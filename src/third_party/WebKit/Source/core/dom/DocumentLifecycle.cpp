@@ -165,7 +165,7 @@ bool DocumentLifecycle::canAdvanceTo(State nextState) const
             return true;
         if (nextState == InPerformLayout)
             return true;
-        // We can redundant arrive in the layout clean state. This situation
+        // We can redundantly arrive in the layout clean state. This situation
         // can happen when we call layout recursively and we unwind the stack.
         if (nextState == LayoutClean)
             return true;
@@ -195,14 +195,37 @@ bool DocumentLifecycle::canAdvanceTo(State nextState) const
             return true;
         if (nextState == InCompositingUpdate)
             return true;
-        if (nextState == InPaintForSlimmingPaintV2 && RuntimeEnabledFeatures::slimmingPaintV2Enabled())
+        if (RuntimeEnabledFeatures::slimmingPaintV2Enabled()) {
+            if (nextState == InUpdatePaintProperties)
+                return true;
+        } else {
+            if (nextState == InPaint && RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
+                return true;
+        }
+        break;
+    case InUpdatePaintProperties:
+        if (nextState == UpdatePaintPropertiesClean && RuntimeEnabledFeatures::slimmingPaintV2Enabled())
             return true;
         break;
-    case InPaintForSlimmingPaintV2:
-        if (nextState == PaintForSlimmingPaintV2Clean && RuntimeEnabledFeatures::slimmingPaintV2Enabled())
+    case UpdatePaintPropertiesClean:
+        if (nextState == InPaint && RuntimeEnabledFeatures::slimmingPaintV2Enabled())
             return true;
         break;
-    case PaintForSlimmingPaintV2Clean:
+    case InPaint:
+        if (nextState == PaintClean && RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
+            return true;
+        break;
+    case PaintClean:
+        if (!RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
+            break;
+        if (!RuntimeEnabledFeatures::slimmingPaintV2Enabled()) {
+            if (nextState == InStyleRecalc)
+                return true;
+            if (nextState == InPreLayout)
+                return true;
+            if (nextState == InCompositingUpdate)
+                return true;
+        }
         if (nextState == InCompositingForSlimmingPaintV2 && RuntimeEnabledFeatures::slimmingPaintV2Enabled())
             return true;
         break;
@@ -245,7 +268,7 @@ bool DocumentLifecycle::canRewindTo(State nextState) const
         || m_state == LayoutClean
         || m_state == CompositingClean
         || m_state == PaintInvalidationClean
-        || (m_state == PaintForSlimmingPaintV2Clean && RuntimeEnabledFeatures::slimmingPaintV2Enabled())
+        || (m_state == PaintClean && RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
         || (m_state == CompositingForSlimmingPaintV2Clean && RuntimeEnabledFeatures::slimmingPaintV2Enabled());
 }
 

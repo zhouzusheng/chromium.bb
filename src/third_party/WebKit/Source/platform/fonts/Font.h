@@ -74,8 +74,8 @@ public:
     void update(PassRefPtrWillBeRawPtr<FontSelector>) const;
 
     enum CustomFontNotReadyAction { DoNotPaintIfFontNotReady, UseFallbackIfFontNotReady };
-    void drawText(SkCanvas*, const TextRunPaintInfo&, const FloatPoint&, float deviceScaleFactor, const SkPaint&) const;
-    void drawBidiText(SkCanvas*, const TextRunPaintInfo&, const FloatPoint&, CustomFontNotReadyAction, float deviceScaleFactor, const SkPaint&) const;
+    bool drawText(SkCanvas*, const TextRunPaintInfo&, const FloatPoint&, float deviceScaleFactor, const SkPaint&) const;
+    bool drawBidiText(SkCanvas*, const TextRunPaintInfo&, const FloatPoint&, CustomFontNotReadyAction, float deviceScaleFactor, const SkPaint&) const;
     void drawEmphasisMarks(SkCanvas*, const TextRunPaintInfo&, const AtomicString& mark, const FloatPoint&, float deviceScaleFactor, const SkPaint&) const;
 
     // Glyph bounds will be the minimum rect containing all glyph strokes, in coordinates using
@@ -86,7 +86,11 @@ public:
     FloatRect selectionRectForText(const TextRun&, const FloatPoint&, int h, int from = 0, int to = -1, bool accountForGlyphBounds = false) const;
 
     // Metrics that we query the FontFallbackList for.
-    const FontMetrics& fontMetrics() const { return primaryFont()->fontMetrics(); }
+    const FontMetrics& fontMetrics() const
+    {
+        RELEASE_ASSERT(primaryFont());
+        return primaryFont()->fontMetrics();
+    }
     float spaceWidth() const { return primaryFont()->spaceWidth() + fontDescription().letterSpacing(); }
     float tabWidth(const SimpleFontData&, const TabSize&, float position) const;
     float tabWidth(const TabSize& tabSize, float position) const { return tabWidth(*primaryFont(), tabSize, position); }

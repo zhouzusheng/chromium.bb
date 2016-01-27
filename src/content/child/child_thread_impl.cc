@@ -28,7 +28,6 @@
 #include "base/synchronization/lock.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_local.h"
-#include "base/trace_event/memory_dump_manager.h"
 #include "base/tracked_objects.h"
 #include "components/tracing/child_trace_message_filter.h"
 #include "content/child/child_discardable_shared_memory_manager.h"
@@ -40,6 +39,7 @@
 #include "content/child/fileapi/file_system_dispatcher.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/geofencing/geofencing_message_filter.h"
+#include "content/child/memory/child_memory_message_filter.h"
 #include "content/child/mojo/mojo_application.h"
 #include "content/child/notifications/notification_dispatcher.h"
 #include "content/child/power_monitor_broadcast_source.h"
@@ -66,6 +66,10 @@
 
 #if defined(OS_MACOSX)
 #include "content/child/child_io_surface_manager_mac.h"
+#endif
+
+#if defined(USE_OZONE)
+#include "ui/ozone/public/client_native_pixmap_factory.h"
 #endif
 
 #if defined(OS_WIN)
@@ -188,6 +192,31 @@ class IOSurfaceManagerFilter : public IPC::MessageFilter {
 
   void OnSetIOSurfaceManagerToken(const IOSurfaceManagerToken& token) {
     ChildIOSurfaceManager::GetInstance()->set_token(token);
+  }
+};
+#endif
+
+#if defined(USE_OZONE)
+class ClientNativePixmapFactoryFilter : public IPC::MessageFilter {
+ public:
+  // Overridden from IPC::MessageFilter:
+  bool OnMessageReceived(const IPC::Message& message) override {
+    bool handled = true;
+    IPC_BEGIN_MESSAGE_MAP(ClientNativePixmapFactoryFilter, message)
+      IPC_MESSAGE_HANDLER(ChildProcessMsg_InitializeClientNativePixmapFactory,
+                          OnInitializeClientNativePixmapFactory)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+    return handled;
+  }
+
+ protected:
+  ~ClientNativePixmapFactoryFilter() override {}
+
+  void OnInitializeClientNativePixmapFactory(
+      const base::FileDescriptor& device_fd) {
+    ui::ClientNativePixmapFactory::GetInstance()->Initialize(
+        base::ScopedFD(device_fd.fd));
   }
 };
 #endif
@@ -329,15 +358,14 @@ void ChildThreadImpl::ConnectChannel(bool use_mojo_channel) {
     VLOG(1) << "Mojo is enabled on child";
     scoped_refptr<base::SequencedTaskRunner> io_task_runner = GetIOTaskRunner();
     DCHECK(io_task_runner);
-    channel_->Init(IPC::ChannelMojo::CreateClientFactory(
-                       io_task_runner, channel_name_, attachment_broker_.get()),
-                   create_pipe_now);
+    channel_->Init(
+        IPC::ChannelMojo::CreateClientFactory(io_task_runner, channel_name_),
+        create_pipe_now);
     return;
   }
 
   VLOG(1) << "Mojo is disabled on child";
-  channel_->Init(channel_name_, IPC::Channel::MODE_CLIENT, create_pipe_now,
-                 attachment_broker_.get());
+  channel_->Init(channel_name_, IPC::Channel::MODE_CLIENT, create_pipe_now);
 }
 
 void ChildThreadImpl::Init(const Options& options) {
@@ -353,16 +381,22 @@ void ChildThreadImpl::Init(const Options& options) {
   // the logger, and the logger does not like being created on the IO thread.
   IPC::Logging::GetInstance();
 #endif
+
+#if defined(OS_WIN)
+  // The only reason a global would already exist is if the thread is being run
+  // in the browser process because of a command line switch.
+  if (!IPC::AttachmentBroker::GetGlobal()) {
+    attachment_broker_.reset(new IPC::AttachmentBrokerUnprivilegedWin());
+    IPC::AttachmentBroker::SetGlobal(attachment_broker_.get());
+  }
+#endif
+
   channel_ =
       IPC::SyncChannel::Create(this, ChildProcess::current()->io_task_runner(),
                                ChildProcess::current()->GetShutDownEvent());
 #ifdef IPC_MESSAGE_LOG_ENABLED
   if (!IsInBrowserProcess())
     IPC::Logging::GetInstance()->SetIPCSender(this);
-#endif
-
-#if defined(OS_WIN)
-  attachment_broker_.reset(new IPC::AttachmentBrokerUnprivilegedWin());
 #endif
 
   mojo_application_.reset(new MojoApplication(GetIOTaskRunner()));
@@ -402,10 +436,11 @@ void ChildThreadImpl::Init(const Options& options) {
   channel_->AddFilter(geofencing_message_filter_->GetFilter());
 
   if (!IsInBrowserProcess()) {
-    // In single process mode, browser-side tracing will cover the whole
-    // process including renderers.
+    // In single process mode, browser-side tracing and memory will cover the
+    // whole process including renderers.
     channel_->AddFilter(new tracing::ChildTraceMessageFilter(
         ChildProcess::current()->io_task_runner()));
+    channel_->AddFilter(new ChildMemoryMessageFilter());
   }
 
   // In single process mode we may already have a power monitor
@@ -427,6 +462,10 @@ void ChildThreadImpl::Init(const Options& options) {
 
 #if defined(OS_MACOSX)
   channel_->AddFilter(new IOSurfaceManagerFilter());
+#endif
+
+#if defined(USE_OZONE)
+  channel_->AddFilter(new ClientNativePixmapFactoryFilter());
 #endif
 
   // Add filters passed here via options.
@@ -472,8 +511,6 @@ void ChildThreadImpl::InitChannel() {
 }
 
 void ChildThreadImpl::InitManagers() {
-  base::trace_event::MemoryDumpManager::GetInstance()->Initialize();
-
   shared_bitmap_manager_.reset(
       new ChildSharedBitmapManager(thread_safe_sender()));
 
@@ -554,10 +591,6 @@ void ChildThreadImpl::SetChannelName(const std::string& channel_name) {
   InitChannel();
 }
 
-IPC::AttachmentBroker* ChildThreadImpl::GetAttachmentBroker() {
-  return attachment_broker_.get();
-}
-
 MessageRouter* ChildThreadImpl::GetRouter() {
   DCHECK(base::MessageLoop::current() == message_loop());
   return &router_;
@@ -578,7 +611,7 @@ scoped_ptr<base::SharedMemory> ChildThreadImpl::AllocateSharedMemory(
   shared_buf.reset(new base::SharedMemory);
   if (!shared_buf->CreateAnonymous(buf_size)) {
     NOTREACHED();
-    return NULL;
+    return nullptr;
   }
 #else
   // On POSIX, we need to ask the browser to create the shared memory for us,
@@ -590,11 +623,11 @@ scoped_ptr<base::SharedMemory> ChildThreadImpl::AllocateSharedMemory(
       shared_buf.reset(new base::SharedMemory(shared_mem_handle, false));
     } else {
       NOTREACHED() << "Browser failed to allocate shared memory";
-      return NULL;
+      return nullptr;
     }
   } else {
-    NOTREACHED() << "Browser allocation request message failed";
-    return NULL;
+    // Send is allowed to fail during shutdown. Return null in this case.
+    return nullptr;
   }
 #endif
   return shared_buf;
@@ -644,6 +677,14 @@ bool ChildThreadImpl::OnMessageReceived(const IPC::Message& msg) {
 
 bool ChildThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
   return false;
+}
+
+void ChildThreadImpl::OnProcessBackgrounded(bool backgrounded) {
+  // Set timer slack to maximum on main thread when in background.
+  base::TimerSlack timer_slack = base::TIMER_SLACK_NONE;
+  if (backgrounded)
+    timer_slack = base::TIMER_SLACK_MAXIMUM;
+  base::MessageLoop::current()->SetTimerSlack(timer_slack);
 }
 
 void ChildThreadImpl::OnShutdown() {
@@ -722,14 +763,6 @@ void ChildThreadImpl::EnsureConnected() {
 
 bool ChildThreadImpl::IsInBrowserProcess() const {
   return browser_process_io_runner_;
-}
-
-void ChildThreadImpl::OnProcessBackgrounded(bool background) {
-  // Set timer slack to maximum on main thread when in background.
-  base::TimerSlack timer_slack = base::TIMER_SLACK_NONE;
-  if (background)
-    timer_slack = base::TIMER_SLACK_MAXIMUM;
-  base::MessageLoop::current()->SetTimerSlack(timer_slack);
 }
 
 }  // namespace content

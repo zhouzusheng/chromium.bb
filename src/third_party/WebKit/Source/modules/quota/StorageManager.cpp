@@ -18,18 +18,17 @@ namespace blink {
 
 namespace {
 
-class DurableStorageQueryCallbacks final : public WebCallbacks<WebPermissionStatus*, void> {
+class DurableStorageQueryCallbacks final : public WebPermissionCallback {
 public:
     DurableStorageQueryCallbacks(ScriptPromiseResolver* resolver)
         : m_resolver(resolver)
     {
     }
 
-    void onSuccess(WebPermissionStatus* rawStatus) override
+    void onSuccess(WebPermissionStatus status) override
     {
-        OwnPtr<WebPermissionStatus> status = adoptPtr(rawStatus);
         String toReturn;
-        switch (*status) {
+        switch (status) {
         case WebPermissionStatusGranted:
             toReturn = "granted";
             break;
@@ -51,17 +50,16 @@ private:
     Persistent<ScriptPromiseResolver> m_resolver;
 };
 
-class DurableStorageRequestCallbacks final : public WebCallbacks<WebPermissionStatus*, void> {
+class DurableStorageRequestCallbacks final : public WebPermissionCallback {
 public:
     DurableStorageRequestCallbacks(ScriptPromiseResolver* resolver)
         : m_resolver(resolver)
     {
     }
 
-    void onSuccess(WebPermissionStatus* rawStatus) override
+    void onSuccess(WebPermissionStatus status) override
     {
-        OwnPtr<WebPermissionStatus> status = adoptPtr(rawStatus);
-        m_resolver->resolve(*status == WebPermissionStatusGranted);
+        m_resolver->resolve(status == WebPermissionStatusGranted);
     }
     void onError() override
     {
@@ -81,14 +79,14 @@ ScriptPromise StorageManager::requestPersistent(ScriptState* scriptState)
     ExecutionContext* executionContext = scriptState->executionContext();
     SecurityOrigin* securityOrigin = executionContext->securityOrigin();
     // TODO(dgrogan): Is the isUnique() check covered by the later
-    // isPrivilegedContext() check? If so, maybe remove it. Write a test if it
+    // isSecureContext() check? If so, maybe remove it. Write a test if it
     // stays.
     if (securityOrigin->isUnique()) {
         resolver->reject(DOMException::create(NotSupportedError));
         return promise;
     }
     String errorMessage;
-    if (!executionContext->isPrivilegedContext(errorMessage)) {
+    if (!executionContext->isSecureContext(errorMessage)) {
         resolver->reject(DOMException::create(SecurityError, errorMessage));
         return promise;
     }

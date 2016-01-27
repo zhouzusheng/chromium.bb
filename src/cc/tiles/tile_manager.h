@@ -133,9 +133,7 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   // date draw information.
   void Flush();
 
-  ScopedTilePtr CreateTile(const gfx::Size& desired_texture_size,
-                           const gfx::Rect& content_rect,
-                           float contents_scale,
+  ScopedTilePtr CreateTile(const Tile::CreateInfo& info,
                            int layer_id,
                            int source_frame_number,
                            int flags);
@@ -156,7 +154,7 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
       TileDrawInfo& draw_info = tiles[i]->draw_info();
       draw_info.resource_ = resource_pool_->AcquireResource(
           tiles[i]->desired_texture_size(),
-          tile_task_runner_->GetResourceFormat());
+          tile_task_runner_->GetResourceFormat(false));
     }
   }
 
@@ -215,10 +213,10 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   friend class Tile;
   // Virtual for testing.
   virtual void Release(Tile* tile);
+  Tile::Id GetUniqueTileId() { return ++next_tile_id_; }
 
   // Overriden from TileTaskRunnerClient:
   void DidFinishRunningTileTasks(TaskSet task_set) override;
-  TaskSetCollection TasksThatShouldBeForcedToComplete() const override;
 
   typedef std::vector<PrioritizedTile> PrioritizedTileVector;
   typedef std::set<Tile*> TileSet;
@@ -282,6 +280,9 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   void CheckIfMoreTilesNeedToBePrepared();
   void CheckAndIssueSignals();
 
+  ResourceFormat DetermineResourceFormat(const Tile* tile) const;
+  bool DetermineResourceRequiresSwizzle(const Tile* tile) const;
+
   TileManagerClient* client_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   ResourcePool* resource_pool_;
@@ -329,6 +330,7 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   bool has_scheduled_tile_tasks_;
 
   uint64_t prepare_tiles_count_;
+  uint64_t next_tile_id_;
 
   DISALLOW_COPY_AND_ASSIGN(TileManager);
 };

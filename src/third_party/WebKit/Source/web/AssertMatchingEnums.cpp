@@ -157,8 +157,10 @@ STATIC_ASSERT_MATCHING_ENUM(WebAXEventAutocorrectionOccured, AXObjectCache::AXAu
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventBlur, AXObjectCache::AXBlur);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventCheckedStateChanged, AXObjectCache::AXCheckedStateChanged);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventChildrenChanged, AXObjectCache::AXChildrenChanged);
+STATIC_ASSERT_MATCHING_ENUM(WebAXEventDocumentSelectionChanged, AXObjectCache::AXDocumentSelectionChanged);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventFocus, AXObjectCache::AXFocusedUIElementChanged);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventHide, AXObjectCache::AXHide);
+STATIC_ASSERT_MATCHING_ENUM(WebAXEventHover, AXObjectCache::AXHover);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventInvalidStatusChanged, AXObjectCache::AXInvalidStatusChanged);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventLayoutComplete, AXObjectCache::AXLayoutComplete);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventLiveRegionChanged, AXObjectCache::AXLiveRegionChanged);
@@ -452,16 +454,6 @@ STATIC_ASSERT_MATCHING_ENUM(WebIconURL::TypeInvalid, InvalidIcon);
 STATIC_ASSERT_MATCHING_ENUM(WebIconURL::TypeFavicon, Favicon);
 STATIC_ASSERT_MATCHING_ENUM(WebIconURL::TypeTouch, TouchIcon);
 STATIC_ASSERT_MATCHING_ENUM(WebIconURL::TypeTouchPrecomposed, TouchPrecomposedIcon);
-
-STATIC_ASSERT_MATCHING_ENUM(WebNode::ElementNode, Node::ELEMENT_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::AttributeNode, Node::ATTRIBUTE_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::TextNode, Node::TEXT_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::CDataSectionNode, Node::CDATA_SECTION_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::ProcessingInstructionsNode, Node::PROCESSING_INSTRUCTION_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::CommentNode, Node::COMMENT_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::DocumentNode, Node::DOCUMENT_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::DocumentTypeNode, Node::DOCUMENT_TYPE_NODE);
-STATIC_ASSERT_MATCHING_ENUM(WebNode::DocumentFragmentNode, Node::DOCUMENT_FRAGMENT_NODE);
 
 STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveNothing, HTMLMediaElement::HAVE_NOTHING);
 STATIC_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveMetadata, HTMLMediaElement::HAVE_METADATA);

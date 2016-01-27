@@ -27,12 +27,9 @@
 #define VisiblePosition_h
 
 #include "core/CoreExport.h"
-#include "core/editing/EditingBoundary.h"
-#include "core/editing/EphemeralRange.h"
 #include "core/editing/PositionWithAffinity.h"
 #include "core/editing/TextAffinity.h"
 #include "platform/heap/Handle.h"
-#include "platform/text/TextDirection.h"
 
 namespace blink {
 
@@ -70,56 +67,36 @@ class Range;
 //
 // NOTE: UPSTREAM affinity will be used only if pos is at end of a wrapped line,
 // otherwise it will be converted to DOWNSTREAM.
-class CORE_EXPORT VisiblePosition final {
+template <typename Strategy>
+class CORE_TEMPLATE_CLASS_EXPORT VisiblePositionTemplate final {
     DISALLOW_ALLOCATION();
 public:
-    VisiblePosition() : m_affinity(VP_DEFAULT_AFFINITY) { }
-    explicit VisiblePosition(const Position&, TextAffinity = VP_DEFAULT_AFFINITY);
-    explicit VisiblePosition(const PositionInComposedTree&, TextAffinity = VP_DEFAULT_AFFINITY);
-    explicit VisiblePosition(const PositionWithAffinity&);
+    VisiblePositionTemplate();
+
+    // Node: Other than |createVisiblePosition()|, we should not use
+    // |create()|.
+    static VisiblePositionTemplate create(const PositionWithAffinityTemplate<Strategy>&);
 
     // Intentionally delete |operator==()| and |operator!=()| for reducing
     // compilation error message.
     // TODO(yosin) We'll have |equals()| when we have use cases of checking
     // equality of both position and affinity.
-    bool operator==(const VisiblePosition&) const = delete;
-    bool operator!=(const VisiblePosition&) const = delete;
+    bool operator==(const VisiblePositionTemplate&) const = delete;
+    bool operator!=(const VisiblePositionTemplate&) const = delete;
 
-    bool isNull() const { return m_deepPosition.isNull(); }
-    bool isNotNull() const { return m_deepPosition.isNotNull(); }
-    bool isOrphan() const { return m_deepPosition.isOrphan(); }
+    bool isNull() const { return m_positionWithAffinity.isNull(); }
+    bool isNotNull() const { return m_positionWithAffinity.isNotNull(); }
+    bool isOrphan() const { return deepEquivalent().isOrphan(); }
 
-    Position deepEquivalent() const { return m_deepPosition; }
-    Position toParentAnchoredPosition() const { return deepEquivalent().parentAnchoredEquivalent(); }
-    PositionWithAffinity toPositionWithAffinity() const { return PositionWithAffinity(m_deepPosition, m_affinity); }
-    TextAffinity affinity() const { return m_affinity; }
+    PositionTemplate<Strategy> deepEquivalent() const { return m_positionWithAffinity.position(); }
+    PositionTemplate<Strategy> toParentAnchoredPosition() const { return deepEquivalent().parentAnchoredEquivalent(); }
+    PositionWithAffinityTemplate<Strategy> toPositionWithAffinity() const { return m_positionWithAffinity; }
+    TextAffinity affinity() const { return m_positionWithAffinity.affinity(); }
 
-    // next() and previous() will increment/decrement by a character cluster.
-    VisiblePosition next(EditingBoundaryCrossingRule = CanCrossEditingBoundary) const;
-    VisiblePosition previous(EditingBoundaryCrossingRule = CanCrossEditingBoundary) const;
-    VisiblePosition honorEditingBoundaryAtOrBefore(const VisiblePosition&) const;
-    VisiblePosition honorEditingBoundaryAtOrAfter(const VisiblePosition&) const;
-    VisiblePosition skipToStartOfEditingBoundary(const VisiblePosition&) const;
-    VisiblePosition skipToEndOfEditingBoundary(const VisiblePosition&) const;
-
-    VisiblePosition left() const;
-    VisiblePosition right() const;
-
-    UChar32 characterAfter() const;
-    UChar32 characterBefore() const { return previous().characterAfter(); }
-
-    // FIXME: This does not handle [table, 0] correctly.
-    Element* rootEditableElement() const { return m_deepPosition.isNotNull() ? m_deepPosition.anchorNode()->rootEditableElement() : 0; }
-
-    // Rect is local to the returned layoutObject
-    LayoutRect localCaretRect(LayoutObject*&) const;
-    // Bounds of (possibly transformed) caret in absolute coords
-    IntRect absoluteCaretBounds() const;
-    // Abs x/y position of the caret ignoring transforms.
-    // FIXME: navigation with transforms should be smarter.
-    int lineDirectionPointForBlockDirectionNavigation() const;
-
-    DECLARE_TRACE();
+    DEFINE_INLINE_TRACE()
+    {
+        visitor->trace(m_positionWithAffinity);
+    }
 
 #ifndef NDEBUG
     void debugPosition(const char* msg = "") const;
@@ -128,22 +105,26 @@ public:
 #endif
 
 private:
-    template<typename Strategy>
-    void init(const PositionAlgorithm<Strategy>&, TextAffinity);
+    explicit VisiblePositionTemplate(const PositionWithAffinityTemplate<Strategy>&);
 
-    Position leftVisuallyDistinctCandidate() const;
-    Position rightVisuallyDistinctCandidate() const;
-
-    Position m_deepPosition;
-    TextAffinity m_affinity;
+    PositionWithAffinityTemplate<Strategy> m_positionWithAffinity;
 };
 
-EphemeralRange makeRange(const VisiblePosition&, const VisiblePosition&);
+extern template class CORE_EXTERN_TEMPLATE_EXPORT VisiblePositionTemplate<EditingStrategy>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT VisiblePositionTemplate<EditingInComposedTreeStrategy>;
 
-CORE_EXPORT Position canonicalPositionOf(const Position&);
-CORE_EXPORT PositionInComposedTree canonicalPositionOf(const PositionInComposedTree&);
-PositionWithAffinity honorEditingBoundaryAtOrBeforeOf(const PositionWithAffinity&, const Position& anchor);
-PositionInComposedTreeWithAffinity honorEditingBoundaryAtOrBeforeOf(const PositionInComposedTreeWithAffinity&, const PositionInComposedTree& anchor);
+using VisiblePosition = VisiblePositionTemplate<EditingStrategy>;
+using VisiblePositionInComposedTree = VisiblePositionTemplate<EditingInComposedTreeStrategy>;
+
+CORE_EXPORT VisiblePosition createVisiblePosition(const Position&, TextAffinity = VP_DEFAULT_AFFINITY);
+CORE_EXPORT VisiblePosition createVisiblePosition(const PositionWithAffinity&);
+CORE_EXPORT VisiblePositionInComposedTree createVisiblePosition(const PositionInComposedTree&, TextAffinity = VP_DEFAULT_AFFINITY);
+CORE_EXPORT VisiblePositionInComposedTree createVisiblePosition(const PositionInComposedTreeWithAffinity&);
+
+// TODO(yosin) Once we have composed tree version of VisibleUnits, we should not
+// use |createVisiblePositionInDOMTree()|.
+VisiblePosition createVisiblePositionInDOMTree(const Position&, TextAffinity = VP_DEFAULT_AFFINITY);
+VisiblePosition createVisiblePositionInDOMTree(const PositionInComposedTree&, TextAffinity = VP_DEFAULT_AFFINITY);
 
 } // namespace blink
 

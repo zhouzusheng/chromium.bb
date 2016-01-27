@@ -33,13 +33,12 @@
 #include "core/html/forms/ColorChooser.h"
 #include "core/html/forms/DateTimeChooser.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/plugins/PluginPlaceholder.h"
 #include "platform/FileChooser.h"
 #include "platform/Widget.h"
 #include "public/platform/WebApplicationCacheHost.h"
 #include "public/platform/WebMediaPlayer.h"
-#include "public/platform/WebServiceWorkerProvider.h"
-#include "public/platform/WebServiceWorkerProviderClient.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
 
 namespace blink {
 
@@ -102,6 +101,11 @@ NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const Resourc
     return NavigationPolicyIgnore;
 }
 
+bool EmptyFrameLoaderClient::hasPendingNavigation()
+{
+    return false;
+}
+
 void EmptyFrameLoaderClient::dispatchWillSendSubmitEvent(HTMLFormElement*)
 {
 }
@@ -120,17 +124,7 @@ PassRefPtrWillBeRawPtr<LocalFrame> EmptyFrameLoaderClient::createFrame(const Fra
     return nullptr;
 }
 
-PassOwnPtrWillBeRawPtr<PluginPlaceholder> EmptyFrameLoaderClient::createPluginPlaceholder(Document&, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually)
-{
-    return nullptr;
-}
-
 PassRefPtrWillBeRawPtr<Widget> EmptyFrameLoaderClient::createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy)
-{
-    return nullptr;
-}
-
-PassRefPtrWillBeRawPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&)
 {
     return nullptr;
 }

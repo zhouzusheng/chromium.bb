@@ -31,6 +31,7 @@
 #include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -61,6 +62,10 @@ public:
     void startAnimation(CatchUpAnimation = CatchUp) override;
     void stopAnimation() override;
     void resetAnimation() override;
+
+    // Advances an animated image. This will trigger an animation update for CSS
+    // and advance the SMIL timeline by one frame.
+    void advanceAnimationForTesting() override;
 
     PassRefPtr<SkImage> imageForCurrentFrame() override;
 
@@ -113,6 +118,7 @@ private:
 DEFINE_IMAGE_TYPE_CASTS(SVGImage);
 
 class ImageObserverDisabler {
+    STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(ImageObserverDisabler);
 public:
     ImageObserverDisabler(Image* image)

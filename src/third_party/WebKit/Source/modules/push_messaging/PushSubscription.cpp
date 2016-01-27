@@ -46,9 +46,12 @@ KURL PushSubscription::endpoint() const
     return m_endpoint;
 }
 
-PassRefPtr<DOMArrayBuffer> PushSubscription::curve25519dh() const
+PassRefPtr<DOMArrayBuffer> PushSubscription::getKey(const AtomicString& name) const
 {
-    return m_curve25519dh;
+    if (name == "curve25519dh")
+        return m_curve25519dh;
+
+    return nullptr;
 }
 
 ScriptPromise PushSubscription::unsubscribe(ScriptState* scriptState)

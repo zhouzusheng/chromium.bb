@@ -148,11 +148,13 @@ void BrowserGpuChannelHostFactory::EstablishRequest::EstablishOnIO() {
     reused_gpu_process_ = true;
   }
 
+  bool preempts = true;
+  bool preempted = false;
+  bool allow_future_sync_points = true;
+  bool allow_real_time_streams = true;
   host->EstablishGpuChannel(
-      gpu_client_id_,
-      gpu_client_tracing_id_,
-      true,
-      true,
+      gpu_client_id_, gpu_client_tracing_id_, preempts, preempted,
+      allow_future_sync_points, allow_real_time_streams,
       base::Bind(
           &BrowserGpuChannelHostFactory::EstablishRequest::OnEstablishedOnIO,
           this));
@@ -254,8 +256,6 @@ BrowserGpuChannelHostFactory::BrowserGpuChannelHostFactory()
           base::Bind(
               &BrowserGpuChannelHostFactory::InitializeShaderDiskCacheOnIO,
               gpu_client_id_, cache_dir));
-    } else {
-      LOG(ERROR) << "Failed to init browser shader disk cache.";
     }
   }
 }
@@ -305,16 +305,11 @@ void BrowserGpuChannelHostFactory::CreateViewCommandBufferOnIO(
 
   host->CreateViewCommandBuffer(
       surface,
-      surface_id,
       gpu_client_id_,
       init_params,
       request->route_id,
       base::Bind(&BrowserGpuChannelHostFactory::CommandBufferCreatedOnIO,
                  request));
-}
-
-IPC::AttachmentBroker* BrowserGpuChannelHostFactory::GetAttachmentBroker() {
-  return content::ChildProcessHost::GetAttachmentBroker();
 }
 
 // static
@@ -410,8 +405,9 @@ void BrowserGpuChannelHostFactory::GpuChannelEstablished() {
             "466866 BrowserGpuChannelHostFactory::GpuChannelEstablished1"));
     GetContentClient()->SetGpuInfo(pending_request_->gpu_info());
     gpu_channel_ = GpuChannelHost::Create(
-        this, pending_request_->gpu_info(), pending_request_->channel_handle(),
-        shutdown_event_.get(), gpu_memory_buffer_manager_.get());
+        this, gpu_client_id_, pending_request_->gpu_info(),
+        pending_request_->channel_handle(), shutdown_event_.get(),
+        gpu_memory_buffer_manager_.get());
   }
   gpu_host_id_ = pending_request_->gpu_host_id();
   pending_request_ = NULL;

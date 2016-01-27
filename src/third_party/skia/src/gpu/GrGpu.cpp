@@ -16,6 +16,7 @@
 #include "GrPathRendering.h"
 #include "GrPipeline.h"
 #include "GrResourceCache.h"
+#include "GrResourceProvider.h"
 #include "GrRenderTargetPriv.h"
 #include "GrStencilAttachment.h"
 #include "GrSurfacePriv.h"
@@ -45,7 +46,6 @@ GrVertices& GrVertices::operator =(const GrVertices& di) {
 GrGpu::GrGpu(GrContext* context)
     : fResetTimestamp(kExpiredTimestamp+1)
     , fResetBits(kAll_GrBackendState)
-    , fGpuTraceMarkerCount(0)
     , fContext(context) {
 }
 
@@ -71,30 +71,30 @@ GrTexture* GrGpu::createTexture(const GrSurfaceDesc& origDesc, bool budgeted,
     GrSurfaceDesc desc = origDesc;
 
     if (!this->caps()->isConfigTexturable(desc.fConfig)) {
-        return NULL;
+        return nullptr;
     }
 
     bool isRT = SkToBool(desc.fFlags & kRenderTarget_GrSurfaceFlag);
     if (isRT && !this->caps()->isConfigRenderable(desc.fConfig, desc.fSampleCnt > 0)) {
-        return NULL;
+        return nullptr;
     }
 
     // We currently do not support multisampled textures
     if (!isRT && desc.fSampleCnt > 0) {
-        return NULL;
+        return nullptr;
     }
 
-    GrTexture *tex = NULL;
+    GrTexture *tex = nullptr;
 
     if (isRT) {
         int maxRTSize = this->caps()->maxRenderTargetSize();
         if (desc.fWidth > maxRTSize || desc.fHeight > maxRTSize) {
-            return NULL;
+            return nullptr;
         }
     } else {
         int maxSize = this->caps()->maxTextureSize();
         if (desc.fWidth > maxSize || desc.fHeight > maxSize) {
-            return NULL;
+            return nullptr;
         }
     }
 
@@ -114,7 +114,7 @@ GrTexture* GrGpu::createTexture(const GrSurfaceDesc& origDesc, bool budgeted,
 
         if (!this->caps()->npotTextureTileSupport() &&
             (!SkIsPow2(desc.fWidth) || !SkIsPow2(desc.fHeight))) {
-            return NULL;
+            return nullptr;
         }
 
         this->handleDirtyContext();
@@ -135,59 +135,17 @@ GrTexture* GrGpu::createTexture(const GrSurfaceDesc& origDesc, bool budgeted,
     return tex;
 }
 
-bool GrGpu::attachStencilAttachmentToRenderTarget(GrRenderTarget* rt) {
-    SkASSERT(NULL == rt->renderTargetPriv().getStencilAttachment());
-    GrUniqueKey sbKey;
-
-    int width = rt->width();
-    int height = rt->height();
-#if 0
-    if (this->caps()->oversizedStencilSupport()) {
-        width  = SkNextPow2(width);
-        height = SkNextPow2(height);
-    }
-#endif
-
-    GrStencilAttachment::ComputeSharedStencilAttachmentKey(width, height,
-        rt->numStencilSamples(), &sbKey);
-    SkAutoTUnref<GrStencilAttachment> sb(static_cast<GrStencilAttachment*>(
-        this->getContext()->getResourceCache()->findAndRefUniqueResource(sbKey)));
-    if (sb) {
-        if (this->attachStencilAttachmentToRenderTarget(sb, rt)) {
-            rt->renderTargetPriv().didAttachStencilAttachment(sb);
-            return true;
-        }
-        return false;
-    }
-    if (this->createStencilAttachmentForRenderTarget(rt, width, height)) {
-        // Right now we're clearing the stencil buffer here after it is
-        // attached to an RT for the first time. When we start matching
-        // stencil buffers with smaller color targets this will no longer
-        // be correct because it won't be guaranteed to clear the entire
-        // sb.
-        // We used to clear down in the GL subclass using a special purpose
-        // FBO. But iOS doesn't allow a stencil-only FBO. It reports unsupported
-        // FBO status.
-        this->clearStencil(rt);
-        GrStencilAttachment* sb = rt->renderTargetPriv().getStencilAttachment();
-        sb->resourcePriv().setUniqueKey(sbKey);
-        return true;
-    } else {
-        return false;
-    }
-}
-
 GrTexture* GrGpu::wrapBackendTexture(const GrBackendTextureDesc& desc, GrWrapOwnership ownership) {
     this->handleDirtyContext();
     GrTexture* tex = this->onWrapBackendTexture(desc, ownership);
-    if (NULL == tex) {
-        return NULL;
+    if (nullptr == tex) {
+        return nullptr;
     }
     // TODO: defer this and attach dynamically
     GrRenderTarget* tgt = tex->asRenderTarget();
-    if (tgt && !this->attachStencilAttachmentToRenderTarget(tgt)) {
+    if (tgt && !fContext->resourceProvider()->attachStencilAttachment(tgt)) {
         tex->unref();
-        return NULL;
+        return nullptr;
     } else {
         return tex;
     }
@@ -279,6 +237,11 @@ bool GrGpu::getWritePixelsInfo(GrSurface* dstSurface, int width, int height, siz
     SkASSERT(tempDrawInfo);
     SkASSERT(kGpuPrefersDraw_DrawPreference != *drawPreference);
 
+    if (GrPixelConfigIsCompressed(dstSurface->desc().fConfig) &&
+        dstSurface->desc().fConfig != srcConfig) {
+        return false;
+    }
+
     if (this->caps()->useDrawInsteadOfPartialRenderTargetWrite() &&
         SkToBool(dstSurface->asRenderTarget()) &&
         (width < dstSurface->width() || height < dstSurface->height())) {
@@ -332,6 +295,10 @@ bool GrGpu::writePixels(GrSurface* surface,
                         int left, int top, int width, int height,
                         GrPixelConfig config, const void* buffer,
                         size_t rowBytes) {
+    if (!buffer) {
+        return false;
+    }
+
     this->handleDirtyContext();
     if (this->onWritePixels(surface, left, top, width, height, config, buffer, rowBytes)) {
         fStats.incTextureUploads();
@@ -346,47 +313,6 @@ void GrGpu::resolveRenderTarget(GrRenderTarget* target) {
     this->onResolveRenderTarget(target);
 }
 
-typedef GrTraceMarkerSet::Iter TMIter;
-void GrGpu::saveActiveTraceMarkers() {
-    if (this->caps()->gpuTracingSupport()) {
-        SkASSERT(0 == fStoredTraceMarkers.count());
-        fStoredTraceMarkers.addSet(fActiveTraceMarkers);
-        for (TMIter iter = fStoredTraceMarkers.begin(); iter != fStoredTraceMarkers.end(); ++iter) {
-            this->removeGpuTraceMarker(&(*iter));
-        }
-    }
-}
-
-void GrGpu::restoreActiveTraceMarkers() {
-    if (this->caps()->gpuTracingSupport()) {
-        SkASSERT(0 == fActiveTraceMarkers.count());
-        for (TMIter iter = fStoredTraceMarkers.begin(); iter != fStoredTraceMarkers.end(); ++iter) {
-            this->addGpuTraceMarker(&(*iter));
-        }
-        for (TMIter iter = fActiveTraceMarkers.begin(); iter != fActiveTraceMarkers.end(); ++iter) {
-            this->fStoredTraceMarkers.remove(*iter);
-        }
-    }
-}
-
-void GrGpu::addGpuTraceMarker(const GrGpuTraceMarker* marker) {
-    if (this->caps()->gpuTracingSupport()) {
-        SkASSERT(fGpuTraceMarkerCount >= 0);
-        this->fActiveTraceMarkers.add(*marker);
-        this->didAddGpuTraceMarker();
-        ++fGpuTraceMarkerCount;
-    }
-}
-
-void GrGpu::removeGpuTraceMarker(const GrGpuTraceMarker* marker) {
-    if (this->caps()->gpuTracingSupport()) {
-        SkASSERT(fGpuTraceMarkerCount >= 1);
-        this->fActiveTraceMarkers.remove(*marker);
-        this->didRemoveGpuTraceMarker();
-        --fGpuTraceMarkerCount;
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 void GrGpu::draw(const DrawArgs& args, const GrVertices& vertices) {
@@ -399,5 +325,6 @@ void GrGpu::draw(const DrawArgs& args, const GrVertices& vertices) {
     const GrNonInstancedVertices* verts = iter.init(vertices);
     do {
         this->onDraw(args, *verts);
+        fStats.incNumDraws();
     } while ((verts = iter.next()));
 }

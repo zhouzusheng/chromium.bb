@@ -48,22 +48,13 @@
 #include "core/page/Page.h"
 #include "platform/SharedBuffer.h"
 #include "platform/UserGestureIndicator.h"
+#include "platform/scheduler/CancellableTaskFactory.h"
+#include "public/platform/Platform.h"
 #include "wtf/CurrentTime.h"
 
 namespace blink {
 
 unsigned NavigationDisablerForBeforeUnload::s_navigationDisableCount = 0;
-
-FrameNavigationDisabler::FrameNavigationDisabler(LocalFrame* frame)
-    : m_navigationScheduler(frame->navigationScheduler())
-{
-    m_navigationScheduler.disableFrameNavigation();
-}
-
-FrameNavigationDisabler::~FrameNavigationDisabler()
-{
-    m_navigationScheduler.enableFrameNavigation();
-}
 
 class ScheduledNavigation : public NoBaseWillBeGarbageCollectedFinalized<ScheduledNavigation> {
     WTF_MAKE_NONCOPYABLE(ScheduledNavigation); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScheduledNavigation);
@@ -158,6 +149,7 @@ public:
         request.setClientRedirect(ClientRedirect);
         frame->loader().load(request);
     }
+
 private:
     ScheduledRedirect(double delay, Document* originDocument, const String& url, bool replacesCurrentItem)
         : ScheduledURLNavigation(delay, originDocument, url, replacesCurrentItem, false)
@@ -265,13 +257,16 @@ private:
 
 NavigationScheduler::NavigationScheduler(LocalFrame* frame)
     : m_frame(frame)
-    , m_timer(this, &NavigationScheduler::timerFired)
-    , m_navigationDisableCount(0)
+    , m_navigateTaskFactory(CancellableTaskFactory::create(this, &NavigationScheduler::navigateTask))
 {
 }
 
 NavigationScheduler::~NavigationScheduler()
 {
+    // TODO(alexclarke): Can remove this if oilpan is on since any pending task should
+    // keep the NavigationScheduler alive.
+    if (m_navigateTaskFactory->isPending())
+        Platform::current()->currentThread()->scheduler()->removePendingNavigation();
 }
 
 bool NavigationScheduler::locationChangePending()
@@ -279,14 +274,19 @@ bool NavigationScheduler::locationChangePending()
     return m_redirect && m_redirect->isLocationChange();
 }
 
+bool NavigationScheduler::isNavigationScheduled() const
+{
+    return m_redirect;
+}
+
 inline bool NavigationScheduler::shouldScheduleReload() const
 {
-    return m_frame->page() && isFrameNavigationAllowed() && NavigationDisablerForBeforeUnload::isNavigationAllowed();
+    return m_frame->page() && m_frame->isNavigationAllowed() && NavigationDisablerForBeforeUnload::isNavigationAllowed();
 }
 
 inline bool NavigationScheduler::shouldScheduleNavigation(const String& url) const
 {
-    return m_frame->page() && isFrameNavigationAllowed() && (protocolIsJavaScript(url) || NavigationDisablerForBeforeUnload::isNavigationAllowed());
+    return m_frame->page() && m_frame->isNavigationAllowed() && (protocolIsJavaScript(url) || NavigationDisablerForBeforeUnload::isNavigationAllowed());
 }
 
 void NavigationScheduler::scheduleRedirect(double delay, const String& url)
@@ -365,8 +365,10 @@ void NavigationScheduler::scheduleReload()
     schedule(ScheduledReload::create());
 }
 
-void NavigationScheduler::timerFired(Timer<NavigationScheduler>*)
+void NavigationScheduler::navigateTask()
 {
+    Platform::current()->currentThread()->scheduler()->removePendingNavigation();
+
     if (!m_frame->page())
         return;
     if (m_frame->page()->defersLoading()) {
@@ -407,20 +409,26 @@ void NavigationScheduler::startTimer()
         return;
 
     ASSERT(m_frame->page());
-    if (m_timer.isActive())
+    if (m_navigateTaskFactory->isPending())
         return;
     if (!m_redirect->shouldStartTimer(m_frame))
         return;
 
-    m_timer.startOneShot(m_redirect->delay(), FROM_HERE);
+    WebScheduler* scheduler = Platform::current()->currentThread()->scheduler();
+    scheduler->addPendingNavigation();
+    scheduler->loadingTaskRunner()->postDelayedTask(
+        FROM_HERE, m_navigateTaskFactory->cancelAndCreate(), m_redirect->delay() * 1000.0);
+
     InspectorInstrumentation::frameScheduledNavigation(m_frame, m_redirect->delay());
 }
 
 void NavigationScheduler::cancel()
 {
-    if (m_timer.isActive())
+    if (m_navigateTaskFactory->isPending()) {
+        Platform::current()->currentThread()->scheduler()->removePendingNavigation();
         InspectorInstrumentation::frameClearedScheduledNavigation(m_frame);
-    m_timer.stop();
+    }
+    m_navigateTaskFactory->cancel();
     m_redirect.clear();
 }
 

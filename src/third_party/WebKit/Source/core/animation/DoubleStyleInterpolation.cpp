@@ -5,8 +5,9 @@
 #include "config.h"
 #include "core/animation/DoubleStyleInterpolation.h"
 
-#include "core/css/CSSCalculationValue.h"
+#include "core/css/CSSValueList.h"
 #include "core/css/resolver/StyleBuilder.h"
+#include "core/style/ComputedStyleConstants.h"
 
 namespace blink {
 
@@ -15,7 +16,7 @@ bool DoubleStyleInterpolation::canCreateFrom(const CSSValue& value)
     return value.isPrimitiveValue() && (toCSSPrimitiveValue(value).isNumber() || toCSSPrimitiveValue(value).isAngle());
 }
 
-PassOwnPtrWillBeRawPtr<InterpolableValue> DoubleStyleInterpolation::doubleToInterpolableValue(const CSSValue& value)
+PassOwnPtr<InterpolableValue> DoubleStyleInterpolation::doubleToInterpolableValue(const CSSValue& value)
 {
     ASSERT(canCreateFrom(value));
     const CSSPrimitiveValue& primitive = toCSSPrimitiveValue(value);
@@ -73,12 +74,7 @@ void DoubleStyleInterpolation::apply(StyleResolverState& state) const
     StyleBuilder::applyProperty(m_id, state, interpolableValueToMotionRotation(m_cachedValue.get(), m_flag).get());
 }
 
-DEFINE_TRACE(DoubleStyleInterpolation)
-{
-    StyleInterpolation::trace(visitor);
-}
-
-PassOwnPtrWillBeRawPtr<InterpolableValue> DoubleStyleInterpolation::toInterpolableValue(const CSSValue& value, CSSPropertyID property)
+PassOwnPtr<InterpolableValue> DoubleStyleInterpolation::toInterpolableValue(const CSSValue& value, CSSPropertyID property)
 {
     ASSERT(canCreateFrom(value));
     return doubleToInterpolableValue(value);
@@ -132,7 +128,7 @@ PassRefPtrWillBeRawPtr<CSSValue> DoubleStyleInterpolation::interpolableValueToMo
     return list.release();
 }
 
-PassOwnPtrWillBeRawPtr<InterpolableValue> DoubleStyleInterpolation::motionRotationToInterpolableValue(const CSSValue& value)
+PassOwnPtr<InterpolableValue> DoubleStyleInterpolation::motionRotationToInterpolableValue(const CSSValue& value)
 {
     float rotation;
     MotionRotationType rotationType;
@@ -141,7 +137,7 @@ PassOwnPtrWillBeRawPtr<InterpolableValue> DoubleStyleInterpolation::motionRotati
     return InterpolableNumber::create(rotation);
 }
 
-PassRefPtrWillBeRawPtr<DoubleStyleInterpolation> DoubleStyleInterpolation::maybeCreateFromMotionRotation(const CSSValue& start, const CSSValue& end, CSSPropertyID id)
+PassRefPtr<DoubleStyleInterpolation> DoubleStyleInterpolation::maybeCreateFromMotionRotation(const CSSValue& start, const CSSValue& end, CSSPropertyID id)
 {
     float startRotation, endRotation;
     MotionRotationType startRotationType, endRotationType;
@@ -151,7 +147,7 @@ PassRefPtrWillBeRawPtr<DoubleStyleInterpolation> DoubleStyleInterpolation::maybe
         || startRotationType != endRotationType)
         return nullptr;
 
-    return adoptRefWillBeNoop(new DoubleStyleInterpolation(
+    return adoptRef(new DoubleStyleInterpolation(
         motionRotationToInterpolableValue(start),
         motionRotationToInterpolableValue(end),
         id, true, InterpolationRange::RangeAll, startRotationType == MotionRotationAuto));

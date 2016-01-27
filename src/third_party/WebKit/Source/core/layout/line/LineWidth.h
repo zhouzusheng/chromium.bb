@@ -32,6 +32,7 @@
 
 #include "core/layout/api/LineLayoutBlockFlow.h"
 #include "platform/LayoutUnit.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -42,6 +43,7 @@ enum IndentTextOrNot { DoNotIndentText, IndentText };
 enum WhitespaceTreatment { ExcludeWhitespace, IncludeWhitespace };
 
 class LineWidth {
+    STACK_ALLOCATED();
 public:
     LineWidth(LineLayoutBlockFlow, bool isFirstLine, IndentTextOrNot shouldIndentText);
 
@@ -52,7 +54,11 @@ public:
         return currentWidth() - (whitespaceTreatment == ExcludeWhitespace ? trailingWhitespaceWidth() : 0) + extra <= (m_availableWidth + LayoutUnit::epsilon());
     }
 
+    // Note that m_uncommittedWidth may not be LayoutUnit-snapped at this point.  Because
+    // currentWidth() is used by the code that lays out words in a single LayoutText, it's
+    // expected that offsets will not be snapped until an InlineBox boundary is reached.
     float currentWidth() const { return m_committedWidth + m_uncommittedWidth; }
+
     // FIXME: We should eventually replace these three functions by ones that work on a higher abstraction.
     float uncommittedWidth() const { return m_uncommittedWidth; }
     float committedWidth() const { return m_committedWidth; }
@@ -66,6 +72,7 @@ public:
     void applyOverhang(LineLayoutRubyRun, LineLayoutItem startLayoutItem, LineLayoutItem endLayoutItem);
     void fitBelowFloats(bool isFirstLine = false);
     void setTrailingWhitespaceWidth(float width) { m_trailingWhitespaceWidth = width; }
+    void snapUncommittedWidth() { m_uncommittedWidth = LayoutUnit(m_uncommittedWidth).toFloat(); }
 
     bool shouldIndentText() const { return m_shouldIndentText == IndentText; }
 

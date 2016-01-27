@@ -129,7 +129,7 @@ VarT *FindVariable(const TString &name,
 }
 
 CollectVariables::CollectVariables(std::vector<sh::Attribute> *attribs,
-                                   std::vector<sh::Attribute> *outputVariables,
+                                   std::vector<sh::OutputVariable> *outputVariables,
                                    std::vector<sh::Uniform> *uniforms,
                                    std::vector<sh::Varying> *varyings,
                                    std::vector<sh::InterfaceBlock> *interfaceBlocks,
@@ -151,6 +151,7 @@ CollectVariables::CollectVariables(std::vector<sh::Attribute> *attribs,
       mLastFragDataAdded(false),
       mFragColorAdded(false),
       mFragDataAdded(false),
+      mFragDepthEXTAdded(false),
       mFragDepthAdded(false),
       mSecondaryFragColorEXTAdded(false),
       mSecondaryFragDataEXTAdded(false),
@@ -375,7 +376,7 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
           case EvqFragColor:
               if (!mFragColorAdded)
               {
-                  Attribute info;
+                  OutputVariable info;
                   const char kName[] = "gl_FragColor";
                   info.name          = kName;
                   info.mappedName    = kName;
@@ -390,7 +391,7 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
           case EvqFragData:
               if (!mFragDataAdded)
               {
-                  Attribute info;
+                  OutputVariable info;
                   const char kName[] = "gl_FragData";
                   info.name          = kName;
                   info.mappedName    = kName;
@@ -405,10 +406,10 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
                   mFragDataAdded = true;
               }
               return;
-          case EvqFragDepth:
-              if (!mFragDepthAdded)
+          case EvqFragDepthEXT:
+              if (!mFragDepthEXTAdded)
               {
-                  Attribute info;
+                  OutputVariable info;
                   const char kName[] = "gl_FragDepthEXT";
                   info.name          = kName;
                   info.mappedName    = kName;
@@ -420,13 +421,28 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
                                               ->getType());
                   info.staticUse = true;
                   mOutputVariables->push_back(info);
+                  mFragDepthEXTAdded = true;
+              }
+              return;
+          case EvqFragDepth:
+              if (!mFragDepthAdded)
+              {
+                  OutputVariable info;
+                  const char kName[] = "gl_FragDepth";
+                  info.name          = kName;
+                  info.mappedName    = kName;
+                  info.type          = GL_FLOAT;
+                  info.arraySize     = 0;
+                  info.precision     = GL_HIGH_FLOAT;
+                  info.staticUse = true;
+                  mOutputVariables->push_back(info);
                   mFragDepthAdded = true;
               }
               return;
           case EvqSecondaryFragColorEXT:
               if (!mSecondaryFragColorEXTAdded)
               {
-                  Attribute info;
+                  OutputVariable info;
                   const char kName[] = "gl_SecondaryFragColorEXT";
                   info.name          = kName;
                   info.mappedName    = kName;
@@ -441,7 +457,7 @@ void CollectVariables::visitSymbol(TIntermSymbol *symbol)
           case EvqSecondaryFragDataEXT:
               if (!mSecondaryFragDataEXTAdded)
               {
-                  Attribute info;
+                  OutputVariable info;
                   const char kName[] = "gl_SecondaryFragDataEXT";
                   info.name          = kName;
                   info.mappedName    = kName;
@@ -476,7 +492,7 @@ class NameHashingTraverser : public GetVariableTraverser
     {}
 
   private:
-    virtual void visitVariable(ShaderVariable *variable)
+    void visitVariable(ShaderVariable *variable) override
     {
         TString stringName = TString(variable->name.c_str());
         variable->mappedName = TIntermTraverser::hash(stringName, mHashFunction).c_str();
@@ -502,6 +518,26 @@ void CollectVariables::visitVariable(const TIntermSymbol *variable,
     attribute.arraySize = static_cast<unsigned int>(type.getArraySize());
     attribute.mappedName = TIntermTraverser::hash(variable->getSymbol(), mHashFunction).c_str();
     attribute.location = variable->getType().getLayoutQualifier().location;
+
+    infoList->push_back(attribute);
+}
+
+template <>
+void CollectVariables::visitVariable(const TIntermSymbol *variable,
+                                     std::vector<OutputVariable> *infoList) const
+{
+    ASSERT(variable);
+    const TType &type = variable->getType();
+    ASSERT(!type.getStruct());
+
+    OutputVariable attribute;
+
+    attribute.type       = GLVariableType(type);
+    attribute.precision  = GLVariablePrecision(type);
+    attribute.name       = variable->getSymbol().c_str();
+    attribute.arraySize  = static_cast<unsigned int>(type.getArraySize());
+    attribute.mappedName = TIntermTraverser::hash(variable->getSymbol(), mHashFunction).c_str();
+    attribute.location   = variable->getType().getLayoutQualifier().location;
 
     infoList->push_back(attribute);
 }

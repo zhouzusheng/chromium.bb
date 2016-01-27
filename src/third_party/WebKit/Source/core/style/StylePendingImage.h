@@ -46,13 +46,20 @@ public:
         return adoptRefWillBeNoop(new StylePendingImage(value));
     }
 
-    WrappedImagePtr data() const override { return m_value; }
+    WrappedImagePtr data() const override { return m_value.get(); }
 
     PassRefPtrWillBeRawPtr<CSSValue> cssValue() const override { return m_value; }
-    CSSImageValue* cssImageValue() const { return m_value->isImageValue() ? toCSSImageValue(m_value) : 0; }
-    CSSImageGeneratorValue* cssImageGeneratorValue() const { return m_value->isImageGeneratorValue() ? toCSSImageGeneratorValue(m_value) : 0; }
-    CSSCursorImageValue* cssCursorImageValue() const { return m_value->isCursorImageValue() ? toCSSCursorImageValue(m_value) : 0; }
-    CSSImageSetValue* cssImageSetValue() const { return m_value->isImageSetValue() ? toCSSImageSetValue(m_value) : 0; }
+
+    PassRefPtrWillBeRawPtr<CSSValue> computedCSSValue() const override
+    {
+        ASSERT_NOT_REACHED();
+        return nullptr;
+    }
+
+    CSSImageValue* cssImageValue() const { return m_value->isImageValue() ? toCSSImageValue(m_value.get()) : 0; }
+    CSSImageGeneratorValue* cssImageGeneratorValue() const { return m_value->isImageGeneratorValue() ? toCSSImageGeneratorValue(m_value.get()) : 0; }
+    CSSCursorImageValue* cssCursorImageValue() const { return m_value->isCursorImageValue() ? toCSSCursorImageValue(m_value.get()) : 0; }
+    CSSImageSetValue* cssImageSetValue() const { return m_value->isImageSetValue() ? toCSSImageSetValue(m_value.get()) : 0; }
 
     LayoutSize imageSize(const LayoutObject*, float /*multiplier*/) const override { return LayoutSize(); }
     bool imageHasRelativeWidth() const override { return false; }
@@ -62,7 +69,7 @@ public:
     void setContainerSizeForLayoutObject(const LayoutObject*, const IntSize&, float) override { }
     void addClient(LayoutObject*) override { }
     void removeClient(LayoutObject*) override { }
-    PassRefPtr<Image> image(LayoutObject*, const IntSize&) const override
+    PassRefPtr<Image> image(const LayoutObject*, const IntSize&) const override
     {
         ASSERT_NOT_REACHED();
         return nullptr;
@@ -82,7 +89,7 @@ private:
         m_isPendingImage = true;
     }
 
-    RawPtrWillBeMember<CSSValue> m_value; // Not retained; it owns us.
+    RefPtrWillBeMember<CSSValue> m_value;
 };
 
 DEFINE_STYLE_IMAGE_TYPE_CASTS(StylePendingImage, isPendingImage());

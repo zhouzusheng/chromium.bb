@@ -46,7 +46,7 @@ protected:
     AXNodeObject(Node*, AXObjectCacheImpl&);
 
 public:
-    static PassRefPtrWillBeRawPtr<AXNodeObject> create(Node*, AXObjectCacheImpl&);
+    static AXNodeObject* create(Node*, AXObjectCacheImpl&);
     ~AXNodeObject() override;
     DECLARE_VIRTUAL_TRACE();
 
@@ -101,6 +101,7 @@ protected:
     bool isAnchor() const final;
     bool isControl() const override;
     bool isControllingVideoElement() const;
+    bool isEditable() const override { return isTextControl(); }
     bool isEmbeddedObject() const final;
     bool isFieldset() const final;
     bool isHeading() const final;
@@ -118,6 +119,7 @@ protected:
     bool isNonNativeTextControl() const final;
     bool isPasswordField() const final;
     bool isProgressIndicator() const override;
+    bool isRichlyEditable() const override { return hasContentEditableAttributeSet(); }
     bool isSlider() const override;
     bool isNativeSlider() const override;
 
@@ -141,6 +143,7 @@ protected:
     bool deprecatedExposesTitleUIElement() const override;
     int headingLevel() const final;
     unsigned hierarchicalLevel() const final;
+    AccessibilityOrientation orientation() const override;
     String text() const override;
     AXObject* deprecatedTitleUIElement() const override;
 
@@ -168,7 +171,7 @@ protected:
     String computedName() const override;
 
     // New AX name calculation.
-    String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom&, AXObjectVector& nameObjects, NameSources*) const override;
+    String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom&, AXObjectVector* nameObjects, NameSources*) const override;
 
     // Location and click point in frame-relative coordinates.
     LayoutRect elementRect() const override;
@@ -207,19 +210,19 @@ protected:
     int setSize() const override;
 
     // Aria-owns.
-    void computeAriaOwnsChildren(Vector<AXObject*>& ownedChildren);
+    void computeAriaOwnsChildren(HeapVector<Member<AXObject>>& ownedChildren);
 
 private:
     RawPtrWillBeMember<Node> m_node;
 
     String deprecatedAlternativeTextForWebArea() const;
-    void deprecatedAlternativeText(WillBeHeapVector<OwnPtrWillBeMember<AccessibilityText>>&) const;
-    void deprecatedAriaLabelledbyText(WillBeHeapVector<OwnPtrWillBeMember<AccessibilityText>>&) const;
+    void deprecatedAlternativeText(HeapVector<Member<AccessibilityText>>&) const;
+    void deprecatedAriaLabelledbyText(HeapVector<Member<AccessibilityText>>&) const;
 
     String textFromDescendants(AXObjectSet& visited) const;
-    String textFromElements(bool inAriaLabelledByTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXObjectVector& nameObjects) const;
-    String textFromAriaLabelledby(AXObjectSet& visited, AXObjectVector& nameObjects) const;
-    String nativeTextAlternative(AXObjectSet& visited, AXNameFrom&, AXObjectVector& nameObjects, NameSources*, bool* foundTextAlternative) const;
+    String textFromElements(bool inAriaLabelledByTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXObjectVector* nameObjects) const;
+    String textFromAriaLabelledby(AXObjectSet& visited, AXObjectVector* nameObjects) const;
+    String nativeTextAlternative(AXObjectSet& visited, AXNameFrom&, AXObjectVector* nameObjects, NameSources*, bool* foundTextAlternative) const;
     float stepValueForRange() const;
     AXObject* findChildWithTagName(const HTMLQualifiedName&) const;
     bool isDescendantOfElementType(const HTMLQualifiedName& tagName) const;

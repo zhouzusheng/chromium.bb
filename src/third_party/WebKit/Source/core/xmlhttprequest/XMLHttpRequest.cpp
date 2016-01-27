@@ -50,7 +50,7 @@
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "core/html/DOMFormData.h"
+#include "core/html/FormData.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/inspector/ConsoleMessage.h"
@@ -72,13 +72,10 @@
 #include "platform/network/ResourceRequest.h"
 #include "public/platform/WebURLRequest.h"
 #include "wtf/Assertions.h"
-#include "wtf/RefCountedLeakCounter.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
 
 namespace blink {
-
-DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, xmlHttpRequestCounter, ("XMLHttpRequest"));
 
 namespace {
 
@@ -221,9 +218,6 @@ XMLHttpRequest::XMLHttpRequest(ExecutionContext* context, PassRefPtr<SecurityOri
     , m_downloadingToFile(false)
     , m_responseTextOverflow(false)
 {
-#ifndef NDEBUG
-    xmlHttpRequestCounter.increment();
-#endif
 #if ENABLE(ASSERT) && !ENABLE(OILPAN)
     // Verify that this object was allocated on the 'eager' heap.
     // (this check comes 'for free' with Oilpan enabled.)
@@ -233,9 +227,6 @@ XMLHttpRequest::XMLHttpRequest(ExecutionContext* context, PassRefPtr<SecurityOri
 
 XMLHttpRequest::~XMLHttpRequest()
 {
-#ifndef NDEBUG
-    xmlHttpRequestCounter.decrement();
-#endif
 }
 
 Document* XMLHttpRequest::document() const
@@ -706,7 +697,7 @@ void XMLHttpRequest::send(Document* document, ExceptionState& exceptionState)
     if (!initSend(exceptionState))
         return;
 
-    RefPtr<FormData> httpBody;
+    RefPtr<EncodedFormData> httpBody;
 
     if (areMethodAndURLValidForSend()) {
         // FIXME: Per https://xhr.spec.whatwg.org/#dom-xmlhttprequest-send the
@@ -717,7 +708,7 @@ void XMLHttpRequest::send(Document* document, ExceptionState& exceptionState)
 
         String body = createMarkup(document);
 
-        httpBody = FormData::create(UTF8Encoding().encode(body, WTF::EntitiesForUnencodables));
+        httpBody = EncodedFormData::create(UTF8Encoding().encode(body, WTF::EntitiesForUnencodables));
     }
 
     createRequest(httpBody.release(), exceptionState);
@@ -730,7 +721,7 @@ void XMLHttpRequest::send(const String& body, ExceptionState& exceptionState)
     if (!initSend(exceptionState))
         return;
 
-    RefPtr<FormData> httpBody;
+    RefPtr<EncodedFormData> httpBody;
 
     if (!body.isNull() && areMethodAndURLValidForSend()) {
         String contentType = getRequestHeader("Content-Type");
@@ -741,7 +732,7 @@ void XMLHttpRequest::send(const String& body, ExceptionState& exceptionState)
             m_requestHeaders.set("Content-Type", AtomicString(contentType));
         }
 
-        httpBody = FormData::create(UTF8Encoding().encode(body, WTF::EntitiesForUnencodables));
+        httpBody = EncodedFormData::create(UTF8Encoding().encode(body, WTF::EntitiesForUnencodables));
     }
 
     createRequest(httpBody.release(), exceptionState);
@@ -754,7 +745,7 @@ void XMLHttpRequest::send(Blob* body, ExceptionState& exceptionState)
     if (!initSend(exceptionState))
         return;
 
-    RefPtr<FormData> httpBody;
+    RefPtr<EncodedFormData> httpBody;
 
     if (areMethodAndURLValidForSend()) {
         if (getRequestHeader("Content-Type").isEmpty()) {
@@ -765,7 +756,7 @@ void XMLHttpRequest::send(Blob* body, ExceptionState& exceptionState)
         }
 
         // FIXME: add support for uploading bundles.
-        httpBody = FormData::create();
+        httpBody = EncodedFormData::create();
         if (body->hasBackingFile()) {
             File* file = toFile(body);
             if (!file->path().isEmpty())
@@ -782,17 +773,17 @@ void XMLHttpRequest::send(Blob* body, ExceptionState& exceptionState)
     createRequest(httpBody.release(), exceptionState);
 }
 
-void XMLHttpRequest::send(DOMFormData* body, ExceptionState& exceptionState)
+void XMLHttpRequest::send(FormData* body, ExceptionState& exceptionState)
 {
-    WTF_LOG(Network, "XMLHttpRequest %p send() DOMFormData %p", this, body);
+    WTF_LOG(Network, "XMLHttpRequest %p send() FormData %p", this, body);
 
     if (!initSend(exceptionState))
         return;
 
-    RefPtr<FormData> httpBody;
+    RefPtr<EncodedFormData> httpBody;
 
     if (areMethodAndURLValidForSend()) {
-        httpBody = body->createMultiPartFormData();
+        httpBody = body->encodeMultiPartFormData();
 
         if (getRequestHeader("Content-Type").isEmpty()) {
             AtomicString contentType = AtomicString("multipart/form-data; boundary=", AtomicString::ConstructFromLiteral) + httpBody->boundary().data();
@@ -822,16 +813,16 @@ void XMLHttpRequest::sendBytesData(const void* data, size_t length, ExceptionSta
     if (!initSend(exceptionState))
         return;
 
-    RefPtr<FormData> httpBody;
+    RefPtr<EncodedFormData> httpBody;
 
     if (areMethodAndURLValidForSend()) {
-        httpBody = FormData::create(data, length);
+        httpBody = EncodedFormData::create(data, length);
     }
 
     createRequest(httpBody.release(), exceptionState);
 }
 
-void XMLHttpRequest::sendForInspectorXHRReplay(PassRefPtr<FormData> formData, ExceptionState& exceptionState)
+void XMLHttpRequest::sendForInspectorXHRReplay(PassRefPtr<EncodedFormData> formData, ExceptionState& exceptionState)
 {
     createRequest(formData ? formData->deepCopy() : nullptr, exceptionState);
     m_exceptionCode = exceptionState.code();
@@ -856,7 +847,7 @@ void XMLHttpRequest::throwForLoadFailureIfNeeded(ExceptionState& exceptionState,
     exceptionState.throwDOMException(m_exceptionCode, message);
 }
 
-void XMLHttpRequest::createRequest(PassRefPtr<FormData> httpBody, ExceptionState& exceptionState)
+void XMLHttpRequest::createRequest(PassRefPtr<EncodedFormData> httpBody, ExceptionState& exceptionState)
 {
     // Only GET request is supported for blob URL.
     if (m_url.protocolIs("blob") && m_method != "GET") {
@@ -1182,6 +1173,10 @@ void XMLHttpRequest::setRequestHeader(const AtomicString& name, const AtomicStri
         exceptionState.throwDOMException(SyntaxError, "'" + value + "' is not a valid HTTP header field value.");
         return;
     }
+
+    // Show deprecation warnings and count occurrences of such deprecated header values.
+    if (!value.isEmpty() && !isValidHTTPFieldContentRFC7230(value))
+        UseCounter::countDeprecation(executionContext(), UseCounter::HeaderValueNotMatchingRFC7230);
 
     // No script (privileged or not) can set unsafe headers.
     if (FetchUtils::isForbiddenHeaderName(name)) {

@@ -71,7 +71,6 @@ static void AssignGLExtensionEntryPoint(const std::vector<std::string> &extensio
     {
         if (std::find(extensions.begin(), extensions.end(), requiredExtension) == extensions.end())
         {
-            *outFunction = nullptr;
             return;
         }
     }
@@ -798,6 +797,8 @@ void FunctionsGL::initialize()
         profile = 0;
     }
 
+    // clang-format off
+
     // Load extensions
     // Even though extensions are written against specific versions of GL, many drivers expose the extensions
     // in even older versions.  Always try loading the extensions regardless of GL version.
@@ -879,6 +880,33 @@ void FunctionsGL::initialize()
     AssignGLExtensionEntryPoint(extensions, "GL_ARB_ES2_compatibility", loadProcAddress("glGetShaderPrecisionFormat"), &getShaderPrecisionFormat);
     AssignGLExtensionEntryPoint(extensions, "GL_ARB_ES2_compatibility", loadProcAddress("glDepthRangef"), &depthRangef);
     AssignGLExtensionEntryPoint(extensions, "GL_ARB_ES2_compatibility", loadProcAddress("glClearDepthf"), &clearDepthf);
+
+    // GL_ARB_instanced_arrays
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_instanced_arrays", loadProcAddress("glVertexAttribDivisorARB"), &vertexAttribDivisor);
+
+    // GL_EXT_draw_instanced
+    AssignGLExtensionEntryPoint(extensions, "GL_EXT_draw_instanced", loadProcAddress("glDrawArraysInstancedEXT"), &drawArraysInstanced);
+    AssignGLExtensionEntryPoint(extensions, "GL_EXT_draw_instanced", loadProcAddress("glDrawElementsInstancedEXT"), &drawElementsInstanced);
+
+    // GL_ARB_draw_instanced
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_draw_instanced", loadProcAddress("glDrawArraysInstancedARB"), &drawArraysInstanced);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_draw_instanced", loadProcAddress("glDrawElementsInstancedARB"), &drawElementsInstanced);
+
+    // GL_ARB_sampler_objects
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glGenSamplers"), &genSamplers);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glDeleteSamplers"), &deleteSamplers);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glIsSampler"), &isSampler);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glBindSampler"), &bindSampler);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glSamplerParameteri"), &samplerParameteri);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glSamplerParameterf"), &samplerParameterf);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glSamplerParameteriv"), &samplerParameteriv);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glSamplerParameterfv"), &samplerParameterfv);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glSamplerParameterIiv"), &samplerParameterIiv);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glSamplerParameterIuiv"), &samplerParameterIuiv);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glGetSamplerParameteriv"), &getSamplerParameteriv);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glGetSamplerParameterfv"), &getSamplerParameterfv);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glGetSamplerParameterIiv"), &getSamplerParameterIiv);
+    AssignGLExtensionEntryPoint(extensions, "GL_ARB_sampler_objects", loadProcAddress("glGetSamplerParameterIuiv"), &getSamplerParameterIuiv);
 
     // 1.0
     if (isAtLeastGL(gl::Version(1, 0)))
@@ -1622,6 +1650,8 @@ void FunctionsGL::initialize()
         AssignGLEntryPoint(loadProcAddress("glVertexArrayVertexBuffer"), &vertexArrayVertexBuffer);
         AssignGLEntryPoint(loadProcAddress("glVertexArrayVertexBuffers"), &vertexArrayVertexBuffers);
     }
+
+    // clang-format on
 }
 
 bool FunctionsGL::isAtLeastGL(const gl::Version &glVersion) const

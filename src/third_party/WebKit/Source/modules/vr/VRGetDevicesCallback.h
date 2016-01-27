@@ -15,11 +15,12 @@ class ScriptPromiseResolver;
 class WebVRClient;
 
 class VRGetDevicesCallback final : public WebVRGetDevicesCallback {
+    WTF_MAKE_FAST_ALLOCATED(VRGetDevicesCallback);
 public:
     VRGetDevicesCallback(ScriptPromiseResolver*, VRHardwareUnitCollection*);
     ~VRGetDevicesCallback() override;
 
-    void onSuccess(WebVector<WebVRDevice>*) override;
+    void onSuccess(const WebVector<WebVRDevice>&) override;
     void onError() override;
 
 private:

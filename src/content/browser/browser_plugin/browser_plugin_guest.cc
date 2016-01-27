@@ -147,6 +147,13 @@ int BrowserPluginGuest::LoadURLWithParams(
   return GetGuestProxyRoutingID();
 }
 
+void BrowserPluginGuest::GuestResizeDueToAutoResize(const gfx::Size& new_size) {
+  if (last_seen_view_size_ != new_size) {
+    delegate_->GuestSizeChanged(new_size);
+    last_seen_view_size_ = new_size;
+  }
+}
+
 void BrowserPluginGuest::SizeContents(const gfx::Size& new_size) {
   GetWebContents()->GetView()->SizeContents(new_size);
 }
@@ -385,17 +392,6 @@ void BrowserPluginGuest::PointerLockPermissionResponse(bool allow) {
       new BrowserPluginMsg_SetMouseLock(browser_plugin_instance_id(), allow));
 }
 
-void BrowserPluginGuest::UpdateGuestSizeIfNecessary(
-    const gfx::Size& frame_size, float scale_factor) {
-  gfx::Size view_size(
-      gfx::ToFlooredSize(gfx::ScaleSize(frame_size, 1.0f / scale_factor)));
-
-  if (last_seen_view_size_ != view_size) {
-    delegate_->GuestSizeChanged(view_size);
-    last_seen_view_size_ = view_size;
-  }
-}
-
 // TODO(wjmaclean): Remove this once any remaining users of this pathway
 // are gone.
 void BrowserPluginGuest::SwapCompositorFrame(
@@ -403,11 +399,6 @@ void BrowserPluginGuest::SwapCompositorFrame(
     int host_process_id,
     int host_routing_id,
     scoped_ptr<cc::CompositorFrame> frame) {
-  cc::RenderPass* root_pass =
-      frame->delegated_frame_data->render_pass_list.back();
-  UpdateGuestSizeIfNecessary(root_pass->output_rect.size(),
-                             frame->metadata.device_scale_factor);
-
   last_pending_frame_.reset(new FrameMsg_CompositorFrameSwapped_Params());
   frame->AssignTo(&last_pending_frame_->frame);
   last_pending_frame_->output_surface_id = output_surface_id;
@@ -466,6 +457,37 @@ bool BrowserPluginGuest::Find(int request_id,
 
 bool BrowserPluginGuest::StopFinding(StopFindAction action) {
   return delegate_->StopFinding(action);
+}
+
+void BrowserPluginGuest::ResendEventToEmbedder(
+    const blink::WebInputEvent& event) {
+  if (!attached() || !owner_web_contents_)
+    return;
+
+  DCHECK(browser_plugin_instance_id_);
+  RenderWidgetHostImpl* host =
+      embedder_web_contents()->GetMainFrame()->GetRenderWidgetHost();
+
+  gfx::Vector2d offset_from_embedder = guest_window_rect_.OffsetFromOrigin();
+  if (event.type == blink::WebInputEvent::GestureScrollUpdate) {
+    blink::WebGestureEvent resent_gesture_event;
+    memcpy(&resent_gesture_event, &event, sizeof(blink::WebGestureEvent));
+    resent_gesture_event.x += offset_from_embedder.x();
+    resent_gesture_event.y += offset_from_embedder.y();
+    // Mark the resend source with the browser plugin's instance id, so the
+    // correct browser_plugin will know to ignore the event.
+    resent_gesture_event.resendingPluginId = browser_plugin_instance_id_;
+    host->ForwardGestureEvent(resent_gesture_event);
+  } else if (event.type == blink::WebInputEvent::MouseWheel) {
+    blink::WebMouseWheelEvent resent_wheel_event;
+    memcpy(&resent_wheel_event, &event, sizeof(blink::WebMouseWheelEvent));
+    resent_wheel_event.x += offset_from_embedder.x();
+    resent_wheel_event.y += offset_from_embedder.y();
+    resent_wheel_event.resendingPluginId = browser_plugin_instance_id_;
+    host->ForwardWheelEvent(resent_wheel_event);
+  } else {
+    NOTIMPLEMENTED();
+  }
 }
 
 WebContentsImpl* BrowserPluginGuest::GetWebContents() const {
@@ -608,6 +630,9 @@ void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
     case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
       RecordAction(
           base::UserMetricsAction("BrowserPlugin.Guest.AbnormalDeath"));
+      break;
+    case base::TERMINATION_STATUS_LAUNCH_FAILED:
+      RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.LaunchFailed"));
       break;
     default:
       break;
@@ -986,5 +1011,10 @@ void BrowserPluginGuest::OnImeCompositionRangeChanged(
           range, character_bounds);
 }
 #endif
+
+void BrowserPluginGuest::SetContextMenuPosition(const gfx::Point& position) {
+  if (delegate_)
+    delegate_->SetContextMenuPosition(position);
+}
 
 }  // namespace content

@@ -66,18 +66,18 @@ const CachedMatchedProperties* MatchedPropertiesCache::find(unsigned hash, const
 
     Cache::iterator it = m_cache.find(hash);
     if (it == m_cache.end())
-        return 0;
+        return nullptr;
     CachedMatchedProperties* cacheItem = it->value.get();
     ASSERT(cacheItem);
 
     size_t size = properties.size();
     if (size != cacheItem->matchedProperties.size())
-        return 0;
+        return nullptr;
     if (cacheItem->computedStyle->insideLink() != styleResolverState.style()->insideLink())
-        return 0;
+        return nullptr;
     for (size_t i = 0; i < size; ++i) {
         if (properties[i] != cacheItem->matchedProperties[i])
-            return 0;
+            return nullptr;
     }
     return cacheItem;
 }
@@ -143,11 +143,9 @@ void MatchedPropertiesCache::sweep(Timer<MatchedPropertiesCache>*)
 }
 #endif
 
-bool MatchedPropertiesCache::isCacheable(const Element* element, const ComputedStyle& style, const ComputedStyle& parentStyle)
+bool MatchedPropertiesCache::isCacheable(const ComputedStyle& style, const ComputedStyle& parentStyle)
 {
     if (style.unique() || (style.styleType() != NOPSEUDO && parentStyle.unique()))
-        return false;
-    if (style.hasAppearance())
         return false;
     if (style.zoom() != ComputedStyle::initialZoom())
         return false;

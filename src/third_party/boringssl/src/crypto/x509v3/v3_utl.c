@@ -70,6 +70,8 @@
 #include <openssl/obj.h>
 #include <openssl/x509v3.h>
 
+#include "../conf/internal.h"
+
 
 static char *strip_spaces(char *name);
 static int sk_strcmp(const OPENSSL_STRING *a, const OPENSSL_STRING *b);
@@ -91,7 +93,7 @@ int X509V3_add_value(const char *name, const char *value,
 	char *tname = NULL, *tvalue = NULL;
 	if(name && !(tname = BUF_strdup(name))) goto err;
 	if(value && !(tvalue = BUF_strdup(value))) goto err;
-	if(!(vtmp = (CONF_VALUE *)OPENSSL_malloc(sizeof(CONF_VALUE)))) goto err;
+	if(!(vtmp = CONF_VALUE_new())) goto err;
 	if(!*extlist && !(*extlist = sk_CONF_VALUE_new_null())) goto err;
 	vtmp->section = NULL;
 	vtmp->name = tname;
@@ -897,7 +899,7 @@ static int do_x509_check(X509 *x, const char *chk, size_t chklen,
 	X509_NAME *name = NULL;
 	size_t i;
 	int j;
-	int cnid;
+	int cnid = NID_undef;
 	int alt_type;
 	int san_present = 0;
 	int rv = 0;
@@ -925,7 +927,6 @@ static int do_x509_check(X509 *x, const char *chk, size_t chklen,
 		}
 	else
 		{
-		cnid = 0;
 		alt_type = V_ASN1_OCTET_STRING;
 		equal = equal_case;
 		}
@@ -955,11 +956,16 @@ static int do_x509_check(X509 *x, const char *chk, size_t chklen,
 		GENERAL_NAMES_free(gens);
 		if (rv != 0)
 			return rv;
-		if (!cnid
+		if (cnid == NID_undef
 		    || (san_present
 		        && !(flags & X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT)))
 			return 0;
 		}
+
+	/* We're done if CN-ID is not pertinent */
+	if (cnid == NID_undef)
+		return 0;
+
 	j = -1;
 	name = X509_get_subject_name(x);
 	while((j = X509_NAME_get_index_by_NID(name, cnid, j)) >= 0)

@@ -73,11 +73,10 @@ class DevToolsEmulator;
 class Frame;
 class FullscreenController;
 class InspectorOverlay;
-class InspectorOverlayImpl;
 class LinkHighlightImpl;
 class PageOverlay;
 class PageScaleConstraintsSet;
-class DeprecatedPaintLayerCompositor;
+class PaintLayerCompositor;
 class TopControls;
 class UserGestureToken;
 class WebActiveGestureAnimation;
@@ -158,6 +157,7 @@ public:
     bool confirmComposition(const WebString& text) override;
     bool compositionRange(size_t* location, size_t* length) override;
     WebTextInputInfo textInputInfo() override;
+    WebTextInputType textInputType() override;
     WebColor backgroundColor() const override;
     WebPagePopup* pagePopup() const override;
     bool selectionBounds(WebRect& anchor, WebRect& focus) const override;
@@ -280,6 +280,7 @@ public:
     void extractSmartClipData(WebRect, WebString&, WebString&, WebRect&) override;
     void hidePopups() override;
     void setPageOverlayColor(WebColor) override;
+    WebPageImportanceSignals* pageImportanceSignals() override;
     void transferActiveWheelFlingAnimation(const WebActiveWheelFlingParameters&) override;
     bool endActiveFlingAnimation() override;
     void setShowPaintRects(bool) override;
@@ -303,7 +304,6 @@ public:
     void resetScrollAndScaleStateImmediately();
 
     HitTestResult coreHitTestResultAt(const WebPoint&);
-    void suppressInvalidations(bool enable);
     void invalidateRect(const IntRect&);
 
     void setIgnoreInputEvents(bool newValue);
@@ -365,8 +365,6 @@ public:
 
     WebDevToolsAgentImpl* mainFrameDevToolsAgentImpl();
 
-    InspectorOverlay* inspectorOverlay();
-
     DevToolsEmulator* devToolsEmulator() const
     {
         return m_devToolsEmulator.get();
@@ -419,19 +417,16 @@ public:
     // unless the view did not need a layout.
     void layoutUpdated(WebLocalFrameImpl*);
 
+    void documentElementAvailable(WebLocalFrameImpl*);
     void willInsertBody(WebLocalFrameImpl*);
     void didRemoveAllPendingStylesheet(WebLocalFrameImpl*);
+    void didFinishDocumentLoad(WebLocalFrameImpl*);
     void didChangeContentsSize();
     void pageScaleFactorChanged();
 
     // Returns true if popup menus should be rendered by the browser, false if
     // they should be rendered by WebKit (which is the default).
     static bool useExternalPopupMenus();
-
-    bool contextMenuAllowed() const
-    {
-        return m_contextMenuAllowed;
-    }
 
     bool shouldAutoResize() const
     {
@@ -473,7 +468,7 @@ public:
     GraphicsLayer* rootGraphicsLayer();
     void setRootGraphicsLayer(GraphicsLayer*);
     GraphicsLayerFactory* graphicsLayerFactory() const;
-    DeprecatedPaintLayerCompositor* compositor() const;
+    PaintLayerCompositor* compositor() const;
     void registerForAnimations(WebLayer*);
     void scheduleAnimation();
     void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*);
@@ -529,10 +524,6 @@ public:
     void requestPointerUnlock();
     bool isPointerLocked();
 
-    // Heuristic-based function for determining if we should disable workarounds
-    // for viewing websites that are not optimized for mobile devices.
-    bool shouldDisableDesktopWorkarounds();
-
     // Exposed for tests.
     unsigned numLinkHighlights() { return m_linkHighlights.size(); }
     LinkHighlightImpl* linkHighlight(int i) { return m_linkHighlights[i].get(); }
@@ -563,9 +554,9 @@ public:
 
     FloatSize elasticOverscroll() const { return m_elasticOverscroll; }
 
-    WebPageImportanceSignals& pageImportanceSignals() { return m_pageImportanceSignals; }
-
 private:
+    InspectorOverlay* inspectorOverlay();
+
     void setPageScaleFactorAndLocation(float, const FloatPoint&);
 
     void scrollAndRescaleViewports(float scaleFactor, const IntPoint& mainFrameOrigin, const FloatPoint& visualViewportOrigin);
@@ -573,7 +564,7 @@ private:
     float maximumLegiblePageScale() const;
     void refreshPageScaleFactorAfterLayout();
     void resetScrollAndScaleState(bool immediately);
-    void resumeTreeViewCommits();
+    void resumeTreeViewCommitsIfRenderingReady();
     IntSize contentsSize() const;
 
     void performResize();
@@ -591,7 +582,6 @@ private:
     explicit WebViewImpl(WebViewClient*);
     ~WebViewImpl() override;
 
-    WebTextInputType textInputType();
     int textInputFlags();
 
     WebString inputModeOfFocusedElement();
@@ -714,8 +704,6 @@ private:
     float m_fakePageScaleAnimationPageScaleFactor;
     bool m_fakePageScaleAnimationUseAnchor;
 
-    bool m_contextMenuAllowed;
-
     bool m_doingDragAndDrop;
 
     bool m_ignoreInputEvents;
@@ -744,7 +732,7 @@ private:
     // The popup associated with an input/select element.
     RefPtr<WebPagePopupImpl> m_pagePopup;
 
-    OwnPtrWillBePersistent<InspectorOverlayImpl> m_inspectorOverlay;
+    OwnPtrWillBePersistent<InspectorOverlay> m_inspectorOverlay;
     OwnPtrWillBePersistent<DevToolsEmulator> m_devToolsEmulator;
     OwnPtr<PageOverlay> m_pageColorOverlay;
     OwnPtr<RubberbandState> m_rubberbandState;
@@ -794,6 +782,7 @@ private:
 
     bool m_userGestureObserved;
     bool m_shouldDispatchFirstVisuallyNonEmptyLayout;
+    bool m_shouldDispatchFirstLayoutAfterFinishedParsing;
     WebDisplayMode m_displayMode;
 
     FloatSize m_elasticOverscroll;

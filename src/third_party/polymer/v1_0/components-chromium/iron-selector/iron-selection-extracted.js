@@ -1,4 +1,6 @@
-/**
+
+
+  /**
    * @param {!Function} selectCallback
    * @constructor
    */
@@ -18,7 +20,7 @@
      * the selected item or undefined if there is no selection.
      */
     get: function() {
-      return this.multi ? this.selection : this.selection[0];
+      return this.multi ? this.selection.slice() : this.selection[0];
     },
 
     /**
@@ -97,3 +99,4 @@
     }
 
   };
+

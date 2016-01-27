@@ -47,10 +47,6 @@ public:
 
     bool mainFrameResizesAreOrientationChanges() const override;
     bool shrinksViewportContentToFit() const override;
-    int availablePointerTypes() const override;
-    PointerType primaryPointerType() const override;
-    int availableHoverTypes() const override;
-    HoverType primaryHoverType() const override;
     bool viewportEnabled() const override;
     void setAccelerated2dCanvasEnabled(bool) override;
     void setAccelerated2dCanvasMSAASampleCount(int) override;
@@ -67,6 +63,7 @@ public:
     void setAntialiased2dCanvasEnabled(bool) override;
     void setAntialiasedClips2dCanvasEnabled(bool) override;
     void setAsynchronousSpellCheckingEnabled(bool) override;
+    void setAutoplayExperimentMode(const WebString&) override;
     void setAutoZoomFocusedNodeToLegibleScale(bool) override;
     void setCaretBrowsingEnabled(bool) override;
     void setClobberUserAgentInitialScaleQuirk(bool) override;
@@ -105,8 +102,8 @@ public:
     void setImageAnimationPolicy(ImageAnimationPolicy) override;
     void setImagesEnabled(bool) override;
     void setInlineTextBoxAccessibilityEnabled(bool) override;
+    void setInertVisualViewport(bool) override;
     void setInvertViewportScrollOrder(bool) override;
-    void setJavaEnabled(bool) override;
     void setJavaScriptCanAccessClipboard(bool) override;
     void setJavaScriptCanOpenWindowsAutomatically(bool) override;
     void setJavaScriptEnabled(bool) override;

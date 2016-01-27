@@ -184,7 +184,7 @@ public:
             }
             ASSERT(m_readerThread);
             if (!m_readerThread->isCurrentThread()) {
-                m_readerThread->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, this)));
+                m_readerThread->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, this)));
                 return;
             }
         }
@@ -265,18 +265,18 @@ public:
     DestinationReader(PassRefPtr<DestinationContext::Proxy> contextProxy, WebDataConsumerHandle::Client* client)
         : m_contextProxy(contextProxy)
     {
-        MutexLocker(context()->mutex());
+        MutexLocker locker(context()->mutex());
         context()->attachReader(client);
         if (client) {
             // We need to use threadSafeBind here to retain the context. Note
             // |context()| return value is of type DestinationContext*, not
             // PassRefPtr<DestinationContext>.
-            Platform::current()->currentThread()->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, context())));
+            Platform::current()->currentThread()->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&DestinationContext::notify, context())));
         }
     }
     ~DestinationReader() override
     {
-        MutexLocker(context()->mutex());
+        MutexLocker locker(context()->mutex());
         context()->detachReader();
     }
 

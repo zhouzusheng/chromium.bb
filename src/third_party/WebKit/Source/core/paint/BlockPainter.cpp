@@ -11,57 +11,36 @@
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutFlexibleBox.h"
 #include "core/layout/LayoutInline.h"
+#include "core/layout/api/LineLayoutBox.h"
 #include "core/page/Page.h"
 #include "core/paint/BoxClipper.h"
 #include "core/paint/BoxPainter.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/InlinePainter.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/LineBoxListPainter.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/ScopeRecorder.h"
 #include "core/paint/ScrollRecorder.h"
 #include "core/paint/ScrollableAreaPainter.h"
 #include "platform/graphics/paint/ClipRecorder.h"
-#include "platform/graphics/paint/SubtreeRecorder.h"
 #include "wtf/Optional.h"
 
 namespace blink {
 
-// We need to balance the benefit of subtree optimization and the cost of subtree display items.
-// Only output subtree information if the block has multiple children or multiple line boxes.
-static bool needsSubtreeRecorder(const LayoutBlock& layoutBlock)
-{
-    return (layoutBlock.firstChild() && layoutBlock.firstChild()->nextSibling())
-        || (layoutBlock.isLayoutBlockFlow() && toLayoutBlockFlow(layoutBlock).firstLineBox() && toLayoutBlockFlow(layoutBlock).firstLineBox()->nextLineBox());
-}
-
 void BlockPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    Optional<SubtreeRecorder> subtreeRecorder;
-    if (needsSubtreeRecorder(m_layoutBlock)) {
-        subtreeRecorder.emplace(*paintInfo.context, m_layoutBlock, paintInfo.phase);
-        if (subtreeRecorder->canUseCache())
-            return;
-    }
-
-    PaintInfo localPaintInfo(paintInfo);
+    if (!intersectsPaintRect(paintInfo, paintOffset))
+        return;
 
     LayoutPoint adjustedPaintOffset = paintOffset + m_layoutBlock.location();
-
+    PaintInfo localPaintInfo(paintInfo);
     PaintPhase originalPhase = localPaintInfo.phase;
-
-    // Check if we need to do anything at all.
-    LayoutRect overflowBox = overflowRectForPaintRejection();
-    m_layoutBlock.flipForWritingMode(overflowBox);
-    overflowBox.moveBy(adjustedPaintOffset);
-    if (!overflowBox.intersects(LayoutRect(localPaintInfo.rect)))
-        return;
 
     // There are some cases where not all clipped visual overflow is accounted for.
     // FIXME: reduce the number of such cases.
     ContentsClipBehavior contentsClipBehavior = ForceContentsClip;
-    if (m_layoutBlock.hasOverflowClip() && !m_layoutBlock.hasControlClip() && !(m_layoutBlock.shouldPaintSelectionGaps() && originalPhase == PaintPhaseForeground) && !hasCaret())
+    if (m_layoutBlock.hasOverflowClip() && !m_layoutBlock.hasControlClip() && !(m_layoutBlock.shouldPaintSelectionGaps() && originalPhase == PaintPhaseForeground) && !m_layoutBlock.hasCaret())
         contentsClipBehavior = SkipContentsClipIfPossible;
 
     if (localPaintInfo.phase == PaintPhaseOutline) {
@@ -105,39 +84,39 @@ void BlockPainter::paintChildren(const PaintInfo& paintInfo, const LayoutPoint& 
         paintChild(*child, paintInfo, paintOffset);
 }
 
-void BlockPainter::paintChild(LayoutBox& child, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void BlockPainter::paintChild(const LayoutBox& child, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     LayoutPoint childPoint = m_layoutBlock.flipForWritingModeForChild(&child, paintOffset);
     if (!child.hasSelfPaintingLayer() && !child.isFloating() && !child.isColumnSpanAll())
         child.paint(paintInfo, childPoint);
 }
 
-void BlockPainter::paintChildrenOfFlexibleBox(LayoutFlexibleBox& layoutFlexibleBox, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void BlockPainter::paintChildrenOfFlexibleBox(const LayoutFlexibleBox& layoutFlexibleBox, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    for (LayoutBox* child = layoutFlexibleBox.orderIterator().first(); child; child = layoutFlexibleBox.orderIterator().next())
+    for (const LayoutBox* child = layoutFlexibleBox.orderIterator().first(); child; child = layoutFlexibleBox.orderIterator().next())
         BlockPainter(layoutFlexibleBox).paintChildAsInlineBlock(*child, paintInfo, paintOffset);
 }
 
-void BlockPainter::paintChildAsInlineBlock(LayoutBox& child, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void BlockPainter::paintChildAsInlineBlock(const LayoutBox& child, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     LayoutPoint childPoint = m_layoutBlock.flipForWritingModeForChild(&child, paintOffset);
     if (!child.hasSelfPaintingLayer() && !child.isFloating())
         paintAsInlineBlock(child, paintInfo, childPoint);
 }
 
-void BlockPainter::paintInlineBox(InlineBox& inlineBox, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void BlockPainter::paintInlineBox(const InlineBox& inlineBox, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     if (!paintInfo.shouldPaintWithinRoot(&inlineBox.layoutObject()) || (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection))
         return;
 
     LayoutPoint childPoint = paintOffset;
-    if (inlineBox.parent()->layoutObject().style()->isFlippedBlocksWritingMode()) // Faster than calling containingBlock().
+    if (inlineBox.parent()->lineLayoutItem().style()->isFlippedBlocksWritingMode()) // Faster than calling containingBlock().
         childPoint = inlineBox.layoutObject().containingBlock()->flipForWritingModeForChild(&toLayoutBox(inlineBox.layoutObject()), childPoint);
 
     paintAsInlineBlock(inlineBox.layoutObject(), paintInfo, childPoint);
 }
 
-void BlockPainter::paintAsInlineBlock(LayoutObject& layoutObject, const PaintInfo& paintInfo, const LayoutPoint& childPoint)
+void BlockPainter::paintAsInlineBlock(const LayoutObject& layoutObject, const PaintInfo& paintInfo, const LayoutPoint& childPoint)
 {
     if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection)
         return;
@@ -162,17 +141,19 @@ void BlockPainter::paintAsInlineBlock(LayoutObject& layoutObject, const PaintInf
     }
 }
 
-static inline LayoutRect visualOverflowRectWithPaintOffset(const LayoutBlock& layoutBox, const LayoutPoint& paintOffset)
-{
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return LayoutRect();
-    LayoutRect bounds = layoutBox.visualOverflowRect();
-    bounds.moveBy(paintOffset);
-    return bounds;
-}
-
 void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
+    if (RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled() && m_layoutBlock.childrenInline()) {
+        if (m_layoutBlock.paintOffsetChanged(paintOffset)) {
+            LineBoxListPainter(m_layoutBlock.lineBoxes()).invalidateLineBoxPaintOffsets(paintInfo);
+            paintInfo.context->displayItemList()->invalidatePaintOffset(m_layoutBlock);
+        }
+        // Set previousPaintOffset here in case that m_layoutBlock paints nothing and no
+        // LayoutObjectDrawingRecorder updates its previousPaintOffset.
+        // TODO(wangxianzhu): Integrate paint offset checking into new paint invalidation.
+        m_layoutBlock.setPreviousPaintOffset(paintOffset);
+    }
+
     const PaintPhase paintPhase = paintInfo.phase;
 
     if ((paintPhase == PaintPhaseBlockBackground || paintPhase == PaintPhaseChildBlockBackground)
@@ -223,69 +204,40 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
             m_layoutBlock.paintFloats(contentsPaintInfo, paintOffset, paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip);
     }
 
-    if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && m_layoutBlock.style()->hasOutline() && m_layoutBlock.style()->visibility() == VISIBLE) {
-        // Don't paint focus ring for anonymous block continuation because the
-        // inline element having outline-style:auto paints the whole focus ring.
-        if (!m_layoutBlock.style()->outlineStyleIsAuto() || !m_layoutBlock.isAnonymousBlockContinuation())
-            ObjectPainter(m_layoutBlock).paintOutline(paintInfo, LayoutRect(paintOffset, m_layoutBlock.size()), visualOverflowRectWithPaintOffset(m_layoutBlock, paintOffset));
-    }
-
-    if (paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseChildOutlines)
-        paintContinuationOutlines(paintInfo, paintOffset);
+    if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && m_layoutBlock.style()->hasOutline() && m_layoutBlock.style()->visibility() == VISIBLE)
+        ObjectPainter(m_layoutBlock).paintOutline(paintInfo, paintOffset);
 
     // If the caret's node's layout object's containing block is this block, and the paint action is PaintPhaseForeground,
     // then paint the caret.
-    if (paintPhase == PaintPhaseForeground && hasCaret() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBlock, DisplayItem::Caret)) {
-        LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBlock, DisplayItem::Caret, visualOverflowRectWithPaintOffset(m_layoutBlock, paintOffset));
+    if (paintPhase == PaintPhaseForeground && m_layoutBlock.hasCaret() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutBlock, DisplayItem::Caret, paintOffset)) {
+        LayoutRect bounds = m_layoutBlock.visualOverflowRect();
+        bounds.moveBy(paintOffset);
+        LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBlock, DisplayItem::Caret, bounds, paintOffset);
         paintCarets(paintInfo, paintOffset);
     }
-}
-
-static inline bool caretBrowsingEnabled(const LocalFrame* frame)
-{
-    Settings* settings = frame->settings();
-    return settings && settings->caretBrowsingEnabled();
-}
-
-static inline bool hasCursorCaret(const FrameSelection& selection, const LayoutBlock* block, const LocalFrame* frame)
-{
-    return selection.caretLayoutObject() == block && (selection.hasEditableStyle() || caretBrowsingEnabled(frame));
-}
-
-static inline bool hasDragCaret(const DragCaretController& dragCaretController, const LayoutBlock* block, const LocalFrame* frame)
-{
-    return dragCaretController.caretLayoutObject() == block && (dragCaretController.isContentEditable() || caretBrowsingEnabled(frame));
 }
 
 void BlockPainter::paintCarets(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     LocalFrame* frame = m_layoutBlock.frame();
 
-    FrameSelection& selection = frame->selection();
-    if (hasCursorCaret(selection, &m_layoutBlock, frame))
-        selection.paintCaret(paintInfo.context, paintOffset, LayoutRect(paintInfo.rect));
+    if (m_layoutBlock.hasCursorCaret())
+        frame->selection().paintCaret(paintInfo.context, paintOffset, LayoutRect(paintInfo.rect));
 
-    DragCaretController& dragCaretController = frame->page()->dragCaretController();
-    if (hasDragCaret(dragCaretController, &m_layoutBlock, frame))
-        dragCaretController.paintDragCaret(frame, paintInfo.context, paintOffset, LayoutRect(paintInfo.rect));
+    if (m_layoutBlock.hasDragCaret())
+        frame->page()->dragCaretController().paintDragCaret(frame, paintInfo.context, paintOffset, LayoutRect(paintInfo.rect));
 }
 
-LayoutRect BlockPainter::overflowRectForPaintRejection() const
+bool BlockPainter::intersectsPaintRect(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     LayoutRect overflowRect = m_layoutBlock.visualOverflowRect();
-    if (!m_layoutBlock.hasOverflowModel() || !m_layoutBlock.usesCompositedScrolling())
-        return overflowRect;
-
-    overflowRect.unite(m_layoutBlock.layoutOverflowRect());
-    overflowRect.move(-m_layoutBlock.scrolledContentOffset());
-    return overflowRect;
-}
-
-bool BlockPainter::hasCaret() const
-{
-    LocalFrame* frame = m_layoutBlock.frame();
-    return hasCursorCaret(frame->selection(), &m_layoutBlock, frame)
-        || hasDragCaret(frame->page()->dragCaretController(), &m_layoutBlock, frame);
+    if (m_layoutBlock.hasOverflowModel() && m_layoutBlock.usesCompositedScrolling()) {
+        overflowRect.unite(m_layoutBlock.layoutOverflowRect());
+        overflowRect.move(-m_layoutBlock.scrolledContentOffset());
+    }
+    m_layoutBlock.flipForWritingMode(overflowRect);
+    overflowRect.moveBy(paintOffset + m_layoutBlock.location());
+    return (overflowRect.intersects(LayoutRect(paintInfo.rect)));
 }
 
 void BlockPainter::paintContents(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -297,7 +249,10 @@ void BlockPainter::paintContents(const PaintInfo& paintInfo, const LayoutPoint& 
         return;
 
     if (m_layoutBlock.childrenInline()) {
-        LineBoxListPainter(*m_layoutBlock.lineBoxes()).paint(&m_layoutBlock, paintInfo, paintOffset);
+        if (paintInfo.phase == PaintPhaseChildOutlines)
+            ObjectPainter(m_layoutBlock).paintInlineChildrenOutlines(paintInfo, paintOffset);
+        else
+            LineBoxListPainter(m_layoutBlock.lineBoxes()).paint(m_layoutBlock, paintInfo, paintOffset);
     } else {
         PaintPhase newPhase = (paintInfo.phase == PaintPhaseChildOutlines) ? PaintPhaseOutline : paintInfo.phase;
         newPhase = (newPhase == PaintPhaseChildBlockBackgrounds) ? PaintPhaseChildBlockBackground : newPhase;
@@ -309,55 +264,5 @@ void BlockPainter::paintContents(const PaintInfo& paintInfo, const LayoutPoint& 
         m_layoutBlock.paintChildren(paintInfoForChild, paintOffset);
     }
 }
-
-void BlockPainter::paintContinuationOutlines(const PaintInfo& info, const LayoutPoint& paintOffset)
-{
-    LayoutInline* inlineCont = m_layoutBlock.inlineElementContinuation();
-    if (inlineCont && inlineCont->style()->hasOutline() && inlineCont->style()->visibility() == VISIBLE) {
-        LayoutInline* inlineLayoutObject = toLayoutInline(inlineCont->node()->layoutObject());
-        LayoutBlock* cb = m_layoutBlock.containingBlock();
-
-        bool inlineEnclosedInSelfPaintingLayer = false;
-        for (LayoutBoxModelObject* box = inlineLayoutObject; box != cb; box = box->parent()->enclosingBoxModelObject()) {
-            if (box->hasSelfPaintingLayer()) {
-                inlineEnclosedInSelfPaintingLayer = true;
-                break;
-            }
-        }
-
-        // Do not add continuations for outline painting by our containing block if we are a relative positioned
-        // anonymous block (i.e. have our own layer), paint them straightaway instead. This is because a block depends on layoutObjects in its continuation table being
-        // in the same layer.
-        if (!inlineEnclosedInSelfPaintingLayer && !m_layoutBlock.hasLayer()) {
-            cb->addContinuationWithOutline(inlineLayoutObject);
-        } else if (!inlineLayoutObject->firstLineBox() || (!inlineEnclosedInSelfPaintingLayer && m_layoutBlock.hasLayer())) {
-            // The outline might be painted multiple times if multiple blocks have the same inline element continuation, and the inline has a self-painting layer.
-            ScopeRecorder scopeRecorder(*info.context);
-            InlinePainter(*inlineLayoutObject).paintOutline(info, paintOffset - m_layoutBlock.locationOffset() + inlineLayoutObject->containingBlock()->location());
-        }
-    }
-
-    ContinuationOutlineTableMap* table = continuationOutlineTable();
-    if (table->isEmpty())
-        return;
-
-    OwnPtr<ListHashSet<LayoutInline*>> continuations = table->take(&m_layoutBlock);
-    if (!continuations)
-        return;
-
-    LayoutPoint accumulatedPaintOffset = paintOffset;
-    // Paint each continuation outline.
-    ListHashSet<LayoutInline*>::iterator end = continuations->end();
-    for (ListHashSet<LayoutInline*>::iterator it = continuations->begin(); it != end; ++it) {
-        // Need to add in the coordinates of the intervening blocks.
-        LayoutInline* flow = *it;
-        LayoutBlock* block = flow->containingBlock();
-        for ( ; block && block != &m_layoutBlock; block = block->containingBlock())
-            accumulatedPaintOffset.moveBy(block->location());
-        ASSERT(block);
-        InlinePainter(*flow).paintOutline(info, accumulatedPaintOffset);
-    }
-}
-
 
 } // namespace blink

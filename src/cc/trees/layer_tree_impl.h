@@ -42,7 +42,6 @@ class LayerTreeSettings;
 class MemoryHistory;
 class OutputSurface;
 class PageScaleAnimation;
-class PaintTimeCounter;
 class PictureLayerImpl;
 class Proxy;
 class ResourceProvider;
@@ -83,10 +82,8 @@ class CC_EXPORT LayerTreeImpl {
   ResourceProvider* resource_provider() const;
   TileManager* tile_manager() const;
   FrameRateCounter* frame_rate_counter() const;
-  PaintTimeCounter* paint_time_counter() const;
   MemoryHistory* memory_history() const;
   gfx::Size device_viewport_size() const;
-  float device_scale_factor() const;
   DebugRectHistory* debug_rect_history() const;
   bool IsActiveTree() const;
   bool IsPendingTree() const;
@@ -198,6 +195,9 @@ class CC_EXPORT LayerTreeImpl {
   SyncedProperty<ScaleGroup>* page_scale_factor();
   const SyncedProperty<ScaleGroup>* page_scale_factor() const;
 
+  void SetDeviceScaleFactor(float device_scale_factor);
+  float device_scale_factor() const { return device_scale_factor_; }
+
   void set_hide_pinch_scrollbars_near_min_scale(bool hide) {
     hide_pinch_scrollbars_near_min_scale_ = hide;
   }
@@ -272,12 +272,9 @@ class CC_EXPORT LayerTreeImpl {
   // Useful for debug assertions, probably shouldn't be used for anything else.
   Proxy* proxy() const;
 
-  void SetRootLayerScrollOffsetDelegate(
-      LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate);
-  void UpdateRootScrollOffsetDelegate();
-  // Distribute the rool scroll between outer and inner viewport scroll layer.
+  // Distribute the root scroll between outer and inner viewport scroll layer.
   // The outer viewport scroll layer scrolls first.
-  void DistributeRootScrollOffset();
+  void DistributeRootScrollOffset(const gfx::ScrollOffset& root_offset);
 
   void ApplyScroll(LayerImpl* layer, ScrollState* scroll_state) {
     layer_tree_host_impl_->ApplyScroll(layer, scroll_state);
@@ -285,7 +282,25 @@ class CC_EXPORT LayerTreeImpl {
 
   // Call this function when you expect there to be a swap buffer.
   // See swap_promise.h for how to use SwapPromise.
+  //
+  // A swap promise queued by QueueSwapPromise travels with the layer
+  // information currently associated with the tree. For example, when
+  // a pending tree is activated, the swap promise is passed to the
+  // active tree along with the layer information. Similarly, when a
+  // new activation overwrites layer information on the active tree,
+  // queued swap promises are broken.
   void QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise);
+
+  // Queue a swap promise, pinned to this tree. Pinned swap promises
+  // may only be queued on the active tree.
+  //
+  // An active tree pinned swap promise will see only DidSwap() or
+  // DidNotSwap(SWAP_FAILS). No DidActivate() will be seen because
+  // that has already happened prior to queueing of the swap promise.
+  //
+  // Pinned active tree swap promises will not be broken prematurely
+  // on the active tree if a new tree is activated.
+  void QueuePinnedSwapPromise(scoped_ptr<SwapPromise> swap_promise);
 
   // Take the |new_swap_promise| and append it to |swap_promise_list_|.
   void PassSwapPromises(ScopedPtrVector<SwapPromise>* new_swap_promise);
@@ -348,9 +363,6 @@ class CC_EXPORT LayerTreeImpl {
 
   void GatherFrameTimingRequestIds(std::vector<int64_t>* request_ids);
 
-  bool IsExternalScrollActive() const;
-  void DidUpdateScrollOffset(int layer_id);
-
   bool IsAnimatingFilterProperty(const LayerImpl* layer) const;
   bool IsAnimatingOpacityProperty(const LayerImpl* layer) const;
   bool IsAnimatingTransformProperty(const LayerImpl* layer) const;
@@ -403,7 +415,6 @@ class CC_EXPORT LayerTreeImpl {
   scoped_ptr<LayerImpl> root_layer_;
   HeadsUpDisplayLayerImpl* hud_layer_;
   PropertyTrees property_trees_;
-  LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate_;
   SkColor background_color_;
   bool has_transparent_background_;
 
@@ -419,6 +430,8 @@ class CC_EXPORT LayerTreeImpl {
   float min_page_scale_factor_;
   float max_page_scale_factor_;
   bool hide_pinch_scrollbars_near_min_scale_;
+
+  float device_scale_factor_;
 
   scoped_refptr<SyncedElasticOverscroll> elastic_overscroll_;
 
@@ -446,6 +459,7 @@ class CC_EXPORT LayerTreeImpl {
   bool has_ever_been_drawn_;
 
   ScopedPtrVector<SwapPromise> swap_promise_list_;
+  ScopedPtrVector<SwapPromise> pinned_swap_promise_list_;
 
   UIResourceRequestQueue ui_resource_request_queue_;
 

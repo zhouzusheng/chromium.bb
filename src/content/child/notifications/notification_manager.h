@@ -14,8 +14,8 @@
 #include "base/single_thread_task_runner.h"
 #include "content/child/notifications/notification_dispatcher.h"
 #include "content/child/notifications/pending_notifications_tracker.h"
-#include "content/child/worker_task_runner.h"
 #include "content/common/platform_notification_messages.h"
+#include "content/public/child/worker_thread.h"
 #include "third_party/WebKit/public/platform/modules/notifications/WebNotificationManager.h"
 
 class SkBitmap;
@@ -26,7 +26,7 @@ struct PlatformNotificationData;
 class ThreadSafeSender;
 
 class NotificationManager : public blink::WebNotificationManager,
-                            public WorkerTaskRunner::Observer {
+                            public WorkerThread::Observer {
  public:
   ~NotificationManager() override;
 
@@ -37,30 +37,30 @@ class NotificationManager : public blink::WebNotificationManager,
       base::SingleThreadTaskRunner* main_thread_task_runner,
       NotificationDispatcher* notification_dispatcher);
 
-  // WorkerTaskRunner::Observer implementation.
-  void OnWorkerRunLoopStopped() override;
+  // WorkerThread::Observer implementation.
+  void WillStopCurrentWorkerThread() override;
 
   // blink::WebNotificationManager implementation.
-  virtual void show(const blink::WebSecurityOrigin& origin,
-                    const blink::WebNotificationData& notification_data,
-                    blink::WebNotificationDelegate* delegate);
-  virtual void showPersistent(
+  void show(const blink::WebSecurityOrigin& origin,
+            const blink::WebNotificationData& notification_data,
+            blink::WebNotificationDelegate* delegate) override;
+  void showPersistent(
       const blink::WebSecurityOrigin& origin,
       const blink::WebNotificationData& notification_data,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebNotificationShowCallbacks* callbacks);
-  virtual void getNotifications(
+      blink::WebNotificationShowCallbacks* callbacks) override;
+  void getNotifications(
       const blink::WebString& filter_tag,
       blink::WebServiceWorkerRegistration* service_worker_registration,
-      blink::WebNotificationGetCallbacks* callbacks);
-  virtual void close(blink::WebNotificationDelegate* delegate);
-  virtual void closePersistent(const blink::WebSecurityOrigin& origin,
-                               int64_t persistent_notification_id);
-  virtual void notifyDelegateDestroyed(
-      blink::WebNotificationDelegate* delegate);
-  virtual blink::WebNotificationPermission checkPermission(
-      const blink::WebSecurityOrigin& origin);
-  virtual size_t maxActions();
+      blink::WebNotificationGetCallbacks* callbacks) override;
+  void close(blink::WebNotificationDelegate* delegate) override;
+  void closePersistent(const blink::WebSecurityOrigin& origin,
+                       int64_t persistent_notification_id) override;
+  void notifyDelegateDestroyed(blink::WebNotificationDelegate* delegate)
+      override;
+  blink::WebNotificationPermission checkPermission(
+      const blink::WebSecurityOrigin& origin) override;
+  size_t maxActions() override;
 
   // Called by the NotificationDispatcher.
   bool OnMessageReceived(const IPC::Message& message);

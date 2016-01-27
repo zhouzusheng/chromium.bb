@@ -104,10 +104,6 @@ WebInspector.NetworkLogView = function(filterBar, progressBarContainer, networkL
     WebInspector.targetManager.addModelListener(WebInspector.NetworkManager, WebInspector.NetworkManager.EventTypes.RequestStarted, this._onRequestStarted, this);
     WebInspector.targetManager.addModelListener(WebInspector.NetworkManager, WebInspector.NetworkManager.EventTypes.RequestUpdated, this._onRequestUpdated, this);
     WebInspector.targetManager.addModelListener(WebInspector.NetworkManager, WebInspector.NetworkManager.EventTypes.RequestFinished, this._onRequestUpdated, this);
-
-    WebInspector.targetManager.addModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
-    WebInspector.targetManager.addModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.EventTypes.Load, this._loadEventFired, this);
-    WebInspector.targetManager.addModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.EventTypes.DOMContentLoaded, this._domContentLoadedEventFired, this);
 }
 
 WebInspector.NetworkLogView._isFilteredOutSymbol = Symbol("isFilteredOut");
@@ -116,7 +112,7 @@ WebInspector.NetworkLogView._isMatchingSearchQuerySymbol = Symbol("isMatchingSea
 WebInspector.NetworkLogView.HTTPSchemas = {"http": true, "https": true, "ws": true, "wss": true};
 WebInspector.NetworkLogView._responseHeaderColumns = ["Cache-Control", "Connection", "Content-Encoding", "Content-Length", "ETag", "Keep-Alive", "Last-Modified", "Server", "Vary"];
 WebInspector.NetworkLogView._defaultColumnsVisibility = {
-    method: false, status: true, protocol: false, scheme: false, domain: false, remoteAddress: false, type: true, initiator: true, cookies: false, setCookies: false, size: true, time: true, connectionId: false,
+    method: false, status: true, protocol: false, scheme: false, domain: false, remoteAddress: false, type: true, initiator: true, cookies: false, setCookies: false, size: true, time: true, priority: false, connectionId: false,
     "Cache-Control": false, "Connection": false, "Content-Encoding": false, "Content-Length": false, "ETag": false, "Keep-Alive": false, "Last-Modified": false, "Server": false, "Vary": false
 };
 WebInspector.NetworkLogView._defaultRefreshDelay = 200;
@@ -132,12 +128,21 @@ WebInspector.NetworkLogView.FilterType = {
     LargerThan: "larger-than",
     Method: "method",
     MimeType: "mime-type",
+    MixedContent: "mixed-content",
     Scheme: "scheme",
     SetCookieDomain: "set-cookie-domain",
     SetCookieName: "set-cookie-name",
     SetCookieValue: "set-cookie-value",
     StatusCode: "status-code"
 };
+
+/** @enum {string} */
+WebInspector.NetworkLogView.MixedContentFilterValues = {
+    All: "all",
+    Displayed: "displayed",
+    Blocked: "blocked",
+    BlockOverridden: "block-overridden"
+}
 
 /** @enum {string} */
 WebInspector.NetworkLogView.IsFilterType = {
@@ -163,6 +168,7 @@ WebInspector.NetworkLogView._columnTitles = {
     "size": WebInspector.UIString("Size"),
     "time": WebInspector.UIString("Time"),
     "connectionId": WebInspector.UIString("Connection Id"),
+    "priority": WebInspector.UIString("Priority"),
     "timeline": WebInspector.UIString("Timeline"),
 
     // Response header columns
@@ -184,6 +190,7 @@ WebInspector.NetworkLogView.prototype = {
     setRecording: function(recording)
     {
         this._recording = recording;
+        this._updateSummaryBar();
     },
 
     /**
@@ -200,6 +207,11 @@ WebInspector.NetworkLogView.prototype = {
      */
     targetAdded: function(target)
     {
+        if (!target.parentTarget()) {
+            target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
+            target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.Load, this._loadEventFired, this);
+            target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.DOMContentLoaded, this._domContentLoadedEventFired, this);
+        }
         target.networkLog.requests().forEach(this._appendRequest.bind(this));
     },
 
@@ -209,6 +221,11 @@ WebInspector.NetworkLogView.prototype = {
      */
     targetRemoved: function(target)
     {
+        if (!target.parentTarget()) {
+            target.resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
+            target.resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.Load, this._loadEventFired, this);
+            target.resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.DOMContentLoaded, this._domContentLoadedEventFired, this);
+        }
     },
 
     /**
@@ -289,6 +306,33 @@ WebInspector.NetworkLogView.prototype = {
 
         this._popoverHelper = new WebInspector.PopoverHelper(this.element, this._getPopoverAnchor.bind(this), this._showPopover.bind(this), this._onHidePopover.bind(this));
         this.switchViewMode(true);
+    },
+
+    _showRecordingHint: function()
+    {
+        this._hideRecordingHint();
+        this._recordingHint = this.element.createChild("div", "network-status-pane fill");
+        var hintText = this._recordingHint.createChild("div", "recording-hint");
+        var reloadShortcutNode = this._recordingHint.createChild("b");
+        reloadShortcutNode.textContent = WebInspector.ShortcutsScreen.TimelinePanelShortcuts.RecordPageReload[0].name;
+
+        if (this._recording) {
+            var recordingText = hintText.createChild("span");
+            recordingText.textContent = WebInspector.UIString("Recording network activity\u2026");
+            hintText.createChild("br");
+            hintText.appendChild(WebInspector.formatLocalized(WebInspector.UIString("Perform a request or hit %s to record the reload."), [reloadShortcutNode], null));
+        } else {
+            var recordNode = hintText.createChild("b");
+            recordNode.textContent = WebInspector.shortcutRegistry.shortcutTitleForAction("network.toggle-recording");
+            hintText.appendChild(WebInspector.formatLocalized(WebInspector.UIString("Record (%s) or reload (%s) to display network activity."), [recordNode, reloadShortcutNode], null));
+        }
+    },
+
+    _hideRecordingHint: function()
+    {
+        if (this._recordingHint)
+            this._recordingHint.remove();
+        delete this._recordingHint;
     },
 
     /**
@@ -397,6 +441,12 @@ WebInspector.NetworkLogView.prototype = {
             title: WebInspector.NetworkLogView._columnTitles["time"],
             weight: 6,
             align: WebInspector.DataGrid.Align.Right
+        });
+
+        columns.push({
+            id: "priority",
+            title: WebInspector.NetworkLogView._columnTitles["priority"],
+            weight: 6
         });
 
         columns.push({
@@ -586,6 +636,7 @@ WebInspector.NetworkLogView.prototype = {
         this._sortingFunctions.size = WebInspector.NetworkDataGridNode.SizeComparator;
         this._sortingFunctions.time = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "duration", false);
         this._sortingFunctions.connectionId = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "connectionId", false);
+        this._sortingFunctions.priority = WebInspector.NetworkDataGridNode.InitialPriorityComparator;
         this._sortingFunctions.timeline = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "startTime", false);
         this._sortingFunctions.startTime = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "startTime", false);
         this._sortingFunctions.endTime = WebInspector.NetworkDataGridNode.RequestPropertyComparator.bind(null, "endTime", false);
@@ -651,17 +702,10 @@ WebInspector.NetworkLogView.prototype = {
         var requestsNumber = this._nodesByRequestId.size;
 
         if (!requestsNumber) {
-            if (this._summaryBarElement._isDisplayingWarning)
-                return;
-            this._summaryBarElement._isDisplayingWarning = true;
-            this._summaryBarElement.removeChildren();
-            this._summaryBarElement.createChild("label", "", "dt-icon-label").type = "warning-icon";
-            var text = WebInspector.UIString("No requests captured. Reload the page to see detailed information on the network activity.");
-            this._summaryBarElement.createTextChild(text);
-            this._summaryBarElement.title = text;
+            this._showRecordingHint();
             return;
         }
-        delete this._summaryBarElement._isDisplayingWarning;
+        this._hideRecordingHint();
 
         var transferSize = 0;
         var selectedRequestsNumber = 0;
@@ -1005,6 +1049,15 @@ WebInspector.NetworkLogView.prototype = {
     },
 
     /**
+      * @param {!WebInspector.NetworkLogView.FilterType} filterType
+      * @param {string} filterValue
+      */
+    setTextFilterValue: function(filterType, filterValue)
+    {
+        this._textFilterUI.setValue(filterType + ":" + filterValue);
+    },
+
+    /**
      * @param {!WebInspector.Event} event
      */
     _onRequestStarted: function(event)
@@ -1062,6 +1115,19 @@ WebInspector.NetworkLogView.prototype = {
         this._suggestionBuilder.addItem(WebInspector.NetworkLogView.FilterType.MimeType, request.mimeType);
         this._suggestionBuilder.addItem(WebInspector.NetworkLogView.FilterType.Scheme, "" + request.scheme);
         this._suggestionBuilder.addItem(WebInspector.NetworkLogView.FilterType.StatusCode, "" + request.statusCode);
+
+        if (request.mixedContentType !== "none") {
+            this._suggestionBuilder.addItem(WebInspector.NetworkLogView.FilterType.MixedContent, WebInspector.NetworkLogView.MixedContentFilterValues.All);
+        }
+
+        if (request.mixedContentType === "optionally-blockable") {
+            this._suggestionBuilder.addItem(WebInspector.NetworkLogView.FilterType.MixedContent, WebInspector.NetworkLogView.MixedContentFilterValues.Displayed);
+        }
+
+        if (request.mixedContentType === "blockable") {
+            var suggestion = request.wasBlocked() ? WebInspector.NetworkLogView.MixedContentFilterValues.Blocked : WebInspector.NetworkLogView.MixedContentFilterValues.BlockOverridden;
+            this._suggestionBuilder.addItem(WebInspector.NetworkLogView.FilterType.MixedContent, suggestion);
+        }
 
         var responseHeaders = request.responseHeaders;
         for (var i = 0, l = responseHeaders.length; i < l; ++i)
@@ -1299,6 +1365,27 @@ WebInspector.NetworkLogView.prototype = {
         contextMenu.appendItem(WebInspector.UIString.capitalize("Clear ^browser ^cache"), this._clearBrowserCache.bind(this));
         contextMenu.appendItem(WebInspector.UIString.capitalize("Clear ^browser ^cookies"), this._clearBrowserCookies.bind(this));
 
+        var blockedSetting = WebInspector.moduleSetting("blockedURLs");
+        if (request && Runtime.experiments.isEnabled("requestBlocking")) {  // Disabled until ready.
+            contextMenu.appendSeparator();
+
+            var urlWithoutScheme = request.parsedURL.urlWithoutScheme();
+            if (urlWithoutScheme && blockedSetting.get().indexOf(urlWithoutScheme) === -1)
+                contextMenu.appendItem(WebInspector.UIString.capitalize("Block ^request URL"), addBlockedURL.bind(null, urlWithoutScheme));
+
+            var domain = request.parsedURL.domain();
+            if (domain && blockedSetting.get().indexOf(domain) === -1)
+                contextMenu.appendItem(WebInspector.UIString.capitalize("Block ^request ^domain"), addBlockedURL.bind(null, domain));
+
+            function addBlockedURL(url)
+            {
+                var list = blockedSetting.get();
+                list.push(url);
+                blockedSetting.set(list);
+                WebInspector.BlockedURLsPane.reveal();
+            }
+        }
+
         if (request && request.resourceType() === WebInspector.resourceTypes.XHR) {
             contextMenu.appendSeparator();
             contextMenu.appendItem(WebInspector.UIString("Replay XHR"), request.replayXHR.bind(request));
@@ -1388,20 +1475,14 @@ WebInspector.NetworkLogView.prototype = {
 
     _clearBrowserCache: function()
     {
-        if (confirm(WebInspector.UIString("Are you sure you want to clear browser cache?"))) {
-            var target = WebInspector.targetManager.mainTarget()
-            if (target)
-                target.networkManager.clearBrowserCache();
-        }
+        if (confirm(WebInspector.UIString("Are you sure you want to clear browser cache?")))
+            WebInspector.multitargetNetworkManager.clearBrowserCache();
     },
 
     _clearBrowserCookies: function()
     {
-        if (confirm(WebInspector.UIString("Are you sure you want to clear browser cookies?"))) {
-            var target = WebInspector.targetManager.mainTarget()
-            if (target)
-                target.networkManager.clearBrowserCookies();
-        }
+        if (confirm(WebInspector.UIString("Are you sure you want to clear browser cookies?")))
+            WebInspector.multitargetNetworkManager.clearBrowserCookies();
     },
 
     /**
@@ -1640,6 +1721,9 @@ WebInspector.NetworkLogView.prototype = {
         case WebInspector.NetworkLogView.FilterType.MimeType:
             return WebInspector.NetworkLogView._requestMimeTypeFilter.bind(null, value);
 
+        case WebInspector.NetworkLogView.FilterType.MixedContent:
+            return WebInspector.NetworkLogView._requestMixedContentFilter.bind(null, /** @type {!WebInspector.NetworkLogView.MixedContentFilterValues} */ (value));
+
         case WebInspector.NetworkLogView.FilterType.Scheme:
             return WebInspector.NetworkLogView._requestSchemeFilter.bind(null, value);
 
@@ -1843,6 +1927,9 @@ WebInspector.NetworkLogView.prototype = {
         }
         command = command.concat(data);
         command.push("--compressed");
+
+        if (request.securityState() === SecurityAgent.SecurityState.Insecure)
+            command.push("--insecure");
         return command.join(" ");
     },
 
@@ -1952,6 +2039,25 @@ WebInspector.NetworkLogView._requestMethodFilter = function(value, request)
 WebInspector.NetworkLogView._requestMimeTypeFilter = function(value, request)
 {
     return request.mimeType === value;
+}
+
+/**
+ * @param {!WebInspector.NetworkLogView.MixedContentFilterValues} value
+ * @param {!WebInspector.NetworkRequest} request
+ * @return {boolean}
+ */
+WebInspector.NetworkLogView._requestMixedContentFilter = function(value, request)
+{
+    if (value === WebInspector.NetworkLogView.MixedContentFilterValues.Displayed) {
+        return request.mixedContentType === "optionally-blockable";
+    } else if (value === WebInspector.NetworkLogView.MixedContentFilterValues.Blocked) {
+        return request.mixedContentType === "blockable" && request.wasBlocked();
+    } else if (value === WebInspector.NetworkLogView.MixedContentFilterValues.BlockOverridden) {
+        return request.mixedContentType === "blockable" && !request.wasBlocked();
+    } else if (value === WebInspector.NetworkLogView.MixedContentFilterValues.All) {
+        return request.mixedContentType !== "none";
+    }
+    return false;
 }
 
 /**

@@ -39,6 +39,8 @@
 #include "wtf/HexNumber.h"
 #include "wtf/MainThread.h"
 #include "wtf/NotFound.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -48,14 +50,6 @@ const int InvalidPort = 0;
 const int MaxAllowedPort = 65535;
 
 static SecurityOriginCache* s_originCache = 0;
-
-static bool schemeRequiresAuthority(const KURL& url)
-{
-    // We expect URLs with these schemes to have authority components. If the
-    // URL lacks an authority component, we get concerned and mark the origin
-    // as unique.
-    return url.protocolIsInHTTPFamily() || url.protocolIs("ftp");
-}
 
 static SecurityOrigin* cachedOrigin(const KURL& url)
 {
@@ -106,11 +100,12 @@ static bool shouldTreatAsUniqueOrigin(const KURL& url)
         relevantURL = url;
     }
 
-    // For edge case URLs that were probably misparsed, make sure that the origin is unique.
-    // FIXME: Do we really need to do this? This looks to be a hack around a
-    // security bug in CFNetwork that might have been fixed.
-    if (schemeRequiresAuthority(relevantURL) && relevantURL.host().isEmpty())
-        return true;
+    // URLs with schemes that require an authority, but which don't have one,
+    // will have failed the isValid() test; e.g. valid HTTP URLs must have a
+    // host.
+    ASSERT(
+        !((relevantURL.protocolIsInHTTPFamily() || relevantURL.protocolIs("ftp"))
+            && relevantURL.host().isEmpty()));
 
     // SchemeRegistry needs a lower case protocol because it uses HashMaps
     // that assume the scheme has already been canonicalized.
@@ -548,11 +543,20 @@ const KURL& SecurityOrigin::urlWithUniqueSecurityOrigin()
     return uniqueSecurityOriginURL;
 }
 
-void SecurityOrigin::transferPrivilegesFrom(const SecurityOrigin& origin)
+PassOwnPtr<SecurityOrigin::PrivilegeData> SecurityOrigin::createPrivilegeData() const
 {
-    m_universalAccess = origin.m_universalAccess;
-    m_canLoadLocalResources = origin.m_canLoadLocalResources;
-    m_blockLocalAccessFromLocalOrigin = origin.m_blockLocalAccessFromLocalOrigin;
+    OwnPtr<PrivilegeData> privilegeData = adoptPtr(new PrivilegeData);
+    privilegeData->m_universalAccess = m_universalAccess;
+    privilegeData->m_canLoadLocalResources = m_canLoadLocalResources;
+    privilegeData->m_blockLocalAccessFromLocalOrigin = m_blockLocalAccessFromLocalOrigin;
+    return privilegeData.release();
+}
+
+void SecurityOrigin::transferPrivilegesFrom(PassOwnPtr<PrivilegeData> privilegeData)
+{
+    m_universalAccess = privilegeData->m_universalAccess;
+    m_canLoadLocalResources = privilegeData->m_canLoadLocalResources;
+    m_blockLocalAccessFromLocalOrigin = privilegeData->m_blockLocalAccessFromLocalOrigin;
 }
 
 } // namespace blink

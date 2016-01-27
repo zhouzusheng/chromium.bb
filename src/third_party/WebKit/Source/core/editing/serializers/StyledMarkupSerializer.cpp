@@ -49,7 +49,7 @@ namespace blink {
 namespace {
 
 template<typename Strategy>
-TextOffset toTextOffset(const PositionAlgorithm<Strategy>& position)
+TextOffset toTextOffset(const PositionTemplate<Strategy>& position)
 {
     if (position.isNull())
         return TextOffset();
@@ -123,7 +123,7 @@ bool StyledMarkupTraverser<Strategy>::convertBlocksToInlines() const
 }
 
 template<typename Strategy>
-StyledMarkupSerializer<Strategy>::StyledMarkupSerializer(EAbsoluteURLs shouldResolveURLs, EAnnotateForInterchange shouldAnnotate, const PositionAlgorithm<Strategy>& start, const PositionAlgorithm<Strategy>& end, Node* highestNodeToBeSerialized, ConvertBlocksToInlines convertBlocksToInlines)
+StyledMarkupSerializer<Strategy>::StyledMarkupSerializer(EAbsoluteURLs shouldResolveURLs, EAnnotateForInterchange shouldAnnotate, const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end, Node* highestNodeToBeSerialized, ConvertBlocksToInlines convertBlocksToInlines)
     : m_start(start)
     , m_end(end)
     , m_shouldResolveURLs(shouldResolveURLs)
@@ -134,24 +134,24 @@ StyledMarkupSerializer<Strategy>::StyledMarkupSerializer(EAbsoluteURLs shouldRes
 {
 }
 
-static bool needInterchangeNewlineAfter(const VisiblePosition& v)
+template <typename Strategy>
+static bool needInterchangeNewlineAfter(const VisiblePositionTemplate<Strategy>& v)
 {
-    VisiblePosition next = v.next();
+    const VisiblePositionTemplate<Strategy> next = nextPositionOf(v);
     Node* upstreamNode = mostBackwardCaretPosition(next.deepEquivalent()).anchorNode();
     Node* downstreamNode = mostForwardCaretPosition(v.deepEquivalent()).anchorNode();
     // Add an interchange newline if a paragraph break is selected and a br won't already be added to the markup to represent it.
     return isEndOfParagraph(v) && isStartOfParagraph(next) && !(isHTMLBRElement(*upstreamNode) && upstreamNode == downstreamNode);
 }
 
-static bool needInterchangeNewlineAt(const VisiblePosition& v)
+template <typename Strategy>
+static bool needInterchangeNewlineAt(const VisiblePositionTemplate<Strategy>& v)
 {
-    // FIXME: |v.previous()| works on a DOM tree. We need to fix this to work on
-    // a composed tree.
-    return needInterchangeNewlineAfter(v.previous());
+    return needInterchangeNewlineAfter(previousPositionOf(v));
 }
 
 template<typename Strategy>
-static bool areSameRanges(Node* node, const PositionAlgorithm<Strategy>& startPosition, const PositionAlgorithm<Strategy>& endPosition)
+static bool areSameRanges(Node* node, const PositionTemplate<Strategy>& startPosition, const PositionTemplate<Strategy>& endPosition)
 {
     ASSERT(node);
     const EphemeralRange range = VisibleSelection::selectionFromContentsOfNode(node).toNormalizedEphemeralRange();
@@ -175,16 +175,16 @@ String StyledMarkupSerializer<Strategy>::createMarkup()
     Node* pastEnd = m_end.nodeAsRangePastLastNode();
 
     Node* firstNode = m_start.nodeAsRangeFirstNode();
-    VisiblePosition visibleStart(m_start);
-    VisiblePosition visibleEnd(m_end);
+    const VisiblePositionTemplate<Strategy> visibleStart = createVisiblePosition(m_start);
+    const VisiblePositionTemplate<Strategy> visibleEnd = createVisiblePosition(m_end);
     if (shouldAnnotate() && needInterchangeNewlineAfter(visibleStart)) {
         markupAccumulator.appendInterchangeNewline();
-        if (visibleStart.deepEquivalent() == visibleEnd.previous().deepEquivalent())
+        if (visibleStart.deepEquivalent() == previousPositionOf(visibleEnd).deepEquivalent())
             return markupAccumulator.takeResults();
 
-        firstNode = visibleStart.next().deepEquivalent().anchorNode();
+        firstNode = nextPositionOf(visibleStart).deepEquivalent().anchorNode();
 
-        if (pastEnd && PositionAlgorithm<Strategy>::beforeNode(firstNode).compareTo(PositionAlgorithm<Strategy>::beforeNode(pastEnd)) >= 0) {
+        if (pastEnd && PositionTemplate<Strategy>::beforeNode(firstNode).compareTo(PositionTemplate<Strategy>::beforeNode(pastEnd)) >= 0) {
             // This condition hits in editing/pasteboard/copy-display-none.html.
             return markupAccumulator.takeResults();
         }
@@ -292,7 +292,7 @@ Node* StyledMarkupTraverser<Strategy>::traverse(Node* startNode, Node* pastEnd)
             next = EditingInComposedTreeStrategy::nextSkippingChildren(*n);
         } else {
             next = Strategy::next(*n);
-            if (isBlock(n) && canHaveChildrenForEditing(n) && next == pastEnd) {
+            if (isEnclosingBlock(n) && canHaveChildrenForEditing(n) && next == pastEnd) {
                 // Don't write out empty block containers that aren't fully selected.
                 continue;
             }
@@ -363,7 +363,7 @@ bool StyledMarkupTraverser<Strategy>::needsInlineStyle(const Element& element)
         return false;
     if (shouldAnnotate())
         return true;
-    return convertBlocksToInlines() && isBlock(&element);
+    return convertBlocksToInlines() && isEnclosingBlock(&element);
 }
 
 template<typename Strategy>
@@ -396,7 +396,7 @@ RefPtrWillBeRawPtr<EditingStyle> StyledMarkupTraverser<Strategy>::createInlineSt
     if (!node.isElementNode())
         return nullptr;
     RefPtrWillBeRawPtr<EditingStyle> inlineStyle = createInlineStyle(toElement(node));
-    if (convertBlocksToInlines() && isBlock(&node))
+    if (convertBlocksToInlines() && isEnclosingBlock(&node))
         inlineStyle->forceInline();
     return inlineStyle;
 }

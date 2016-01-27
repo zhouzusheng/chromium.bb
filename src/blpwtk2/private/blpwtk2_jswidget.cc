@@ -73,16 +73,14 @@ bool JsWidget::initialize(blink::WebPluginContainer* container)
 {
     d_container = container;
     d_webElement = container->element();
-    blink::WebDOMCustomEvent event = blink::WebDOMCustomEvent::create();
-    event.initCustomEvent("bbOnInitialize", false, false, blink::WebSerializedScriptValue());
+    blink::WebDOMCustomEvent event("bbOnInitialize", false, false, blink::WebSerializedScriptValue());
     scheduleDispatchEvent(FROM_HERE, this, event);
     return true;
 }
 
 void JsWidget::destroy()
 {
-    blink::WebDOMCustomEvent event = blink::WebDOMCustomEvent::create();
-    event.initCustomEvent("bbOnDestroy", false, false, blink::WebSerializedScriptValue());
+    blink::WebDOMCustomEvent event("bbOnDestroy", false, false, blink::WebSerializedScriptValue());
     scheduleDispatchEvent(FROM_HERE, this, event);
     base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
@@ -114,9 +112,8 @@ void JsWidget::updateGeometry(
     // TODO: Remove once clients are updated.
     detailObj->Set(v8::String::NewFromUtf8(isolate, "frameRect"), toV8(isolate, windowRect));
 
-    blink::WebDOMCustomEvent event = blink::WebDOMCustomEvent::create();
-    event.initCustomEvent("bbOnUpdateGeometry", false, false,
-                          blink::WebSerializedScriptValue::serialize(detailObj));
+    blink::WebDOMCustomEvent event("bbOnUpdateGeometry", false, false,
+                                   blink::WebSerializedScriptValue::serialize(detailObj));
     scheduleDispatchEvent(FROM_HERE, this, event);
 }
 
@@ -132,9 +129,8 @@ void JsWidget::updateVisibility(bool isVisible)
     v8::Handle<v8::Object> detailObj = v8::Object::New(isolate);
     detailObj->Set(v8::String::NewFromUtf8(isolate, "isVisible"), v8::Boolean::New(isolate, isVisible));
 
-    blink::WebDOMCustomEvent event = blink::WebDOMCustomEvent::create();
-    event.initCustomEvent("bbOnUpdateVisibility", false, false,
-                          blink::WebSerializedScriptValue::serialize(detailObj));
+    blink::WebDOMCustomEvent event("bbOnUpdateVisibility", false, false,
+                                   blink::WebSerializedScriptValue::serialize(detailObj));
     scheduleDispatchEvent(FROM_HERE, this, event);
 }
 

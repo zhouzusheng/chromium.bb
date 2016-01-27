@@ -28,7 +28,7 @@ import zipfile
 # Note: this revision is only used for Windows. Other platforms use update.sh.
 # TODO(thakis): Use the same revision on Windows and non-Windows.
 # TODO(thakis): Remove update.sh, use update.py everywhere.
-LLVM_WIN_REVISION = '245402'
+LLVM_WIN_REVISION = '247874'
 
 use_head_revision = 'LLVM_FORCE_HEAD_REVISION' in os.environ
 if use_head_revision:
@@ -527,6 +527,7 @@ def UpdateClang(args):
 
   cmake_args = base_cmake_args + [
       '-DLLVM_BINUTILS_INCDIR=' + binutils_incdir,
+      '-DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=WebAssembly',
       '-DCMAKE_C_FLAGS=' + ' '.join(cflags),
       '-DCMAKE_CXX_FLAGS=' + ' '.join(cxxflags),
       '-DCMAKE_EXE_LINKER_FLAGS=' + ' '.join(ldflags),

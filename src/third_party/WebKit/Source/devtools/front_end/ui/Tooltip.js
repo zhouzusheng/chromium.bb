@@ -75,9 +75,9 @@ WebInspector.Tooltip.prototype = {
 
         if (tooltip.actionId) {
             var shortcuts = WebInspector.shortcutRegistry.shortcutDescriptorsForAction(tooltip.actionId);
-            if (shortcuts && shortcuts.length) {
+            for (var shortcut of shortcuts) {
                 var shortcutElement = this._tooltipElement.createChild("div", "tooltip-shortcut");
-                shortcutElement.textContent = shortcuts[0].name;
+                shortcutElement.textContent = shortcut.name;
             }
         }
 
@@ -114,7 +114,7 @@ WebInspector.Tooltip.prototype = {
             containerOffset.x + containerOffsetWidth - tooltipWidth - pageMargin);
         var tooltipY;
         if (!anchorTooltipAtElement) {
-            tooltipY = event.y + cursorOffset;
+            tooltipY = event.y + cursorOffset + tooltipHeight < containerOffset.y + containerOffsetHeight ? event.y + cursorOffset : event.y - tooltipHeight;
         } else {
             var onBottom = anchorBox.y + anchorOffset + anchorBox.height + tooltipHeight < containerOffset.y + containerOffsetHeight;
             tooltipY = onBottom ? anchorBox.y + anchorBox.height + anchorOffset : anchorBox.y - tooltipHeight - anchorOffset;

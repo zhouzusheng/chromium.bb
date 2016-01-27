@@ -108,10 +108,8 @@ bool ResourceDispatcher::OnMessageReceived(const IPC::Message& message) {
   // Make sure any deferred messages are dispatched before we dispatch more.
   if (!request_info->deferred_message_queue.empty()) {
     FlushDeferredMessages(request_id);
-    // The request could have been deferred now. If yes then the current
-    // message has to be queued up. The request_info instance should remain
-    // valid here as there are pending messages for it.
-    DCHECK(pending_requests_.find(request_id) != pending_requests_.end());
+    request_info = GetPendingRequestInfo(request_id);
+    DCHECK(request_info);
     if (request_info->is_deferred) {
       request_info->deferred_message_queue.push_back(new IPC::Message(message));
       return true;
@@ -800,6 +798,7 @@ scoped_ptr<ResourceHostMsg_Request> ResourceDispatcher::CreateRequest(
   request->enable_load_timing = request_info.enable_load_timing;
   request->enable_upload_progress = request_info.enable_upload_progress;
   request->do_not_prompt_for_login = request_info.do_not_prompt_for_login;
+  request->report_raw_headers = request_info.report_raw_headers;
 
   if ((request_info.referrer.policy == blink::WebReferrerPolicyDefault ||
        request_info.referrer.policy ==

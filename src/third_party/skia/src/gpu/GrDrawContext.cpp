@@ -24,7 +24,7 @@
 #define ASSERT_OWNED_RESOURCE(R) SkASSERT(!(R) || (R)->getContext() == fContext)
 #define RETURN_IF_ABANDONED        if (!fDrawTarget) { return; }
 #define RETURN_FALSE_IF_ABANDONED  if (!fDrawTarget) { return false; }
-#define RETURN_NULL_IF_ABANDONED   if (!fDrawTarget) { return NULL; }
+#define RETURN_NULL_IF_ABANDONED   if (!fDrawTarget) { return nullptr; }
 
 class AutoCheckFlush {
 public:
@@ -40,13 +40,13 @@ GrDrawContext::GrDrawContext(GrContext* context,
                              const SkSurfaceProps& surfaceProps)
     : fContext(context)
     , fDrawTarget(SkRef(drawTarget))
-    , fTextContext(NULL)
+    , fTextContext(nullptr)
     , fSurfaceProps(surfaceProps) {
 }
 
 GrDrawContext::~GrDrawContext() {
     SkSafeUnref(fDrawTarget);
-    SkDELETE(fTextContext);
+    delete fTextContext;
 }
 
 void GrDrawContext::copySurface(GrRenderTarget* dst, GrSurface* src,
@@ -62,14 +62,15 @@ GrTextContext* GrDrawContext::createTextContext(GrRenderTarget* renderTarget,
                                                 const SkSurfaceProps& surfaceProps) {
     if (fContext->caps()->shaderCaps()->pathRenderingSupport() &&
         renderTarget->isStencilBufferMultisampled() &&
-        fSurfaceProps.isUseDistanceFieldFonts()) { // FIXME: Rename the dff flag to be more general.
-        GrStencilAttachment* sb = renderTarget->renderTargetPriv().attachStencilAttachment();
+        fSurfaceProps.isUseDeviceIndependentFonts()) {
+        GrStencilAttachment* sb =
+            fContext->resourceProvider()->attachStencilAttachment(renderTarget);
         if (sb) {
-            return GrStencilAndCoverTextContext::Create(fContext, this, surfaceProps);
+            return GrStencilAndCoverTextContext::Create(fContext, surfaceProps);
         }
     } 
 
-    return GrAtlasTextContext::Create(fContext, this, surfaceProps);
+    return GrAtlasTextContext::Create(fContext, surfaceProps);
 }
 
 void GrDrawContext::drawText(GrRenderTarget* rt, const GrClip& clip, const GrPaint& grPaint,
@@ -81,7 +82,7 @@ void GrDrawContext::drawText(GrRenderTarget* rt, const GrClip& clip, const GrPai
         fTextContext = this->createTextContext(rt, fSurfaceProps);
     }
 
-    fTextContext->drawText(rt, clip, grPaint, skPaint, viewMatrix,
+    fTextContext->drawText(this, rt, clip, grPaint, skPaint, viewMatrix,
                            text, byteLength, x, y, clipBounds);
 
 }
@@ -95,8 +96,8 @@ void GrDrawContext::drawPosText(GrRenderTarget* rt, const GrClip& clip, const Gr
         fTextContext = this->createTextContext(rt, fSurfaceProps);
     }
 
-    fTextContext->drawPosText(rt, clip, grPaint, skPaint, viewMatrix, text, byteLength,
-                               pos, scalarsPerPosition, offset, clipBounds);
+    fTextContext->drawPosText(this, rt, clip, grPaint, skPaint, viewMatrix, text, byteLength,
+                              pos, scalarsPerPosition, offset, clipBounds);
 
 }
 void GrDrawContext::drawTextBlob(GrRenderTarget* rt, const GrClip& clip, const SkPaint& skPaint,
@@ -107,23 +108,18 @@ void GrDrawContext::drawTextBlob(GrRenderTarget* rt, const GrClip& clip, const S
         fTextContext = this->createTextContext(rt, fSurfaceProps);
     }
 
-    fTextContext->drawTextBlob(rt, clip, skPaint, viewMatrix, blob, x, y, filter, clipBounds);
+    fTextContext->drawTextBlob(this, rt,
+                               clip, skPaint, viewMatrix, blob, x, y, filter, clipBounds);
 }
 
-void GrDrawContext::drawPaths(GrPipelineBuilder* pipelineBuilder,
-                              const GrPathProcessor* pathProc,
-                              const GrPathRange* pathRange,
-                              const void* indices,
-                              int /*GrDrawTarget::PathIndexType*/ indexType,
-                              const float transformValues[],
-                              int /*GrDrawTarget::PathTransformType*/ transformType,
-                              int count,
-                              int /*GrPathRendering::FillType*/ fill) {
-    fDrawTarget->drawPaths(*pipelineBuilder, pathProc, pathRange,
-                           indices, (GrDrawTarget::PathIndexType) indexType,
-                           transformValues,
-                           (GrDrawTarget::PathTransformType) transformType,
-                           count, (GrPathRendering::FillType) fill);
+void GrDrawContext::drawPathsFromRange(const GrPipelineBuilder* pipelineBuilder,
+                                       const SkMatrix& viewMatrix,
+                                       const SkMatrix& localMatrix,
+                                       GrColor color,
+                                       GrPathRangeDraw* draw,
+                                       int /*GrPathRendering::FillType*/ fill) {
+    fDrawTarget->drawPathsFromRange(*pipelineBuilder, viewMatrix, localMatrix, color, draw,
+                                    (GrPathRendering::FillType) fill);
 }
 
 void GrDrawContext::discard(GrRenderTarget* renderTarget) {
@@ -195,12 +191,11 @@ void GrDrawContext::drawPaint(GrRenderTarget* rt,
         }
 
         GrPipelineBuilder pipelineBuilder(*paint, rt, clip);
-        fDrawTarget->drawBWRect(pipelineBuilder,
-                                paint->getColor(),
-                                SkMatrix::I(),
-                                r,
-                                NULL,
-                                &localMatrix);
+        fDrawTarget->drawNonAARect(pipelineBuilder,
+                                   paint->getColor(),
+                                   SkMatrix::I(),
+                                   r,
+                                   localMatrix);
     }
 }
 
@@ -231,7 +226,7 @@ void GrDrawContext::drawRect(GrRenderTarget* rt,
 
     GrPipelineBuilder pipelineBuilder(paint, rt, clip);
 
-    SkScalar width = NULL == strokeInfo ? -1 : strokeInfo->getWidth();
+    SkScalar width = nullptr == strokeInfo ? -1 : strokeInfo->getWidth();
 
     // Check if this is a full RT draw and can be replaced with a clear. We don't bother checking
     // cases where the RT is fully inside a stroke.
@@ -260,7 +255,7 @@ void GrDrawContext::drawRect(GrRenderTarget* rt,
                 // Will it blend?
                 GrColor clearColor;
                 if (paint.isConstantBlendedColor(&clearColor)) {
-                    fDrawTarget->clear(NULL, clearColor, true, rt);
+                    fDrawTarget->clear(nullptr, clearColor, true, rt);
                     return;
                 }
             }
@@ -273,19 +268,18 @@ void GrDrawContext::drawRect(GrRenderTarget* rt,
 
     // The fill path can handle rotation but not skew
     // The stroke path needs the rect to remain axis aligned (no rotation or skew)
-    // None of our draw rect calls can handle perspective yet
-    SkASSERT(!viewMatrix.hasPerspective());
+    // None of our AA draw rect calls can handle perspective yet
     bool canApplyAA = width >=0 ? viewMatrix.rectStaysRect() : viewMatrix.preservesRightAngles();
 
     if (needAA && canApplyAA) {
-        SkRect devBoundRect;
-        viewMatrix.mapRect(&devBoundRect, rect);
+        SkASSERT(!viewMatrix.hasPerspective());
         SkAutoTUnref<GrDrawBatch> batch;
         if (width >= 0) {
-            batch.reset(GrRectBatchFactory::CreateStrokeAA(color, viewMatrix, rect, devBoundRect,
-                                                           *strokeInfo));
+            batch.reset(GrRectBatchFactory::CreateAAStroke(color, viewMatrix, rect, *strokeInfo));
         } else {
-            batch.reset(GrRectBatchFactory::CreateFillAA(color, viewMatrix, rect, devBoundRect));
+            SkRect devBoundRect;
+            viewMatrix.mapRect(&devBoundRect, rect);
+            batch.reset(GrRectBatchFactory::CreateAAFill(color, viewMatrix, rect, devBoundRect));
         }
         fDrawTarget->drawBatch(pipelineBuilder, batch);
         return;
@@ -294,7 +288,7 @@ void GrDrawContext::drawRect(GrRenderTarget* rt,
     if (width >= 0) {
         // Non-AA hairlines are snapped to pixel centers to make which pixels are hit deterministic
         bool snapToPixelCenters = (0 == width && !rt->isUnifiedMultisampled());
-        SkAutoTUnref<GrDrawBatch> batch(GrRectBatchFactory::CreateStrokeBW(
+        SkAutoTUnref<GrDrawBatch> batch(GrRectBatchFactory::CreateNonAAStroke(
                                         color, viewMatrix, rect, width, snapToPixelCenters));
 
         // Depending on sub-pixel coordinates and the particular GPU, we may lose a corner of
@@ -305,7 +299,7 @@ void GrDrawContext::drawRect(GrRenderTarget* rt,
         fDrawTarget->drawBatch(pipelineBuilder, batch);
     } else {
         // filled BW rect
-        fDrawTarget->drawSimpleRect(pipelineBuilder, color, viewMatrix, rect);
+        fDrawTarget->drawNonAARect(pipelineBuilder, color, viewMatrix, rect);
     }
 }
 
@@ -314,8 +308,7 @@ void GrDrawContext::drawNonAARectToRect(GrRenderTarget* rt,
                                         const GrPaint& paint,
                                         const SkMatrix& viewMatrix,
                                         const SkRect& rectToDraw,
-                                        const SkRect& localRect,
-                                        const SkMatrix* localMatrix) {
+                                        const SkRect& localRect) {
     RETURN_IF_ABANDONED
     AutoCheckFlush acf(fContext);
     if (!this->prepareToDraw(rt)) {
@@ -323,12 +316,31 @@ void GrDrawContext::drawNonAARectToRect(GrRenderTarget* rt,
     }
 
     GrPipelineBuilder pipelineBuilder(paint, rt, clip);
-    fDrawTarget->drawBWRect(pipelineBuilder,
-                            paint.getColor(),
-                            viewMatrix,
-                            rectToDraw,
-                            &localRect,
-                            localMatrix);
+    fDrawTarget->drawNonAARect(pipelineBuilder,
+                               paint.getColor(),
+                               viewMatrix,
+                               rectToDraw,
+                               localRect);
+}
+
+void GrDrawContext::drawNonAARectWithLocalMatrix(GrRenderTarget* rt,
+                                                 const GrClip& clip,
+                                                 const GrPaint& paint,
+                                                 const SkMatrix& viewMatrix,
+                                                 const SkRect& rectToDraw,
+                                                 const SkMatrix& localMatrix) {
+    RETURN_IF_ABANDONED
+    AutoCheckFlush acf(fContext);
+    if (!this->prepareToDraw(rt)) {
+        return;
+    }
+
+    GrPipelineBuilder pipelineBuilder(paint, rt, clip);
+    fDrawTarget->drawNonAARect(pipelineBuilder,
+                               paint.getColor(),
+                               viewMatrix,
+                               rectToDraw,
+                               localMatrix);
 }
 
 void GrDrawContext::drawVertices(GrRenderTarget* rt,
@@ -625,7 +637,7 @@ void GrDrawContext::drawPath(GrRenderTarget* rt,
             SkRect rects[2];
 
             if (is_nested_rects(viewMatrix, path, strokeInfo, rects)) {
-                SkAutoTUnref<GrDrawBatch> batch(GrRectBatchFactory::CreateFillNestedRectsAA(
+                SkAutoTUnref<GrDrawBatch> batch(GrRectBatchFactory::CreateAAFillNestedRects(
                     color, viewMatrix, rects));
                 fDrawTarget->drawBatch(pipelineBuilder, batch);
                 return;
@@ -682,7 +694,7 @@ void GrDrawContext::internalDrawPath(GrDrawTarget* target,
                                                     *strokeInfoPtr, false, type);
 
     GrStrokeInfo dashlessStrokeInfo(strokeInfo, false);
-    if (NULL == pr && strokeInfo.isDashed()) {
+    if (nullptr == pr && strokeInfo.isDashed()) {
         // It didn't work above, so try again with dashed stroke converted to a dashless stroke.
         if (!strokeInfo.applyDashToPath(tmpPath.init(), &dashlessStrokeInfo, *pathPtr)) {
             return;
@@ -696,8 +708,8 @@ void GrDrawContext::internalDrawPath(GrDrawTarget* target,
                                        false, type);
     }
 
-    if (NULL == pr) {
-        if (!GrPathRenderer::IsStrokeHairlineOrEquivalent(*strokeInfoPtr, viewMatrix, NULL) &&
+    if (nullptr == pr) {
+        if (!GrPathRenderer::IsStrokeHairlineOrEquivalent(*strokeInfoPtr, viewMatrix, nullptr) &&
             !strokeInfoPtr->isFillStyle()) {
             // It didn't work above, so try again with stroke converted to a fill.
             if (!tmpPath.isValid()) {
@@ -720,7 +732,7 @@ void GrDrawContext::internalDrawPath(GrDrawTarget* target,
                                        true, type);
     }
 
-    if (NULL == pr) {
+    if (nullptr == pr) {
 #ifdef SK_DEBUG
         SkDebugf("Unable to find path renderer compatible with path.\n");
 #endif

@@ -18,7 +18,6 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
                    const GrGLInterface* glInterface) : INHERITED(contextOptions) {
     fVerifiedColorConfigs.reset();
     fStencilFormats.reset();
-    fStencilVerifiedColorConfigs.reset();
     fMSFBOType = kNone_MSFBOType;
     fInvalidateFBType = kNone_InvalidateFBType;
     fLATCAlias = kLATC_LATCAlias;
@@ -54,7 +53,7 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
 
     fReadPixelsSupportedCache.reset();
 
-    fShaderCaps.reset(SkNEW_ARGS(GrGLSLCaps, (contextOptions)));
+    fShaderCaps.reset(new GrGLSLCaps(contextOptions));
 
     this->init(contextOptions, ctxInfo, glInterface);
 }
@@ -305,6 +304,8 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         }
     }
 
+    fBindUniformLocationSupport = ctxInfo.hasExtension("GL_CHROMIUM_bind_uniform_location");
+
 #ifdef SK_BUILD_FOR_WIN
     // We're assuming that on Windows Chromium we're using ANGLE.
     bool isANGLE = kANGLE_GrGLDriver == ctxInfo.driver() ||
@@ -356,6 +357,10 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         fDiscardRenderTargetSupport = false;
         fInvalidateFBType = kNone_InvalidateFBType;
     }
+    glslCaps->fProgrammableSampleLocationsSupport =
+        ctxInfo.hasExtension("GL_NV_sample_locations") ||
+        ctxInfo.hasExtension("GL_ARB_sample_locations");
+
 
     /**************************************************************************
      * GrCaps fields
@@ -538,11 +543,11 @@ bool GrGLCaps::hasPathRenderingSupport(const GrGLContextInfo& ctxInfo, const GrG
     // additions are detected by checking the existence of the function.
     // We also use *Then* functions that not all drivers might have. Check
     // them for consistency.
-    if (NULL == gli->fFunctions.fStencilThenCoverFillPath ||
-        NULL == gli->fFunctions.fStencilThenCoverStrokePath ||
-        NULL == gli->fFunctions.fStencilThenCoverFillPathInstanced ||
-        NULL == gli->fFunctions.fStencilThenCoverStrokePathInstanced ||
-        NULL == gli->fFunctions.fProgramPathFragmentInputGen) {
+    if (nullptr == gli->fFunctions.fStencilThenCoverFillPath ||
+        nullptr == gli->fFunctions.fStencilThenCoverStrokePath ||
+        nullptr == gli->fFunctions.fStencilThenCoverFillPathInstanced ||
+        nullptr == gli->fFunctions.fStencilThenCoverStrokePathInstanced ||
+        nullptr == gli->fFunctions.fProgramPathFragmentInputGen) {
         return false;
     }
     return true;
@@ -709,16 +714,19 @@ void GrGLCaps::initConfigTexturableTable(const GrGLContextInfo& ctxInfo, const G
     fConfigTextureSupport[kRGBA_4444_GrPixelConfig] = true;
     fConfigTextureSupport[kRGBA_8888_GrPixelConfig] = true;
 
-    // Check for 8-bit palette..
-    GrGLint numFormats;
-    GR_GL_GetIntegerv(gli, GR_GL_NUM_COMPRESSED_TEXTURE_FORMATS, &numFormats);
-    if (numFormats) {
-        SkAutoSTMalloc<10, GrGLint> formats(numFormats);
-        GR_GL_GetIntegerv(gli, GR_GL_COMPRESSED_TEXTURE_FORMATS, formats);
-        for (int i = 0; i < numFormats; ++i) {
-            if (GR_GL_PALETTE8_RGBA8 == formats[i]) {
-                fConfigTextureSupport[kIndex_8_GrPixelConfig] = true;
-                break;
+    // Disable this for now, while we investigate skbug.com/4333
+    if (false) {
+        // Check for 8-bit palette..
+        GrGLint numFormats;
+        GR_GL_GetIntegerv(gli, GR_GL_NUM_COMPRESSED_TEXTURE_FORMATS, &numFormats);
+        if (numFormats) {
+            SkAutoSTMalloc<10, GrGLint> formats(numFormats);
+            GR_GL_GetIntegerv(gli, GR_GL_COMPRESSED_TEXTURE_FORMATS, formats);
+            for (int i = 0; i < numFormats; ++i) {
+                if (GR_GL_PALETTE8_RGBA8 == formats[i]) {
+                    fConfigTextureSupport[kIndex_8_GrPixelConfig] = true;
+                    break;
+                }
             }
         }
     }
@@ -1019,53 +1027,6 @@ void GrGLCaps::initStencilFormats(const GrGLContextInfo& ctxInfo) {
             fStencilFormats.push_back() = gS4;
         }
     }
-    SkASSERT(0 == fStencilVerifiedColorConfigs.count());
-    fStencilVerifiedColorConfigs.push_back_n(fStencilFormats.count());
-}
-
-void GrGLCaps::markColorConfigAndStencilFormatAsVerified(
-                                    GrPixelConfig config,
-                                    const GrGLStencilAttachment::Format& format) {
-#if !GR_GL_CHECK_FBO_STATUS_ONCE_PER_FORMAT
-    return;
-#endif
-    SkASSERT((unsigned)config < (unsigned)kGrPixelConfigCnt);
-    SkASSERT(fStencilFormats.count() == fStencilVerifiedColorConfigs.count());
-    int count = fStencilFormats.count();
-    // we expect a really small number of possible formats so linear search
-    // should be OK
-    SkASSERT(count < 16);
-    for (int i = 0; i < count; ++i) {
-        if (format.fInternalFormat ==
-            fStencilFormats[i].fInternalFormat) {
-            fStencilVerifiedColorConfigs[i].markVerified(config);
-            return;
-        }
-    }
-    SkFAIL("Why are we seeing a stencil format that "
-            "GrGLCaps doesn't know about.");
-}
-
-bool GrGLCaps::isColorConfigAndStencilFormatVerified(
-                                GrPixelConfig config,
-                                const GrGLStencilAttachment::Format& format) const {
-#if !GR_GL_CHECK_FBO_STATUS_ONCE_PER_FORMAT
-    return false;
-#endif
-    SkASSERT((unsigned)config < (unsigned)kGrPixelConfigCnt);
-    int count = fStencilFormats.count();
-    // we expect a really small number of possible formats so linear search
-    // should be OK
-    SkASSERT(count < 16);
-    for (int i = 0; i < count; ++i) {
-        if (format.fInternalFormat ==
-            fStencilFormats[i].fInternalFormat) {
-            return fStencilVerifiedColorConfigs[i].isVerified(config);
-        }
-    }
-    SkFAIL("Why are we seeing a stencil format that "
-            "GLCaps doesn't know about.");
-    return false;
 }
 
 SkString GrGLCaps::dump() const {
@@ -1154,6 +1115,7 @@ SkString GrGLCaps::dump() const {
     r.appendf("SRGB write contol: %s\n", (fSRGBWriteControl ? "YES" : "NO"));
     r.appendf("RGBA 8888 pixel ops are slow: %s\n", (fRGBA8888PixelsOpsAreSlow ? "YES" : "NO"));
     r.appendf("Partial FBO read is slow: %s\n", (fPartialFBOReadIsSlow ? "YES" : "NO"));
+    r.appendf("Bind uniform location support: %s\n", (fBindUniformLocationSupport ? "YES" : "NO"));
     return r;
 }
 
@@ -1192,7 +1154,7 @@ void GrGLCaps::initShaderPrecisionTable(const GrGLContextInfo& ctxInfo,
             if (kGeometry_GrShaderType != s) {
                 GrShaderType shaderType = static_cast<GrShaderType>(s);
                 GrGLenum glShader = shader_type_to_gl_shader(shaderType);
-                GrShaderCaps::PrecisionInfo* first = NULL;
+                GrShaderCaps::PrecisionInfo* first = nullptr;
                 glslCaps->fShaderPrecisionVaries = false;
                 for (int p = 0; p < kGrSLPrecisionCount; ++p) {
                     GrSLPrecision precision = static_cast<GrSLPrecision>(p);

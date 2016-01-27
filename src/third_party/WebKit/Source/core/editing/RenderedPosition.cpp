@@ -35,7 +35,7 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/layout/compositing/CompositedSelectionBound.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 
 namespace blink {
 
@@ -67,21 +67,13 @@ static inline LayoutObject* layoutObjectFromPosition(const Position& position)
 }
 
 RenderedPosition::RenderedPosition(const VisiblePosition& position)
-    : m_layoutObject(nullptr)
-    , m_inlineBox(nullptr)
-    , m_offset(0)
-    , m_prevLeafChild(uncachedInlineBox())
-    , m_nextLeafChild(uncachedInlineBox())
+    : RenderedPosition(position.deepEquivalent(), position.affinity())
 {
-    if (position.isNull())
-        return;
-    InlineBoxPosition boxPosition = computeInlineBoxPosition(position);
-    m_inlineBox = boxPosition.inlineBox;
-    m_offset = boxPosition.offsetInBox;
-    if (m_inlineBox)
-        m_layoutObject = &m_inlineBox->layoutObject();
-    else
-        m_layoutObject = layoutObjectFromPosition(position.deepEquivalent());
+}
+
+RenderedPosition::RenderedPosition(const VisiblePositionInComposedTree& position)
+    : RenderedPosition(position.deepEquivalent(), position.affinity())
+{
 }
 
 RenderedPosition::RenderedPosition(const Position& position, TextAffinity affinity)
@@ -252,7 +244,7 @@ void RenderedPosition::positionInGraphicsLayerBacking(CompositedSelectionBound& 
         return;
 
     LayoutRect rect = m_layoutObject->localCaretRect(m_inlineBox, m_offset);
-    DeprecatedPaintLayer* layer = nullptr;
+    PaintLayer* layer = nullptr;
     bound.edgeTopInLayer = m_layoutObject->localToInvalidationBackingPoint(rect.minXMinYCorner(), &layer);
     bound.edgeBottomInLayer = m_layoutObject->localToInvalidationBackingPoint(rect.minXMaxYCorner(), nullptr);
     bound.layer = layer ? layer->graphicsLayerBacking() : nullptr;

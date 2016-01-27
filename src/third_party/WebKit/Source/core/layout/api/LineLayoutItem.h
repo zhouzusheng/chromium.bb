@@ -9,6 +9,7 @@
 #include "core/layout/LayoutObjectInlines.h"
 
 #include "platform/LayoutUnit.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -19,10 +20,12 @@ class HitTestLocation;
 class LayoutObject;
 class LineLayoutBox;
 class LineLayoutBoxModel;
+class LineLayoutPaintShim;
 
 enum HitTestFilter;
 
 class LineLayoutItem {
+    ALLOW_ONLY_INLINE_ALLOCATION();
 public:
     explicit LineLayoutItem(LayoutObject* layoutObject)
         : m_layoutObject(layoutObject)
@@ -301,6 +304,16 @@ public:
         return m_layoutObject->selectionBackgroundColor();
     }
 
+    PositionWithAffinity positionForPoint(const LayoutPoint& point)
+    {
+        return m_layoutObject->positionForPoint(point);
+    }
+
+    PositionWithAffinity createPositionWithAffinity(int offset, TextAffinity affinity)
+    {
+        return m_layoutObject->createPositionWithAffinity(offset, affinity);
+    }
+
 #ifndef NDEBUG
 
     const char* name() const
@@ -323,6 +336,8 @@ protected:
 
 private:
     LayoutObject* m_layoutObject;
+
+    friend class LineLayoutPaintShim;
 };
 
 } // namespace blink

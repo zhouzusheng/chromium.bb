@@ -58,6 +58,7 @@ class WebContentsDelegate;
 struct CustomContextMenuContext;
 struct DropData;
 struct Manifest;
+struct PageImportanceSignals;
 struct RendererPreferences;
 
 // WebContents is the core class in content/. A WebContents renders web content
@@ -249,8 +250,10 @@ class WebContents : public PageNavigator,
   // Create a WebUI page for the given url. In most cases, this doesn't need to
   // be called by embedders since content will create its own WebUI objects as
   // necessary. However if the embedder wants to create its own WebUI object and
-  // keep track of it manually, it can use this.
-  virtual WebUI* CreateWebUI(const GURL& url) = 0;
+  // keep track of it manually, it can use this. |frame_name| is used to
+  // identify the frame and cannot be empty.
+  virtual WebUI* CreateSubframeWebUI(const GURL& url,
+                                     const std::string& frame_name) = 0;
 
   // Returns the committed WebUI if one exists, otherwise the pending one.
   virtual WebUI* GetWebUI() const = 0;
@@ -276,6 +279,8 @@ class WebContents : public PageNavigator,
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) = 0;
 #endif
+
+  virtual const PageImportanceSignals& GetPageImportanceSignals() const = 0;
 
   // Tab navigation state ------------------------------------------------------
 
@@ -638,7 +643,7 @@ class WebContents : public PageNavigator,
   // removed since we can then embed iframes in different processes.
   virtual bool IsSubframe() const = 0;
 
-  // Finds text on a page.
+  // Finds text on a page. |search_text| should not be empty.
   virtual void Find(int request_id,
                     const base::string16& search_text,
                     const blink::WebFindOptions& options) = 0;

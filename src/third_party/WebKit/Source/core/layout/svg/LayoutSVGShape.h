@@ -70,6 +70,7 @@ public:
         ASSERT(m_path);
         return *m_path;
     }
+    bool hasPath() const { return m_path.get(); }
 
     virtual bool isShapeEmpty() const { return path().isEmpty(); }
 
@@ -83,7 +84,6 @@ public:
     float strokeWidth() const;
 
     virtual ShapeGeometryCodePath geometryCodePath() const { return PathGeometry; }
-    virtual const Vector<FloatPoint>* zeroLengthLineCaps() const { return nullptr; }
 
     FloatRect objectBoundingBox() const final { return m_fillBoundingBox; }
 
@@ -91,12 +91,9 @@ public:
 
 protected:
     void clearPath() { m_path.clear(); }
+    void createPath();
 
-    // Reconstruct the Path. Subclasses may use geometry knowledge to avoid creating a Path.
     virtual void updateShapeFromElement();
-
-    virtual void updateStrokeAndFillBoundingBoxes();
-
     // Calculates an inclusive bounding box of this shape as if this shape has
     // a stroke. If this shape has a stroke, then m_strokeBoundingBox is returned;
     // otherwise, estimates a bounding box (not necessarily tight) that would
@@ -120,13 +117,14 @@ private:
 
     bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGShape || LayoutSVGModelObject::isOfType(type); }
     void layout() final;
-    void paint(const PaintInfo&, const LayoutPoint&) final;
-    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const final;
+    void paint(const PaintInfo&, const LayoutPoint&) const final;
+    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const final;
 
     bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) final;
 
     FloatRect strokeBoundingBox() const final { return m_strokeBoundingBox; }
-
+    FloatRect calculateObjectBoundingBox() const;
+    FloatRect calculateStrokeBoundingBox() const;
     void updatePaintInvalidationBoundingBox();
     void updateLocalTransform();
 

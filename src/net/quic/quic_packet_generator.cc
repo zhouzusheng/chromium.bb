@@ -369,11 +369,11 @@ void QuicPacketGenerator::OnFecTimeout() {
 }
 
 QuicTime::Delta QuicPacketGenerator::GetFecTimeout(
-    QuicPacketSequenceNumber sequence_number) {
-  // Do not set up FEC alarm for |sequence_number| it is not the first packet in
+    QuicPacketNumber packet_number) {
+  // Do not set up FEC alarm for |packet_number| it is not the first packet in
   // the current group.
   if (packet_creator_.IsFecGroupOpen() &&
-      (sequence_number == packet_creator_.fec_group_number())) {
+      (packet_number == packet_creator_.fec_group_number())) {
     return QuicTime::Delta::Max(
         fec_timeout_, QuicTime::Delta::FromMilliseconds(kMinFecTimeoutMs));
   }
@@ -454,7 +454,12 @@ bool QuicPacketGenerator::AddFrame(const QuicFrame& frame,
 }
 
 void QuicPacketGenerator::SerializeAndSendPacket() {
-  char buffer[kMaxPacketSize];
+  // The optimized encryption algorithm implementations run faster when
+  // operating on aligned memory.
+  //
+  // TODO(rtenneti): Change the default 64 alignas value (used the default
+  // value from CACHELINE_SIZE).
+  ALIGNAS(64) char buffer[kMaxPacketSize];
   SerializedPacket serialized_packet =
       packet_creator_.SerializePacket(buffer, kMaxPacketSize);
   if (serialized_packet.packet == nullptr) {
@@ -486,8 +491,8 @@ void QuicPacketGenerator::StopSendingVersion() {
   packet_creator_.StopSendingVersion();
 }
 
-QuicPacketSequenceNumber QuicPacketGenerator::sequence_number() const {
-  return packet_creator_.sequence_number();
+QuicPacketNumber QuicPacketGenerator::packet_number() const {
+  return packet_creator_.packet_number();
 }
 
 QuicByteCount QuicPacketGenerator::GetMaxPacketLength() const {
@@ -521,7 +526,7 @@ QuicEncryptedPacket* QuicPacketGenerator::SerializeVersionNegotiationPacket(
 
 SerializedPacket QuicPacketGenerator::ReserializeAllFrames(
     const RetransmittableFrames& frames,
-    QuicSequenceNumberLength original_length,
+    QuicPacketNumberLength original_length,
     char* buffer,
     size_t buffer_len) {
   return packet_creator_.ReserializeAllFrames(frames, original_length, buffer,
@@ -529,10 +534,10 @@ SerializedPacket QuicPacketGenerator::ReserializeAllFrames(
 }
 
 void QuicPacketGenerator::UpdateSequenceNumberLength(
-      QuicPacketSequenceNumber least_packet_awaited_by_peer,
-      QuicPacketCount max_packets_in_flight) {
-  return packet_creator_.UpdateSequenceNumberLength(
-      least_packet_awaited_by_peer, max_packets_in_flight);
+    QuicPacketNumber least_packet_awaited_by_peer,
+    QuicPacketCount max_packets_in_flight) {
+  return packet_creator_.UpdatePacketNumberLength(least_packet_awaited_by_peer,
+                                                  max_packets_in_flight);
 }
 
 void QuicPacketGenerator::SetConnectionIdLength(uint32 length) {

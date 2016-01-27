@@ -12,7 +12,6 @@
 #include "GrCaps.h"
 #include "GrClip.h"
 #include "GrGpuResourceRef.h"
-#include "GrStagedProcessor.h"
 #include "GrProcOptInfo.h"
 #include "GrProcessorDataManager.h"
 #include "GrRenderTarget.h"
@@ -29,14 +28,9 @@ class GrCaps;
 class GrPaint;
 class GrTexture;
 
-class GrPipelineBuilder {
+class GrPipelineBuilder : public SkNoncopyable {
 public:
     GrPipelineBuilder();
-
-    GrPipelineBuilder(const GrPipelineBuilder& pipelineBuilder) {
-        SkDEBUGCODE(fBlockEffectRemovalCnt = 0;)
-        *this = pipelineBuilder;
-    }
 
     /**
      * Initializes the GrPipelineBuilder based on a GrPaint, render target, and clip. Note
@@ -58,53 +52,56 @@ public:
     /// feed their output to the GrXferProcessor which controls blending.
     ////
 
-    int numColorFragmentStages() const { return fColorStages.count(); }
-    int numCoverageFragmentStages() const { return fCoverageStages.count(); }
-    int numFragmentStages() const { return this->numColorFragmentStages() +
-                                               this->numCoverageFragmentStages(); }
+    int numColorFragmentProcessors() const { return fColorFragmentProcessors.count(); }
+    int numCoverageFragmentProcessors() const { return fCoverageFragmentProcessors.count(); }
+    int numFragmentProcessors() const { return this->numColorFragmentProcessors() +
+                                               this->numCoverageFragmentProcessors(); }
 
-    const GrFragmentStage& getColorFragmentStage(int idx) const { return fColorStages[idx]; }
-    const GrFragmentStage& getCoverageFragmentStage(int idx) const { return fCoverageStages[idx]; }
-
-    const GrFragmentProcessor* addColorProcessor(const GrFragmentProcessor* effect) {
-        SkASSERT(effect);
-        SkNEW_APPEND_TO_TARRAY(&fColorStages, GrFragmentStage, (effect));
-        fColorProcInfoValid = false;
-        return effect;
+    const GrFragmentProcessor* getColorFragmentProcessor(int idx) const {
+        return fColorFragmentProcessors[idx];
+    }
+    const GrFragmentProcessor* getCoverageFragmentProcessor(int idx) const {
+        return fCoverageFragmentProcessors[idx];
     }
 
-    const GrFragmentProcessor* addCoverageProcessor(const GrFragmentProcessor* effect) {
-        SkASSERT(effect);
-        SkNEW_APPEND_TO_TARRAY(&fCoverageStages, GrFragmentStage, (effect));
-        fCoverageProcInfoValid = false;
-        return effect;
+    const GrFragmentProcessor* addColorFragmentProcessor(const GrFragmentProcessor* processor) {
+        SkASSERT(processor);
+        fColorFragmentProcessors.push_back(SkRef(processor));
+        return processor;
+    }
+
+    const GrFragmentProcessor* addCoverageFragmentProcessor(const GrFragmentProcessor* processor) {
+        SkASSERT(processor);
+        fCoverageFragmentProcessors.push_back(SkRef(processor));
+        return processor;
     }
 
     /**
      * Creates a GrSimpleTextureEffect that uses local coords as texture coordinates.
      */
     void addColorTextureProcessor(GrTexture* texture, const SkMatrix& matrix) {
-        this->addColorProcessor(GrSimpleTextureEffect::Create(fProcDataManager, texture,
-                                                              matrix))->unref();
+        this->addColorFragmentProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
+                                                                      matrix))->unref();
     }
 
     void addCoverageTextureProcessor(GrTexture* texture, const SkMatrix& matrix) {
-        this->addCoverageProcessor(GrSimpleTextureEffect::Create(fProcDataManager, texture,
-                                                                 matrix))->unref();
+        this->addCoverageFragmentProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
+                                                                         matrix))->unref();
     }
 
     void addColorTextureProcessor(GrTexture* texture,
                                   const SkMatrix& matrix,
                                   const GrTextureParams& params) {
-        this->addColorProcessor(GrSimpleTextureEffect::Create(fProcDataManager, texture, matrix,
-                                                              params))->unref();
+        this->addColorFragmentProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
+                                                                      matrix,
+                                                                      params))->unref();
     }
 
     void addCoverageTextureProcessor(GrTexture* texture,
                                      const SkMatrix& matrix,
                                      const GrTextureParams& params) {
-        this->addCoverageProcessor(GrSimpleTextureEffect::Create(fProcDataManager, texture, matrix,
-                                                                 params))->unref();
+        this->addCoverageFragmentProcessor(GrSimpleTextureEffect::Create(&fProcDataManager, texture,
+                                                                         matrix, params))->unref();
     }
 
     /**
@@ -117,20 +114,18 @@ public:
     class AutoRestoreFragmentProcessorState : public ::SkNoncopyable {
     public:
         AutoRestoreFragmentProcessorState() 
-            : fPipelineBuilder(NULL)
+            : fPipelineBuilder(nullptr)
             , fColorEffectCnt(0)
-            , fCoverageEffectCnt(0)
-            , fSaveMarker(0) {}
+            , fCoverageEffectCnt(0) {}
 
         AutoRestoreFragmentProcessorState(const GrPipelineBuilder& ds)
-            : fPipelineBuilder(NULL)
+            : fPipelineBuilder(nullptr)
             , fColorEffectCnt(0)
-            , fCoverageEffectCnt(0)
-            , fSaveMarker(0) {
+            , fCoverageEffectCnt(0) {
             this->set(&ds);
         }
 
-        ~AutoRestoreFragmentProcessorState() { this->set(NULL); }
+        ~AutoRestoreFragmentProcessorState() { this->set(nullptr); }
 
         void set(const GrPipelineBuilder* ds);
 
@@ -141,9 +136,9 @@ public:
             return fPipelineBuilder->getProcessorDataManager();
         }
 
-        const GrFragmentProcessor* addCoverageProcessor(const GrFragmentProcessor* processor) {
+        const GrFragmentProcessor* addCoverageFragmentProcessor(const GrFragmentProcessor* processor) {
             SkASSERT(this->isSet());
-            return fPipelineBuilder->addCoverageProcessor(processor);
+            return fPipelineBuilder->addCoverageFragmentProcessor(processor);
         }
 
     private:
@@ -151,7 +146,6 @@ public:
         GrPipelineBuilder*    fPipelineBuilder;
         int                   fColorEffectCnt;
         int                   fCoverageEffectCnt;
-        uint32_t              fSaveMarker;
     };
 
     /// @}
@@ -260,11 +254,11 @@ public:
      */
     class AutoRestoreStencil : public ::SkNoncopyable {
     public:
-        AutoRestoreStencil() : fPipelineBuilder(NULL) {}
+        AutoRestoreStencil() : fPipelineBuilder(nullptr) {}
 
-        AutoRestoreStencil(const GrPipelineBuilder& ds) : fPipelineBuilder(NULL) { this->set(&ds); }
+        AutoRestoreStencil(const GrPipelineBuilder& ds) : fPipelineBuilder(nullptr) { this->set(&ds); }
 
-        ~AutoRestoreStencil() { this->set(NULL); }
+        ~AutoRestoreStencil() { this->set(nullptr); }
 
         void set(const GrPipelineBuilder* ds) {
             if (fPipelineBuilder) {
@@ -302,25 +296,20 @@ public:
      */
     enum Flags {
         /**
-         * Perform dithering. TODO: Re-evaluate whether we need this bit
-         */
-        kDither_Flag        = 0x01,
-        /**
          * Perform HW anti-aliasing. This means either HW FSAA, if supported by the render target,
          * or smooth-line rendering if a line primitive is drawn and line smoothing is supported by
          * the 3D API.
          */
-        kHWAntialias_Flag   = 0x02,
+        kHWAntialias_Flag   = 0x01,
 
         /**
          * Modifies the vertex shader so that vertices will be positioned at pixel centers.
          */
-        kSnapVerticesToPixelCenters_Flag = 0x04,
+        kSnapVerticesToPixelCenters_Flag = 0x02,
 
         kLast_Flag = kSnapVerticesToPixelCenters_Flag,
     };
 
-    bool isDither() const { return SkToBool(fFlags & kDither_Flag); }
     bool isHWAntialias() const { return SkToBool(fFlags & kHWAntialias_Flag); }
     bool snapVerticesToPixelCenters() const {
         return SkToBool(fFlags & kSnapVerticesToPixelCenters_Flag); }
@@ -387,19 +376,6 @@ public:
 
     ///////////////////////////////////////////////////////////////////////////
 
-    GrPipelineBuilder& operator=(const GrPipelineBuilder& that);
-
-    // TODO delete when we have Batch
-    const GrProcOptInfo& colorProcInfo(const GrPrimitiveProcessor* pp) const {
-        this->calcColorInvariantOutput(pp);
-        return fColorProcInfo;
-    }
-
-    const GrProcOptInfo& coverageProcInfo(const GrPrimitiveProcessor* pp) const {
-        this->calcCoverageInvariantOutput(pp);
-        return fCoverageProcInfo;
-    }
-
     const GrProcOptInfo& colorProcInfo(const GrDrawBatch* batch) const {
         this->calcColorInvariantOutput(batch);
         return fColorProcInfo;
@@ -413,8 +389,8 @@ public:
     void setClip(const GrClip& clip) { fClip = clip; }
     const GrClip& clip() const { return fClip; }
 
-    GrProcessorDataManager* getProcessorDataManager() { return fProcDataManager.get(); }
-    const GrProcessorDataManager* processorDataManager() const { return fProcDataManager.get(); }
+    GrProcessorDataManager* getProcessorDataManager() { return &fProcDataManager; }
+    const GrProcessorDataManager* processorDataManager() const { return &fProcDataManager; }
 
 private:
     // Calculating invariant color / coverage information is expensive, so we partially cache the
@@ -425,52 +401,29 @@ private:
     // GrOptDrawState constructor - never caches results
 
     /**
-     * Primproc variants of the calc functions
-     * TODO remove these when batch is everywhere
-     */
-    void calcColorInvariantOutput(const GrPrimitiveProcessor*) const;
-    void calcCoverageInvariantOutput(const GrPrimitiveProcessor*) const;
-
-    /**
      * GrBatch provides the initial seed for these loops based off of its initial geometry data
      */
     void calcColorInvariantOutput(const GrDrawBatch*) const;
     void calcCoverageInvariantOutput(const GrDrawBatch*) const;
 
-    /**
-     * If fColorProcInfoValid is false, function calculates the invariant output for the color
-     * processors and results are stored in fColorProcInfo.
-     */
-    void calcColorInvariantOutput(GrColor) const;
-
-    /**
-     * If fCoverageProcInfoValid is false, function calculates the invariant output for the coverage
-     * processors and results are stored in fCoverageProcInfo.
-     */
-    void calcCoverageInvariantOutput(GrColor) const;
-
     // Some of the auto restore objects assume that no effects are removed during their lifetime.
     // This is used to assert that this condition holds.
     SkDEBUGCODE(mutable int fBlockEffectRemovalCnt;)
 
-    typedef SkSTArray<4, GrFragmentStage> FragmentStageArray;
+    typedef SkSTArray<4, const GrFragmentProcessor*, true> FragmentProcessorArray;
 
-    SkAutoTUnref<GrProcessorDataManager>    fProcDataManager;
+    GrProcessorDataManager                  fProcDataManager;
     SkAutoTUnref<GrRenderTarget>            fRenderTarget;
     uint32_t                                fFlags;
     GrStencilSettings                       fStencilSettings;
     DrawFace                                fDrawFace;
     mutable SkAutoTUnref<const GrXPFactory> fXPFactory;
-    FragmentStageArray                      fColorStages;
-    FragmentStageArray                      fCoverageStages;
+    FragmentProcessorArray                  fColorFragmentProcessors;
+    FragmentProcessorArray                  fCoverageFragmentProcessors;
     GrClip                                  fClip;
 
     mutable GrProcOptInfo fColorProcInfo;
     mutable GrProcOptInfo fCoverageProcInfo;
-    mutable bool fColorProcInfoValid;
-    mutable bool fCoverageProcInfoValid;
-    mutable GrColor fColorCache;
-    mutable GrColor fCoverageCache;
 
     friend class GrPipeline;
 };

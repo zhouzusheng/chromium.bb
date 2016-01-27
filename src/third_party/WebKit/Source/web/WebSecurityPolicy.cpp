@@ -81,6 +81,11 @@ void WebSecurityPolicy::registerURLSchemeAsAllowingServiceWorkers(const WebStrin
     SchemeRegistry::registerURLSchemeAsAllowingServiceWorkers(scheme);
 }
 
+void WebSecurityPolicy::registerURLSchemeAsSupportingFetchAPI(const WebString& scheme)
+{
+    SchemeRegistry::registerURLSchemeAsSupportingFetchAPI(scheme);
+}
+
 void WebSecurityPolicy::registerURLSchemeAsBypassingContentSecurityPolicy(const WebString& scheme)
 {
     SchemeRegistry::registerURLSchemeAsBypassingContentSecurityPolicy(scheme);
@@ -131,6 +136,11 @@ void WebSecurityPolicy::resetOriginAccessWhitelists()
 void WebSecurityPolicy::addOriginTrustworthyWhiteList(const WebSecurityOrigin& origin)
 {
     SecurityPolicy::addOriginTrustworthyWhiteList(origin);
+}
+
+void WebSecurityPolicy::addSchemeToBypassSecureContextWhitelist(const WebString& scheme)
+{
+    SchemeRegistry::registerURLSchemeBypassingSecureContextCheck(scheme);
 }
 
 WebString WebSecurityPolicy::generateReferrerHeader(WebReferrerPolicy referrerPolicy, const WebURL& url, const WebString& referrer)

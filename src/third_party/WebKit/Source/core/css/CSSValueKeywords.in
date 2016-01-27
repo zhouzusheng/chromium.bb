@@ -828,12 +828,6 @@ sideways-right
 upright
 vertical-right
 
-// -webkit-line-box-contain
-font
-glyphs
-inline-box
-replaced
-
 // -webkit-font-feature-settings
 on
 off

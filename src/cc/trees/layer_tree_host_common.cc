@@ -12,6 +12,7 @@
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/layer_iterator.h"
+#include "cc/layers/render_surface_draw_properties.h"
 #include "cc/layers/render_surface_impl.h"
 #include "cc/trees/draw_property_utils.h"
 #include "cc/trees/layer_tree_host.h"
@@ -270,8 +271,9 @@ static gfx::Rect TranslateRectToTargetSpace(const LayerImpl& ancestor_layer,
       ComputeChangeOfBasisTranslation(ancestor_layer, descendant_layer);
   if (direction == TRANSLATE_RECT_DIRECTION_TO_DESCENDANT)
     translation.Scale(-1.f);
+  gfx::RectF rect_f = gfx::RectF(rect);
   return gfx::ToEnclosingRect(
-      gfx::RectF(rect.origin() + translation, rect.size()));
+      gfx::RectF(rect_f.origin() + translation, rect_f.size()));
 }
 
 // Attempts to update the clip rects for the given layer. If the layer has a
@@ -416,8 +418,8 @@ void UpdateAccumulatedSurfaceState(
     DCHECK_IMPLIES(current_target->num_unclipped_descendants(),
                    current_draw_transform.IsIdentityOrTranslation());
 
-    target_rect = gfx::ToEnclosingRect(
-        MathUtil::MapClippedRect(current_draw_transform, target_rect));
+    target_rect =
+        MathUtil::MapEnclosingClippedRect(current_draw_transform, target_rect);
   }
 
   // It is an error to not reach |render_target|. If this happens, it means that
@@ -567,12 +569,12 @@ static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
 
   // When we need to do a readback/copy of a layer's output, we can not skip
   // it or any of its ancestors.
-  if (layer->draw_properties().layer_or_descendant_has_copy_request)
+  if (layer->num_layer_or_descendants_with_copy_request() > 0)
     return false;
 
   // We cannot skip the the subtree if a descendant has a wheel or touch handler
   // or the hit testing code will break (it requires fresh transforms, etc).
-  if (layer->draw_properties().layer_or_descendant_has_input_handler)
+  if (layer->layer_or_descendant_has_input_handler())
     return false;
 
   // If the layer is not drawn, then skip it and its subtree.
@@ -1177,7 +1179,6 @@ static void PreCalculateMetaInformationInternal(
   }
 
   layer->set_sorted_for_recursion(false);
-  layer->draw_properties().has_child_with_a_scroll_parent = false;
   layer->set_layer_or_descendant_is_drawn(false);
   layer->set_visited(false);
 
@@ -1190,18 +1191,11 @@ static void PreCalculateMetaInformationInternal(
   if (layer->clip_parent())
     recursive_data->num_unclipped_descendants++;
 
-  layer->set_num_children_with_scroll_parent(0);
   for (size_t i = 0; i < layer->children().size(); ++i) {
     Layer* child_layer = layer->child_at(i);
 
     PreCalculateMetaInformationRecursiveData data_for_child;
     PreCalculateMetaInformationInternal(child_layer, &data_for_child);
-
-    if (child_layer->scroll_parent()) {
-      layer->draw_properties().has_child_with_a_scroll_parent = true;
-      layer->set_num_children_with_scroll_parent(
-          layer->num_children_with_scroll_parent() + 1);
-    }
     recursive_data->Merge(data_for_child);
   }
 
@@ -1218,13 +1212,9 @@ static void PreCalculateMetaInformationInternal(
       layer->have_wheel_event_handlers())
     recursive_data->num_layer_or_descendants_with_input_handler++;
 
-  layer->draw_properties().num_unclipped_descendants =
-      recursive_data->num_unclipped_descendants;
-  layer->draw_properties().layer_or_descendant_has_copy_request =
-      (recursive_data->num_layer_or_descendants_with_copy_request != 0);
-  layer->draw_properties().layer_or_descendant_has_input_handler =
-      (recursive_data->num_layer_or_descendants_with_input_handler != 0);
-  layer->set_num_layer_or_descandant_with_copy_request(
+  layer->set_num_unclipped_descendants(
+      recursive_data->num_unclipped_descendants);
+  layer->set_num_layer_or_descendant_with_copy_request(
       recursive_data->num_layer_or_descendants_with_copy_request);
 
   if (IsRootLayer(layer))
@@ -1276,10 +1266,12 @@ static void PreCalculateMetaInformationInternal(
 
   layer->draw_properties().num_unclipped_descendants =
       recursive_data->num_unclipped_descendants;
-  layer->draw_properties().layer_or_descendant_has_copy_request =
-      (recursive_data->num_layer_or_descendants_with_copy_request != 0);
-  layer->draw_properties().layer_or_descendant_has_input_handler =
-      (recursive_data->num_layer_or_descendants_with_input_handler != 0);
+  layer->set_layer_or_descendant_has_input_handler(
+      (recursive_data->num_layer_or_descendants_with_input_handler != 0));
+  // TODO(enne): this should be synced from the main thread, so is only
+  // for tests constructing layers on the compositor thread.
+  layer->set_num_layer_or_descendant_with_copy_request(
+      recursive_data->num_layer_or_descendants_with_copy_request);
 }
 
 void LayerTreeHostCommon::PreCalculateMetaInformation(Layer* root_layer) {
@@ -1355,7 +1347,6 @@ struct DataForRecursion {
 
   bool ancestor_is_animating_scale;
   bool ancestor_clips_subtree;
-  RenderSurfaceImpl* nearest_occlusion_immune_ancestor_surface;
   bool in_subtree_of_page_scale_layer;
   bool subtree_can_use_lcd_text;
   bool subtree_is_visible_from_ancestor;
@@ -1564,8 +1555,6 @@ static void CalculateDrawPropertiesInternal(
   layer->set_visited(visited);
 
   DataForRecursion data_for_children;
-  RenderSurfaceImpl* nearest_occlusion_immune_ancestor_surface =
-      data_from_ancestor.nearest_occlusion_immune_ancestor_surface;
   data_for_children.in_subtree_of_page_scale_layer =
       data_from_ancestor.in_subtree_of_page_scale_layer;
   data_for_children.subtree_can_use_lcd_text =
@@ -1603,7 +1592,7 @@ static void CalculateDrawPropertiesInternal(
   // layer that actually get computed. To avoid unnecessary copies
   // (particularly for matrices), we do computations directly on these values
   // when possible.
-  DrawProperties<LayerImpl>& layer_draw_properties = layer->draw_properties();
+  DrawProperties& layer_draw_properties = layer->draw_properties();
 
   gfx::Rect clip_rect_in_target_space;
   bool layer_or_ancestor_clips_descendants = false;
@@ -1828,7 +1817,7 @@ static void CalculateDrawPropertiesInternal(
     data_for_children.full_hierarchy_matrix.FlattenTo2d();
 
     if (layer->mask_layer()) {
-      DrawProperties<LayerImpl>& mask_layer_draw_properties =
+      DrawProperties& mask_layer_draw_properties =
           layer->mask_layer()->draw_properties();
       mask_layer_draw_properties.visible_layer_rect =
           gfx::Rect(layer->bounds());
@@ -1842,7 +1831,7 @@ static void CalculateDrawPropertiesInternal(
     }
 
     if (layer->replica_layer() && layer->replica_layer()->mask_layer()) {
-      DrawProperties<LayerImpl>& replica_mask_draw_properties =
+      DrawProperties& replica_mask_draw_properties =
           layer->replica_layer()->mask_layer()->draw_properties();
       replica_mask_draw_properties.visible_layer_rect =
           gfx::Rect(layer->bounds());
@@ -1850,42 +1839,29 @@ static void CalculateDrawPropertiesInternal(
           layer_draw_properties.target_space_transform;
     }
 
-    // Ignore occlusion from outside the surface when surface contents need to
-    // be fully drawn. Layers with copy-request need to be complete.
-    // We could be smarter about layers with replica and exclude regions
-    // where both layer and the replica are occluded, but this seems like an
-    // overkill. The same is true for layers with filters that move pixels.
-    // TODO(senorblanco): make this smarter for the SkImageFilter case (check
-    // for pixel-moving filters)
-    if (layer->HasCopyRequest() ||
-        layer->has_replica() ||
-        layer->filters().HasReferenceFilter() ||
-        layer->filters().HasFilterThatMovesPixels()) {
-      nearest_occlusion_immune_ancestor_surface = render_surface;
-    }
-    render_surface->SetNearestOcclusionImmuneAncestor(
-        nearest_occlusion_immune_ancestor_surface);
-
     layer_or_ancestor_clips_descendants = false;
     bool subtree_is_clipped_by_surface_bounds = false;
-    if (ancestor_clips_subtree) {
-      // It may be the layer or the surface doing the clipping of the subtree,
-      // but in either case, we'll be clipping to the projected clip rect of our
-      // ancestor.
-      gfx::Transform inverse_surface_draw_transform(
-          gfx::Transform::kSkipInitialization);
-      if (!render_surface->draw_transform().GetInverse(
-              &inverse_surface_draw_transform)) {
-        // TODO(shawnsingh): Either we need to handle uninvertible transforms
-        // here, or DCHECK that the transform is invertible.
-      }
+    // It may be the layer or the surface doing the clipping of the subtree,
+    // but in either case, we'll be clipping to the projected clip rect of our
+    // ancestor.
+    gfx::Transform inverse_surface_draw_transform(
+        gfx::Transform::kSkipInitialization);
+    if (!render_surface->draw_transform().GetInverse(
+            &inverse_surface_draw_transform)) {
+      // TODO(shawnsingh): Either we need to handle uninvertible transforms
+      // here, or DCHECK that the transform is invertible.
+    }
 
-      gfx::Rect surface_clip_rect_in_target_space = gfx::IntersectRects(
-          data_from_ancestor.clip_rect_of_target_surface_in_target_space,
+    gfx::Rect surface_clip_rect_in_target_space =
+        data_from_ancestor.clip_rect_of_target_surface_in_target_space;
+    if (ancestor_clips_subtree)
+      surface_clip_rect_in_target_space.Intersect(
           ancestor_clip_rect_in_target_space);
-      gfx::Rect projected_surface_rect = MathUtil::ProjectEnclosingClippedRect(
-          inverse_surface_draw_transform, surface_clip_rect_in_target_space);
+    gfx::Rect projected_surface_rect = MathUtil::ProjectEnclosingClippedRect(
+        inverse_surface_draw_transform, surface_clip_rect_in_target_space);
+    clip_rect_of_target_surface_in_target_space = projected_surface_rect;
 
+    if (ancestor_clips_subtree) {
       if (layer_draw_properties.num_unclipped_descendants > 0u) {
         // If we have unclipped descendants, we cannot count on the render
         // surface's bounds clipping our subtree: the unclipped descendants
@@ -1904,7 +1880,6 @@ static void CalculateDrawPropertiesInternal(
         // expressed in the space where this surface draws, i.e. the same space
         // as clip_rect_from_ancestor_in_ancestor_target_space.
         render_surface->SetClipRect(ancestor_clip_rect_in_target_space);
-        clip_rect_of_target_surface_in_target_space = projected_surface_rect;
         subtree_is_clipped_by_surface_bounds = true;
       }
     }
@@ -1918,8 +1893,6 @@ static void CalculateDrawPropertiesInternal(
     render_surface->SetIsClipped(subtree_is_clipped_by_surface_bounds);
     if (!subtree_is_clipped_by_surface_bounds) {
       render_surface->SetClipRect(gfx::Rect());
-      clip_rect_of_target_surface_in_target_space =
-          data_from_ancestor.clip_rect_of_target_surface_in_target_space;
     }
 
     // If the new render surface is drawn translucent or with a non-integral
@@ -1976,7 +1949,7 @@ static void CalculateDrawPropertiesInternal(
   // reduce how much would be drawn, and instead it would create unnecessary
   // changes to scissor state affecting GPU performance. Our clip information
   // is used in the recursion below, so we must set it beforehand.
-  DCHECK_EQ(layer_or_ancestor_clips_descendants, layer->is_clipped());
+  layer_draw_properties.is_clipped = layer_or_ancestor_clips_descendants;
   if (layer_or_ancestor_clips_descendants) {
     layer_draw_properties.clip_rect = clip_rect_in_target_space;
   } else {
@@ -2010,8 +1983,6 @@ static void CalculateDrawPropertiesInternal(
         clip_rect_of_target_surface_in_target_space;
     data_for_children.ancestor_clips_subtree =
         layer_or_ancestor_clips_descendants;
-    data_for_children.nearest_occlusion_immune_ancestor_surface =
-        nearest_occlusion_immune_ancestor_surface;
     data_for_children.subtree_is_visible_from_ancestor = layer_is_drawn;
   }
 
@@ -2212,7 +2183,6 @@ static void ProcessCalcDrawPropsInputs(
   data_for_recursion->starting_animation_contents_scale = 0.f;
   data_for_recursion->ancestor_is_animating_scale = false;
   data_for_recursion->ancestor_clips_subtree = true;
-  data_for_recursion->nearest_occlusion_immune_ancestor_surface = NULL;
   data_for_recursion->in_subtree_of_page_scale_layer = false;
   data_for_recursion->subtree_can_use_lcd_text = inputs.can_use_lcd_text;
   data_for_recursion->subtree_is_visible_from_ancestor = true;
@@ -2232,15 +2202,10 @@ void LayerTreeHostCommon::UpdateRenderSurface(
     // will now be relative to this RenderSurface.
     transform->MakeIdentity();
     *draw_transform_is_axis_aligned = true;
-    if (!layer->render_surface()) {
-      layer->CreateRenderSurface();
-    }
     layer->SetHasRenderSurface(true);
     return;
   }
   layer->SetHasRenderSurface(false);
-  if (layer->render_surface())
-    layer->ClearRenderSurface();
 }
 
 void LayerTreeHostCommon::UpdateRenderSurfaces(
@@ -2263,13 +2228,7 @@ void LayerTreeHostCommon::UpdateRenderSurfaces(
 
 static bool ApproximatelyEqual(const gfx::Rect& r1, const gfx::Rect& r2) {
   // TODO(vollick): This tolerance should be lower: crbug.com/471786
-  static const int tolerance = 3;
-
-  if (r1.IsEmpty())
-    return std::min(r2.width(), r2.height()) < tolerance;
-
-  if (r2.IsEmpty())
-    return std::min(r1.width(), r1.height()) < tolerance;
+  static const int tolerance = 1;
 
   return std::abs(r1.x() - r2.x()) <= tolerance &&
          std::abs(r1.y() - r2.y()) <= tolerance &&
@@ -2301,115 +2260,106 @@ static bool ApproximatelyEqual(const gfx::Transform& a,
 
 void VerifyPropertyTreeValuesForSurface(RenderSurfaceImpl* render_surface,
                                         PropertyTrees* property_trees) {
-  const bool render_surface_draw_transforms_match =
-      ApproximatelyEqual(render_surface->draw_transform(),
-                         DrawTransformOfRenderSurfaceFromPropertyTrees(
-                             render_surface, property_trees->transform_tree));
+  RenderSurfaceDrawProperties draw_properties;
+  ComputeSurfaceDrawPropertiesUsingPropertyTrees(render_surface, property_trees,
+                                                 &draw_properties);
+
+  // content_rect has to be computed recursively, so is computed separately from
+  // other draw properties.
+  draw_properties.content_rect =
+      render_surface->content_rect_from_property_trees();
+
+  const bool render_surface_draw_transforms_match = ApproximatelyEqual(
+      render_surface->draw_transform(), draw_properties.draw_transform);
   CHECK(render_surface_draw_transforms_match)
       << "expected: " << render_surface->draw_transform().ToString()
-      << " actual: "
-      << DrawTransformOfRenderSurfaceFromPropertyTrees(
-             render_surface, property_trees->transform_tree)
-             .ToString();
+      << " actual: " << draw_properties.draw_transform.ToString();
 
   const bool render_surface_screen_space_transform_match =
       ApproximatelyEqual(render_surface->screen_space_transform(),
-                         ScreenSpaceTransformOfRenderSurfaceFromPropertyTrees(
-                             render_surface, property_trees->transform_tree));
+                         draw_properties.screen_space_transform);
   CHECK(render_surface_screen_space_transform_match)
       << "expected: " << render_surface->screen_space_transform().ToString()
+      << " actual: " << draw_properties.screen_space_transform.ToString();
+
+  const bool render_surface_replica_draw_transforms_match =
+      ApproximatelyEqual(render_surface->replica_draw_transform(),
+                         draw_properties.replica_draw_transform);
+  CHECK(render_surface_replica_draw_transforms_match)
+      << "expected: " << render_surface->replica_draw_transform().ToString()
+      << " actual: " << draw_properties.replica_draw_transform.ToString();
+
+  const bool render_surface_replica_screen_space_transforms_match =
+      ApproximatelyEqual(render_surface->replica_screen_space_transform(),
+                         draw_properties.replica_screen_space_transform);
+  CHECK(render_surface_replica_screen_space_transforms_match)
+      << "expected: "
+      << render_surface->replica_screen_space_transform().ToString()
       << " actual: "
-      << ScreenSpaceTransformOfRenderSurfaceFromPropertyTrees(
-             render_surface, property_trees->transform_tree)
-             .ToString();
+      << draw_properties.replica_screen_space_transform.ToString();
 
-  CHECK_EQ(render_surface->is_clipped(),
-           RenderSurfaceIsClippedFromPropertyTrees(render_surface,
-                                                   property_trees->clip_tree));
+  CHECK_EQ(render_surface->is_clipped(), draw_properties.is_clipped);
 
-  const bool render_surface_clip_rects_match =
-      ApproximatelyEqual(render_surface->clip_rect(),
-                         ClipRectOfRenderSurfaceFromPropertyTrees(
-                             render_surface, property_trees->clip_tree));
+  const bool render_surface_clip_rects_match = ApproximatelyEqual(
+      render_surface->clip_rect(), draw_properties.clip_rect);
   CHECK(render_surface_clip_rects_match)
-      << "expected: " << render_surface->clip_rect().ToString() << " actual: "
-      << ClipRectOfRenderSurfaceFromPropertyTrees(render_surface,
-                                                  property_trees->clip_tree)
-             .ToString();
+      << "expected: " << render_surface->clip_rect().ToString()
+      << " actual: " << draw_properties.clip_rect.ToString();
 
-  const bool render_surface_content_rects_match =
-      ApproximatelyEqual(render_surface->content_rect(),
-                         render_surface->content_rect_from_property_trees());
+  CHECK_EQ(render_surface->draw_opacity(), draw_properties.draw_opacity);
+
+  const bool render_surface_content_rects_match = ApproximatelyEqual(
+      render_surface->content_rect(), draw_properties.content_rect);
   CHECK(render_surface_content_rects_match)
       << "expected: " << render_surface->content_rect().ToString()
-      << " actual: "
-      << render_surface->content_rect_from_property_trees().ToString();
-
-  CHECK_EQ(render_surface->draw_opacity(),
-           DrawOpacityOfRenderSurfaceFromPropertyTrees(
-               render_surface, property_trees->effect_tree));
+      << " actual: " << draw_properties.content_rect.ToString();
 }
 
 void VerifyPropertyTreeValuesForLayer(LayerImpl* current_layer,
                                       PropertyTrees* property_trees,
                                       bool layers_always_allowed_lcd_text,
                                       bool can_use_lcd_text) {
-  const bool visible_rects_match =
-      ApproximatelyEqual(current_layer->visible_layer_rect(),
-                         current_layer->visible_rect_from_property_trees());
+  DrawProperties draw_properties;
+  ComputeLayerDrawPropertiesUsingPropertyTrees(
+      current_layer, property_trees, layers_always_allowed_lcd_text,
+      can_use_lcd_text, &draw_properties);
+
+  const bool visible_rects_match = ApproximatelyEqual(
+      current_layer->visible_layer_rect(), draw_properties.visible_layer_rect);
   CHECK(visible_rects_match)
       << "expected: " << current_layer->visible_layer_rect().ToString()
-      << " actual: "
-      << current_layer->visible_rect_from_property_trees().ToString();
+      << " actual: " << draw_properties.visible_layer_rect.ToString();
 
-  const bool draw_transforms_match =
-      ApproximatelyEqual(current_layer->draw_transform(),
-                         DrawTransformFromPropertyTrees(
-                             current_layer, property_trees->transform_tree));
+  const bool draw_transforms_match = ApproximatelyEqual(
+      current_layer->draw_transform(), draw_properties.target_space_transform);
   CHECK(draw_transforms_match)
       << "expected: " << current_layer->draw_transform().ToString()
-      << " actual: "
-      << DrawTransformFromPropertyTrees(
-             current_layer, property_trees->transform_tree).ToString();
+      << " actual: " << draw_properties.target_space_transform.ToString();
 
-  const bool draw_opacities_match =
-      current_layer->draw_opacity() ==
-      DrawOpacityFromPropertyTrees(current_layer, property_trees->effect_tree);
-  CHECK(draw_opacities_match)
-      << "expected: " << current_layer->draw_opacity()
-      << " actual: " << DrawOpacityFromPropertyTrees(
-                            current_layer, property_trees->effect_tree);
-
-  const bool can_use_lcd_text_match =
-      CanUseLcdTextFromPropertyTrees(
-          current_layer, layers_always_allowed_lcd_text, can_use_lcd_text,
-          property_trees) == current_layer->can_use_lcd_text();
-  CHECK(can_use_lcd_text_match);
-
+  CHECK_EQ(current_layer->draw_opacity(), draw_properties.opacity);
+  CHECK_EQ(current_layer->can_use_lcd_text(), draw_properties.can_use_lcd_text);
+  CHECK_EQ(current_layer->is_clipped(), draw_properties.is_clipped);
   CHECK_EQ(current_layer->screen_space_transform_is_animating(),
-           ScreenSpaceTransformIsAnimatingFromPropertyTrees(
-               current_layer, property_trees->transform_tree));
+           draw_properties.screen_space_transform_is_animating);
 
   const bool drawable_content_rects_match =
       ApproximatelyEqual(current_layer->drawable_content_rect(),
-                         DrawableContentRectFromPropertyTrees(
-                             current_layer, property_trees->transform_tree));
+                         draw_properties.drawable_content_rect);
   CHECK(drawable_content_rects_match)
       << "expected: " << current_layer->drawable_content_rect().ToString()
-      << " actual: "
-      << DrawableContentRectFromPropertyTrees(current_layer,
-                                              property_trees->transform_tree)
-             .ToString();
+      << " actual: " << draw_properties.drawable_content_rect.ToString();
 
-  const bool clip_rects_match = ApproximatelyEqual(
-      current_layer->clip_rect(),
-      ClipRectFromPropertyTrees(current_layer, property_trees->transform_tree));
+  const bool clip_rects_match =
+      ApproximatelyEqual(current_layer->clip_rect(), draw_properties.clip_rect);
   CHECK(clip_rects_match) << "expected: "
                           << current_layer->clip_rect().ToString()
                           << " actual: "
-                          << ClipRectFromPropertyTrees(
-                                 current_layer, property_trees->transform_tree)
-                                 .ToString();
+                          << draw_properties.clip_rect.ToString();
+
+  CHECK_EQ(current_layer->draw_properties().maximum_animation_contents_scale,
+           draw_properties.maximum_animation_contents_scale);
+  CHECK_EQ(current_layer->draw_properties().starting_animation_contents_scale,
+           draw_properties.starting_animation_contents_scale);
 }
 
 void VerifyPropertyTreeValues(
@@ -2480,6 +2430,7 @@ void CalculateRenderSurfaceLayerListInternal(
     PropertyTrees* property_trees,
     LayerImplList* render_surface_layer_list,
     LayerImplList* descendants,
+    RenderSurfaceImpl* nearest_occlusion_immune_ancestor,
     bool subtree_visible_from_ancestor,
     const bool can_render_to_separate_surface,
     const int current_render_surface_layer_list_id,
@@ -2539,6 +2490,20 @@ void CalculateRenderSurfaceLayerListInternal(
           layer_is_visible);
     }
 
+    // Ignore occlusion from outside the surface when surface contents need to
+    // be fully drawn. Layers with copy-request need to be complete.
+    // We could be smarter about layers with replica and exclude regions
+    // where both layer and the replica are occluded, but this seems like an
+    // overkill. The same is true for layers with filters that move pixels.
+    // TODO(senorblanco): make this smarter for the SkImageFilter case (check
+    // for pixel-moving filters)
+    if (layer->HasCopyRequest() || layer->has_replica() ||
+        layer->filters().HasReferenceFilter() ||
+        layer->filters().HasFilterThatMovesPixels()) {
+      nearest_occlusion_immune_ancestor = layer->render_surface();
+    }
+    layer->render_surface()->SetNearestOcclusionImmuneAncestor(
+        nearest_occlusion_immune_ancestor);
     layer->ClearRenderSurfaceLayerList();
 
     render_surface_layer_list->push_back(layer);
@@ -2563,16 +2528,15 @@ void CalculateRenderSurfaceLayerListInternal(
       if (IsRootLayer(layer)) {
         // The root layer's surface content rect is always the entire viewport.
         gfx::Rect viewport =
-            ViewportRectFromPropertyTrees(property_trees->clip_tree);
+            gfx::ToEnclosingRect(property_trees->clip_tree.ViewportClip());
         layer->render_surface()->SetAccumulatedContentRect(viewport);
       } else {
         // If the owning layer of a render surface draws content, the content
         // rect of the render surface is initialized to the drawable content
         // rect of the layer.
-        gfx::Rect content_rect =
-            layer->DrawsContent() ? DrawableContentRectFromPropertyTrees(
-                                        layer, property_trees->transform_tree)
-                                  : gfx::Rect();
+        gfx::Rect content_rect = layer->DrawsContent()
+                                     ? layer->drawable_content_rect()
+                                     : gfx::Rect();
         layer->render_surface()->SetAccumulatedContentRect(content_rect);
       }
     } else if (!layer_should_be_skipped &&
@@ -2581,8 +2545,7 @@ void CalculateRenderSurfaceLayerListInternal(
       // content rect of the render surface it is drawing into.
       gfx::Rect surface_content_rect =
           layer->render_target()->render_surface()->accumulated_content_rect();
-      surface_content_rect.Union(DrawableContentRectFromPropertyTrees(
-          layer, property_trees->transform_tree));
+      surface_content_rect.Union(layer->drawable_content_rect());
       layer->render_target()->render_surface()->SetAccumulatedContentRect(
           surface_content_rect);
     }
@@ -2591,8 +2554,9 @@ void CalculateRenderSurfaceLayerListInternal(
   for (auto& child_layer : layer->children()) {
     CalculateRenderSurfaceLayerListInternal(
         child_layer, property_trees, render_surface_layer_list, descendants,
-        layer_is_drawn, can_render_to_separate_surface,
-        current_render_surface_layer_list_id, verify_property_trees);
+        nearest_occlusion_immune_ancestor, layer_is_drawn,
+        can_render_to_separate_surface, current_render_surface_layer_list_id,
+        verify_property_trees);
 
     // If the child is its own render target, then it has a render surface.
     if (child_layer->render_target() == child_layer &&
@@ -2620,9 +2584,7 @@ void CalculateRenderSurfaceLayerListInternal(
 
   if (verify_property_trees && render_to_separate_surface &&
       !IsRootLayer(layer)) {
-    if (!layer->replica_layer() &&
-        RenderSurfaceIsClippedFromPropertyTrees(layer->render_surface(),
-                                                property_trees->clip_tree)) {
+    if (!layer->replica_layer() && layer->render_surface()->is_clipped()) {
       // Here, we clip the render surface's content rect with its clip rect.
       // As the clip rect of render surface is in the surface's target space,
       // we first map the content rect into the target space, intersect it with
@@ -2632,11 +2594,8 @@ void CalculateRenderSurfaceLayerListInternal(
 
       if (!surface_content_rect.IsEmpty()) {
         gfx::Rect surface_clip_rect = LayerTreeHostCommon::CalculateVisibleRect(
-            ClipRectOfRenderSurfaceFromPropertyTrees(layer->render_surface(),
-                                                     property_trees->clip_tree),
-            surface_content_rect,
-            DrawTransformOfRenderSurfaceFromPropertyTrees(
-                layer->render_surface(), property_trees->transform_tree));
+            layer->render_surface()->clip_rect(), surface_content_rect,
+            layer->render_surface()->draw_transform());
         surface_content_rect.Intersect(surface_clip_rect);
         layer->render_surface()->SetAccumulatedContentRect(
             surface_content_rect);
@@ -2651,8 +2610,8 @@ void CalculateRenderSurfaceLayerListInternal(
                                           ->render_target()
                                           ->render_surface()
                                           ->accumulated_content_rect();
-      surface_target_rect.Union(DrawableContentRectOfSurfaceFromPropertyTrees(
-          layer->render_surface(), property_trees->transform_tree));
+      surface_target_rect.Union(
+          gfx::ToEnclosedRect(layer->render_surface()->DrawableContentRect()));
       layer->parent()
           ->render_target()
           ->render_surface()
@@ -2694,8 +2653,8 @@ void CalculateRenderSurfaceLayerList(
   const bool subtree_visible_from_ancestor = true;
   CalculateRenderSurfaceLayerListInternal(
       inputs->root_layer, inputs->property_trees,
-      inputs->render_surface_layer_list, nullptr, subtree_visible_from_ancestor,
-      inputs->can_render_to_separate_surface,
+      inputs->render_surface_layer_list, nullptr, nullptr,
+      subtree_visible_from_ancestor, inputs->can_render_to_separate_surface,
       inputs->current_render_surface_layer_list_id,
       inputs->verify_property_trees);
 }

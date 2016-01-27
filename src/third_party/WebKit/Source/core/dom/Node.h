@@ -209,7 +209,7 @@ public:
     Node* firstChild() const;
     Node* lastChild() const;
 
-    void remove(ExceptionState&);
+    void remove(ExceptionState& = ASSERT_NO_EXCEPTION);
 
     Node* pseudoAwareNextSibling() const;
     Node* pseudoAwarePreviousSibling() const;
@@ -384,7 +384,6 @@ public:
     void setNeedsStyleInvalidation();
 
     void updateDistribution();
-    void recalcDistribution();
 
     bool svgFilterNeedsLayerUpdate() const { return getFlag(SVGFilterNeedsLayerUpdateFlag); }
     void setSVGFilterNeedsLayerUpdate() { setFlag(SVGFilterNeedsLayerUpdateFlag); }
@@ -417,8 +416,8 @@ public:
         UserSelectAllDoesNotAffectEditability,
         UserSelectAllIsAlwaysNonEditable
     };
-    bool isContentEditable(UserSelectAllTreatment = UserSelectAllDoesNotAffectEditability);
-    bool isContentRichlyEditable();
+    bool isContentEditable(UserSelectAllTreatment = UserSelectAllDoesNotAffectEditability) const;
+    bool isContentRichlyEditable() const;
 
     bool hasEditableStyle(EditableType editableType = ContentIsEditable, UserSelectAllTreatment treatment = UserSelectAllIsAlwaysNonEditable) const
     {
@@ -446,12 +445,6 @@ public:
 
     virtual LayoutRect boundingBox() const;
     IntRect pixelSnappedBoundingBox() const { return pixelSnappedIntRect(boundingBox()); }
-
-    // Returns true if the node has a non-empty bounding box in layout.
-    // This does not 100% guarantee the user can see it, but is pretty close.
-    // Note: This method only works properly after layout has occurred.
-    // DEPRECATED: Use Element::hasNonEmptyLayoutSize() instead.
-    bool hasNonEmptyBoundingBox() const;
 
     unsigned nodeIndex() const;
 
@@ -648,7 +641,7 @@ public:
     EventTargetData* eventTargetData() override;
     EventTargetData& ensureEventTargetData() override;
 
-    void getRegisteredMutationObserversOfType(WillBeHeapHashMap<RawPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>&, MutationObserver::MutationType, const QualifiedName* attributeName);
+    void getRegisteredMutationObserversOfType(WillBeHeapHashMap<RefPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>&, MutationObserver::MutationType, const QualifiedName* attributeName);
     void registerMutationObserver(MutationObserver&, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
     void unregisterMutationObserver(MutationObserverRegistration*);
     void registerTransientMutationObserver(MutationObserverRegistration*);
@@ -799,6 +792,8 @@ private:
     bool isUserActionElementHovered() const;
     bool isUserActionElementFocused() const;
 
+    void recalcDistribution();
+
     void setStyleChange(StyleChangeType);
 
     virtual ComputedStyle* nonLayoutObjectComputedStyle() const { return nullptr; }
@@ -896,6 +891,11 @@ PassRefPtrWillBeRawPtr<T> T::create(Document& document) \
 { \
     return adoptRefWillBeNoop(new T(document)); \
 }
+
+// These printers are available only for testing in "webkit_unit_tests", and
+// implemented in "core/testing/CoreTestPrinters.cpp".
+std::ostream& operator<<(std::ostream&, const Node&);
+std::ostream& operator<<(std::ostream&, const Node*);
 
 } // namespace blink
 

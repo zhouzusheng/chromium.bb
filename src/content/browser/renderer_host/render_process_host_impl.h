@@ -46,6 +46,7 @@ class ChannelMojoHost;
 }
 
 namespace content {
+class AudioInputRendererHost;
 class AudioRendererHost;
 class BluetoothDispatcherHost;
 class BrowserCdmManager;
@@ -119,6 +120,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   bool Shutdown(int exit_code, bool wait) override;
   bool FastShutdownIfPossible() override;
   base::ProcessHandle GetHandle() const override;
+  bool IsReady() const override;
   BrowserContext* GetBrowserContext() const override;
   bool InSameStoragePartition(StoragePartition* partition) const override;
   int GetID() const override;
@@ -138,8 +140,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void ResumeRequestsForView(int route_id) override;
   void FilterURL(bool empty_allowed, GURL* url) override;
 #if defined(ENABLE_WEBRTC)
-  void EnableAecDump(const base::FilePath& file) override;
-  void DisableAecDump() override;
+  void EnableAudioDebugRecordings(const base::FilePath& file) override;
+  void DisableAudioDebugRecordings() override;
   void SetWebRtcLogMessageCallback(
       base::Callback<void(const std::string&)> callback) override;
   WebRtcStopRtpDumpCallback StartRtpDump(
@@ -182,13 +184,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void mark_child_process_activity_time() {
     child_process_activity_time_ = base::TimeTicks::Now();
   }
-
-  // Start and end frame subscription for a specific renderer.
-  // This API only supports subscription to accelerated composited frames.
-  void BeginFrameSubscription(
-      int route_id,
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
-  void EndFrameSubscription(int route_id);
 
 #if defined(ENABLE_WEBRTC)
   // Fires the webrtc log message callback with |message|, if callback is set.
@@ -273,8 +268,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   BluetoothDispatcherHost* GetBluetoothDispatcherHost();
 
  protected:
-  // A proxy for our IPC::Channel that lives on the IO thread (see
-  // browser_process.h)
+  // A proxy for our IPC::Channel that lives on the IO thread.
   scoped_ptr<IPC::ChannelProxy> channel_;
 
   // True if fast shutdown has been performed on this RPH.
@@ -336,6 +330,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SendAecDumpFileToRenderer(int id,
                                  IPC::PlatformFileForTransit file_for_transit);
   void SendDisableAecDumpToRenderer();
+  base::FilePath GetAecDumpFilePathWithExtensions(const base::FilePath& file);
 #endif
 
   scoped_ptr<MojoApplicationHost> mojo_application_host_;
@@ -445,6 +440,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   scoped_refptr<AudioRendererHost> audio_renderer_host_;
 
+  scoped_refptr<AudioInputRendererHost> audio_input_renderer_host_;
+
   scoped_refptr<BluetoothDispatcherHost> bluetooth_dispatcher_host_;
 
 #if defined(OS_ANDROID)
@@ -493,6 +490,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // IOSurface references.
   IOSurfaceManagerToken io_surface_manager_token_;
 #endif
+
+  bool channel_connected_;
+  bool sent_render_process_ready_;
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 

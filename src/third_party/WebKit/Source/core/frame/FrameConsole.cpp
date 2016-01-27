@@ -117,7 +117,7 @@ void FrameConsole::addMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> prpConsoleM
             return;
 
         if (consoleMessage->level() >= ErrorMessageLevel || frame().chromeClient().shouldReportDetailedMessageForSource(frame(), messageURL))
-            reportedCallStack = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
+            reportedCallStack = currentScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
     }
 
     String stackTrace;

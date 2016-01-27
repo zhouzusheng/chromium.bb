@@ -7,9 +7,10 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
+#include "components/scheduler/base/task_queue.h"
 #include "components/scheduler/child/scheduler_task_runner_delegate_impl.h"
-#include "components/scheduler/child/task_queue.h"
 #include "components/scheduler/child/web_scheduler_impl.h"
+#include "components/scheduler/child/web_task_runner_impl.h"
 #include "components/scheduler/child/worker_scheduler_impl.h"
 
 namespace scheduler {
@@ -26,6 +27,7 @@ WebThreadImplForPPAPI::WebThreadImplForPPAPI()
       worker_scheduler_.get(), worker_scheduler_->IdleTaskRunner(),
       worker_scheduler_->DefaultTaskRunner(),
       worker_scheduler_->DefaultTaskRunner()));
+  web_task_runner_ = make_scoped_ptr(new WebTaskRunnerImpl(task_runner_));
 }
 
 WebThreadImplForPPAPI::~WebThreadImplForPPAPI() {}
@@ -44,6 +46,10 @@ base::SingleThreadTaskRunner* WebThreadImplForPPAPI::TaskRunner() const {
 
 SingleThreadIdleTaskRunner* WebThreadImplForPPAPI::IdleTaskRunner() const {
   return idle_task_runner_.get();
+}
+
+blink::WebTaskRunner* WebThreadImplForPPAPI::taskRunner() {
+  return web_task_runner_.get();
 }
 
 void WebThreadImplForPPAPI::AddTaskObserverInternal(

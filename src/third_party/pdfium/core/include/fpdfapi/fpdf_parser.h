@@ -51,6 +51,9 @@ class CFX_PrivateData;
 //   'R' - otherwise.
 extern const char PDF_CharType[256];
 
+// Indexed by 8-bit char code, contains unicode code points.
+extern const FX_WORD PDFDocEncoding[256];
+
 class CPDF_Document : public CFX_PrivateData, public CPDF_IndirectObjects {
  public:
   CPDF_Document();
@@ -450,10 +453,10 @@ class CPDF_Parser {
 
   FX_BOOL LoadAllCrossRefV5(FX_FILESIZE pos);
 
-  FX_BOOL LoadCrossRefV4(FX_FILESIZE pos,
-                         FX_FILESIZE streampos,
-                         FX_BOOL bSkip,
-                         FX_BOOL bFirst);
+  bool LoadCrossRefV4(FX_FILESIZE pos,
+                      FX_FILESIZE streampos,
+                      FX_BOOL bSkip,
+                      FX_BOOL bFirst);
 
   FX_BOOL LoadCrossRefV5(FX_FILESIZE pos, FX_FILESIZE& prev, FX_BOOL bMainXRef);
 
@@ -478,6 +481,8 @@ class CPDF_Parser {
   CPDF_StreamAcc* GetObjectStream(FX_DWORD number);
 
   FX_BOOL IsLinearizedFile(IFX_FileRead* pFileAccess, FX_DWORD offset);
+
+  bool FindPosInOffsets(FX_FILESIZE pos) const;
 
   int m_FileVersion;
 
@@ -802,6 +807,14 @@ void FlateEncode(const uint8_t* src_buf,
                  FX_DWORD src_size,
                  uint8_t*& dest_buf,
                  FX_DWORD& dest_size);
+void FlateEncode(const uint8_t* src_buf,
+                 FX_DWORD src_size,
+                 int predictor,
+                 int Colors,
+                 int BitsPerComponent,
+                 int Columns,
+                 uint8_t*& dest_buf,
+                 FX_DWORD& dest_size);
 FX_DWORD FlateDecode(const uint8_t* src_buf,
                      FX_DWORD src_size,
                      uint8_t*& dest_buf,
@@ -810,6 +823,8 @@ FX_DWORD RunLengthDecode(const uint8_t* src_buf,
                          FX_DWORD src_size,
                          uint8_t*& dest_buf,
                          FX_DWORD& dest_size);
+FX_BOOL IsSignatureDict(const CPDF_Dictionary* pDict);
+
 class CPDF_NumberTree {
  public:
   CPDF_NumberTree(CPDF_Dictionary* pRoot) { m_pRoot = pRoot; }
@@ -911,5 +926,15 @@ enum PDF_DATAAVAIL_STATUS {
   PDF_DATAAVAIL_LOADALLFILE,
   PDF_DATAAVAIL_TRAILER_APPEND
 };
+
+FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
+                       FX_DWORD src_size,
+                       const CPDF_Dictionary* pDict,
+                       uint8_t*& dest_buf,
+                       FX_DWORD& dest_size,
+                       CFX_ByteString& ImageEncoding,
+                       CPDF_Dictionary*& pImageParms,
+                       FX_DWORD estimated_size,
+                       FX_BOOL bImageAcc);
 
 #endif  // CORE_INCLUDE_FPDFAPI_FPDF_PARSER_H_

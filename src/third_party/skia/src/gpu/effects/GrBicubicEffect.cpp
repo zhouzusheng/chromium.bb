@@ -159,7 +159,7 @@ void GrBicubicEffect::onGetGLProcessorKey(const GrGLSLCaps& caps,
 }
 
 GrGLFragmentProcessor* GrBicubicEffect::onCreateGLInstance() const  {
-    return SkNEW_ARGS(GrGLBicubicEffect, (*this));
+    return new GrGLBicubicEffect(*this);
 }
 
 bool GrBicubicEffect::onIsEqual(const GrFragmentProcessor& sBase) const {
@@ -175,7 +175,7 @@ void GrBicubicEffect::onComputeInvariantOutput(GrInvariantOutput* inout) const {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrBicubicEffect);
 
-GrFragmentProcessor* GrBicubicEffect::TestCreate(GrProcessorTestData* d) {
+const GrFragmentProcessor* GrBicubicEffect::TestCreate(GrProcessorTestData* d) {
     int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
                                           GrProcessorUnitTest::kAlphaTextureIdx;
     SkScalar coefficients[16];

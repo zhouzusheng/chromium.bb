@@ -24,6 +24,7 @@
 
 // SHEZ: Remove test-only code.
 // #include "content/shell/browser/blink_test_controller.h"
+// #include "content/shell/browser/layout_test/layout_test_bluetooth_chooser_factory.h"
 // #include "content/shell/browser/layout_test/layout_test_devtools_frontend.h"
 // #include "content/shell/browser/layout_test/layout_test_javascript_dialog_manager.h"
 
@@ -380,6 +381,22 @@ JavaScriptDialogManager* Shell::GetJavaScriptDialogManager(
         new ShellJavaScriptDialogManager);
   }
   return dialog_manager_.get();
+}
+
+scoped_ptr<BluetoothChooser> Shell::RunBluetoothChooser(
+    WebContents* web_contents,
+    const BluetoothChooser::EventHandler& event_handler,
+    const GURL& origin) {
+    // SHEZ: Remove test-only code.
+#if 0
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kRunLayoutTest)) {
+    return BlinkTestController::Get()->RunBluetoothChooser(
+        web_contents, event_handler, origin);
+  }
+#endif
+  return nullptr;
 }
 
 bool Shell::AddMessageToConsole(WebContents* source,

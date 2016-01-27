@@ -280,8 +280,6 @@
 #define glGetRequestableExtensionsCHROMIUM \
   GLES2_GET_FUN(GetRequestableExtensionsCHROMIUM)
 #define glRequestExtensionCHROMIUM GLES2_GET_FUN(RequestExtensionCHROMIUM)
-#define glRateLimitOffscreenContextCHROMIUM \
-  GLES2_GET_FUN(RateLimitOffscreenContextCHROMIUM)
 #define glGetProgramInfoCHROMIUM GLES2_GET_FUN(GetProgramInfoCHROMIUM)
 #define glGetUniformBlocksCHROMIUM GLES2_GET_FUN(GetUniformBlocksCHROMIUM)
 #define glGetTransformFeedbackVaryingsCHROMIUM \
@@ -325,11 +323,6 @@
 #define glReleaseTexImage2DCHROMIUM GLES2_GET_FUN(ReleaseTexImage2DCHROMIUM)
 #define glTraceBeginCHROMIUM GLES2_GET_FUN(TraceBeginCHROMIUM)
 #define glTraceEndCHROMIUM GLES2_GET_FUN(TraceEndCHROMIUM)
-#define glAsyncTexSubImage2DCHROMIUM GLES2_GET_FUN(AsyncTexSubImage2DCHROMIUM)
-#define glAsyncTexImage2DCHROMIUM GLES2_GET_FUN(AsyncTexImage2DCHROMIUM)
-#define glWaitAsyncTexImage2DCHROMIUM GLES2_GET_FUN(WaitAsyncTexImage2DCHROMIUM)
-#define glWaitAllAsyncTexImage2DCHROMIUM \
-  GLES2_GET_FUN(WaitAllAsyncTexImage2DCHROMIUM)
 #define glDiscardFramebufferEXT GLES2_GET_FUN(DiscardFramebufferEXT)
 #define glLoseContextCHROMIUM GLES2_GET_FUN(LoseContextCHROMIUM)
 #define glInsertSyncPointCHROMIUM GLES2_GET_FUN(InsertSyncPointCHROMIUM)
@@ -359,5 +352,7 @@
   GLES2_GET_FUN(StencilThenCoverStrokePathCHROMIUM)
 #define glGetGraphicsResetStatusKHR GLES2_GET_FUN(GetGraphicsResetStatusKHR)
 #define glBlendBarrierKHR GLES2_GET_FUN(BlendBarrierKHR)
+#define glApplyScreenSpaceAntialiasingCHROMIUM \
+  GLES2_GET_FUN(ApplyScreenSpaceAntialiasingCHROMIUM)
 
 #endif  // GPU_GLES2_GL2CHROMIUM_AUTOGEN_H_

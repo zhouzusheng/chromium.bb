@@ -137,6 +137,7 @@ StaticVisitorBase::VisitorId StaticVisitorBase::GetVisitorId(
     case JS_MESSAGE_OBJECT_TYPE:
     case JS_SET_ITERATOR_TYPE:
     case JS_MAP_ITERATOR_TYPE:
+    case JS_ITERATOR_RESULT_TYPE:
       return GetVisitorIdForSize(kVisitJSObject, kVisitJSObjectGeneric,
                                  instance_size, has_unboxed_fields);
 
@@ -219,13 +220,13 @@ void HeapObject::IterateBody(InstanceType type, int object_size,
     case JS_VALUE_TYPE:
     case JS_DATE_TYPE:
     case JS_ARRAY_TYPE:
-    case JS_ARRAY_BUFFER_TYPE:
     case JS_TYPED_ARRAY_TYPE:
     case JS_DATA_VIEW_TYPE:
     case JS_SET_TYPE:
     case JS_MAP_TYPE:
     case JS_SET_ITERATOR_TYPE:
     case JS_MAP_ITERATOR_TYPE:
+    case JS_ITERATOR_RESULT_TYPE:
     case JS_WEAK_MAP_TYPE:
     case JS_WEAK_SET_TYPE:
     case JS_REGEXP_TYPE:
@@ -234,6 +235,9 @@ void HeapObject::IterateBody(InstanceType type, int object_size,
     case JS_BUILTINS_OBJECT_TYPE:
     case JS_MESSAGE_OBJECT_TYPE:
       JSObject::BodyDescriptor::IterateBody(this, object_size, v);
+      break;
+    case JS_ARRAY_BUFFER_TYPE:
+      JSArrayBuffer::JSArrayBufferIterateBody(this, v);
       break;
     case JS_FUNCTION_TYPE:
       reinterpret_cast<JSFunction*>(this)
@@ -269,13 +273,15 @@ void HeapObject::IterateBody(InstanceType type, int object_size,
     case SYMBOL_TYPE:
       Symbol::BodyDescriptor::IterateBody(this, v);
       break;
+    case BYTECODE_ARRAY_TYPE:
+      reinterpret_cast<BytecodeArray*>(this)->BytecodeArrayIterateBody(v);
+      break;
 
     case HEAP_NUMBER_TYPE:
     case MUTABLE_HEAP_NUMBER_TYPE:
     case SIMD128_VALUE_TYPE:
     case FILLER_TYPE:
     case BYTE_ARRAY_TYPE:
-    case BYTECODE_ARRAY_TYPE:
     case FREE_SPACE_TYPE:
       break;
 

@@ -227,15 +227,6 @@ typedef void (GL_APIENTRYP PFNGLRELEASETEXIMAGE2DCHROMIUMPROC) (
     GLenum target, GLint imageId);
 #endif  /* GL_CHROMIUM_texture_from_image */
 
-/* GL_CHROMIUM_rate_limit_offscreen_context */
-#ifndef GL_CHROMIUM_rate_limit_offscreen_context
-#define GL_CHROMIUM_rate_limit_offscreen_context 1
-#ifdef GL_GLEXT_PROTOTYPES
-GL_APICALL void GL_APIENTRY glRateLimitOffscreenContextCHROMIUM();
-#endif
-typedef void (GL_APIENTRYP PFNGLRATELIMITOFFSCREENCONTEXTCHROMIUMPROC) ();
-#endif  /* GL_CHROMIUM_rate_limit_offscreen_context */
-
 /* GL_CHROMIUM_post_sub_buffer */
 #ifndef GL_CHROMIUM_post_sub_buffer
 #define GL_CHROMIUM_post_sub_buffer 1
@@ -374,9 +365,6 @@ typedef void (GL_APIENTRYP PFNGLBLITFRAMEBUFFERCHROMIUMPROC) (GLint srcX0, GLint
 #ifndef GL_CHROMIUM_async_pixel_transfers
 #define GL_CHROMIUM_async_pixel_transfers 1
 
-#ifndef GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM
-#define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM 0x6005
-#endif
 #ifndef GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM
 #define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM 0x6006
 #endif
@@ -523,6 +511,15 @@ typedef GLboolean (GL_APIENTRYP PFNGLENABLEFEATURECHROMIUMPROC) (
 #define GL_LATENCY_QUERY_CHROMIUM 0x6007
 #endif
 #endif  /* GL_CHROMIUM_command_buffer_latency_query */
+
+/* GL_CHROMIUM_screen_space_antialiasing */
+#ifndef GL_CHROMIUM_screen_space_antialiasing
+#define GL_CHROMIUM_screen_space_antialiasing 1
+#ifdef GL_GLEXT_PROTOTYPES
+GL_APICALL void GL_APIENTRY glApplyScreenSpaceAntialiasingCHROMIUM();
+#endif
+typedef void(GL_APIENTRYP PFNGLAPPLYSCREENSPACEANTIALIASINGCHROMIUMPROC)();
+#endif /* GL_CHROMIUM_screen_space_antialiasing */
 
 /* GL_ARB_robustness */
 #ifndef GL_ARB_robustness

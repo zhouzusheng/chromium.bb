@@ -69,6 +69,7 @@
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/MixedContentChecker.h"
+#include "core/loader/NavigationScheduler.h"
 #include "core/loader/ProgressTracker.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/ChromeClient.h"
@@ -113,7 +114,7 @@ static bool needsHistoryItemRestore(FrameLoadType type)
 ResourceRequest FrameLoader::resourceRequestFromHistoryItem(HistoryItem* item,
     ResourceRequestCachePolicy cachePolicy)
 {
-    RefPtr<FormData> formData = item->formData();
+    RefPtr<EncodedFormData> formData = item->formData();
     ResourceRequest request(item->url());
     request.setHTTPReferrer(item->referrer());
     request.setCachePolicy(cachePolicy);
@@ -237,7 +238,7 @@ void FrameLoader::saveScrollState()
         return;
 
     // Shouldn't clobber anything if we might still restore later.
-    if (needsHistoryItemRestore(m_loadType) && !documentLoader()->initialScrollState().wasScrolledByUser)
+    if (needsHistoryItemRestore(m_loadType) && m_documentLoader && !m_documentLoader->initialScrollState().wasScrolledByUser)
         return;
 
     if (ScrollableArea* layoutScrollableArea = m_frame->view()->layoutViewportScrollableArea())
@@ -314,7 +315,7 @@ void FrameLoader::clear()
 // This is the <iframe src="javascript:'html'"> case.
 void FrameLoader::replaceDocumentWhileExecutingJavaScriptURL(const String& source, Document* ownerDocument)
 {
-    if (!m_frame->document()->loader())
+    if (!m_frame->document()->loader() || m_frame->document()->pageDismissalEventBeingDispatched() != Document::NoDismissal)
         return;
 
     // DocumentLoader::replaceDocumentWhileExecutingJavaScriptURL can cause the DocumentLoader to get deref'ed and possible destroyed,
@@ -482,7 +483,7 @@ void FrameLoader::finishedParsing()
     m_progressTracker->finishedParsing();
 
     if (client())
-        client()->dispatchDidFinishDocumentLoad(m_documentLoader->isCommittedButEmpty());
+        client()->dispatchDidFinishDocumentLoad(m_documentLoader ? m_documentLoader->isCommittedButEmpty() : true);
 
     checkCompleted();
 
@@ -550,9 +551,14 @@ static bool shouldSendCompleteNotifications(LocalFrame* frame)
     if (frame->loader().provisionalDocumentLoader())
         return false;
 
+    // A navigation is still scheduled in the embedder, so don't complete yet.
+    if (frame->loader().client()->hasPendingNavigation())
+        return false;
+
     // We might have declined to run the load event due to an imminent content-initiated navigation.
     if (!frame->document()->loadEventFinished())
         return false;
+
     return true;
 }
 
@@ -1052,7 +1058,7 @@ bool FrameLoader::prepareForCommit()
     if (pdl != m_provisionalDocumentLoader)
         return false;
     if (m_documentLoader) {
-        FrameNavigationDisabler navigationDisabler(m_frame);
+        FrameNavigationDisabler navigationDisabler(*m_frame);
         detachDocumentLoader(m_documentLoader);
     }
     // detachFromFrame() will abort XHRs that haven't completed, which can
@@ -1114,7 +1120,7 @@ FrameLoadType FrameLoader::loadType() const
 void FrameLoader::restoreScrollPositionAndViewState()
 {
     FrameView* view = m_frame->view();
-    if (!m_frame->page() || !view || !m_currentItem || !m_stateMachine.committedFirstRealDocumentLoad())
+    if (!m_frame->page() || !view || !view->layoutViewportScrollableArea() || !m_currentItem || !m_stateMachine.committedFirstRealDocumentLoad())
         return;
 
     if (!needsHistoryItemRestore(m_loadType))
@@ -1131,7 +1137,7 @@ void FrameLoader::restoreScrollPositionAndViewState()
     //   4. ignore clamp detection if we are not restoring scroll or after load
     //      completes because that may be because the page will never reach its
     //      previous height
-    bool canRestoreWithoutClamping = view->clampOffsetAtScale(m_currentItem->scrollPoint(), 1) == m_currentItem->scrollPoint();
+    bool canRestoreWithoutClamping = view->layoutViewportScrollableArea()->clampScrollPosition(m_currentItem->scrollPoint()) == m_currentItem->scrollPoint();
     bool canRestoreWithoutAnnoyingUser = !documentLoader()->initialScrollState().wasScrolledByUser
         && (canRestoreWithoutClamping || !m_frame->isLoading() || !shouldRestoreScroll);
     if (!canRestoreWithoutAnnoyingUser)
@@ -1257,7 +1263,7 @@ void FrameLoader::processFragment(const KURL& url, LoadStartType loadStartType)
     // If scroll position is restored from history fragment then we should not override it unless
     // this is a same document reload.
     bool shouldScrollToFragment = (loadStartType == NavigationWithinSameDocument && !isBackForwardLoadType(m_loadType))
-        || !documentLoader()->initialScrollState().didRestoreFromHistory;
+        || (documentLoader() && !documentLoader()->initialScrollState().didRestoreFromHistory);
 
     view->processUrlFragment(url, shouldScrollToFragment ?
         FrameView::UrlFragmentScroll : FrameView::UrlFragmentDontScroll);
@@ -1357,7 +1363,7 @@ void FrameLoader::startLoad(FrameLoadRequest& frameLoadRequest, FrameLoadType ty
     if (m_provisionalDocumentLoader->isClientRedirect())
         m_provisionalDocumentLoader->appendRedirect(m_frame->document()->url());
     m_provisionalDocumentLoader->appendRedirect(m_provisionalDocumentLoader->request().url());
-    double triggeringEventTime = frameLoadRequest.triggeringEvent() ? convertDOMTimeStampToSeconds(frameLoadRequest.triggeringEvent()->timeStamp()) : 0;
+    double triggeringEventTime = frameLoadRequest.triggeringEvent() ? frameLoadRequest.triggeringEvent()->platformTimeStamp() : 0;
     client()->dispatchDidStartProvisionalLoad(triggeringEventTime);
     ASSERT(m_provisionalDocumentLoader);
     m_provisionalDocumentLoader->startLoadingMainResource();

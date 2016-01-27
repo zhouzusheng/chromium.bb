@@ -33,9 +33,7 @@
 
 #include "bindings/core/v8/V8ScriptRunner.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
-#include "core/inspector/v8/V8DebuggerListener.h"
 #include "core/workers/WorkerThread.h"
-#include "wtf/MessageQueue.h"
 #include <v8.h>
 
 namespace blink {
@@ -44,8 +42,8 @@ static const int workerContextGroupId = 1;
 
 WorkerThreadDebugger::WorkerThreadDebugger(WorkerThread* workerThread)
     : ScriptDebuggerBase(v8::Isolate::GetCurrent())
-    , m_listener(nullptr)
     , m_workerThread(workerThread)
+    , m_paused(false)
 {
 }
 
@@ -63,20 +61,22 @@ int WorkerThreadDebugger::contextGroupId()
     return workerContextGroupId;
 }
 
-void WorkerThreadDebugger::runMessageLoopOnPause(v8::Local<v8::Context>)
+void WorkerThreadDebugger::runMessageLoopOnPause(int contextGroupId)
 {
-    MessageQueueWaitResult result;
-    m_workerThread->willEnterNestedLoop();
+    ASSERT(contextGroupId == workerContextGroupId);
+    m_paused = true;
+    WorkerThread::TaskQueueResult result;
+    m_workerThread->willRunDebuggerTasks();
     do {
         result = m_workerThread->runDebuggerTask();
     // Keep waiting until execution is resumed.
-    } while (result == MessageQueueMessageReceived && debugger()->isPaused());
-    m_workerThread->didLeaveNestedLoop();
+    } while (result == WorkerThread::TaskReceived && m_paused);
+    m_workerThread->didRunDebuggerTasks();
 }
 
 void WorkerThreadDebugger::quitMessageLoopOnPause()
 {
-    // Nothing to do here in case of workers since runMessageLoopOnPause will check for paused state after each debugger command.
+    m_paused = false;
 }
 
 } // namespace blink

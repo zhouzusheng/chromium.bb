@@ -51,13 +51,13 @@
 #include "core/layout/LayoutScrollbarPart.h"
 #include "core/layout/LayoutTableCell.h"
 #include "core/layout/LayoutView.h"
-#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
+#include "core/layout/compositing/PaintLayerCompositor.h"
 #include "core/layout/shapes/ShapeOutsideInfo.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/Page.h"
 #include "core/paint/BackgroundImageGeometry.h"
 #include "core/paint/BoxPainter.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/style/ShadowList.h"
 #include "platform/LengthFunctions.h"
 #include "platform/geometry/DoubleRect.h"
@@ -98,19 +98,19 @@ LayoutBox::LayoutBox(ContainerNode* node)
     setIsBox();
 }
 
-DeprecatedPaintLayerType LayoutBox::layerTypeRequired() const
+PaintLayerType LayoutBox::layerTypeRequired() const
 {
     // hasAutoZIndex only returns true if the element is positioned or a flex-item since
     // position:static elements that are not flex-items get their z-index coerced to auto.
     if (isPositioned() || createsGroup() || hasClipPath() || hasTransformRelatedProperty()
         || style()->hasCompositorProxy() || hasHiddenBackface() || hasReflection() || style()->specifiesColumns()
         || !style()->hasAutoZIndex() || style()->shouldCompositeForCurrentAnimations())
-        return NormalDeprecatedPaintLayer;
+        return NormalPaintLayer;
 
     if (hasOverflowClip())
-        return OverflowClipDeprecatedPaintLayer;
+        return OverflowClipPaintLayer;
 
-    return NoDeprecatedPaintLayer;
+    return NoPaintLayer;
 }
 
 void LayoutBox::willBeDestroyed()
@@ -157,6 +157,10 @@ void LayoutBox::styleWillChange(StyleDifference diff, const ComputedStyle& newSt
 {
     const ComputedStyle* oldStyle = style();
     if (oldStyle) {
+        LayoutFlowThread* flowThread = flowThreadContainingBlock();
+        if (flowThread && flowThread != this)
+            flowThread->flowThreadDescendantStyleWillChange(this, diff, newStyle);
+
         // The background of the root element or the body element could propagate up to
         // the canvas. Just dirty the entire canvas when our style changes substantially.
         if ((diff.needsPaintInvalidation() || diff.needsLayout()) && node()
@@ -235,6 +239,14 @@ void LayoutBox::styleDidChange(StyleDifference diff, const ComputedStyle* oldSty
     if (isDocumentElement() || isBody()) {
         document().view()->recalculateScrollbarOverlayStyle();
         document().view()->recalculateCustomScrollbarStyle();
+        if (LayoutView* layoutView = view()) {
+            if (PaintLayerScrollableArea* scrollableArea = layoutView->scrollableArea()) {
+                if (scrollableArea->horizontalScrollbar() && scrollableArea->horizontalScrollbar()->isCustomScrollbar())
+                    scrollableArea->horizontalScrollbar()->styleChanged();
+                if (scrollableArea->verticalScrollbar() && scrollableArea->verticalScrollbar()->isCustomScrollbar())
+                    scrollableArea->verticalScrollbar()->styleChanged();
+            }
+        }
     }
     updateShapeOutsideInfoAfterStyleChange(*style(), oldStyle);
     updateGridPositionAfterStyleChange(oldStyle);
@@ -242,10 +254,16 @@ void LayoutBox::styleDidChange(StyleDifference diff, const ComputedStyle* oldSty
     if (LayoutMultiColumnSpannerPlaceholder* placeholder = this->spannerPlaceholder())
         placeholder->layoutObjectInFlowThreadStyleDidChange(oldStyle);
 
-    updateSlowRepaintStatusAfterStyleChange();
+    updateBackgroundAttachmentFixedStatusAfterStyleChange();
+
+    if (oldStyle) {
+        LayoutFlowThread* flowThread = flowThreadContainingBlock();
+        if (flowThread && flowThread != this)
+            flowThread->flowThreadDescendantStyleDidChange(this, diff, *oldStyle);
+    }
 }
 
-void LayoutBox::updateSlowRepaintStatusAfterStyleChange()
+void LayoutBox::updateBackgroundAttachmentFixedStatusAfterStyleChange()
 {
     if (!frameView())
         return;
@@ -259,15 +277,15 @@ void LayoutBox::updateSlowRepaintStatusAfterStyleChange()
         return;
 
     // An object needs to be repainted on frame scroll when it has background-attachment:fixed.
-    // LayoutObject is responsible for painting root background, thus the root element (and the
+    // LayoutView is responsible for painting root background, thus the root element (and the
     // body element if html element has no background) skips painting backgrounds.
-    bool isSlowRepaintObject = !isDocumentElement() && !backgroundStolenForBeingBody() && styleRef().hasFixedBackgroundImage();
+    bool isBackgroundAttachmentFixedObject = !isDocumentElement() && !backgroundStolenForBeingBody() && styleRef().hasFixedBackgroundImage();
     if (isLayoutView() && view()->compositor()->supportsFixedRootBackgroundCompositing()) {
         if (styleRef().hasEntirelyFixedBackground())
-            isSlowRepaintObject = false;
+            isBackgroundAttachmentFixedObject = false;
     }
 
-    setIsSlowRepaintObject(isSlowRepaintObject);
+    setIsBackgroundAttachmentFixedObject(isBackgroundAttachmentFixedObject);
 }
 
 void LayoutBox::updateShapeOutsideInfoAfterStyleChange(const ComputedStyle& style, const ComputedStyle* oldStyle)
@@ -618,10 +636,9 @@ FloatQuad LayoutBox::absoluteContentQuad() const
     return localToAbsoluteQuad(FloatRect(rect));
 }
 
-void LayoutBox::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+void LayoutBox::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const
 {
-    if (!size().isEmpty())
-        rects.append(LayoutRect(additionalOffset, size()));
+    rects.append(LayoutRect(additionalOffset, size()));
 }
 
 bool LayoutBox::canResize() const
@@ -632,7 +649,7 @@ bool LayoutBox::canResize() const
     return (hasOverflowClip() || isLayoutIFrame()) && style()->resize() != RESIZE_NONE;
 }
 
-void LayoutBox::addLayerHitTestRects(LayerHitTestRects& layerRects, const DeprecatedPaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+void LayoutBox::addLayerHitTestRects(LayerHitTestRects& layerRects, const PaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
 {
     LayoutPoint adjustedLayerOffset = layerOffset + locationOffset();
     LayoutBoxModelObject::addLayerHitTestRects(layerRects, currentLayer, adjustedLayerOffset, containerRect);
@@ -1151,19 +1168,19 @@ bool LayoutBox::nodeAtPoint(HitTestResult& result, const HitTestLocation& locati
     return false;
 }
 
-void LayoutBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     BoxPainter(*this).paint(paintInfo, paintOffset);
 }
 
 
-void LayoutBox::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutBox::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     BoxPainter(*this).paintBoxDecorationBackground(paintInfo, paintOffset);
 }
 
 
-bool LayoutBox::getBackgroundPaintedExtent(LayoutRect& paintedExtent)
+bool LayoutBox::getBackgroundPaintedExtent(LayoutRect& paintedExtent) const
 {
     ASSERT(hasBackground());
 
@@ -1243,7 +1260,7 @@ static bool isCandidateForOpaquenessTest(const LayoutBox& childBox)
         return false;
     if (childBox.size().isZero())
         return false;
-    if (DeprecatedPaintLayer* childLayer = childBox.layer()) {
+    if (PaintLayer* childLayer = childBox.layer()) {
         // FIXME: perhaps this could be less conservative?
         if (childLayer->compositingState() != NotComposited)
             return false;
@@ -1289,7 +1306,7 @@ bool LayoutBox::foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, u
     return false;
 }
 
-bool LayoutBox::computeBackgroundIsKnownToBeObscured()
+bool LayoutBox::computeBackgroundIsKnownToBeObscured() const
 {
     // Test to see if the children trivially obscure the background.
     // FIXME: This test can be much more comprehensive.
@@ -1307,7 +1324,7 @@ bool LayoutBox::computeBackgroundIsKnownToBeObscured()
     return foregroundIsKnownToBeOpaqueInRect(backgroundRect, backgroundObscurationTestMaxDepth);
 }
 
-void LayoutBox::paintMask(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutBox::paintMask(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     BoxPainter(*this).paintMask(paintInfo, paintOffset);
 }
@@ -1345,6 +1362,9 @@ bool LayoutBox::invalidatePaintOfLayerRectsForImage(WrappedImagePtr image, const
                 setShouldDoFullPaintInvalidation(PaintInvalidationDelayedFull);
             else
                 setShouldDoFullPaintInvalidation();
+
+            if (drawingBackground)
+                invalidateBackgroundObscurationStatus();
             return true;
         }
     }
@@ -1386,7 +1406,7 @@ PaintInvalidationReason LayoutBox::invalidatePaintIfNeeded(PaintInvalidationStat
         // Issue paint invalidations for any scrollbars if there is a scrollable area for this layoutObject.
         if (ScrollableArea* area = scrollableArea()) {
             // In slimming paint mode, we already invalidated the display item clients of the scrollbars
-            // during DeprecatedPaintLayerScrollableArea::invalidateScrollbarRect(). However, for now we still need to
+            // during PaintLayerScrollableArea::invalidateScrollbarRect(). However, for now we still need to
             // invalidate the rectangles to trigger repaints.
             if (area->hasVerticalBarDamage())
                 invalidatePaintRectangleNotInvalidatingDisplayItemClients(LayoutRect(area->verticalBarDamage()));
@@ -1439,7 +1459,7 @@ void LayoutBox::excludeScrollbars(LayoutRect& rect, OverlayScrollbarSizeRelevanc
     rect.contract(layer()->scrollableArea()->verticalScrollbarWidth(relevancy), layer()->scrollableArea()->horizontalScrollbarHeight(relevancy));
 }
 
-LayoutRect LayoutBox::clipRect(const LayoutPoint& location)
+LayoutRect LayoutBox::clipRect(const LayoutPoint& location) const
 {
     LayoutRect borderBoxRect = this->borderBoxRect();
     LayoutRect clipRect = LayoutRect(borderBoxRect.location() + location, borderBoxRect.size());
@@ -1752,7 +1772,7 @@ void LayoutBox::clearSpannerPlaceholder()
 LayoutRect LayoutBox::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     if (style()->visibility() != VISIBLE) {
-        DeprecatedPaintLayer* layer = enclosingLayer();
+        PaintLayer* layer = enclosingLayer();
         layer->updateDescendantDependentFlags();
         if (layer->subtreeIsInvisible())
             return LayoutRect();
@@ -1945,7 +1965,7 @@ void LayoutBox::computeLogicalWidth(LogicalExtentComputedValues& computedValues)
     LayoutUnit containerLogicalWidth = std::max(LayoutUnit(), containingBlockLogicalWidthForContent());
     bool hasPerpendicularContainingBlock = cb->isHorizontalWritingMode() != isHorizontalWritingMode();
 
-    if (parent()->isLayoutGrid() && style()->logicalWidth().isAuto() && style()->minWidth().isAuto() && style()->overflowX() == OVISIBLE) {
+    if (parent()->isLayoutGrid() && style()->logicalWidth().isAuto() && style()->logicalMinWidth().isAuto() && style()->overflowX() == OVISIBLE) {
         LayoutUnit minLogicalWidth = minPreferredLogicalWidth();
         if (containerLogicalWidth < minLogicalWidth) {
             computedValues.m_extent = constrainLogicalWidthByMinMax(minLogicalWidth, containerLogicalWidth, cb);
@@ -2282,7 +2302,7 @@ void LayoutBox::computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logica
         // https://bugs.webkit.org/show_bug.cgi?id=46418
         if (hasOverrideLogicalContentHeight() && (parent()->isFlexibleBoxIncludingDeprecated() || parent()->isLayoutGrid())) {
             LayoutUnit contentHeight = overrideLogicalContentHeight();
-            if (parent()->isLayoutGrid() && style()->minHeight().isAuto() && style()->overflowY() == OVISIBLE) {
+            if (parent()->isLayoutGrid() && style()->logicalMinHeight().isAuto() && style()->overflowY() == OVISIBLE) {
                 ASSERT(style()->logicalHeight().isAuto());
                 LayoutUnit minContentHeight = computeContentLogicalHeight(MinSize, Length(MinContent), computedValues.m_extent - borderAndPaddingLogicalHeight());
                 contentHeight = std::max(contentHeight, constrainLogicalHeightByMinMax(minContentHeight, computedValues.m_extent - borderAndPaddingLogicalHeight()));
@@ -2392,7 +2412,7 @@ LayoutUnit LayoutBox::computeContentAndScrollbarLogicalHeightUsing(SizeType heig
     if (height.isIntrinsic()) {
         if (intrinsicContentHeight == -1)
             return -1; // Intrinsic height isn't available.
-        return computeIntrinsicLogicalContentHeightUsing(height, intrinsicContentHeight, borderAndPaddingLogicalHeight());
+        return computeIntrinsicLogicalContentHeightUsing(height, intrinsicContentHeight, borderAndPaddingLogicalHeight()) + scrollbarLogicalHeight();
     }
     if (height.isFixed())
         return height.value();
@@ -2743,7 +2763,7 @@ LayoutUnit LayoutBox::containingBlockLogicalWidthForPositioned(const LayoutBoxMo
     if (style()->position() == FixedPosition && containingBlock->isLayoutView()) {
         const LayoutView* view = toLayoutView(containingBlock);
         if (FrameView* frameView = view->frameView()) {
-            // Don't use visibleContentRect since the DeprecatedPaintLayer's size has not been set yet.
+            // Don't use visibleContentRect since the PaintLayer's size has not been set yet.
             IntSize viewportSize = frameView->layoutViewportScrollableArea()->excludeScrollbars(frameView->frameRect().size());
             return containingBlock->isHorizontalWritingMode() ? viewportSize.width() : viewportSize.height();
         }
@@ -2787,7 +2807,7 @@ LayoutUnit LayoutBox::containingBlockLogicalHeightForPositioned(const LayoutBoxM
     if (style()->position() == FixedPosition && containingBlock->isLayoutView()) {
         const LayoutView* view = toLayoutView(containingBlock);
         if (FrameView* frameView = view->frameView()) {
-            // Don't use visibleContentRect since the DeprecatedPaintLayer's size has not been set yet.
+            // Don't use visibleContentRect since the PaintLayer's size has not been set yet.
             IntSize viewportSize = frameView->layoutViewportScrollableArea()->excludeScrollbars(frameView->frameRect().size());
             return containingBlock->isHorizontalWritingMode() ? viewportSize.height() : viewportSize.width();
         }
@@ -3907,8 +3927,8 @@ bool LayoutBox::avoidsFloats() const
 
 bool LayoutBox::hasNonCompositedScrollbars() const
 {
-    if (DeprecatedPaintLayer* layer = this->layer()) {
-        if (DeprecatedPaintLayerScrollableArea* scrollableArea = layer->scrollableArea()) {
+    if (PaintLayer* layer = this->layer()) {
+        if (PaintLayerScrollableArea* scrollableArea = layer->scrollableArea()) {
             if (scrollableArea->hasHorizontalScrollbar() && !scrollableArea->layerForHorizontalScrollbar())
                 return true;
             if (scrollableArea->hasVerticalScrollbar() && !scrollableArea->layerForVerticalScrollbar())
@@ -3972,6 +3992,12 @@ PaintInvalidationReason LayoutBox::paintInvalidationReason(const LayoutBoxModelO
     if (oldBorderBoxSize == newBorderBoxSize)
         return invalidationReason;
 
+    // LayoutBox::incrementallyInvalidatePaint() depends on positionFromPaintInvalidationBacking
+    // which is not available when slimmingPaintOffsetCachingEnabled.
+    if (RuntimeEnabledFeatures::slimmingPaintOffsetCachingEnabled() && (style()->hasBoxDecorations() || style()->hasBackground()))
+        return PaintInvalidationBorderBoxChange;
+
+    // TODO(wangxianzhu): Remove incremental invalidation when we remove rect-based paint invalidation.
     // See another hasNonCompositedScrollbars() callsite above.
     if (hasNonCompositedScrollbars())
         return PaintInvalidationBorderBoxChange;
@@ -4114,23 +4140,15 @@ LayoutRectOutsets LayoutBox::computeVisualEffectOverflowOutsets() const
     }
 
     if (style()->hasOutline()) {
+        Vector<LayoutRect> outlineRects;
+        // The result rects are in coordinates of this object's border box.
+        addOutlineRects(outlineRects, LayoutPoint(), outlineRectsShouldIncludeBlockVisualOverflow());
+        LayoutRect rect = unionRectEvenIfEmpty(outlineRects);
         int outlineOutset = style()->outlineOutsetExtent();
-        if (style()->outlineStyleIsAuto()) {
-            // The result focus ring rects are in coordinates of this object's border box.
-            Vector<LayoutRect> focusRingRects;
-            addOutlineRects(focusRingRects, LayoutPoint());
-            LayoutRect rect = unionRect(focusRingRects);
-
-            top = std::max(top, -rect.y() + outlineOutset);
-            right = std::max(right, rect.maxX() - size().width() + outlineOutset);
-            bottom = std::max(bottom, rect.maxY() - size().height() + outlineOutset);
-            left = std::max(left, -rect.x() + outlineOutset);
-        } else {
-            top = std::max<LayoutUnit>(top, outlineOutset);
-            right = std::max<LayoutUnit>(right, outlineOutset);
-            bottom = std::max<LayoutUnit>(bottom, outlineOutset);
-            left = std::max<LayoutUnit>(left, outlineOutset);
-        }
+        top = std::max(top, -rect.y() + outlineOutset);
+        right = std::max(right, rect.maxX() - size().width() + outlineOutset);
+        bottom = std::max(bottom, rect.maxY() - size().height() + outlineOutset);
+        left = std::max(left, -rect.x() + outlineOutset);
     }
 
     return LayoutRectOutsets(top, right, bottom, left);
@@ -4333,11 +4351,11 @@ int LayoutBox::baselinePosition(FontBaseline baselineType, bool /*firstLine*/, L
 }
 
 
-DeprecatedPaintLayer* LayoutBox::enclosingFloatPaintingLayer() const
+PaintLayer* LayoutBox::enclosingFloatPaintingLayer() const
 {
     const LayoutObject* curr = this;
     while (curr) {
-        DeprecatedPaintLayer* layer = curr->hasLayer() && curr->isBox() ? toLayoutBox(curr)->layer() : 0;
+        PaintLayer* layer = curr->hasLayer() && curr->isBox() ? toLayoutBox(curr)->layer() : 0;
         if (layer && layer->isSelfPaintingLayer())
             return layer;
         curr = curr->parent();

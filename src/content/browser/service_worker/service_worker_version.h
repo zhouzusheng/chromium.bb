@@ -19,6 +19,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/timer/timer.h"
+#include "content/browser/background_sync/background_sync_registration_handle.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/service_worker_script_cache_map.h"
 #include "content/common/background_sync_service.mojom.h"
@@ -209,7 +210,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // notify completion.
   //
   // This must be called when the status() is ACTIVATED.
-  void DispatchSyncEvent(SyncRegistrationPtr registration,
+  void DispatchSyncEvent(BackgroundSyncRegistrationHandle::HandleId handle_id,
                          const StatusCallback& callback);
 
   // Sends notificationclick event to the associated embedded worker and
@@ -308,11 +309,16 @@ class CONTENT_EXPORT ServiceWorkerVersion
   bool skip_waiting() const { return skip_waiting_; }
   void set_skip_waiting(bool skip_waiting) { skip_waiting_ = skip_waiting; }
 
-  bool force_bypass_cache_for_scripts() {
+  bool force_bypass_cache_for_scripts() const {
     return force_bypass_cache_for_scripts_;
   }
   void set_force_bypass_cache_for_scripts(bool force_bypass_cache_for_scripts) {
     force_bypass_cache_for_scripts_ = force_bypass_cache_for_scripts;
+  }
+
+  bool skip_script_comparison() const { return skip_script_comparison_; }
+  void set_skip_script_comparison(bool skip_script_comparison) {
+    skip_script_comparison_ = skip_script_comparison;
   }
 
   void SetDevToolsAttached(bool attached);
@@ -331,6 +337,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   friend class base::RefCounted<ServiceWorkerVersion>;
   friend class ServiceWorkerMetrics;
   friend class ServiceWorkerURLRequestJobTest;
+  friend class ServiceWorkerStallInStoppingTest;
   friend class ServiceWorkerVersionBrowserTest;
 
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerControlleeRequestHandlerTest,
@@ -351,6 +358,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionBrowserTest,
                            TimeoutWorkerInEvent);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, StayAliveAfterPush);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerStallInStoppingTest, DetachThenStart);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerStallInStoppingTest, DetachThenRestart);
 
   class Metrics;
   class PingController;
@@ -358,6 +367,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   typedef ServiceWorkerVersion self;
   using ServiceWorkerClients = std::vector<ServiceWorkerClientInfo>;
 
+  // Used for UMA; add new entries to the end, before NUM_REQUEST_TYPES.
   enum RequestType {
     REQUEST_ACTIVATE,
     REQUEST_INSTALL,
@@ -366,7 +376,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
     REQUEST_NOTIFICATION_CLICK,
     REQUEST_PUSH,
     REQUEST_GEOFENCING,
-    REQUEST_SERVICE_PORT_CONNECT
+    REQUEST_SERVICE_PORT_CONNECT,
+    NUM_REQUEST_TYPES
   };
 
   struct RequestInfo {
@@ -386,20 +397,26 @@ class CONTENT_EXPORT ServiceWorkerVersion
     base::TimeTicks start_time;
   };
 
+  // The timeout timer interval.
+  static const int kTimeoutTimerDelaySeconds;
   // Timeout for the worker to start.
   static const int kStartWorkerTimeoutMinutes;
   // Timeout for a request to be handled.
   static const int kRequestTimeoutMinutes;
+  // Timeout for the worker to stop.
+  static const int kStopWorkerTimeoutSeconds;
 
   ~ServiceWorkerVersion() override;
 
   // EmbeddedWorkerInstance::Listener overrides:
-  void OnScriptLoaded() override;
+  void OnThreadStarted() override;
   void OnStarting() override;
   void OnStarted() override;
   void OnStopping() override;
   void OnStopped(EmbeddedWorkerInstance::Status old_status) override;
   void OnDetached(EmbeddedWorkerInstance::Status old_status) override;
+  void OnScriptLoaded() override;
+  void OnScriptLoadFailed() override;
   void OnReportException(const base::string16& error_message,
                          int line_number,
                          int column_number,
@@ -481,7 +498,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void DidEnsureLiveRegistrationForStartWorker(
       const StatusCallback& callback,
       ServiceWorkerStatusCode status,
-      const scoped_refptr<ServiceWorkerRegistration>& protect);
+      const scoped_refptr<ServiceWorkerRegistration>& registration);
   void StartWorkerInternal();
 
   void DidSkipWaiting(int request_id);
@@ -526,7 +543,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
       IDMap<PendingRequest<CallbackType>, IDMapOwnPointer>* callback_map,
       RequestType request_type);
 
-  bool OnRequestTimeout(const RequestInfo& info);
+  bool MaybeTimeOutRequest(const RequestInfo& info);
   void SetAllRequestTimes(const base::TimeTicks& ticks);
 
   // Returns the reason the embedded worker failed to start, using information
@@ -590,10 +607,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
   base::WeakPtr<ServiceWorkerContextCore> context_;
   base::ObserverList<Listener> listeners_;
   ServiceWorkerScriptCacheMap script_cache_map_;
-  base::OneShotTimer<ServiceWorkerVersion> update_timer_;
+  base::OneShotTimer update_timer_;
 
   // Starts running in StartWorker and continues until the worker is stopped.
-  base::RepeatingTimer<ServiceWorkerVersion> timeout_timer_;
+  base::RepeatingTimer timeout_timer_;
   // Holds the time the worker last started being considered idle.
   base::TimeTicks idle_time_;
   // Holds the time that the outstanding StartWorker() request started.
@@ -614,6 +631,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   bool skip_waiting_ = false;
   bool skip_recording_startup_time_ = false;
   bool force_bypass_cache_for_scripts_ = false;
+  bool skip_script_comparison_ = false;
   bool is_update_scheduled_ = false;
   bool in_dtor_ = false;
 

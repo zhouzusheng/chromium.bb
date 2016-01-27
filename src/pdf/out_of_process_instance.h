@@ -169,8 +169,6 @@ class OutOfProcessInstance : public pp::Instance,
 
   void FormDidOpen(int32_t result);
 
-  std::string GetLocalizedString(PP_ResourceString id);
-
   void UserMetricsRecordAction(const std::string& action);
 
   enum DocumentLoadState {
@@ -256,6 +254,10 @@ class OutOfProcessInstance : public pp::Instance,
   PrintSettings print_settings_;
 
   scoped_ptr<PDFEngine> engine_;
+
+  // The PreviewModeClient used for print preview. Will be passed to
+  // |preview_engine_|.
+  scoped_ptr<PreviewModeClient> preview_client_;
 
   // This engine is used to render the individual preview page data. This is
   // used only in print preview mode. This will use |PreviewModeClient|

@@ -33,6 +33,27 @@
 #include "libANGLE/validationES.h"
 #include "libANGLE/renderer/Renderer.h"
 
+namespace
+{
+
+void MarkTransformFeedbackBufferUsage(gl::TransformFeedback *transformFeedback)
+{
+    if (transformFeedback->isActive() && !transformFeedback->isPaused())
+    {
+        for (size_t tfBufferIndex = 0; tfBufferIndex < transformFeedback->getIndexedBufferCount();
+             tfBufferIndex++)
+        {
+            const OffsetBindingPointer<gl::Buffer> &buffer =
+                transformFeedback->getIndexedBuffer(tfBufferIndex);
+            if (buffer.get() != nullptr)
+            {
+                buffer->onTransformFeedback();
+            }
+        }
+    }
+}
+}  // anonymous namespace
+
 namespace gl
 {
 
@@ -94,15 +115,10 @@ Context::Context(const egl::Config *config,
 
     mState.initializeZeroTextures(mZeroTextures);
 
-    // Allocate default FBO
-    mFramebufferMap[0] = new Framebuffer(mCaps, mRenderer, 0);
-
     bindVertexArray(0);
     bindArrayBuffer(0);
     bindElementArrayBuffer(0);
 
-    bindReadFramebuffer(0);
-    bindDrawFramebuffer(0);
     bindRenderbuffer(0);
 
     bindGenericUniformBuffer(0);
@@ -129,38 +145,41 @@ Context::Context(const egl::Config *config,
     mResetStrategy = (notifyResets ? GL_LOSE_CONTEXT_ON_RESET_EXT : GL_NO_RESET_NOTIFICATION_EXT);
     mRobustAccess = robustAccess;
 
-    mCompiler = new Compiler(mRenderer->createCompiler(getData()));
+    mCompiler = new Compiler(mRenderer, getData());
 }
 
 Context::~Context()
 {
     mState.reset();
 
-    while (!mFramebufferMap.empty())
+    for (auto framebuffer : mFramebufferMap)
     {
-        // Delete the framebuffer in reverse order to destroy the framebuffer zero last.
-        deleteFramebuffer(mFramebufferMap.rbegin()->first);
+        // Default framebuffer are owned by their respective Surface
+        if (framebuffer.second != nullptr && framebuffer.second->id() != 0)
+        {
+            SafeDelete(framebuffer.second);
+        }
     }
 
-    while (!mFenceNVMap.empty())
+    for (auto fence : mFenceNVMap)
     {
-        deleteFenceNV(mFenceNVMap.begin()->first);
+        SafeDelete(fence.second);
     }
 
-    while (!mQueryMap.empty())
+    for (auto query : mQueryMap)
     {
-        deleteQuery(mQueryMap.begin()->first);
+        query.second->release();
     }
 
-    while (!mVertexArrayMap.empty())
+    for (auto vertexArray : mVertexArrayMap)
     {
-        deleteVertexArray(mVertexArrayMap.begin()->first);
+        SafeDelete(vertexArray.second);
     }
 
     mTransformFeedbackZero.set(NULL);
-    while (!mTransformFeedbackMap.empty())
+    for (auto transformFeedback : mTransformFeedbackMap)
     {
-        deleteTransformFeedback(mTransformFeedbackMap.begin()->first);
+        SafeDelete(transformFeedback.second);
     }
 
     for (auto &zeroTexture : mZeroTextures)
@@ -204,60 +223,43 @@ void Context::makeCurrent(egl::Surface *surface)
     {
         releaseSurface();
     }
-
-    ASSERT(mCurrentSurface == nullptr);
-    mCurrentSurface = surface;
     surface->setIsCurrent(true);
+    mCurrentSurface = surface;
 
-    // Update default framebuffer
-    Framebuffer *defaultFBO = mFramebufferMap[0];
-
-    GLenum drawBufferState = GL_BACK;
-    defaultFBO->setDrawBuffers(1, &drawBufferState);
-    defaultFBO->setReadBuffer(GL_BACK);
-
-    const FramebufferAttachment *backAttachment = defaultFBO->getAttachment(GL_BACK);
-
-    if (backAttachment && backAttachment->getSurface() == surface)
+    // Update default framebuffer, the binding of the previous default
+    // framebuffer (or lack of) will have a nullptr.
     {
-        // FBO already initialized to the surface.
-        return;
-    }
-
-    const egl::Config *config = surface->getConfig();
-
-    defaultFBO->setAttachment(GL_FRAMEBUFFER_DEFAULT, GL_BACK, ImageIndex::MakeInvalid(), surface);
-
-    if (config->depthSize > 0)
-    {
-        defaultFBO->setAttachment(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH, ImageIndex::MakeInvalid(), surface);
-    }
-    else
-    {
-        defaultFBO->resetAttachment(GL_DEPTH);
-    }
-
-    if (config->stencilSize > 0)
-    {
-        defaultFBO->setAttachment(GL_FRAMEBUFFER_DEFAULT, GL_STENCIL, ImageIndex::MakeInvalid(), surface);
-    }
-    else
-    {
-        defaultFBO->resetAttachment(GL_STENCIL);
+        Framebuffer *newDefault = surface->getDefaultFramebuffer();
+        if (mState.getReadFramebuffer() == nullptr)
+        {
+            mState.setReadFramebufferBinding(newDefault);
+        }
+        if (mState.getDrawFramebuffer() == nullptr)
+        {
+            mState.setDrawFramebufferBinding(newDefault);
+        }
+        mFramebufferMap[0] = newDefault;
     }
 }
 
 void Context::releaseSurface()
 {
-    Framebuffer *defaultFBO = mFramebufferMap[0];
-    if (defaultFBO)
+    ASSERT(mCurrentSurface != nullptr);
+
+    // Remove the default framebuffer
     {
-        defaultFBO->resetAttachment(GL_BACK);
-        defaultFBO->resetAttachment(GL_DEPTH);
-        defaultFBO->resetAttachment(GL_STENCIL);
+        Framebuffer *currentDefault = mCurrentSurface->getDefaultFramebuffer();
+        if (mState.getReadFramebuffer() == currentDefault)
+        {
+            mState.setReadFramebufferBinding(nullptr);
+        }
+        if (mState.getDrawFramebuffer() == currentDefault)
+        {
+            mState.setDrawFramebufferBinding(nullptr);
+        }
+        mFramebufferMap.erase(0);
     }
 
-    ASSERT(mCurrentSurface != nullptr);
     mCurrentSurface->setIsCurrent(false);
     mCurrentSurface = nullptr;
 }
@@ -287,7 +289,7 @@ GLuint Context::createProgram()
 
 GLuint Context::createShader(GLenum type)
 {
-    return mResourceManager->createShader(getData(), type);
+    return mResourceManager->createShader(mRenderer->getRendererLimitations(), type);
 }
 
 GLuint Context::createTexture()
@@ -849,7 +851,7 @@ void Context::getIntegerv(GLenum pname, GLint *params)
       case GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS:           *params = mCaps.maxVertexTextureImageUnits;                     break;
       case GL_MAX_TEXTURE_IMAGE_UNITS:                  *params = mCaps.maxTextureImageUnits;                           break;
       case GL_MAX_FRAGMENT_UNIFORM_VECTORS:             *params = mCaps.maxFragmentUniformVectors;                      break;
-      case GL_MAX_FRAGMENT_UNIFORM_COMPONENTS:          *params = mCaps.maxFragmentInputComponents;                     break;
+      case GL_MAX_FRAGMENT_UNIFORM_COMPONENTS:          *params = mCaps.maxFragmentUniformComponents;                   break;
       case GL_MAX_RENDERBUFFER_SIZE:                    *params = mCaps.maxRenderbufferSize;                            break;
       case GL_MAX_COLOR_ATTACHMENTS_EXT:                *params = mCaps.maxColorAttachments;                            break;
       case GL_MAX_DRAW_BUFFERS_EXT:                     *params = mCaps.maxDrawBuffers;                                 break;
@@ -1092,6 +1094,26 @@ bool Context::getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *nu
             }
         }
         return true;
+        case GL_PACK_ROW_LENGTH:
+        case GL_PACK_SKIP_ROWS:
+        case GL_PACK_SKIP_PIXELS:
+            if (!mExtensions.packSubimage)
+            {
+                return false;
+            }
+            *type      = GL_INT;
+            *numParams = 1;
+            return true;
+        case GL_UNPACK_ROW_LENGTH:
+        case GL_UNPACK_SKIP_ROWS:
+        case GL_UNPACK_SKIP_PIXELS:
+            if (!mExtensions.unpackSubimage)
+            {
+                return false;
+            }
+            *type      = GL_INT;
+            *numParams = 1;
+            return true;
       case GL_MAX_VIEWPORT_DIMS:
         {
             *type = GL_INT;
@@ -1202,6 +1224,12 @@ bool Context::getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *nu
       case GL_MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS:
       case GL_MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS:
       case GL_MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS:
+      case GL_PACK_ROW_LENGTH:
+      case GL_PACK_SKIP_ROWS:
+      case GL_PACK_SKIP_PIXELS:
+      case GL_UNPACK_ROW_LENGTH:
+      case GL_UNPACK_SKIP_ROWS:
+      case GL_UNPACK_SKIP_PIXELS:
         {
             *type = GL_INT;
             *numParams = 1;
@@ -1267,37 +1295,67 @@ bool Context::getIndexedQueryParameterInfo(GLenum target, GLenum *type, unsigned
     return false;
 }
 
-Error Context::drawArrays(GLenum mode, GLint first, GLsizei count, GLsizei instances)
+Error Context::drawArrays(GLenum mode, GLint first, GLsizei count)
 {
     syncRendererState();
-    Error error = mRenderer->drawArrays(getData(), mode, first, count, instances);
+    Error error = mRenderer->drawArrays(getData(), mode, first, count);
     if (error.isError())
     {
         return error;
     }
 
-    TransformFeedback *transformFeedback = mState.getCurrentTransformFeedback();
-    if (transformFeedback->isActive() && !transformFeedback->isPaused())
-    {
-        for (size_t tfBufferIndex = 0; tfBufferIndex < transformFeedback->getIndexedBufferCount(); tfBufferIndex++)
-        {
-            const OffsetBindingPointer<Buffer> &buffer = transformFeedback->getIndexedBuffer(tfBufferIndex);
-            if (buffer.get() != nullptr)
-            {
-                buffer->onTransformFeedback();
-            }
-        }
-    }
+    MarkTransformFeedbackBufferUsage(mState.getCurrentTransformFeedback());
 
     return Error(GL_NO_ERROR);
 }
 
-Error Context::drawElements(GLenum mode, GLsizei count, GLenum type,
-                            const GLvoid *indices, GLsizei instances,
-                            const RangeUI &indexRange)
+Error Context::drawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount)
 {
     syncRendererState();
-    return mRenderer->drawElements(getData(), mode, count, type, indices, instances, indexRange);
+    Error error = mRenderer->drawArraysInstanced(getData(), mode, first, count, instanceCount);
+    if (error.isError())
+    {
+        return error;
+    }
+
+    MarkTransformFeedbackBufferUsage(mState.getCurrentTransformFeedback());
+
+    return Error(GL_NO_ERROR);
+}
+
+Error Context::drawElements(GLenum mode,
+                            GLsizei count,
+                            GLenum type,
+                            const GLvoid *indices,
+                            const IndexRange &indexRange)
+{
+    syncRendererState();
+    return mRenderer->drawElements(getData(), mode, count, type, indices, indexRange);
+}
+
+Error Context::drawElementsInstanced(GLenum mode,
+                                     GLsizei count,
+                                     GLenum type,
+                                     const GLvoid *indices,
+                                     GLsizei instances,
+                                     const IndexRange &indexRange)
+{
+    syncRendererState();
+    return mRenderer->drawElementsInstanced(getData(), mode, count, type, indices, instances,
+                                            indexRange);
+}
+
+Error Context::drawRangeElements(GLenum mode,
+                                 GLuint start,
+                                 GLuint end,
+                                 GLsizei count,
+                                 GLenum type,
+                                 const GLvoid *indices,
+                                 const IndexRange &indexRange)
+{
+    syncRendererState();
+    return mRenderer->drawRangeElements(getData(), mode, start, end, count, type, indices,
+                                        indexRange);
 }
 
 Error Context::flush()
@@ -1402,10 +1460,19 @@ EGLenum Context::getClientType() const
 
 EGLenum Context::getRenderBuffer() const
 {
-    ASSERT(mFramebufferMap.count(0) > 0);
-    const Framebuffer *framebuffer = mFramebufferMap.find(0)->second;
-    const FramebufferAttachment *backAttachment = framebuffer->getAttachment(GL_BACK);
-    return backAttachment ? backAttachment->getSurface()->getRenderBuffer() : EGL_NONE;
+    auto framebufferIt = mFramebufferMap.find(0);
+    if (framebufferIt != mFramebufferMap.end())
+    {
+        const Framebuffer *framebuffer              = framebufferIt->second;
+        const FramebufferAttachment *backAttachment = framebuffer->getAttachment(GL_BACK);
+
+        ASSERT(backAttachment != nullptr);
+        return backAttachment->getSurface()->getRenderBuffer();
+    }
+    else
+    {
+        return EGL_NONE;
+    }
 }
 
 const Caps &Context::getCaps() const
@@ -1518,19 +1585,22 @@ void Context::samplerParameteri(GLuint sampler, GLenum pname, GLint param)
     Sampler *samplerObject = getSampler(sampler);
     ASSERT(samplerObject);
 
+    // clang-format off
     switch (pname)
     {
-      case GL_TEXTURE_MIN_FILTER:    samplerObject->setMinFilter(static_cast<GLenum>(param));       break;
-      case GL_TEXTURE_MAG_FILTER:    samplerObject->setMagFilter(static_cast<GLenum>(param));       break;
-      case GL_TEXTURE_WRAP_S:        samplerObject->setWrapS(static_cast<GLenum>(param));           break;
-      case GL_TEXTURE_WRAP_T:        samplerObject->setWrapT(static_cast<GLenum>(param));           break;
-      case GL_TEXTURE_WRAP_R:        samplerObject->setWrapR(static_cast<GLenum>(param));           break;
-      case GL_TEXTURE_MIN_LOD:       samplerObject->setMinLod(static_cast<GLfloat>(param));         break;
-      case GL_TEXTURE_MAX_LOD:       samplerObject->setMaxLod(static_cast<GLfloat>(param));         break;
-      case GL_TEXTURE_COMPARE_MODE:  samplerObject->setComparisonMode(static_cast<GLenum>(param));  break;
-      case GL_TEXTURE_COMPARE_FUNC:  samplerObject->setComparisonFunc(static_cast<GLenum>(param));  break;
-      default:                       UNREACHABLE(); break;
+      case GL_TEXTURE_MIN_FILTER:         samplerObject->setMinFilter(static_cast<GLenum>(param));    break;
+      case GL_TEXTURE_MAG_FILTER:         samplerObject->setMagFilter(static_cast<GLenum>(param));    break;
+      case GL_TEXTURE_WRAP_S:             samplerObject->setWrapS(static_cast<GLenum>(param));        break;
+      case GL_TEXTURE_WRAP_T:             samplerObject->setWrapT(static_cast<GLenum>(param));        break;
+      case GL_TEXTURE_WRAP_R:             samplerObject->setWrapR(static_cast<GLenum>(param));        break;
+      case GL_TEXTURE_MAX_ANISOTROPY_EXT: samplerObject->setMaxAnisotropy(std::min(static_cast<GLfloat>(param), getExtensions().maxTextureAnisotropy)); break;
+      case GL_TEXTURE_MIN_LOD:            samplerObject->setMinLod(static_cast<GLfloat>(param));      break;
+      case GL_TEXTURE_MAX_LOD:            samplerObject->setMaxLod(static_cast<GLfloat>(param));      break;
+      case GL_TEXTURE_COMPARE_MODE:       samplerObject->setCompareMode(static_cast<GLenum>(param));  break;
+      case GL_TEXTURE_COMPARE_FUNC:       samplerObject->setCompareFunc(static_cast<GLenum>(param));  break;
+      default:                            UNREACHABLE(); break;
     }
+    // clang-format on
 }
 
 void Context::samplerParameterf(GLuint sampler, GLenum pname, GLfloat param)
@@ -1540,19 +1610,22 @@ void Context::samplerParameterf(GLuint sampler, GLenum pname, GLfloat param)
     Sampler *samplerObject = getSampler(sampler);
     ASSERT(samplerObject);
 
+    // clang-format off
     switch (pname)
     {
-      case GL_TEXTURE_MIN_FILTER:    samplerObject->setMinFilter(uiround<GLenum>(param));       break;
-      case GL_TEXTURE_MAG_FILTER:    samplerObject->setMagFilter(uiround<GLenum>(param));       break;
-      case GL_TEXTURE_WRAP_S:        samplerObject->setWrapS(uiround<GLenum>(param));           break;
-      case GL_TEXTURE_WRAP_T:        samplerObject->setWrapT(uiround<GLenum>(param));           break;
-      case GL_TEXTURE_WRAP_R:        samplerObject->setWrapR(uiround<GLenum>(param));           break;
-      case GL_TEXTURE_MIN_LOD:       samplerObject->setMinLod(param);                           break;
-      case GL_TEXTURE_MAX_LOD:       samplerObject->setMaxLod(param);                           break;
-      case GL_TEXTURE_COMPARE_MODE:  samplerObject->setComparisonMode(uiround<GLenum>(param));  break;
-      case GL_TEXTURE_COMPARE_FUNC:  samplerObject->setComparisonFunc(uiround<GLenum>(param));  break;
-      default:                       UNREACHABLE(); break;
+      case GL_TEXTURE_MIN_FILTER:         samplerObject->setMinFilter(uiround<GLenum>(param));   break;
+      case GL_TEXTURE_MAG_FILTER:         samplerObject->setMagFilter(uiround<GLenum>(param));   break;
+      case GL_TEXTURE_WRAP_S:             samplerObject->setWrapS(uiround<GLenum>(param));       break;
+      case GL_TEXTURE_WRAP_T:             samplerObject->setWrapT(uiround<GLenum>(param));       break;
+      case GL_TEXTURE_WRAP_R:             samplerObject->setWrapR(uiround<GLenum>(param));       break;
+      case GL_TEXTURE_MAX_ANISOTROPY_EXT: samplerObject->setMaxAnisotropy(std::min(param, getExtensions().maxTextureAnisotropy)); break;
+      case GL_TEXTURE_MIN_LOD:            samplerObject->setMinLod(param);                       break;
+      case GL_TEXTURE_MAX_LOD:            samplerObject->setMaxLod(param);                       break;
+      case GL_TEXTURE_COMPARE_MODE:       samplerObject->setCompareMode(uiround<GLenum>(param)); break;
+      case GL_TEXTURE_COMPARE_FUNC:       samplerObject->setCompareFunc(uiround<GLenum>(param)); break;
+      default:                            UNREACHABLE(); break;
     }
+    // clang-format on
 }
 
 GLint Context::getSamplerParameteri(GLuint sampler, GLenum pname)
@@ -1562,19 +1635,22 @@ GLint Context::getSamplerParameteri(GLuint sampler, GLenum pname)
     Sampler *samplerObject = getSampler(sampler);
     ASSERT(samplerObject);
 
+    // clang-format off
     switch (pname)
     {
-      case GL_TEXTURE_MIN_FILTER:    return static_cast<GLint>(samplerObject->getMinFilter());
-      case GL_TEXTURE_MAG_FILTER:    return static_cast<GLint>(samplerObject->getMagFilter());
-      case GL_TEXTURE_WRAP_S:        return static_cast<GLint>(samplerObject->getWrapS());
-      case GL_TEXTURE_WRAP_T:        return static_cast<GLint>(samplerObject->getWrapT());
-      case GL_TEXTURE_WRAP_R:        return static_cast<GLint>(samplerObject->getWrapR());
-      case GL_TEXTURE_MIN_LOD:       return uiround<GLint>(samplerObject->getMinLod());
-      case GL_TEXTURE_MAX_LOD:       return uiround<GLint>(samplerObject->getMaxLod());
-      case GL_TEXTURE_COMPARE_MODE:  return static_cast<GLint>(samplerObject->getComparisonMode());
-      case GL_TEXTURE_COMPARE_FUNC:  return static_cast<GLint>(samplerObject->getComparisonFunc());
-      default:                       UNREACHABLE(); return 0;
+      case GL_TEXTURE_MIN_FILTER:         return static_cast<GLint>(samplerObject->getMinFilter());
+      case GL_TEXTURE_MAG_FILTER:         return static_cast<GLint>(samplerObject->getMagFilter());
+      case GL_TEXTURE_WRAP_S:             return static_cast<GLint>(samplerObject->getWrapS());
+      case GL_TEXTURE_WRAP_T:             return static_cast<GLint>(samplerObject->getWrapT());
+      case GL_TEXTURE_WRAP_R:             return static_cast<GLint>(samplerObject->getWrapR());
+      case GL_TEXTURE_MAX_ANISOTROPY_EXT: return static_cast<GLint>(samplerObject->getMaxAnisotropy());
+      case GL_TEXTURE_MIN_LOD:            return uiround<GLint>(samplerObject->getMinLod());
+      case GL_TEXTURE_MAX_LOD:            return uiround<GLint>(samplerObject->getMaxLod());
+      case GL_TEXTURE_COMPARE_MODE:       return static_cast<GLint>(samplerObject->getCompareMode());
+      case GL_TEXTURE_COMPARE_FUNC:       return static_cast<GLint>(samplerObject->getCompareFunc());
+      default:                            UNREACHABLE(); return 0;
     }
+    // clang-format on
 }
 
 GLfloat Context::getSamplerParameterf(GLuint sampler, GLenum pname)
@@ -1584,19 +1660,22 @@ GLfloat Context::getSamplerParameterf(GLuint sampler, GLenum pname)
     Sampler *samplerObject = getSampler(sampler);
     ASSERT(samplerObject);
 
+    // clang-format off
     switch (pname)
     {
-      case GL_TEXTURE_MIN_FILTER:    return static_cast<GLfloat>(samplerObject->getMinFilter());
-      case GL_TEXTURE_MAG_FILTER:    return static_cast<GLfloat>(samplerObject->getMagFilter());
-      case GL_TEXTURE_WRAP_S:        return static_cast<GLfloat>(samplerObject->getWrapS());
-      case GL_TEXTURE_WRAP_T:        return static_cast<GLfloat>(samplerObject->getWrapT());
-      case GL_TEXTURE_WRAP_R:        return static_cast<GLfloat>(samplerObject->getWrapR());
-      case GL_TEXTURE_MIN_LOD:       return samplerObject->getMinLod();
-      case GL_TEXTURE_MAX_LOD:       return samplerObject->getMaxLod();
-      case GL_TEXTURE_COMPARE_MODE:  return static_cast<GLfloat>(samplerObject->getComparisonMode());
-      case GL_TEXTURE_COMPARE_FUNC:  return static_cast<GLfloat>(samplerObject->getComparisonFunc());
-      default:                       UNREACHABLE(); return 0;
+      case GL_TEXTURE_MIN_FILTER:         return static_cast<GLfloat>(samplerObject->getMinFilter());
+      case GL_TEXTURE_MAG_FILTER:         return static_cast<GLfloat>(samplerObject->getMagFilter());
+      case GL_TEXTURE_WRAP_S:             return static_cast<GLfloat>(samplerObject->getWrapS());
+      case GL_TEXTURE_WRAP_T:             return static_cast<GLfloat>(samplerObject->getWrapT());
+      case GL_TEXTURE_WRAP_R:             return static_cast<GLfloat>(samplerObject->getWrapR());
+      case GL_TEXTURE_MAX_ANISOTROPY_EXT: return samplerObject->getMaxAnisotropy();
+      case GL_TEXTURE_MIN_LOD:            return samplerObject->getMinLod();
+      case GL_TEXTURE_MAX_LOD:            return samplerObject->getMaxLod();
+      case GL_TEXTURE_COMPARE_MODE:       return static_cast<GLfloat>(samplerObject->getCompareMode());
+      case GL_TEXTURE_COMPARE_FUNC:       return static_cast<GLfloat>(samplerObject->getCompareFunc());
+      default:                            UNREACHABLE(); return 0;
     }
+    // clang-format on
 }
 
 void Context::initRendererString()
@@ -1675,10 +1754,15 @@ void Context::initCaps(GLuint clientVersion)
 
         const InternalFormat &formatInfo = GetInternalFormatInfo(format);
 
-        // Update the format caps based on the client version and extensions
-        formatCaps.texturable = formatInfo.textureSupport(clientVersion, mExtensions);
-        formatCaps.renderable = formatInfo.renderSupport(clientVersion, mExtensions);
-        formatCaps.filterable = formatInfo.filterSupport(clientVersion, mExtensions);
+        // Update the format caps based on the client version and extensions.
+        // Caps are AND'd with the renderer caps because some core formats are still unsupported in
+        // ES3.
+        formatCaps.texturable =
+            formatCaps.texturable && formatInfo.textureSupport(clientVersion, mExtensions);
+        formatCaps.renderable =
+            formatCaps.renderable && formatInfo.renderSupport(clientVersion, mExtensions);
+        formatCaps.filterable =
+            formatCaps.filterable && formatInfo.filterSupport(clientVersion, mExtensions);
 
         // OpenGL ES does not support multisampling with integer formats
         if (!formatInfo.renderSupport || formatInfo.componentType == GL_INT || formatInfo.componentType == GL_UNSIGNED_INT)

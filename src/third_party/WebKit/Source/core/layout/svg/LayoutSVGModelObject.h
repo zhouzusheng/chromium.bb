@@ -65,7 +65,7 @@ public:
     bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVG || LayoutObject::isOfType(type); }
 
 protected:
-    void addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const final;
+    void addLayerHitTestRects(LayerHitTestRects&, const PaintLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const final;
     void willBeDestroyed() override;
 
 private:
@@ -74,7 +74,7 @@ private:
 
     // This method should never be called, SVG uses a different nodeAtPoint method
     bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) final;
-    IntRect absoluteOutlineBoundingBoxRect() const final;
+    IntRect absoluteElementBoundingBoxRect() const final;
 
     void invalidateTreeIfNeeded(PaintInvalidationState&) final;
 

@@ -20,7 +20,6 @@
         'usb/device_impl.h',
         'usb/device_manager_impl.cc',
         'usb/device_manager_impl.h',
-        'usb/public/cpp/device_manager_delegate.h',
         'usb/type_converters.cc',
         'usb/type_converters.h',
       ],
@@ -30,6 +29,7 @@
         '<(DEPTH)/device/usb/usb.gyp:device_usb',
         '<(DEPTH)/mojo/mojo_base.gyp:mojo_application_base',
         '<(DEPTH)/mojo/mojo_base.gyp:mojo_application_bindings',
+        '<(DEPTH)/mojo/mojo_base.gyp:mojo_url_type_converters',
         '<(DEPTH)/third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
       ],
       'export_dependent_settings': [
@@ -45,6 +45,7 @@
         'mojom_files': [
           'usb/public/interfaces/device.mojom',
           'usb/public/interfaces/device_manager.mojom',
+          'usb/public/interfaces/permission_provider.mojom',
         ],
       },
       'includes': [

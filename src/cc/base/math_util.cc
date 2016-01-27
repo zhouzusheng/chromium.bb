@@ -127,7 +127,14 @@ gfx::Rect MathUtil::MapEnclosingClippedRect(const gfx::Transform& transform,
                          static_cast<int>(transform.matrix().getFloat(1, 3)));
     return src_rect + offset;
   }
-  return gfx::ToEnclosingRect(MapClippedRect(transform, gfx::RectF(src_rect)));
+  gfx::RectF mapped_rect = MapClippedRect(transform, gfx::RectF(src_rect));
+
+  // gfx::ToEnclosingRect crashes if called on a RectF with any NaN coordinate.
+  if (std::isnan(mapped_rect.x()) || std::isnan(mapped_rect.y()) ||
+      std::isnan(mapped_rect.right()) || std::isnan(mapped_rect.bottom()))
+    return gfx::Rect();
+
+  return gfx::ToEnclosingRect(mapped_rect);
 }
 
 gfx::RectF MathUtil::MapClippedRect(const gfx::Transform& transform,
@@ -167,8 +174,15 @@ gfx::Rect MathUtil::ProjectEnclosingClippedRect(const gfx::Transform& transform,
                          static_cast<int>(transform.matrix().getFloat(1, 3)));
     return src_rect + offset;
   }
-  return gfx::ToEnclosingRect(
-      ProjectClippedRect(transform, gfx::RectF(src_rect)));
+  gfx::RectF projected_rect =
+      ProjectClippedRect(transform, gfx::RectF(src_rect));
+
+  // gfx::ToEnclosingRect crashes if called on a RectF with any NaN coordinate.
+  if (std::isnan(projected_rect.x()) || std::isnan(projected_rect.y()) ||
+      std::isnan(projected_rect.right()) || std::isnan(projected_rect.bottom()))
+    return gfx::Rect();
+
+  return gfx::ToEnclosingRect(projected_rect);
 }
 
 gfx::RectF MathUtil::ProjectClippedRect(const gfx::Transform& transform,
@@ -202,7 +216,7 @@ gfx::Rect MathUtil::MapEnclosedRectWith2dAxisAlignedTransform(
   if (transform.IsIdentityOrTranslation()) {
     gfx::Vector2dF offset(transform.matrix().getFloat(0, 3),
                           transform.matrix().getFloat(1, 3));
-    return gfx::ToEnclosedRect(rect + offset);
+    return gfx::ToEnclosedRect(gfx::RectF(rect) + offset);
   }
 
   SkMScalar quad[2 * 2];  // input: 2 x 2D points

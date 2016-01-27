@@ -12,6 +12,7 @@
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 
 namespace content {
 
@@ -33,19 +34,20 @@ gfx::Point GetScreenLocationFromEvent(const ui::LocatedEvent& event) {
   return screen_location;
 }
 
-blink::WebInputEvent::Modifiers DomCodeToWebInputEventModifiers(
-    ui::DomCode code) {
-  switch (ui::KeycodeConverter::DomCodeToLocation(code)) {
-    case ui::DomKeyLocation::LEFT:
-      return blink::WebInputEvent::IsLeft;
-    case ui::DomKeyLocation::RIGHT:
-      return blink::WebInputEvent::IsRight;
-    case ui::DomKeyLocation::NUMPAD:
-      return blink::WebInputEvent::IsKeyPad;
-    case ui::DomKeyLocation::STANDARD:
-      break;
+blink::WebPointerProperties::PointerType EventPointerTypeToWebPointerType(
+    ui::EventPointerType pointer_type) {
+  switch (pointer_type) {
+    case ui::EventPointerType::POINTER_TYPE_UNKNOWN:
+      return blink::WebPointerProperties::PointerType::PointerTypeUnknown;
+    case ui::EventPointerType::POINTER_TYPE_MOUSE:
+      return blink::WebPointerProperties::PointerType::PointerTypeMouse;
+    case ui::EventPointerType::POINTER_TYPE_PEN:
+      return blink::WebPointerProperties::PointerType::PointerTypePen;
+    case ui::EventPointerType::POINTER_TYPE_TOUCH:
+      return blink::WebPointerProperties::PointerType::PointerTypeTouch;
   }
-  return static_cast<blink::WebInputEvent::Modifiers>(0);
+  NOTREACHED() << "Unexpected EventPointerType";
+  return blink::WebPointerProperties::PointerType::PointerTypeUnknown;
 }
 
 }  // namespace
@@ -84,10 +86,15 @@ blink::WebKeyboardEvent MakeWebKeyboardEventFromAuraEvent(
   if (webkit_event.modifiers & blink::WebInputEvent::AltKey)
     webkit_event.isSystemKey = true;
 
-  webkit_event.windowsKeyCode = event.GetLocatedWindowsKeyboardCode();
+  // TODO(dtapuska): crbug.com/570388. Ozone appears to deliver
+  // key_code events that aren't "located" for the keypad like
+  // Windows and X11 do and blink expects.
+  webkit_event.windowsKeyCode =
+      ui::NonLocatedToLocatedKeypadKeyboardCode(event.key_code(), event.code());
   webkit_event.nativeKeyCode =
     ui::KeycodeConverter::DomCodeToNativeKeycode(event.code());
   webkit_event.domCode = static_cast<int>(event.code());
+  webkit_event.domKey = static_cast<int>(event.GetDomKey());
   webkit_event.unmodifiedText[0] = event.GetUnmodifiedText();
   webkit_event.text[0] = event.GetText();
 
@@ -280,6 +287,7 @@ blink::WebKeyboardEvent MakeWebKeyboardEvent(const ui::KeyEvent& event) {
         MakeWebKeyboardEventFromNativeEvent(event.native_event()));
     webkit_event.modifiers |= DomCodeToWebInputEventModifiers(event.code());
     webkit_event.domCode = static_cast<int>(event.code());
+    webkit_event.domKey = static_cast<int>(event.GetDomKey());
     return webkit_event;
   }
 #endif
@@ -383,6 +391,12 @@ blink::WebMouseEvent MakeWebMouseEventFromAuraEvent(
       break;
   }
 
+  webkit_event.tiltX = roundf(event.pointer_details().tilt_x());
+  webkit_event.tiltY = roundf(event.pointer_details().tilt_y());
+  webkit_event.force = event.pointer_details().force();
+  webkit_event.pointerType =
+      EventPointerTypeToWebPointerType(event.pointer_details().pointer_type());
+
   return webkit_event;
 }
 
@@ -405,6 +419,12 @@ blink::WebMouseWheelEvent MakeWebMouseWheelEventFromAuraEvent(
 
   webkit_event.wheelTicksX = webkit_event.deltaX / kPixelsPerTick;
   webkit_event.wheelTicksY = webkit_event.deltaY / kPixelsPerTick;
+
+  webkit_event.tiltX = roundf(event.pointer_details().tilt_x());
+  webkit_event.tiltY = roundf(event.pointer_details().tilt_y());
+  webkit_event.force = event.pointer_details().force();
+  webkit_event.pointerType =
+      EventPointerTypeToWebPointerType(event.pointer_details().pointer_type());
 
   return webkit_event;
 }

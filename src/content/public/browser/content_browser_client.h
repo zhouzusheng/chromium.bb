@@ -16,6 +16,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/values.h"
 #include "content/public/browser/certificate_request_result_type.h"
+#include "content/public/browser/navigation_throttle.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/resource_type.h"
@@ -96,6 +97,7 @@ class DevToolsManagerDelegate;
 class ExternalVideoSurfaceContainer;
 class LocationProvider;
 class MediaObserver;
+class NavigationHandle;
 class NavigatorConnectContext;
 class NavigatorConnectServiceFactory;
 class PlatformNotificationService;
@@ -178,6 +180,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldUseProcessPerSite(BrowserContext* browser_context,
                                        const GURL& effective_url);
 
+  // Returns true unless the effective URL is part of a site that cannot live in
+  // a process dedicated to that site.  This is only called if
+  // SiteIsolationPolicy::DoesSiteRequireDedicatedProcess returns true.
+  // TODO(nick): Remove this function once https://crbug.com/160576 is fixed,
+  // and origin lock can be applied to all URLs.
+  virtual bool ShouldLockToOrigin(BrowserContext* browser_context,
+                                  const GURL& effective_url);
+
   // Returns a list additional WebUI schemes, if any.  These additional schemes
   // act as aliases to the chrome: scheme.  The additional schemes may or may
   // not serve specific WebUI pages depending on the particular URLDataSource
@@ -190,6 +200,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // URLRequestChromeJob::CheckStoragePartitionMatches.
   virtual void GetAdditionalWebUIHostsToIgnoreParititionCheck(
       std::vector<std::string>* hosts) {}
+
+  // Called when WebUI objects are created to get aggregate usage data (i.e. is
+  // chrome://downloads used more than chrome://bookmarks?). Only internal (e.g.
+  // chrome://) URLs are logged. Returns whether the URL was actually logged.
+  virtual bool LogWebUIUrl(const GURL& web_ui_url) const;
 
   // Creates the main net::URLRequestContextGetter. Should only be called once
   // per ContentBrowserClient object.
@@ -302,6 +317,8 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Allow the embedder to control if a Service Worker can be associated
   // with the given scope.
+  // Invalid (-1) process/frame ids indicate this is for starting a service
+  // worker, which is not necessarily associated with a particular frame.
   // This is called on the IO thread.
   virtual bool AllowServiceWorker(const GURL& scope,
                                   const GURL& first_party,
@@ -631,16 +648,23 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void RegisterInProcessMojoApplications(
       StaticMojoApplicationMap* apps) {}
 
+  using OutOfProcessMojoApplicationMap = std::map<GURL, base::string16>;
+
+  // Registers Mojo applications to be loaded out of the browser process, in a
+  // sandboxed utility process. The value of each map entry should be the
+  // process name to use for the application's host process when launched.
+  virtual void RegisterOutOfProcessMojoApplications(
+      OutOfProcessMojoApplicationMap* apps) {}
+
   // Registers Mojo applications to be loaded out of the browser process (in
-  // a utility process) without the sandbox. By default, the utility process
-  // thats runs Mojo applications are sandboxed.
+  // a utility process) without the sandbox.
   //
   // WARNING: This path is NOT recommended! If a Mojo application needs a
   // service that is only available out of the sandbox, it could ask the browser
   // process to provide it (e.g. through OverrideFrameMojoShellServices()). Only
   // use this method when that approach does not work.
   virtual void RegisterUnsandboxedOutOfProcessMojoApplications(
-      std::vector<GURL>* urls) {}
+      OutOfProcessMojoApplicationMap* apps) {}
 
   // Registers additional navigator.connect service factories available in a
   // particular NavigatorConnectContext.
@@ -667,6 +691,14 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Allows the embedder to record |metric| for a specific |url|.
   virtual void RecordURLMetric(const std::string& metric, const GURL& url) {}
+
+  // Allows the embedder to register one or more NavigationThrottles for the
+  // navigation indicated by |navigation_handle|.  A NavigationThrottle is used
+  // to control the flow of a navigation on the UI thread. The embedder is
+  // guaranteed that the throttles will be executed in the order they were
+  // provided.
+  virtual ScopedVector<NavigationThrottle> CreateThrottlesForNavigation(
+      NavigationHandle* navigation_handle);
 
   // Populates |mappings| with all files that need to be mapped before launching
   // a child process.

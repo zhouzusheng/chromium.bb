@@ -35,7 +35,7 @@
 #include <chrome/renderer/spellchecker/spellcheck_provider.h>
 #include <components/printing/renderer/print_web_view_helper.h>
 #include <content/child/request_info.h>
-#include <content/public/renderer/render_font_warmup_win.h>
+#include <content/common/font_warmup_win.h>
 #include <content/public/renderer/render_thread.h>
 #include <net/base/net_errors.h>
 #include <skia/ext/fontmgr_default_win.h>

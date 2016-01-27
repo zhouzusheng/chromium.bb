@@ -1027,9 +1027,6 @@ static const GLES2Util::EnumToString enum_to_string_table[] = {
         0x8E7D, "GL_MAX_PATCH_VERTICES_EXT",
     },
     {
-        0x6005, "GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM",
-    },
-    {
         0x9105, "GL_TEXTURE_BINDING_2D_MULTISAMPLE_ARRAY_OES",
     },
     {
@@ -3415,6 +3412,9 @@ std::string GLES2Util::GetStringAttachment(uint32_t value) {
       {GL_DEPTH_ATTACHMENT, "GL_DEPTH_ATTACHMENT"},
       {GL_STENCIL_ATTACHMENT, "GL_STENCIL_ATTACHMENT"},
       {GL_DEPTH_STENCIL_ATTACHMENT, "GL_DEPTH_STENCIL_ATTACHMENT"},
+      {GL_COLOR_EXT, "GL_COLOR_EXT"},
+      {GL_DEPTH_EXT, "GL_DEPTH_EXT"},
+      {GL_STENCIL_EXT, "GL_STENCIL_EXT"},
   };
   return GLES2Util::GetQualifiedEnumString(string_table,
                                            arraysize(string_table), value);
@@ -4139,8 +4139,6 @@ std::string GLES2Util::GetStringQueryTarget(uint32_t value) {
        "GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT"},
       {GL_COMMANDS_ISSUED_CHROMIUM, "GL_COMMANDS_ISSUED_CHROMIUM"},
       {GL_LATENCY_QUERY_CHROMIUM, "GL_LATENCY_QUERY_CHROMIUM"},
-      {GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM,
-       "GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM"},
       {GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM,
        "GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM"},
       {GL_COMMANDS_COMPLETED_CHROMIUM, "GL_COMMANDS_COMPLETED_CHROMIUM"},
@@ -4179,6 +4177,11 @@ std::string GLES2Util::GetStringReadPixelFormat(uint32_t value) {
       {GL_ALPHA, "GL_ALPHA"},
       {GL_RGB, "GL_RGB"},
       {GL_RGBA, "GL_RGBA"},
+      {GL_RED, "GL_RED"},
+      {GL_RED_INTEGER, "GL_RED_INTEGER"},
+      {GL_RG, "GL_RG"},
+      {GL_RG_INTEGER, "GL_RG_INTEGER"},
+      {GL_RGB_INTEGER, "GL_RGB_INTEGER"},
       {GL_RGBA_INTEGER, "GL_RGBA_INTEGER"},
   };
   return GLES2Util::GetQualifiedEnumString(string_table,
@@ -4191,8 +4194,12 @@ std::string GLES2Util::GetStringReadPixelType(uint32_t value) {
       {GL_UNSIGNED_SHORT_5_6_5, "GL_UNSIGNED_SHORT_5_6_5"},
       {GL_UNSIGNED_SHORT_4_4_4_4, "GL_UNSIGNED_SHORT_4_4_4_4"},
       {GL_UNSIGNED_SHORT_5_5_5_1, "GL_UNSIGNED_SHORT_5_5_5_1"},
+      {GL_BYTE, "GL_BYTE"},
+      {GL_UNSIGNED_SHORT, "GL_UNSIGNED_SHORT"},
+      {GL_SHORT, "GL_SHORT"},
       {GL_UNSIGNED_INT, "GL_UNSIGNED_INT"},
       {GL_INT, "GL_INT"},
+      {GL_HALF_FLOAT, "GL_HALF_FLOAT"},
       {GL_FLOAT, "GL_FLOAT"},
       {GL_UNSIGNED_INT_2_10_10_10_REV, "GL_UNSIGNED_INT_2_10_10_10_REV"},
   };

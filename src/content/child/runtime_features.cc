@@ -80,8 +80,11 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   // until we can find how to disable it only for Blink instances running in a
   // renderer process in Metro, we need to disable the API altogether for Win8.
   // See http://crbug.com/400846
-  if (base::win::OSInfo::GetInstance()->version() >= base::win::VERSION_WIN8)
+  base::win::Version version = base::win::OSInfo::GetInstance()->version();
+  if (version == base::win::VERSION_WIN8 ||
+      version == base::win::VERSION_WIN8_1) {
     WebRuntimeFeatures::enableScreenOrientation(false);
+  }
 #endif // OS_WIN
 }
 
@@ -128,8 +131,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableEncryptedMedia))
     WebRuntimeFeatures::enableEncryptedMedia(false);
 
-  if (command_line.HasSwitch(switches::kDisablePrefixedEncryptedMedia))
-    WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
+  if (command_line.HasSwitch(switches::kEnablePrefixedEncryptedMedia))
+    WebRuntimeFeatures::enablePrefixedEncryptedMedia(true);
 
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::enableFileSystem(false);
@@ -164,12 +167,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableCSSGridLayout))
     WebRuntimeFeatures::enableCSSGridLayout(true);
 
-  // TODO(watk): Remove EnableOverlayFullscreenVideo once blink is updated to
-  // use ForceOverlayFullscreenVideo instead. http://crbug.com/511376
-  if (command_line.HasSwitch(switches::kEnableOverlayFullscreenVideo) ||
-      command_line.HasSwitch(switches::kForceOverlayFullscreenVideo)) {
+  if (command_line.HasSwitch(switches::kForceOverlayFullscreenVideo))
     WebRuntimeFeatures::forceOverlayFullscreenVideo(true);
-  }
 
   if (ui::IsOverlayScrollbarEnabled())
     WebRuntimeFeatures::enableOverlayScrollbars(true);

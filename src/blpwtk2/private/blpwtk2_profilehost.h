@@ -28,6 +28,7 @@
 #include <blpwtk2_processhostlistener.h>
 
 #include <base/compiler_specific.h>
+#include <base/macros.h>
 
 #include <string>
 #include <vector>

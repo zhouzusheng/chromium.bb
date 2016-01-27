@@ -85,9 +85,9 @@
           # Enable top chrome material design.
           'enable_topchrome_md%' : 0,
 
-          # Force building against pre-built sysroot image on linux.  By default
-          # the sysroot image is only used for Official builds  or when cross
-          # compiling to arm or mips.
+          # Build against pre-built sysroot image on linux.  By default
+          # the sysroot image is only used for Official builds or when cross
+          # compiling.
           'use_sysroot%': 0,
 
           # Override buildtype to select the desired build flavor.
@@ -110,9 +110,14 @@
               'use_aura%': 1,
             }],
 
-            ['chromecast==1 and OS!="android"', {
-              'embedded%': 1,
-              'use_ozone%': 1,
+            ['chromecast==1', {
+              'use_libpci': 0,
+              'conditions': [
+                ['OS!="android"', {
+                  'embedded%': 1,
+                  'use_ozone%': 1,
+                }],
+              ],
             }],
 
             # Ozone uses Aura.
@@ -180,8 +185,6 @@
         'use_goma%': 0,
         'gomadir%': '',
 
-        # The system root for cross-compiles. Default: none.
-        'sysroot%': '',
         'chroot_cmd%': '',
 
         # The system libdir used for this ABI.
@@ -287,26 +290,27 @@
             'mips_arch_variant%': 'r1',
           }],
 
-          ['OS=="linux" and target_arch=="arm" and chromeos==0', {
+          # The system root for cross-compiles. Default: none.
+          ['OS=="linux" and chromeos==0 and ((branding=="Chrome" and buildtype=="Official") or target_arch=="arm" or target_arch=="mipsel" or use_sysroot==1)', {
             # sysroot needs to be an absolute path otherwise it generates
             # incorrect results when passed to pkg-config
-            'sysroot%': '<!(cd <(DEPTH) && pwd -P)/build/linux/debian_wheezy_arm-sysroot',
-          }], # OS=="linux" and target_arch=="arm" and chromeos==0
-
-          ['OS=="linux" and ((branding=="Chrome" and buildtype=="Official" and chromeos==0) or use_sysroot==1)' , {
             'conditions': [
+              ['target_arch=="arm"', {
+                'sysroot%': '<!(cd <(DEPTH) && pwd -P)/build/linux/debian_wheezy_arm-sysroot',
+              }],
               ['target_arch=="x64"', {
                 'sysroot%': '<!(cd <(DEPTH) && pwd -P)/build/linux/debian_wheezy_amd64-sysroot',
               }],
               ['target_arch=="ia32"', {
                 'sysroot%': '<!(cd <(DEPTH) && pwd -P)/build/linux/debian_wheezy_i386-sysroot',
               }],
-          ],
-          }], # OS=="linux" and branding=="Chrome" and buildtype=="Official" and chromeos==0
-
-          ['OS=="linux" and target_arch=="mipsel"', {
-            'sysroot%': '<!(cd <(DEPTH) && pwd -P)/build/linux/debian_wheezy_mips-sysroot',
-          }],
+              ['target_arch=="mipsel"', {
+                'sysroot%': '<!(cd <(DEPTH) && pwd -P)/build/linux/debian_wheezy_mips-sysroot',
+              }],
+            ],
+          }, {
+            'sysroot%': ''
+          }], # OS=="linux" and use_sysroot==1
         ],
       },
 
@@ -525,16 +529,6 @@
       # builds.
       'use_custom_libcxx%': 0,
 
-      # Use system libc++ instead of the default C++ library, usually libstdc++.
-      # This is intended for iOS builds only.
-      'use_system_libcxx%': 0,
-
-      # Use a modified version of Clang to intercept allocated types and sizes
-      # for allocated objects. clang_type_profiler=1 implies clang=1.
-      # See http://dev.chromium.org/developers/deep-memory-profiler/cpp-object-type-identifier
-      # TODO(dmikurube): Support mac.  See http://crbug.com/123758#c11
-      'clang_type_profiler%': 0,
-
       # Set to true to instrument the code with function call logger.
       # See src/third_party/cygprofile/cyg-profile.cc for details.
       'order_profiling%': 0,
@@ -569,16 +563,15 @@
       'enable_print_preview%': 1,
 
       # Set the version of CLD.
-      #   1: Use only CLD1.
+      #   1: (DEPRECATED! See http://crbug.com/528305 for info) Use only CLD1.
       #   2: Use only CLD2.
       'cld_version%': 2,
 
       # For CLD2, the size of the tables that should be included in the build
-      # Only evaluated if cld_version == 2 or if building the CLD2 dynamic data
-      # tool explicitly.
+      # Only evaluated if cld_version == 2.
       # See third_party/cld_2/cld_2.gyp for more information.
-      #   0: Small tables, lower accuracy
-      #   2: Large tables, high accuracy
+      #   0: Small tables, high accuracy
+      #   2: Large tables, higher accuracy
       'cld2_table_size%': 2,
 
       # Enable spell checker.
@@ -623,10 +616,6 @@
 
       # Enable FTP support by default.
       'disable_ftp_support%': 0,
-
-      # Use native android functions in place of ICU.  Not supported by most
-      # components.
-      'use_icu_alternatives_on_android%': 0,
 
       # Use of precompiled headers on Windows.
       #
@@ -692,10 +681,10 @@
       'host_clang%': 1,
 
       # Variables to control Link-Time Optimization (LTO).
-      # On Android, the variable use_lto enables LTO on code compiled with -Os,
-      # and use_lto_o2 enables LTO on code compiled with -O2. On other
-      # platforms, use_lto enables LTO in all translation units, and use_lto_o2
-      # has no effect.
+      # On Android, when using GCC LTO, the variable use_lto enables LTO on code
+      # compiled with -Os, and use_lto_o2 enables LTO on code compiled with -O2.
+      # On other platforms (including Android with Clang), use_lto enables LTO
+      # in all translation units, and use_lto_o2 has no effect.
       #
       # On Linux and Android, when using LLVM LTO, the script
       # build/download_gold_plugin.py must be run to download a linker plugin.
@@ -703,8 +692,10 @@
       # tools/clang/scripts/update.py and the absolute path to
       # third_party/llvm-build/Release+Asserts/lib must be added to
       # $DYLD_LIBRARY_PATH to pick up the right version of the linker plugin.
+      # TODO(pcc): Teach build system to use -lto_library flag to specify path
+      # to linker plugin on Mac.
       #
-      # On Android, the variables must *not* be enabled at the same time.
+      # On Android/GCC, the variables must *not* be enabled at the same time.
       # In this case LTO would 'merge' the optimization flags at link-time
       # which would lead to all code be optimized with -O2. See crbug.com/407544
       'use_lto%': 0,
@@ -715,6 +706,9 @@
 
       # Libxkbcommon usage.
       'use_xkbcommon%': 0,
+
+      # Whether we use GTKv3 on linux.
+      'use_gtk3%': 0,
 
       # Control Flow Integrity for virtual calls and casts.
       # See http://clang.llvm.org/docs/ControlFlowIntegrity.html
@@ -828,7 +822,7 @@
         ['OS=="android"', {
           'enable_extensions%': 0,
           'enable_google_now%': 0,
-          'cld_version%': 1,
+          'cld2_table_size%': 0,
           'enable_themes%': 0,
           'remoting%': 0,
           'arm_neon%': 0,
@@ -880,7 +874,6 @@
           'disable_ftp_support%': 1,
           'enable_extensions%': 0,
           'enable_google_now%': 0,
-          'cld_version%': 2,
           'cld2_table_size%': 0,
           'enable_basic_printing%': 0,
           'enable_print_preview%': 0,
@@ -893,7 +886,6 @@
           'safe_browsing%': 0,
           'enable_supervised_users%': 0,
           'enable_task_manager%': 0,
-          'use_system_libcxx%': 1,
           'enable_media_router%': 0,
         }],
 
@@ -908,6 +900,13 @@
         # Turn precompiled headers on by default.
         ['OS=="win" and buildtype!="Official"', {
           'chromium_win_pch%': 1
+        }],
+
+        # Whether PDF plugin is enabled.
+        ['OS=="android" or OS=="ios" or (embedded==1 and chromecast==0)', {
+          'enable_pdf%': 0,
+        }, {
+          'enable_pdf%': 1,
         }],
 
         ['chromeos==1 or OS=="android" or OS=="ios" or desktop_linux==1', {
@@ -1042,10 +1041,15 @@
         }, {
           'pkg-config': 'pkg-config'
         }],
-      ],
 
-      # WebVR support disabled until platform implementations have been added
-      'enable_webvr%': 0,
+        # Enable WebVR support by default on Android
+        # Still requires command line flag to access API
+        ['OS=="android"', {
+          'enable_webvr%': 1,
+        }, {
+          'enable_webvr%': 0,
+        }],
+      ],
 
       # Setting this to '0' will cause V8's startup snapshot to be
       # embedded in the binary instead of being a external files.
@@ -1140,6 +1144,7 @@
     'use_ozone%': '<(use_ozone)',
     'use_ozone_evdev%': '<(use_ozone_evdev)',
     'use_xkbcommon%': '<(use_xkbcommon)',
+    'use_gtk3%': '<(use_gtk3)',
     'use_clipboard_aurax11%': '<(use_clipboard_aurax11)',
     'desktop_linux%': '<(desktop_linux)',
     'use_x11%': '<(use_x11)',
@@ -1208,11 +1213,10 @@
     'use_instrumented_libraries%': '<(use_instrumented_libraries)',
     'use_prebuilt_instrumented_libraries%': '<(use_prebuilt_instrumented_libraries)',
     'use_custom_libcxx%': '<(use_custom_libcxx)',
-    'use_system_libcxx%': '<(use_system_libcxx)',
-    'clang_type_profiler%': '<(clang_type_profiler)',
     'order_profiling%': '<(order_profiling)',
     'order_text_section%': '<(order_text_section)',
     'enable_extensions%': '<(enable_extensions)',
+    'enable_pdf%': '<(enable_pdf)',
     'enable_plugin_installation%': '<(enable_plugin_installation)',
     'enable_plugins%': '<(enable_plugins)',
     'enable_session_service%': '<(enable_session_service)',
@@ -1236,7 +1240,6 @@
     'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
     'disable_file_support%': '<(disable_file_support)',
     'disable_ftp_support%': '<(disable_ftp_support)',
-    'use_icu_alternatives_on_android%': '<(use_icu_alternatives_on_android)',
     'enable_task_manager%': '<(enable_task_manager)',
     'sas_dll_path%': '<(sas_dll_path)',
     'wix_path%': '<(wix_path)',
@@ -1446,9 +1449,6 @@
     # TODO(thakis): Make this a blacklist instead, http://crbug.com/101600
     'enable_wexit_time_destructors%': 0,
 
-    # Build libpeerconnection as a static library by default.
-    'libpeer_target_type%': 'static_library',
-
     # Set to 1 to compile with the OpenGL ES 2.0 conformance tests.
     'internal_gles2_conform_tests%': 0,
 
@@ -1558,7 +1558,6 @@
     # Ozone platforms to include in the build.
     'ozone_platform_caca%': 0,
     'ozone_platform_cast%': 0,
-    'ozone_platform_drm%': 0,
     'ozone_platform_egltest%': 0,
     'ozone_platform_gbm%': 0,
     'ozone_platform_ozonex%': 0,
@@ -1863,7 +1862,9 @@
         'use_openssl_certs%': 1,
 
         'proprietary_codecs%': '<(proprietary_codecs)',
+
         'safe_browsing%': 3,
+
         'enable_web_speech%': 0,
         'java_bridge%': 1,
         'use_allocator%': 'none',
@@ -1897,7 +1898,6 @@
             'arm_arch%': '',
             'arm_tune%': 'cortex-a9',
             'arm_thumb%': 1,
-            'video_hole%': 1,
           }],
         ],
       }],
@@ -2292,23 +2292,6 @@
         'v8_target_arch': 'arm64',
       }],
 
-      ['OS=="linux" and clang_type_profiler==1', {
-        'clang%': 1,
-        'clang_use_chrome_plugins%': 0,
-        'conditions': [
-          ['host_arch=="x64"', {
-            'make_clang_dir%': 'third_party/llvm-allocated-type/Linux_x64',
-          }],
-          ['host_arch=="ia32"', {
-            # 32-bit Clang is unsupported.  It may not build.  Put your 32-bit
-            # Clang in this directory at your own risk if needed for some
-            # purpose (e.g. to compare 32-bit and 64-bit behavior like memory
-            # usage).  Any failure by this compiler should not close the tree.
-            'make_clang_dir%': 'third_party/llvm-allocated-type/Linux_ia32',
-          }],
-        ],
-      }],
-
       # On valgrind bots, override the optimizer settings so we don't inline too
       # much and make the stacks harder to figure out.
       #
@@ -2420,7 +2403,7 @@
 
         # Build all platforms whose deps are in install-build-deps.sh.
         # Only these platforms will be compile tested by buildbots.
-        'ozone_platform_drm%': 1,
+        'ozone_platform_gbm%': 1,
         'ozone_platform_test%': 1,
         'ozone_platform_egltest%': 1,
       }],
@@ -2659,6 +2642,9 @@
 
         # TODO(thakis): Enable this, crbug.com/507717
         '-Wno-shift-negative-value',
+
+        # TODO(thakis): Consider enabling this?
+        '-Wno-bitfield-width',
       ],
     },
     'includes': [ 'set_clang_warning_flags.gypi', ],
@@ -2684,18 +2670,6 @@
       ['OS=="win" and asan==1 and component=="shared_library"', {
         'dependencies': [
           '<(DEPTH)/build/win/asan.gyp:asan_dynamic_runtime',
-        ],
-      }],
-      ['OS=="linux" and use_allocator!="none" and clang_type_profiler==1', {
-        'cflags_cc!': ['-fno-rtti'],
-        'cflags_cc+': [
-          '-frtti',
-          '-gline-tables-only',
-          '-fintercept-allocation-functions',
-        ],
-        'defines': ['TYPE_PROFILING'],
-        'dependencies': [
-          '<(DEPTH)/base/allocator/allocator.gyp:type_profiler',
         ],
       }],
       ['branding=="Chrome"', {
@@ -3020,6 +2994,9 @@
       }],
       ['enable_dart==1', {
         'defines': ['WEBKIT_USING_DART=1'],
+      }],
+      ['enable_pdf==1', {
+        'defines': ['ENABLE_PDF=1'],
       }],
       ['enable_plugin_installation==1', {
         'defines': ['ENABLE_PLUGIN_INSTALLATION=1'],
@@ -3364,6 +3341,32 @@
             ],
           },
         },
+        'conditions': [
+          ['OS=="win" and win_fastlink==1', {
+            'msvs_settings': {
+              'VCLinkerTool': {
+                # /PROFILE is incompatible with /debug:fastlink
+                'Profile': 'false',
+                'AdditionalOptions': [
+                  # Tell VS 2015+ to create a PDB that references debug
+                  # information in .obj and .lib files instead of copying
+                  # it all.
+                  '/DEBUG:FASTLINK',
+                ],
+              },
+            },
+          }],
+          ['OS=="win" and MSVS_VERSION == "2015"', {
+            'msvs_settings': {
+              'VCCLCompilerTool': {
+                'AdditionalOptions': [
+                  # Work around crbug.com/526851, bug in VS 2015 RTM compiler.
+                  '/Zc:sizedDealloc-',
+                ],
+              },
+            },
+          }],
+        ],
       },
       'x86_Base': {
         'abstract': 1,
@@ -3608,22 +3611,6 @@
           }],
           ['OS=="win"', {
             'defines': ['NO_TCMALLOC'],
-            'conditions': [
-              ['win_fastlink==1', {
-                'msvs_settings': {
-                  'VCLinkerTool': {
-                    # /PROFILE is incompatible with /debug:fastlink
-                    'Profile': 'false',
-                    'AdditionalOptions': [
-                      # Tell VS 2015+ to create a PDB that references debug
-                      # information in .obj and .lib files instead of copying
-                      # it all.
-                      '/DEBUG:FASTLINK',
-                    ],
-                  },
-                },
-              }],
-            ],
           }],
           # _FORTIFY_SOURCE isn't really supported by Clang now, see
           # http://llvm.org/bugs/show_bug.cgi?id=16821.
@@ -4652,24 +4639,19 @@
               '<(DEPTH)/buildtools/third_party/libc++/libc++.gyp:libcxx_proxy',
             ],
           }],
-          ['order_profiling!=0 and (chromeos==1 or OS=="linux" or OS=="android")', {
+          ['order_profiling!=0 and OS=="android"', {
             'target_conditions' : [
-              # crazy_linker has an upstream gyp file we can't edit, and we
-              # don't want to instrument it.
-              ['_toolset=="target" and _target_name!="crazy_linker"', {
+              ['_toolset=="target"', {
                 'cflags': [
                   '-finstrument-functions',
                   # Allow mmx intrinsics to inline, so that the
-                  #0 compiler can expand the intrinsics.
+                  # compiler can expand the intrinsics.
                   '-finstrument-functions-exclude-file-list=mmintrin.h',
-                ],
-              }],
-              ['_toolset=="target" and OS=="android"', {
-                'cflags': [
                   # Avoids errors with current NDK:
                   # "third_party/android_tools/ndk/toolchains/arm-linux-androideabi-4.6/prebuilt/linux-x86_64/bin/../lib/gcc/arm-linux-androideabi/4.6/include/arm_neon.h:3426:3: error: argument must be a constant"
                   '-finstrument-functions-exclude-file-list=arm_neon.h,SaturatedArithmeticARM.h',
                 ],
+                'defines': ['CYGPROFILE_INSTRUMENTATION'],
               }],
             ],
           }],
@@ -4817,7 +4799,7 @@
         # so forking it's deps seems like overkill.
         # But this variable need defined to properly run gyp.
         # A proper solution is to have an OS==android conditional
-        # in third_party/libvpx/libvpx.gyp to define it.
+        # in third_party/libvpx_new/libvpx.gyp to define it.
         'libvpx_path': 'lib/linux/arm',
       },
       'target_defaults': {
@@ -5457,6 +5439,7 @@
         'xcode_settings' : {
           'CLANG_CXX_LANGUAGE_STANDARD': 'c++11',
           'ENABLE_BITCODE': 'NO',
+          'CLANG_CXX_LIBRARY': 'libc++',  # -stdlib=libc++
 
           'conditions': [
             # Older Xcodes do not support -Wno-deprecated-register, so pass an
@@ -5486,20 +5469,6 @@
             }],
             ['target_subarch=="both"', {
               'VALID_ARCHS': ['arm64', 'armv7', 'x86_64', 'i386'],
-            }],
-            ['use_system_libcxx==1', {
-              'target_conditions': [
-                # Only use libc++ when building target for iOS not when building
-                # tools for the host (OS X) as Mac targets OS X SDK 10.6 which
-                # does not support libc++.
-                ['_toolset=="target"', {
-                  'CLANG_CXX_LIBRARY': 'libc++',  # -stdlib=libc++
-                }]
-              ],
-            }, {
-              # The default for deployment target of 7.0+ is libc++, so force
-              # the old behavior unless libc++ is enabled.
-              'CLANG_CXX_LIBRARY': 'libstdc++',  # -stdlib=libstdc++
             }],
           ],
         },
@@ -5792,7 +5761,6 @@
             ],
             'GenerateDebugInformation': 'true',
             'MapFileName': '$(OutDir)\\$(TargetName).map',
-            'ImportLibrary': '$(OutDir)\\lib\\$(TargetName).lib',
             'FixedBaseAddress': '1',
             # SubSystem values:
             #   0 == not set
@@ -5840,7 +5808,7 @@
 
                   # TODO(hans): Make this list shorter eventually, http://crbug.com/504657
                   '-Qunused-arguments',  # http://crbug.com/504658
-                  '-Wno-microsoft',  # http://crbug.com/505296
+                  '-Wno-microsoft-enum-value',  # http://crbug.com/505296
                   '-Wno-unknown-pragmas',  # http://crbug.com/505314
                   '-Wno-unused-value',  # http://crbug.com/505318
                 ],

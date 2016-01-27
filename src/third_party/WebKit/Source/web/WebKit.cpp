@@ -83,7 +83,7 @@ public:
     }
 };
 
-class MainThreadTaskRunner_private : public WebThread::Task {
+class MainThreadTaskRunner_private: public WebTaskRunner::Task {
     WTF_MAKE_NONCOPYABLE(MainThreadTaskRunner_private);
 public:
     MainThreadTaskRunner_private(WTF::MainThreadFunction* function, void* context)
@@ -158,7 +158,7 @@ static void cryptographicallyRandomValues(unsigned char* buffer, size_t length)
 
 static void callOnMainThreadFunction(WTF::MainThreadFunction function, void* context)
 {
-    Platform::current()->mainThread()->postTask(FROM_HERE, new MainThreadTaskRunner_private(function, context));
+    Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, new MainThreadTaskRunner_private(function, context));
 }
 
 static void adjustAmountOfExternalAllocatedMemory(int size)
@@ -186,7 +186,7 @@ void initializeWithoutV8(Platform* platform)
         s_pendingGCRunner = new PendingGCRunner;
         currentThread->addTaskObserver(s_pendingGCRunner);
 
-        OwnPtr<MessageLoopInterruptor> interruptor = adoptPtr(new MessageLoopInterruptor(currentThread));
+        OwnPtr<MessageLoopInterruptor> interruptor = adoptPtr(new MessageLoopInterruptor(currentThread->taskRunner()));
         ThreadState::current()->addInterruptor(interruptor.release());
     }
 

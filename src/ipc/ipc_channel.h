@@ -5,6 +5,8 @@
 #ifndef IPC_IPC_CHANNEL_H_
 #define IPC_IPC_CHANNEL_H_
 
+#include <stdint.h>
+
 #include <string>
 
 #if defined(OS_POSIX)
@@ -20,7 +22,6 @@
 
 namespace IPC {
 
-class AttachmentBroker;
 class Listener;
 
 //------------------------------------------------------------------------------
@@ -79,7 +80,7 @@ class IPC_EXPORT Channel : public Endpoint {
     // The message contains just the process id (pid).
     // The message has a special routing_id (MSG_ROUTING_NONE)
     // and type (HELLO_MESSAGE_TYPE).
-    HELLO_MESSAGE_TYPE = kuint16max,
+    HELLO_MESSAGE_TYPE = UINT16_MAX,
     // The CLOSE_FD_MESSAGE_TYPE is used in the IPC class to
     // work around a bug in sendmsg() on Mac. When an FD is sent
     // over the socket, a CLOSE_FD_MESSAGE is sent with hops = 2.
@@ -118,22 +119,13 @@ class IPC_EXPORT Channel : public Endpoint {
   // Each mode has its own Create*() API to create the Channel object.
   //
   // TODO(morrita): Replace CreateByModeForProxy() with one of above Create*().
-  //
-  // TODO(erikchen): Remove default parameter for |broker|. It exists only to
-  // make the upcoming refactor decomposable into smaller CLs.
-  // http://crbug.com/493414.
   static scoped_ptr<Channel> Create(const IPC::ChannelHandle& channel_handle,
                                     Mode mode,
-                                    Listener* listener,
-                                    AttachmentBroker* broker = nullptr);
+                                    Listener* listener);
 
-  // TODO(erikchen): Remove default parameter for |broker|. It exists only to
-  // make the upcoming refactor decomposable into smaller CLs.
-  // http://crbug.com/493414.
   static scoped_ptr<Channel> CreateClient(
       const IPC::ChannelHandle& channel_handle,
-      Listener* listener,
-      AttachmentBroker* broker = nullptr);
+      Listener* listener);
 
   // Channels on Windows are named by default and accessible from other
   // processes. On POSIX channels are anonymous by default and not accessible
@@ -142,28 +134,21 @@ class IPC_EXPORT Channel : public Endpoint {
   // MODE_NAMED_CLIENT is equivalent to MODE_CLIENT.
   static scoped_ptr<Channel> CreateNamedServer(
       const IPC::ChannelHandle& channel_handle,
-      Listener* listener,
-      AttachmentBroker* broker);
+      Listener* listener);
   static scoped_ptr<Channel> CreateNamedClient(
       const IPC::ChannelHandle& channel_handle,
-      Listener* listener,
-      AttachmentBroker* broker);
+      Listener* listener);
 #if defined(OS_POSIX)
   // An "open" named server accepts connections from ANY client.
   // The caller must then implement their own access-control based on the
   // client process' user Id.
   static scoped_ptr<Channel> CreateOpenNamedServer(
       const IPC::ChannelHandle& channel_handle,
-      Listener* listener,
-      AttachmentBroker* broker);
+      Listener* listener);
 #endif
-  // TODO(erikchen): Remove default parameter for |broker|. It exists only to
-  // make the upcoming refactor decomposable into smaller CLs.
-  // http://crbug.com/493414.
   static scoped_ptr<Channel> CreateServer(
       const IPC::ChannelHandle& channel_handle,
-      Listener* listener,
-      AttachmentBroker* broker = nullptr);
+      Listener* listener);
 
   ~Channel() override;
 
@@ -240,6 +225,27 @@ class IPC_EXPORT Channel : public Endpoint {
   // process such that it acts similar to if it was exec'd, for tests.
   static void NotifyProcessForkedForTesting();
 #endif
+
+ protected:
+  // An OutputElement is a wrapper around a Message or raw buffer while it is
+  // waiting to be passed to the system's underlying IPC mechanism.
+  class OutputElement {
+   public:
+    // Takes ownership of message.
+    OutputElement(Message* message);
+    // Takes ownership of the buffer. |buffer| is freed via free(), so it
+    // must be malloced.
+    OutputElement(void* buffer, size_t length);
+    ~OutputElement();
+    size_t size() const { return message_ ? message_->size() : length_; }
+    const void* data() const { return message_ ? message_->data() : buffer_; }
+    const Message* get_message() const { return message_.get(); }
+
+   private:
+    scoped_ptr<const Message> message_;
+    void* buffer_;
+    size_t length_;
+  };
 };
 
 #if defined(OS_POSIX)

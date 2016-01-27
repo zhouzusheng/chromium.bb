@@ -28,7 +28,6 @@
 
 #include "SkImageFilter.h"
 #include "SkMatrix44.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
@@ -64,6 +63,9 @@
 
 namespace blink {
 
+static bool s_drawDebugRedFill = true;
+
+// TODO(wangxianzhu): Remove this when we no longer invalidate rects.
 struct PaintInvalidationTrackingInfo {
     Vector<FloatRect> invalidationRects;
     Vector<String> invalidationObjects;
@@ -97,6 +99,8 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_isRootForIsolatedGroup(false)
     , m_hasScrollParent(false)
     , m_hasClipParent(false)
+    , m_needsDisplay(true)
+    , m_textPainted(false)
     , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
     , m_parent(0)
     , m_maskLayer(0)
@@ -146,6 +150,11 @@ GraphicsLayer::~GraphicsLayer()
 
     resetTrackedPaintInvalidations();
     ASSERT(!m_parent);
+}
+
+void GraphicsLayer::setDrawDebugRedFillForTesting(bool enabled)
+{
+    s_drawDebugRedFill = enabled;
 }
 
 void GraphicsLayer::setParent(GraphicsLayer* layer)
@@ -289,8 +298,7 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
         m_debugInfo.clearAnnotatedInvalidateRects();
     incrementPaintCount();
 #ifndef NDEBUG
-    if (m_displayItemList && contentsOpaque()) {
-        ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
+    if (m_displayItemList && contentsOpaque() && s_drawDebugRedFill) {
         FloatRect rect(FloatPoint(), size());
         if (!DrawingRecorder::useCachedDrawingIfPossible(context, *this, DisplayItem::DebugRedFill)) {
             DrawingRecorder recorder(context, *this, DisplayItem::DebugRedFill, rect);
@@ -299,6 +307,10 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
     }
 #endif
     m_client->paintContents(this, context, m_paintingPhase, clip);
+    if (!m_textPainted && m_displayItemList->textPainted()) {
+        m_textPainted = true;
+        m_client->notifyTextPainted();
+    }
 }
 
 void GraphicsLayer::updateChildList()
@@ -459,6 +471,14 @@ void GraphicsLayer::resetTrackedPaintInvalidations()
     paintInvalidationTrackingMap().remove(this);
 }
 
+bool GraphicsLayer::hasTrackedPaintInvalidations() const
+{
+    PaintInvalidationTrackingMap::iterator it = paintInvalidationTrackingMap().find(this);
+    if (it != paintInvalidationTrackingMap().end())
+        return !it->value.invalidationRects.isEmpty();
+    return false;
+}
+
 void GraphicsLayer::trackPaintInvalidationRect(const FloatRect& rect)
 {
     if (rect.isEmpty())
@@ -479,9 +499,6 @@ void GraphicsLayer::trackPaintInvalidationObject(const String& objectDebugString
     // The caller must check isTrackingPaintInvalidations() before calling this method
     // because constructing the debug string will be costly.
     ASSERT(isTrackingPaintInvalidations());
-
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return;
 
     paintInvalidationTrackingMap().add(this, PaintInvalidationTrackingInfo()).storedValue->value.invalidationObjects.append(objectDebugString);
 }
@@ -660,7 +677,7 @@ PassRefPtr<JSONObject> GraphicsLayer::layerTreeAsJSON(LayerTreeFlags flags, Rend
             }
         }
 
-        if (RuntimeEnabledFeatures::slimmingPaintEnabled() && (flags & LayerTreeIncludesPaintInvalidationObjects)) {
+        if (flags & LayerTreeIncludesPaintInvalidationObjects) {
             Vector<String>& clients = it->value.invalidationObjects;
             if (!clients.isEmpty()) {
                 RefPtr<JSONArray> clientsJSON = adoptRef(new JSONArray);
@@ -783,10 +800,8 @@ void GraphicsLayer::setSize(const FloatSize& size)
 
 #ifndef NDEBUG
     // The red debug fill needs to be invalidated if the layer resizes.
-    if (m_displayItemList) {
-        ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
-        m_displayItemList->invalidate(displayItemClient());
-    }
+    if (m_displayItemList)
+        m_displayItemList->invalidateUntracked(displayItemClient());
 #endif
 }
 
@@ -953,40 +968,73 @@ void GraphicsLayer::setContentsNeedsDisplay()
     }
 }
 
+void GraphicsLayer::setNeedsDisplayWithoutInvalidateForTesting()
+{
+    ASSERT(RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
+    if (!drawsContent())
+        return;
+
+    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
+        m_needsDisplay = true;
+}
+
 void GraphicsLayer::setNeedsDisplay()
 {
-    if (drawsContent()) {
-        m_layer->layer()->invalidate();
-        if (isTrackingPaintInvalidations())
-            trackPaintInvalidationRect(FloatRect(FloatPoint(), m_size));
-        for (size_t i = 0; i < m_linkHighlights.size(); ++i)
-            m_linkHighlights[i]->invalidate();
+    if (!drawsContent())
+        return;
 
-        if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-            displayItemList()->invalidateAll();
-            if (isTrackingPaintInvalidations())
-                trackPaintInvalidationObject("##ALL##");
-        }
+    // TODO(chrishtr): stop invalidating the rects once FrameView::paintRecursively does so.
+    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
+        m_needsDisplay = true;
+
+    m_layer->layer()->invalidate();
+    if (isTrackingPaintInvalidations())
+        trackPaintInvalidationRect(FloatRect(FloatPoint(), m_size));
+    for (size_t i = 0; i < m_linkHighlights.size(); ++i)
+        m_linkHighlights[i]->invalidate();
+
+    displayItemList()->invalidateAll();
+    if (isTrackingPaintInvalidations())
+        trackPaintInvalidationObject("##ALL##");
+}
+
+bool GraphicsLayer::needsDisplay() const
+{
+    ASSERT(RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
+    return m_needsDisplay;
+}
+
+bool GraphicsLayer::commitIfNeeded(DisplayListDiff& displayListDiff)
+{
+    ASSERT(RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
+    if (m_needsDisplay) {
+        displayItemList()->commitNewDisplayItems(&displayListDiff);
+        m_needsDisplay = false;
+        return true;
     }
+    return false;
 }
 
 void GraphicsLayer::setNeedsDisplayInRect(const IntRect& rect, PaintInvalidationReason invalidationReason)
 {
-    if (drawsContent()) {
-        m_layer->layer()->invalidateRect(rect);
-        if (firstPaintInvalidationTrackingEnabled())
-            m_debugInfo.appendAnnotatedInvalidateRect(rect, invalidationReason);
-        if (isTrackingPaintInvalidations())
-            trackPaintInvalidationRect(rect);
-        for (size_t i = 0; i < m_linkHighlights.size(); ++i)
-            m_linkHighlights[i]->invalidate();
-    }
+    if (!drawsContent())
+        return;
+
+    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
+        m_needsDisplay = true;
+
+    m_layer->layer()->invalidateRect(rect);
+    if (firstPaintInvalidationTrackingEnabled())
+        m_debugInfo.appendAnnotatedInvalidateRect(rect, invalidationReason);
+    if (isTrackingPaintInvalidations())
+        trackPaintInvalidationRect(rect);
+    for (size_t i = 0; i < m_linkHighlights.size(); ++i)
+        m_linkHighlights[i]->invalidate();
 }
 
 void GraphicsLayer::invalidateDisplayItemClient(const DisplayItemClientWrapper& displayItemClient)
 {
-    ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
-    displayItemList()->invalidate(displayItemClient.displayItemClient());
+    displayItemList()->invalidate(displayItemClient);
     if (isTrackingPaintInvalidations())
         trackPaintInvalidationObject(displayItemClient.debugName());
 }
@@ -1055,6 +1103,16 @@ void GraphicsLayer::setFilters(const FilterOperations& filters)
     builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
     builder.buildFilterOperations(filters, webFilters.get());
     m_layer->layer()->setFilters(*webFilters);
+}
+
+void GraphicsLayer::setBackdropFilters(const FilterOperations& filters)
+{
+    SkiaImageFilterBuilder builder;
+    OwnPtr<WebFilterOperations> webFilters = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
+    FilterOutsets outsets = filters.outsets();
+    builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
+    builder.buildFilterOperations(filters, webFilters.get());
+    m_layer->layer()->setBackgroundFilters(*webFilters);
 }
 
 void GraphicsLayer::setFilterQuality(SkFilterQuality filterQuality)
@@ -1131,8 +1189,6 @@ void GraphicsLayer::didScroll()
 
 DisplayItemList* GraphicsLayer::displayItemList()
 {
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return 0;
     if (!m_displayItemList)
         m_displayItemList = DisplayItemList::create();
     return m_displayItemList.get();

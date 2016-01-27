@@ -6,8 +6,8 @@
 #define CSSSelectorParser_h
 
 #include "core/CoreExport.h"
+#include "core/css/parser/CSSParserSelector.h"
 #include "core/css/parser/CSSParserTokenRange.h"
-#include "core/css/parser/CSSParserValues.h"
 
 namespace blink {
 
@@ -19,12 +19,12 @@ class StyleSheetContents;
 class CORE_EXPORT CSSSelectorParser {
     STACK_ALLOCATED();
 public:
-    static void parseSelector(CSSParserTokenRange, const CSSParserContext&, const AtomicString& defaultNamespace, StyleSheetContents*, CSSSelectorList&);
+    static void parseSelector(CSSParserTokenRange, const CSSParserContext&, StyleSheetContents*, CSSSelectorList&);
 
     static bool consumeANPlusB(CSSParserTokenRange&, std::pair<int, int>&);
 
 private:
-    CSSSelectorParser(const CSSParserContext&, const AtomicString& defaultNamespace, StyleSheetContents*);
+    CSSSelectorParser(const CSSParserContext&, StyleSheetContents*);
 
     // These will all consume trailing comments if successful
 
@@ -36,7 +36,7 @@ private:
     // This doesn't include element names, since they're handled specially
     PassOwnPtr<CSSParserSelector> consumeSimpleSelector(CSSParserTokenRange&);
 
-    bool consumeName(CSSParserTokenRange&, AtomicString& name, AtomicString& namespacePrefix, bool& hasNamespace);
+    bool consumeName(CSSParserTokenRange&, AtomicString& name, AtomicString& namespacePrefix);
 
     // These will return nullptr when the selector is invalid
     PassOwnPtr<CSSParserSelector> consumeId(CSSParserTokenRange&);
@@ -48,14 +48,14 @@ private:
     CSSSelector::Match consumeAttributeMatch(CSSParserTokenRange&);
     CSSSelector::AttributeMatchType consumeAttributeFlags(CSSParserTokenRange&);
 
-    QualifiedName determineNameInNamespace(const AtomicString& prefix, const AtomicString& localName);
+    const AtomicString& defaultNamespace() const;
+    const AtomicString& determineNamespace(const AtomicString& prefix);
     void prependTypeSelectorIfNeeded(const AtomicString& namespacePrefix, const AtomicString& elementName, CSSParserSelector*);
     void rewriteSpecifiersWithElementNameForCustomPseudoElement(const QualifiedName& tag, CSSParserSelector*, bool tagIsImplicit);
     void rewriteSpecifiersWithElementNameForContentPseudoElement(const QualifiedName& tag, CSSParserSelector*, bool tagIsImplicit);
     static PassOwnPtr<CSSParserSelector> addSimpleSelectorToCompound(PassOwnPtr<CSSParserSelector> compoundSelector, PassOwnPtr<CSSParserSelector> simpleSelector);
 
     const CSSParserContext& m_context;
-    AtomicString m_defaultNamespace;
     RawPtrWillBeMember<StyleSheetContents> m_styleSheet; // FIXME: Should be const
 
     bool m_failedParsing;

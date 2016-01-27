@@ -14,7 +14,6 @@
 #include "SkPostConfig.h"
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/types.h>
 
 #if defined(SK_ARM_HAS_NEON)
     #include <arm_neon.h>
@@ -23,7 +22,6 @@
 #endif
 // IWYU pragma: end_exports
 
-#include <stdlib.h>
 #include <string.h>
 
 /** \file SkTypes.h
@@ -108,6 +106,7 @@ inline void operator delete(void* p) {
 #ifdef SK_DEBUG
     #define SkASSERT(cond)              SK_ALWAYSBREAK(cond)
     #define SkDEBUGFAIL(message)        SkASSERT(false && message)
+    #define SkDEBUGFAILF(fmt, ...)      SkASSERTF(false, fmt, ##__VA_ARGS__)
     #define SkDEBUGCODE(code)           code
     #define SkDECLAREPARAM(type, var)   , type var
     #define SkPARAM(var)                , var
@@ -244,7 +243,6 @@ typedef uint8_t SkBool8;
     SK_API int         SkToInt(intmax_t);
     SK_API unsigned    SkToUInt(uintmax_t);
     SK_API size_t      SkToSizeT(uintmax_t);
-    SK_API off_t       SkToOffT(intmax_t x);
 #else
     #define SkToS8(x)   ((int8_t)(x))
     #define SkToU8(x)   ((uint8_t)(x))
@@ -255,7 +253,6 @@ typedef uint8_t SkBool8;
     #define SkToInt(x)  ((int)(x))
     #define SkToUInt(x) ((unsigned)(x))
     #define SkToSizeT(x) ((size_t)(x))
-    #define SkToOffT(x) ((off_t)(x))
 #endif
 
 /** Returns 0 or 1 based on the condition
@@ -285,9 +282,6 @@ static inline bool SkIsU16(long x) {
 }
 
 //////////////////////////////////////////////////////////////////////////////
-#ifndef SK_OFFSETOF
-    #define SK_OFFSETOF(type, field)    (size_t)((char*)&(((type*)1)->field) - (char*)1)
-#endif
 
 /** Returns the number of entries in an array (not a pointer) */
 template <typename T, size_t N> char (&SkArrayCountHelper(T (&array)[N]))[N];
@@ -399,13 +393,9 @@ static inline int32_t SkFastMin32(int32_t value, int32_t max) {
     return value;
 }
 
-template <typename T> static inline const T& SkTPin(const T& x, const T& min, const T& max) {
-    return SkTMax(SkTMin(x, max), min);
-}
-
-/** Returns signed 32 bit value pinned between min and max, inclusively. */
-static inline int32_t SkPin32(int32_t value, int32_t min, int32_t max) {
-    return SkTPin(value, min, max);
+/** Returns value pinned between min and max, inclusively. */
+template <typename T> static inline const T& SkTPin(const T& value, const T& min, const T& max) {
+    return SkTMax(SkTMin(value, max), min);
 }
 
 static inline uint32_t SkSetClearShift(uint32_t bits, bool cond,

@@ -11,6 +11,7 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/frame/UseCounter.h"
 #include "modules/credentialmanager/Credential.h"
 #include "modules/credentialmanager/CredentialManagerClient.h"
 #include "modules/credentialmanager/CredentialRequestOptions.h"
@@ -108,7 +109,7 @@ static bool checkBoilerplate(ScriptPromiseResolver* resolver)
     }
 
     String errorMessage;
-    if (!resolver->scriptState()->executionContext()->isPrivilegedContext(errorMessage)) {
+    if (!resolver->scriptState()->executionContext()->isSecureContext(errorMessage)) {
         resolver->reject(DOMException::create(SecurityError, errorMessage));
         return false;
     }
@@ -131,6 +132,10 @@ ScriptPromise CredentialsContainer::get(ScriptState* scriptState, const Credenti
                 providers.append(url);
         }
     }
+
+    UseCounter::count(scriptState->executionContext(),
+                      options.suppressUI() ? UseCounter::CredentialManagerGetWithoutUI
+                                           : UseCounter::CredentialManagerGetWithUI);
 
     CredentialManagerClient::from(scriptState->executionContext())->dispatchGet(options.suppressUI(), providers, new RequestCallbacks(resolver));
     return promise;

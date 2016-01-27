@@ -35,16 +35,10 @@
 
 namespace blink {
 
-class CSSBasicShape;
 class CSSCalcValue;
 class CSSToLengthConversionData;
-class Counter;
 class Length;
-class LengthSize;
-class Pair;
-class Quad;
 class RGBColor;
-class Rect;
 class ComputedStyle;
 
 // Dimension calculations are imprecise, often resulting in values of e.g.
@@ -94,9 +88,6 @@ public:
         Kilohertz,
         CustomIdentifier,
         URI,
-        Attribute,
-        Counter,
-        Rect,
         RGBColor,
         ViewportWidth,
         ViewportHeight,
@@ -107,17 +98,20 @@ public:
         DotsPerCentimeter,
         Fraction,
         Integer,
-        Pair,
         Rems,
         Chs,
-        Shape,
-        Quad,
         Calc,
         CalcPercentageWithNumber,
         CalcPercentageWithLength,
         String,
         PropertyID,
         ValueID,
+
+        // This value is used to handle quirky margins in reflow roots (body, td, and th) like WinIE.
+        // The basic idea is that a stylesheet can use the value __qem (for quirky em) instead of em.
+        // When the quirky value is used, if you're in quirks mode, the margin will collapse away
+        // inside a table cell. This quirk is specified in the HTML spec but our impl is different.
+        // TODO: Remove this. crbug.com/443952
         QuirkyEms,
     };
 
@@ -137,8 +131,8 @@ public:
         LengthUnitTypeCount,
     };
 
-    typedef Vector<double, CSSPrimitiveValue::LengthUnitTypeCount> CSSLengthArray;
-    typedef BitVector CSSLengthTypeArray;
+    using CSSLengthArray = Vector<double, CSSPrimitiveValue::LengthUnitTypeCount>;
+    using CSSLengthTypeArray = BitVector;
 
     void accumulateLengthArray(CSSLengthArray&, double multiplier = 1) const;
     void accumulateLengthArray(CSSLengthArray&, CSSLengthTypeArray&, double multiplier = 1) const;
@@ -167,31 +161,28 @@ public:
             || type() == UnitType::Gradians
             || type() == UnitType::Turns;
     }
-    bool isAttr() const { return type() == UnitType::Attribute; }
-    bool isCounter() const { return type() == UnitType::Counter; }
     bool isCustomIdent() const { return type() == UnitType::CustomIdentifier; }
     bool isFontRelativeLength() const
     {
-        return type() == UnitType::Ems
+        return type() == UnitType::QuirkyEms
+            || type() == UnitType::Ems
             || type() == UnitType::Exs
             || type() == UnitType::Rems
             || type() == UnitType::Chs;
     }
+    bool isQuirkyEms() const { return type() == UnitType::QuirkyEms; }
     bool isViewportPercentageLength() const { return isViewportPercentageLength(type()); }
     static bool isViewportPercentageLength(UnitType type) { return type >= UnitType::ViewportWidth && type <= UnitType::ViewportMax; }
     static bool isLength(UnitType type)
     {
-        return (type >= UnitType::Ems && type <= UnitType::Picas) || type == UnitType::Rems || type == UnitType::Chs || isViewportPercentageLength(type);
+        return (type >= UnitType::Ems && type <= UnitType::Picas) || type == UnitType::QuirkyEms || type == UnitType::Rems || type == UnitType::Chs || isViewportPercentageLength(type);
     }
     bool isLength() const { return isLength(typeWithCalcResolved()); }
     bool isNumber() const { return typeWithCalcResolved() == UnitType::Number || typeWithCalcResolved() == UnitType::Integer; }
     bool isPercentage() const { return typeWithCalcResolved() == UnitType::Percentage; }
     bool isPropertyID() const { return type() == UnitType::PropertyID; }
     bool isPx() const { return typeWithCalcResolved() == UnitType::Pixels; }
-    bool isQuad() const { return type() == UnitType::Quad; }
-    bool isRect() const { return type() == UnitType::Rect; }
     bool isRGBColor() const { return type() == UnitType::RGBColor; }
-    bool isShape() const { return type() == UnitType::Shape; }
     bool isString() const { return type() == UnitType::String; }
     bool isTime() const { return type() == UnitType::Seconds || type() == UnitType::Milliseconds; }
     bool isURI() const { return type() == UnitType::URI; }
@@ -230,24 +221,9 @@ public:
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(value, zoom));
     }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const LengthSize& value, const ComputedStyle& style)
-    {
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(value, style));
-    }
     template<typename T> static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(T value)
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(value));
-    }
-
-    // This value is used to handle quirky margins in reflow roots (body, td, and th) like WinIE.
-    // The basic idea is that a stylesheet can use the value __qem (for quirky em) instead of em.
-    // When the quirky value is used, if you're in quirks mode, the margin will collapse away
-    // inside a table cell.
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createAllowingMarginQuirk(double value, UnitType type)
-    {
-        CSSPrimitiveValue* quirkValue = new CSSPrimitiveValue(value, type);
-        quirkValue->m_isQuirkValue = true;
-        return adoptRefWillBeNoop(quirkValue);
     }
 
     ~CSSPrimitiveValue();
@@ -257,13 +233,13 @@ public:
     UnitType typeWithCalcResolved() const;
 
     double computeDegrees() const;
-    double computeSeconds();
+    double computeSeconds() const;
 
     // Computes a length in pixels, resolving relative lengths
-    template<typename T> T computeLength(const CSSToLengthConversionData&);
+    template<typename T> T computeLength(const CSSToLengthConversionData&) const;
 
     // Converts to a Length (Fixed, Percent or Calculated)
-    Length convertToLength(const CSSToLengthConversionData&);
+    Length convertToLength(const CSSToLengthConversionData&) const;
 
     double getDoubleValue() const;
     float getFloatValue() const { return getValue<float>(); }
@@ -271,16 +247,8 @@ public:
     template<typename T> inline T getValue() const { return clampTo<T>(getDoubleValue()); }
 
     String getStringValue() const;
-
-    Counter* getCounterValue() const { ASSERT(isCounter()); return m_value.counter; }
-    Rect* getRectValue() const { ASSERT(isRect()); return m_value.rect; }
-    Quad* getQuadValue() const { ASSERT(isQuad()); return m_value.quad; }
     RGBA32 getRGBA32Value() const { ASSERT(isRGBColor()); return m_value.rgbcolor; }
 
-    // TODO(timloh): Add isPair() and update callers so we can ASSERT(isPair())
-    Pair* getPairValue() const { return type() != UnitType::Pair ? 0 : m_value.pair; }
-
-    CSSBasicShape* getShapeValue() const { ASSERT(isShape()); return m_value.shape; }
     CSSCalcValue* cssCalcValue() const { ASSERT(isCalculated()); return m_value.calc; }
     CSSPropertyID getPropertyID() const { ASSERT(isPropertyID()); return m_value.propertyID; }
 
@@ -290,8 +258,6 @@ public:
 
     static const char* unitTypeToString(UnitType);
     String customCSSText() const;
-
-    bool isQuirkValue() { return m_isQuirkValue; }
 
     bool equals(const CSSPrimitiveValue&) const;
 
@@ -309,7 +275,6 @@ private:
     CSSPrimitiveValue(CSSPropertyID);
     CSSPrimitiveValue(RGBA32 color);
     CSSPrimitiveValue(const Length&, float zoom);
-    CSSPrimitiveValue(const LengthSize&, const ComputedStyle&);
     CSSPrimitiveValue(const String&, UnitType);
     CSSPrimitiveValue(double, UnitType);
 
@@ -332,15 +297,9 @@ private:
 
     void init(UnitType);
     void init(const Length&);
-    void init(const LengthSize&, const ComputedStyle&);
-    void init(PassRefPtrWillBeRawPtr<Counter>);
-    void init(PassRefPtrWillBeRawPtr<Rect>);
-    void init(PassRefPtrWillBeRawPtr<Pair>);
-    void init(PassRefPtrWillBeRawPtr<Quad>);
-    void init(PassRefPtrWillBeRawPtr<CSSBasicShape>);
     void init(PassRefPtrWillBeRawPtr<CSSCalcValue>);
 
-    double computeLengthDouble(const CSSToLengthConversionData&);
+    double computeLengthDouble(const CSSToLengthConversionData&) const;
 
     inline UnitType type() const { return static_cast<UnitType>(m_primitiveUnitType); }
 
@@ -350,18 +309,13 @@ private:
         double num;
         StringImpl* string;
         RGBA32 rgbcolor;
-        // FIXME: oilpan: Should be members, but no support for members in unions. Just trace the raw ptr for now.
-        CSSBasicShape* shape;
+        // FIXME: oilpan: Should be a member, but no support for members in unions. Just trace the raw ptr for now.
         CSSCalcValue* calc;
-        Counter* counter;
-        Pair* pair;
-        Rect* rect;
-        Quad* quad;
     } m_value;
 };
 
-typedef CSSPrimitiveValue::CSSLengthArray CSSLengthArray;
-typedef CSSPrimitiveValue::CSSLengthTypeArray CSSLengthTypeArray;
+using CSSLengthArray = CSSPrimitiveValue::CSSLengthArray;
+using CSSLengthTypeArray = CSSPrimitiveValue::CSSLengthTypeArray;
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSPrimitiveValue, isPrimitiveValue());
 

@@ -4,12 +4,15 @@
 
 #include "media/formats/mp4/mp4_stream_parser.h"
 
+#include <vector>
+
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/text_track_config.h"
+#include "media/base/timestamp_constants.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_util.h"
 #include "media/formats/mp4/box_definitions.h"
@@ -265,10 +268,9 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
 
       is_audio_track_encrypted_ = entry.sinf.info.track_encryption.is_encrypted;
       DVLOG(1) << "is_audio_track_encrypted_: " << is_audio_track_encrypted_;
-      audio_config.Initialize(
-          codec, sample_format, channel_layout, sample_per_second,
-          extra_data.size() ? &extra_data[0] : NULL, extra_data.size(),
-          is_audio_track_encrypted_, base::TimeDelta(), 0);
+      audio_config.Initialize(codec, sample_format, channel_layout,
+                              sample_per_second, extra_data,
+                              is_audio_track_encrypted_, base::TimeDelta(), 0);
       has_audio_ = true;
       audio_track_id_ = track->header.track_id;
     }
@@ -298,20 +300,18 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
             GetNaturalSize(visible_rect.size(), entry.pixel_aspect.h_spacing,
                            entry.pixel_aspect.v_spacing);
       } else if (track->header.width && track->header.height) {
-        // An even width makes things easier for YV12 and appears to be the
-        // behavior expected by WebKit layout tests. See GetNaturalSize().
         natural_size =
-            gfx::Size(track->header.width & ~1, track->header.height);
+            gfx::Size(track->header.width, track->header.height);
       }
 
       is_video_track_encrypted_ = entry.sinf.info.track_encryption.is_encrypted;
       DVLOG(1) << "is_video_track_encrypted_: " << is_video_track_encrypted_;
-      video_config.Initialize(kCodecH264, H264PROFILE_MAIN, PIXEL_FORMAT_YV12,
-                              COLOR_SPACE_HD_REC709, coded_size, visible_rect,
-                              natural_size,
-                              // No decoder-specific buffer needed for AVC;
-                              // SPS/PPS are embedded in the video stream
-                              NULL, 0, is_video_track_encrypted_);
+      video_config.Initialize(
+          entry.video_codec, entry.video_codec_profile, PIXEL_FORMAT_YV12,
+          COLOR_SPACE_HD_REC709, coded_size, visible_rect, natural_size,
+          // No decoder-specific buffer needed for AVC;
+          // SPS/PPS are embedded in the video stream
+          std::vector<uint8_t>(), is_video_track_encrypted_);
       has_video_ = true;
       video_track_id_ = track->header.track_id;
     }
@@ -479,7 +479,8 @@ bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
     DCHECK(runs_->video_description().frame_bitstream_converter);
     if (!runs_->video_description().frame_bitstream_converter->ConvertFrame(
         &frame_buf, runs_->is_keyframe(), &subsamples)) {
-      MEDIA_LOG(ERROR, media_log_) << "Failed to prepare AVC sample for decode";
+      MEDIA_LOG(ERROR, media_log_)
+          << "Failed to prepare video sample for decode";
       *err = true;
       return false;
     }

@@ -8,6 +8,7 @@
 #include "platform/heap/glue/MessageLoopInterruptor.h"
 #include "platform/heap/glue/PendingGCRunner.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebTaskRunner.h"
 #include "public/platform/WebThread.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -21,20 +22,24 @@ namespace blink {
 // thread allocates any objects managed by the Blink GC. The shutdown
 // method must be called on the WebThread during shutdown when the thread
 // no longer needs to access objects managed by the Blink GC.
+//
+// WebThreadSupportingGC usually internally creates and owns WebThread unless
+// an existing WebThread is given via createForThread.
 class PLATFORM_EXPORT WebThreadSupportingGC final {
     WTF_MAKE_NONCOPYABLE(WebThreadSupportingGC);
 public:
-    static PassOwnPtr<WebThreadSupportingGC> create(const char*);
+    static PassOwnPtr<WebThreadSupportingGC> create(const char* name);
+    static PassOwnPtr<WebThreadSupportingGC> createForThread(WebThread*);
     ~WebThreadSupportingGC();
 
-    void postTask(const WebTraceLocation& location, WebThread::Task* task)
+    void postTask(const WebTraceLocation& location, WebTaskRunner::Task* task)
     {
-        m_thread->postTask(location, task);
+        m_thread->taskRunner()->postTask(location, task);
     }
 
-    void postDelayedTask(const WebTraceLocation& location, WebThread::Task* task, long long delayMs)
+    void postDelayedTask(const WebTraceLocation& location, WebTaskRunner::Task* task, long long delayMs)
     {
-        m_thread->postDelayedTask(location, task, delayMs);
+        m_thread->taskRunner()->postDelayedTask(location, task, delayMs);
     }
 
     bool isCurrentThread() const
@@ -62,10 +67,15 @@ public:
     }
 
 private:
-    explicit WebThreadSupportingGC(const char*);
+    WebThreadSupportingGC(const char* name, WebThread*);
 
     OwnPtr<PendingGCRunner> m_pendingGCRunner;
-    OwnPtr<WebThread> m_thread;
+
+    // m_thread is guaranteed to be non-null after this instance is constructed.
+    // m_owningThread is non-null unless this instance is constructed for an
+    // existing thread via createForThread().
+    WebThread* m_thread = nullptr;
+    OwnPtr<WebThread> m_owningThread;
 };
 
 }

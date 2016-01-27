@@ -4,8 +4,6 @@
 
 #include "net/quic/congestion_control/pacing_sender.h"
 
-#include "net/quic/quic_flags.h"
-
 using std::min;
 
 namespace net {
@@ -55,26 +53,23 @@ void PacingSender::OnCongestionEvent(bool rtt_updated,
 bool PacingSender::OnPacketSent(
     QuicTime sent_time,
     QuicByteCount bytes_in_flight,
-    QuicPacketSequenceNumber sequence_number,
+    QuicPacketNumber packet_number,
     QuicByteCount bytes,
     HasRetransmittableData has_retransmittable_data) {
   const bool in_flight =
-      sender_->OnPacketSent(sent_time, bytes_in_flight, sequence_number,
-                            bytes, has_retransmittable_data);
+      sender_->OnPacketSent(sent_time, bytes_in_flight, packet_number, bytes,
+                            has_retransmittable_data);
   if (has_retransmittable_data != HAS_RETRANSMITTABLE_DATA) {
     return in_flight;
   }
-  if (bytes_in_flight == 0) {
+  // If in recovery, the connection is not coming out of quiescence.
+  if (bytes_in_flight == 0 && !sender_->InRecovery()) {
     // Add more burst tokens anytime the connection is leaving quiescence, but
     // limit it to the equivalent of a single bulk write, not exceeding the
     // current CWND in packets.
-    if (FLAGS_quic_limit_pacing_burst) {
-      burst_tokens_ = min(
-          initial_packet_burst_,
-          static_cast<uint32>(sender_->GetCongestionWindow() / kDefaultTCPMSS));
-    } else {
-      burst_tokens_ = initial_packet_burst_;
-    }
+    burst_tokens_ = min(
+        initial_packet_burst_,
+        static_cast<uint32>(sender_->GetCongestionWindow() / kDefaultTCPMSS));
   }
   if (burst_tokens_ > 0) {
     --burst_tokens_;

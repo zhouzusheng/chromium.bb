@@ -37,12 +37,9 @@
 #include "core/events/Event.h"
 #include "core/events/EventTarget.h"
 #include "core/inspector/AsyncOperationMap.h"
-#include "core/inspector/V8DebuggerAgent.h"
 #include "core/xmlhttprequest/XMLHttpRequest.h"
 #include "core/xmlhttprequest/XMLHttpRequestUpload.h"
 #include "platform/ScriptForbiddenScope.h"
-#include "wtf/MainThread.h"
-#include "wtf/Optional.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/StringHash.h"
 
@@ -142,14 +139,10 @@ AsyncCallTracker::AsyncCallTracker(V8DebuggerAgent* debuggerAgent, Instrumenting
     : m_debuggerAgent(debuggerAgent)
     , m_instrumentingAgents(instrumentingAgents)
 {
-    m_debuggerAgent->addAsyncCallTrackingListener(this);
 }
 
 AsyncCallTracker::~AsyncCallTracker()
 {
-#if !ENABLE(OILPAN)
-    m_debuggerAgent->removeAsyncCallTrackingListener(this);
-#endif
 }
 
 void AsyncCallTracker::asyncCallTrackingStateChanged(bool tracking)
@@ -242,9 +235,7 @@ void AsyncCallTracker::didEnqueueEvent(EventTarget* eventTarget, Event* event)
 {
     ASSERT(eventTarget->executionContext());
     ASSERT(m_debuggerAgent->trackingAsyncCalls());
-    Optional<ScriptForbiddenScope::AllowUserAgentScript> allowScripting;
-    if (isMainThread())
-        allowScripting.emplace();
+    ScriptForbiddenScope::AllowUserAgentScript allowScripting;
     int operationId = m_debuggerAgent->traceAsyncOperationStarting(event->type());
     ExecutionContextData* data = createContextDataIfNeeded(eventTarget->executionContext());
     data->m_eventCallChains.set(event, operationId);
@@ -273,7 +264,7 @@ void AsyncCallTracker::willHandleEvent(EventTarget* eventTarget, Event* event, E
     }
 }
 
-void AsyncCallTracker::willLoadXHR(XMLHttpRequest* xhr, ThreadableLoaderClient*, const AtomicString&, const KURL&, bool async, PassRefPtr<FormData>, const HTTPHeaderMap&, bool)
+void AsyncCallTracker::willLoadXHR(XMLHttpRequest* xhr, ThreadableLoaderClient*, const AtomicString&, const KURL&, bool async, PassRefPtr<EncodedFormData>, const HTTPHeaderMap&, bool)
 {
     ASSERT(xhr->executionContext());
     ASSERT(m_debuggerAgent->trackingAsyncCalls());
@@ -310,9 +301,7 @@ void AsyncCallTracker::didEnqueueMutationRecord(ExecutionContext* context, Mutat
     ExecutionContextData* data = createContextDataIfNeeded(context);
     if (data->m_mutationObserverCallChains.contains(observer))
         return;
-    Optional<ScriptForbiddenScope::AllowUserAgentScript> allowScripting;
-    if (isMainThread())
-        allowScripting.emplace();
+    ScriptForbiddenScope::AllowUserAgentScript allowScripting;
     int operationId = m_debuggerAgent->traceAsyncOperationStarting(enqueueMutationRecordName);
     data->m_mutationObserverCallChains.set(observer, operationId);
 }
@@ -437,10 +426,8 @@ DEFINE_TRACE(AsyncCallTracker)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_executionContextDataMap);
-    visitor->trace(m_debuggerAgent);
     visitor->trace(m_instrumentingAgents);
 #endif
-    V8DebuggerAgent::AsyncCallTrackingListener::trace(visitor);
 }
 
 } // namespace blink

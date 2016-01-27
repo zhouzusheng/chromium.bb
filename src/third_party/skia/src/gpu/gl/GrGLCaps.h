@@ -115,24 +115,6 @@ public:
     }
 
     /**
-     * Call to note that a color config / stencil format pair passed
-     * FBO status check. We may skip calling glCheckFramebufferStatus for
-     * this combination in the future using
-     * isColorConfigAndStencilFormatVerified().
-     */
-    void markColorConfigAndStencilFormatAsVerified(
-                    GrPixelConfig config,
-                    const GrGLStencilAttachment::Format& format);
-
-    /**
-     * Call to check whether color config / stencil format pair has already
-     * passed FBO status check.
-     */
-    bool isColorConfigAndStencilFormatVerified(
-                    GrPixelConfig config,
-                    const GrGLStencilAttachment::Format& format) const;
-
-    /**
      * Reports the type of MSAA FBO support.
      */
     MSFBOType msFBOType() const { return fMSFBOType; }
@@ -254,6 +236,8 @@ public:
 
     bool bindFragDataLocationSupport() const { return fBindFragDataLocationSupport; }
 
+    bool bindUniformLocationSupport() const { return fBindUniformLocationSupport; }
+
     /**
      * Is there support for enabling/disabling sRGB writes for sRGB-capable color attachments?
      * If false this does not mean sRGB is not supported but rather that if it is supported
@@ -343,10 +327,6 @@ private:
     VerifiedColorConfigs fVerifiedColorConfigs;
 
     SkTArray<StencilFormat, true> fStencilFormats;
-    // tracks configs that have been verified to pass the FBO completeness when
-    // used as a color attachment when a particular stencil format is used
-    // as a stencil attachment.
-    SkTArray<VerifiedColorConfigs, true> fStencilVerifiedColorConfigs;
 
     int fMaxFragmentUniformVectors;
     int fMaxVertexAttributes;
@@ -382,6 +362,7 @@ private:
     bool fSRGBWriteControl : 1;
     bool fRGBA8888PixelsOpsAreSlow : 1;
     bool fPartialFBOReadIsSlow : 1;
+    bool fBindUniformLocationSupport : 1;
 
     struct ReadPixelsSupportedFormat {
         GrGLenum fFormat;

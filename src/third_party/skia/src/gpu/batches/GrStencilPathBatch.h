@@ -17,14 +17,15 @@
 
 class GrStencilPathBatch final : public GrBatch {
 public:
+    DEFINE_BATCH_CLASS_ID
+
     static GrBatch* Create(const SkMatrix& viewMatrix,
                            bool useHWAA,
                            const GrStencilSettings& stencil,
                            const GrScissorState& scissor,
                            GrRenderTarget* renderTarget,
                            const GrPath* path) {
-        return SkNEW_ARGS(GrStencilPathBatch, (viewMatrix, useHWAA, stencil, scissor, renderTarget,
-                                               path));
+        return new GrStencilPathBatch(viewMatrix, useHWAA, stencil, scissor, renderTarget, path);
     }
 
     const char* name() const override { return "StencilPath"; }
@@ -44,13 +45,14 @@ private:
                        const GrScissorState& scissor,
                        GrRenderTarget* renderTarget,
                        const GrPath* path)
-    : fViewMatrix(viewMatrix)
+    : INHERITED(ClassID())
+    , fViewMatrix(viewMatrix)
     , fUseHWAA(useHWAA)
     , fStencil(stencil)
     , fScissor(scissor)
     , fRenderTarget(renderTarget)
     , fPath(path) {
-        this->initClassID<GrStencilPathBatch>();
+        fBounds = path->getBounds();
     }
 
     bool onCombineIfPossible(GrBatch* t, const GrCaps& caps) override { return false; }
@@ -69,6 +71,8 @@ private:
     GrScissorState                                          fScissor;
     GrPendingIOResource<GrRenderTarget, kWrite_GrIOType>    fRenderTarget;
     GrPendingIOResource<const GrPath, kRead_GrIOType>       fPath;
+
+    typedef GrBatch INHERITED;
 };
 
 #endif

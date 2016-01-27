@@ -50,6 +50,7 @@ bool BrowserAccessibility::PlatformIsLeaf() const {
   // implementation details, but we want to expose them as leaves
   // to platform accessibility APIs.
   switch (GetRole()) {
+    case ui::AX_ROLE_COMBO_BOX:
     case ui::AX_ROLE_LINE_BREAK:
     case ui::AX_ROLE_SLIDER:
     case ui::AX_ROLE_STATIC_TEXT:
@@ -123,14 +124,14 @@ bool BrowserAccessibility::PlatformIsChildOfLeaf() const {
   return false;
 }
 
-BrowserAccessibility* BrowserAccessibility::GetPreviousSibling() {
+BrowserAccessibility* BrowserAccessibility::GetPreviousSibling() const {
   if (GetParent() && GetIndexInParent() > 0)
     return GetParent()->InternalGetChild(GetIndexInParent() - 1);
 
-  return NULL;
+  return nullptr;
 }
 
-BrowserAccessibility* BrowserAccessibility::GetNextSibling() {
+BrowserAccessibility* BrowserAccessibility::GetNextSibling() const {
   if (GetParent() &&
       GetIndexInParent() >= 0 &&
       GetIndexInParent() < static_cast<int>(
@@ -138,7 +139,31 @@ BrowserAccessibility* BrowserAccessibility::GetNextSibling() {
     return GetParent()->InternalGetChild(GetIndexInParent() + 1);
   }
 
-  return NULL;
+  return nullptr;
+}
+
+BrowserAccessibility* BrowserAccessibility::PlatformDeepestFirstChild() const {
+  if (!PlatformChildCount())
+    return nullptr;
+
+  auto deepest_child = PlatformGetChild(0);
+  while (deepest_child->PlatformChildCount())
+    deepest_child = deepest_child->PlatformGetChild(0);
+
+  return deepest_child;
+}
+
+BrowserAccessibility* BrowserAccessibility::PlatformDeepestLastChild() const {
+  if (!PlatformChildCount())
+    return nullptr;
+
+  auto deepest_child = PlatformGetChild(PlatformChildCount() - 1);
+  while (deepest_child->PlatformChildCount()) {
+    deepest_child = deepest_child->PlatformGetChild(
+        deepest_child->PlatformChildCount() - 1);
+  }
+
+  return deepest_child;
 }
 
 uint32 BrowserAccessibility::InternalChildCount() const {
@@ -618,18 +643,7 @@ bool BrowserAccessibility::IsCellOrTableHeaderRole() const {
 }
 
 bool BrowserAccessibility::IsEditableText() const {
-  // These roles don't have readonly set, but they're not editable text.
-  if (GetRole() == ui::AX_ROLE_SCROLL_AREA ||
-      GetRole() == ui::AX_ROLE_COLUMN ||
-      GetRole() == ui::AX_ROLE_TABLE_HEADER_CONTAINER) {
-    return false;
-  }
-
-  // Note: WebAXStateReadonly being false means it's either a text control,
-  // or contenteditable. We also check for the text field role to cover
-  // elements that have role=textbox set on it.
-  return (!HasState(ui::AX_STATE_READ_ONLY) ||
-          GetRole() == ui::AX_ROLE_TEXT_FIELD);
+  return HasState(ui::AX_STATE_EDITABLE);
 }
 
 bool BrowserAccessibility::IsWebAreaForPresentationalIframe() const {

@@ -51,7 +51,8 @@ class CONTENT_EXPORT VideoCaptureBufferPool
   class BufferHandle {
    public:
     virtual ~BufferHandle() {}
-    virtual size_t size() const = 0;
+    virtual gfx::Size dimensions() const = 0;
+    virtual size_t mapped_size() const = 0;
     virtual void* data(int plane) = 0;
     virtual ClientBuffer AsClientBuffer(int plane) = 0;
 #if defined(OS_POSIX)
@@ -62,11 +63,14 @@ class CONTENT_EXPORT VideoCaptureBufferPool
   explicit VideoCaptureBufferPool(int count);
 
   // One-time (per client/per-buffer) initialization to share a particular
-  // buffer to a process. The size of the allocation is returned as
-  // |memory_size|.
-  base::SharedMemoryHandle ShareToProcess(int buffer_id,
-                                          base::ProcessHandle process_handle,
-                                          size_t* memory_size);
+  // buffer to a process. The shared handle is returned as |new_handle|.
+  bool ShareToProcess(int buffer_id,
+                      base::ProcessHandle process_handle,
+                      base::SharedMemoryHandle* new_handle);
+  bool ShareToProcess2(int buffer_id,
+                       int plane,
+                       base::ProcessHandle process_handle,
+                       gfx::GpuMemoryBufferHandle* new_handle);
 
   // Try and obtain a BufferHandle for |buffer_id|.
   scoped_ptr<BufferHandle> GetBufferHandle(int buffer_id);
@@ -84,7 +88,7 @@ class CONTENT_EXPORT VideoCaptureBufferPool
   // On occasion, this call will decide to free an old buffer to make room for a
   // new allocation at a larger size. If so, the ID of the destroyed buffer is
   // returned via |buffer_id_to_drop|.
-  int ReserveForProducer(media::VideoCapturePixelFormat format,
+  int ReserveForProducer(media::VideoPixelFormat format,
                          media::VideoPixelStorage storage,
                          const gfx::Size& dimensions,
                          int* buffer_id_to_drop);
@@ -119,17 +123,17 @@ class CONTENT_EXPORT VideoCaptureBufferPool
 
     Tracker()
         : pixel_count_(0), held_by_producer_(false), consumer_hold_count_(0) {}
-    virtual bool Init(media::VideoCapturePixelFormat format,
+    virtual bool Init(media::VideoPixelFormat format,
                       media::VideoPixelStorage storage_type,
                       const gfx::Size& dimensions) = 0;
     virtual ~Tracker();
 
     size_t pixel_count() const { return pixel_count_; }
     void set_pixel_count(size_t count) { pixel_count_ = count; }
-    media::VideoCapturePixelFormat pixel_format() const {
+    media::VideoPixelFormat pixel_format() const {
       return pixel_format_;
     }
-    void set_pixel_format(media::VideoCapturePixelFormat format) {
+    void set_pixel_format(media::VideoPixelFormat format) {
       pixel_format_ = format;
     }
     media::VideoPixelStorage storage_type() const { return storage_type_; }
@@ -144,15 +148,16 @@ class CONTENT_EXPORT VideoCaptureBufferPool
     // Returns a handle to the underlying storage, be that a block of Shared
     // Memory, or a GpuMemoryBuffer.
     virtual scoped_ptr<BufferHandle> GetBufferHandle() = 0;
-    // The actual size of the underlying backing resource.
-    virtual size_t mapped_size() const = 0;
 
     virtual bool ShareToProcess(base::ProcessHandle process_handle,
                                 base::SharedMemoryHandle* new_handle) = 0;
+    virtual bool ShareToProcess2(int plane,
+                                 base::ProcessHandle process_handle,
+                                 gfx::GpuMemoryBufferHandle* new_handle) = 0;
 
    private:
     size_t pixel_count_;
-    media::VideoCapturePixelFormat pixel_format_;
+    media::VideoPixelFormat pixel_format_;
     media::VideoPixelStorage storage_type_;
     // Indicates whether this Tracker is currently referenced by the producer.
     bool held_by_producer_;
@@ -163,7 +168,7 @@ class CONTENT_EXPORT VideoCaptureBufferPool
   friend class base::RefCountedThreadSafe<VideoCaptureBufferPool>;
   virtual ~VideoCaptureBufferPool();
 
-  int ReserveForProducerInternal(media::VideoCapturePixelFormat format,
+  int ReserveForProducerInternal(media::VideoPixelFormat format,
                                  media::VideoPixelStorage storage,
                                  const gfx::Size& dimensions,
                                  int* tracker_id_to_drop);

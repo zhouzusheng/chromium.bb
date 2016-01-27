@@ -41,6 +41,7 @@
 #include "content/browser/loader/detachable_resource_handler.h"
 #include "content/browser/loader/mime_type_resource_handler.h"
 #include "content/browser/loader/navigation_resource_handler.h"
+#include "content/browser/loader/navigation_resource_throttle.h"
 #include "content/browser/loader/navigation_url_loader_impl_core.h"
 #include "content/browser/loader/power_save_block_resource_throttle.h"
 #include "content/browser/loader/redirect_to_file_resource_handler.h"
@@ -471,8 +472,7 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl()
                           base::Bind(&ResourceDispatcherHostImpl::OnInit,
                                      base::Unretained(this)));
 
-  update_load_states_timer_.reset(
-      new base::RepeatingTimer<ResourceDispatcherHostImpl>());
+  update_load_states_timer_.reset(new base::RepeatingTimer());
 }
 
 ResourceDispatcherHostImpl::~ResourceDispatcherHostImpl() {
@@ -602,7 +602,8 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
     bool is_content_initiated,
     ResourceContext* context,
     int child_id,
-    int route_id,
+    int render_view_route_id,
+    int render_frame_route_id,
     bool prefer_cache,
     bool do_not_prompt_for_login,
     scoped_ptr<DownloadSaveInfo> save_info,
@@ -666,7 +667,8 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
   }
 
   ResourceRequestInfoImpl* extra_info =
-      CreateRequestInfo(child_id, route_id, true, context);
+      CreateRequestInfo(child_id, render_view_route_id,
+                        render_frame_route_id, true, context);
   extra_info->set_do_not_prompt_for_login(do_not_prompt_for_login);
   extra_info->AssociateWithRequest(request.get());  // Request takes ownership.
 
@@ -824,6 +826,12 @@ void ResourceDispatcherHostImpl::DidReceiveRedirect(ResourceLoader* loader,
   if (!info->GetAssociatedRenderFrame(&render_process_id, &render_frame_host))
     return;
 
+  // Don't notify WebContents observers for requests known to be
+  // downloads; they aren't really associated with the Webcontents.
+  // Note that not all downloads are known before content sniffing.
+  if (info->IsDownload())
+    return;
+
   // Notify the observers on the UI thread.
   scoped_ptr<ResourceRedirectDetails> detail(new ResourceRedirectDetails(
       loader->request(),
@@ -848,6 +856,12 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(ResourceLoader* loader) {
 
   int render_process_id, render_frame_host;
   if (!info->GetAssociatedRenderFrame(&render_process_id, &render_frame_host))
+    return;
+
+  // Don't notify WebContents observers for requests known to be
+  // downloads; they aren't really associated with the Webcontents.
+  // Note that not all downloads are known before content sniffing.
+  if (info->IsDownload())
     return;
 
   // Notify the observers on the UI thread.
@@ -993,7 +1007,6 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ResourceHostMsg_ReleaseDownloadedFile,
                         OnReleaseDownloadedFile)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_DataDownloaded_ACK, OnDataDownloadedACK)
-    IPC_MESSAGE_HANDLER(ResourceHostMsg_UploadProgress_ACK, OnUploadProgressACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_CancelRequest, OnCancelRequest)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_DidChangePriority, OnDidChangePriority)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -1149,6 +1162,15 @@ void ResourceDispatcherHostImpl::BeginRequest(
   int process_type = filter_->process_type();
   int child_id = filter_->child_id();
 
+  // PlzNavigate: reject invalid renderer main resource request.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation) &&
+      IsResourceTypeFrame(request_data.resource_type) &&
+      !request_data.url.SchemeIs(url::kBlobScheme)) {
+    bad_message::ReceivedBadMessage(filter_, bad_message::RDH_INVALID_URL);
+    return;
+  }
+
   // Reject invalid priority.
   if (request_data.priority < net::MINIMUM_PRIORITY ||
       request_data.priority > net::MAXIMUM_PRIORITY) {
@@ -1257,6 +1279,17 @@ void ResourceDispatcherHostImpl::BeginRequest(
       IsResourceTypeFrame(request_data.resource_type);
   bool do_not_prompt_for_login = request_data.do_not_prompt_for_login;
   bool is_sync_load = sync_result != NULL;
+
+  // Raw headers are sensitive, as they include Cookie/Set-Cookie, so only
+  // allow requesting them if requester has ReadRawCookies permission.
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+  bool report_raw_headers = request_data.report_raw_headers;
+  if (report_raw_headers && !policy->CanReadRawCookies(child_id)) {
+    // TODO: crbug.com/523063 can we call bad_message::ReceivedBadMessage here?
+    VLOG(1) << "Denied unauthorized request for raw headers";
+    report_raw_headers = false;
+  }
   int load_flags =
       BuildLoadFlagsForRequest(request_data, child_id, is_sync_load);
   if (request_data.resource_type == RESOURCE_TYPE_PREFETCH ||
@@ -1312,6 +1345,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
       request_data.referrer_policy,
       request_data.visiblity_state,
       resource_context, filter_->GetWeakPtr(),
+      report_raw_headers,
       !is_sync_load);
   // Request takes ownership.
   extra_info->AssociateWithRequest(new_request.get());
@@ -1428,6 +1462,15 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::AddStandardHandlers(
     int child_id,
     int route_id,
     scoped_ptr<ResourceHandler> handler) {
+  // PlzNavigate: do not add ResourceThrottles for main resource requests from
+  // the renderer.  Decisions about the navigation should have been done in the
+  // initial request.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation) &&
+      IsResourceTypeFrame(resource_type) && child_id != -1) {
+    DCHECK(request->url().SchemeIs(url::kBlobScheme));
+    return handler.Pass();
+  }
 
   PluginService* plugin_service = nullptr;
 #if defined(ENABLE_PLUGINS)
@@ -1438,6 +1481,16 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::AddStandardHandlers(
                                             plugin_service, request));
 
   ScopedVector<ResourceThrottle> throttles;
+
+  // Add a NavigationResourceThrottle for navigations.
+  // PlzNavigate: the throttle is unnecessary as communication with the UI
+  // thread is handled by the NavigationURLloader.
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation) &&
+      IsResourceTypeFrame(resource_type)) {
+    throttles.push_back(new NavigationResourceThrottle(request));
+  }
+
   if (delegate_) {
     delegate_->RequestBeginning(request,
                                 resource_context,
@@ -1525,12 +1578,6 @@ bool ResourceDispatcherHostImpl::Send(IPC::Message* message) {
   return false;
 }
 
-void ResourceDispatcherHostImpl::OnUploadProgressACK(int request_id) {
-  ResourceLoader* loader = GetLoader(filter_->child_id(), request_id);
-  if (loader)
-    loader->OnUploadProgressACK();
-}
-
 // Note that this cancel is subtly different from the other
 // CancelRequest methods in this file, which also tear down the loader.
 void ResourceDispatcherHostImpl::OnCancelRequest(int request_id) {
@@ -1555,17 +1602,18 @@ void ResourceDispatcherHostImpl::OnCancelRequest(int request_id) {
 
 ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
     int child_id,
-    int route_id,
+    int render_view_route_id,
+    int render_frame_route_id,
     bool download,
     ResourceContext* context) {
   return new ResourceRequestInfoImpl(
       PROCESS_TYPE_RENDERER,
       child_id,
-      route_id,
+      render_view_route_id,
       -1,  // frame_tree_node_id
       0,
       request_id_,
-      MSG_ROUTING_NONE,  // render_frame_id
+      render_frame_route_id,
       false,             // is_main_frame
       false,             // parent_is_main_frame
       -1,                // parent_render_frame_id
@@ -1583,6 +1631,7 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       blink::WebPageVisibilityStateVisible,
       context,
       base::WeakPtr<ResourceMessageFilter>(),  // filter
+      false,                                   // report_raw_headers
       true);                                   // is_async
 }
 
@@ -1634,7 +1683,8 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
     const GURL& url,
     const Referrer& referrer,
     int child_id,
-    int route_id,
+    int render_view_route_id,
+    int render_frame_route_id,
     ResourceContext* context) {
   if (is_shutdown_)
     return;
@@ -1669,13 +1719,14 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
 
   // Since we're just saving some resources we need, disallow downloading.
   ResourceRequestInfoImpl* extra_info =
-      CreateRequestInfo(child_id, route_id, false, context);
+      CreateRequestInfo(child_id, render_view_route_id,
+                        render_frame_route_id, false, context);
   extra_info->AssociateWithRequest(request.get());  // Request takes ownership.
 
   scoped_ptr<ResourceHandler> handler(
       new SaveFileResourceHandler(request.get(),
                                   child_id,
-                                  route_id,
+                                  render_frame_route_id,
                                   url,
                                   save_file_manager_.get()));
 
@@ -1905,7 +1956,6 @@ void ResourceDispatcherHostImpl::FinishedWithResourcesForRequest(
 
 void ResourceDispatcherHostImpl::BeginNavigationRequest(
     ResourceContext* resource_context,
-    int frame_tree_node_id,
     const NavigationRequestInfo& info,
     NavigationURLLoaderImplCore* loader) {
   // PlzNavigate: BeginNavigationRequest currently should only be used for the
@@ -2026,6 +2076,7 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       blink::WebPageVisibilityStateVisible,
       resource_context,
       base::WeakPtr<ResourceMessageFilter>(),  // filter
+      false,  // request_data.report_raw_headers
       true);
   // Request takes ownership.
   extra_info->AssociateWithRequest(new_request.get());
@@ -2377,17 +2428,6 @@ int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
 
   if (is_sync_load)
     load_flags |= net::LOAD_IGNORE_LIMITS;
-
-  ChildProcessSecurityPolicyImpl* policy =
-      ChildProcessSecurityPolicyImpl::GetInstance();
-
-  // Raw headers are sensitive, as they include Cookie/Set-Cookie, so only
-  // allow requesting them if requester has ReadRawCookies permission.
-  if ((load_flags & net::LOAD_REPORT_RAW_HEADERS)
-      && !policy->CanReadRawCookies(child_id)) {
-    VLOG(1) << "Denied unauthorized request for raw headers";
-    load_flags &= ~net::LOAD_REPORT_RAW_HEADERS;
-  }
 
   return load_flags;
 }

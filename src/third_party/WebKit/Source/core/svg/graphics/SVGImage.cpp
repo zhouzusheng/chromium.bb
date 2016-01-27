@@ -58,7 +58,6 @@
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
 #include "third_party/skia/include/core/SkPicture.h"
-#include "third_party/skia/include/core/SkSurface.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
@@ -218,21 +217,16 @@ void SVGImage::drawForContainer(SkCanvas* canvas, const SkPaint& paint, const Fl
 
 PassRefPtr<SkImage> SVGImage::imageForCurrentFrame()
 {
-    // TODO(fmalita): instead of rasterizing, investigate returning a SkPicture-backed image.
-
     if (!m_page)
         return nullptr;
 
-    IntSize size = this->size();
-    SkImageInfo imageInfo = SkImageInfo::MakeN32(size.width(), size.height(), kPremul_SkAlphaType);
-    SkSurfaceProps disableLCDProps(0, kUnknown_SkPixelGeometry);
-    RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRaster(imageInfo, &disableLCDProps));
-    if (!surface)
-        return nullptr;
+    SkPictureRecorder recorder;
+    SkCanvas* canvas = recorder.beginRecording(width(), height());
+    drawForContainer(canvas, SkPaint(), size(), 1, rect(), rect());
+    RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
 
-    drawForContainer(surface->getCanvas(), SkPaint(), size, 1, rect(), rect());
-
-    return adoptRef(surface->newImageSnapshot());
+    return adoptRef(
+        SkImage::NewFromPicture(picture.get(), SkISize::Make(width(), height()), nullptr, nullptr));
 }
 
 void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize,
@@ -401,6 +395,20 @@ bool SVGImage::hasAnimations() const
     return rootElement->timeContainer()->hasAnimations() || toLocalFrame(m_page->mainFrame())->document()->timeline().hasPendingUpdates();
 }
 
+void SVGImage::advanceAnimationForTesting()
+{
+    if (SVGSVGElement* rootElement = svgRootElement(m_page.get())) {
+        rootElement->timeContainer()->advanceFrameForTesting();
+
+        // The following triggers animation updates which can issue a new draw
+        // but will not permanently change the animation timeline.
+        // TODO(pdr): Actually advance the document timeline so CSS animations
+        // can be properly tested.
+        rootElement->document().page()->animator().serviceScriptedAnimations(rootElement->getCurrentTime());
+        imageObserver()->animationAdvanced(this);
+    }
+}
+
 void SVGImage::updateUseCounters(Document& document) const
 {
     if (SVGSVGElement* rootElement = svgRootElement(m_page.get())) {
@@ -424,7 +432,7 @@ bool SVGImage::dataChanged(bool allDataReceived)
         // types.
         EventDispatchForbiddenScope::AllowUserAgentEvents allowUserAgentEvents;
 
-        static FrameLoaderClient* dummyFrameLoaderClient = new EmptyFrameLoaderClient;
+        DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<FrameLoaderClient>, dummyFrameLoaderClient, (EmptyFrameLoaderClient::create()));
 
         Page::PageClients pageClients;
         fillWithEmptyClients(pageClients);
@@ -461,7 +469,7 @@ bool SVGImage::dataChanged(bool allDataReceived)
         RefPtrWillBeRawPtr<LocalFrame> frame = nullptr;
         {
             TRACE_EVENT0("blink", "SVGImage::dataChanged::createFrame");
-            frame = LocalFrame::create(dummyFrameLoaderClient, &page->frameHost(), 0);
+            frame = LocalFrame::create(dummyFrameLoaderClient.get(), &page->frameHost(), 0);
             frame->setView(FrameView::create(frame.get()));
             frame->init();
         }

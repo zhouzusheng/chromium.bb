@@ -174,11 +174,14 @@
             }],
           ],
         }],
+        ['OS=="ios"', {
+          'sources!': [
+            'sync_socket.h',
+            'sync_socket_posix.cc',
+          ]
+        }],
       ],
       'sources': [
-        'async_socket_io_handler.h',
-        'async_socket_io_handler_posix.cc',
-        'async_socket_io_handler_win.cc',
         'auto_reset.h',
         'linux_util.cc',
         'linux_util.h',
@@ -374,7 +377,6 @@
         'android/path_utils_unittest.cc',
         'android/scoped_java_ref_unittest.cc',
         'android/sys_utils_unittest.cc',
-        'async_socket_io_handler_unittest.cc',
         'at_exit_unittest.cc',
         'atomicops_unittest.cc',
         'barrier_closure_unittest.cc',
@@ -408,6 +410,7 @@
         'debug/task_annotator_unittest.cc',
         'deferred_sequenced_task_runner_unittest.cc',
         'environment_unittest.cc',
+        'feature_list_unittest.cc',
         'file_version_info_unittest.cc',
         'files/dir_reader_posix_unittest.cc',
         'files/file_path_unittest.cc',
@@ -460,6 +463,7 @@
         'memory/aligned_memory_unittest.cc',
         'memory/discardable_shared_memory_unittest.cc',
         'memory/linked_ptr_unittest.cc',
+        'memory/memory_pressure_listener_unittest.cc',
         'memory/memory_pressure_monitor_chromeos_unittest.cc',
         'memory/memory_pressure_monitor_mac_unittest.cc',
         'memory/memory_pressure_monitor_win_unittest.cc',
@@ -469,6 +473,7 @@
         'memory/scoped_ptr_unittest.nc',
         'memory/scoped_vector_unittest.cc',
         'memory/shared_memory_unittest.cc',
+        'memory/shared_memory_mac_unittest.cc',
         'memory/singleton_unittest.cc',
         'memory/weak_ptr_unittest.cc',
         'memory/weak_ptr_unittest.nc',
@@ -595,6 +600,7 @@
         'win/registry_unittest.cc',
         'win/scoped_bstr_unittest.cc',
         'win/scoped_comptr_unittest.cc',
+        'win/scoped_handle_unittest.cc',
         'win/scoped_process_information_unittest.cc',
         'win/scoped_variant_unittest.cc',
         'win/shortcut_unittest.cc',
@@ -629,6 +635,8 @@
         }],
         ['OS == "ios" and _toolset != "host"', {
           'sources/': [
+            # iOS does not support FilePathWatcher.
+            ['exclude', '^files/file_path_watcher_unittest\\.cc$'],
             # Only test the iOS-meaningful portion of memory and process_utils.
             ['exclude', '^memory/discardable_shared_memory_unittest\\.cc$'],
             ['exclude', '^memory/shared_memory_unittest\\.cc$'],
@@ -693,6 +701,11 @@
             }],
           ]},
         ],
+        [ 'OS == "win" and target_arch == "x64"', {
+          'sources': [
+            'profiler/win32_stack_frame_unwinder_unittest.cc',
+          ],
+        }],
         ['OS == "win"', {
           'sources!': [
             'file_descriptor_shuffle_unittest.cc',
@@ -750,6 +763,12 @@
         # strings
         ['OS=="mac" or OS=="ios" or <(chromeos)==1 or <(chromecast)==1', {
           'defines': ['SYSTEM_NATIVE_UTF8'],
+        }],
+        # SyncSocket isn't used on iOS
+        ['OS=="ios"', {
+          'sources!': [
+            'sync_socket_unittest.cc',
+          ],
         }],
       ],  # target_conditions
     },
@@ -905,9 +924,6 @@
             4267,
           ],
           'sources': [
-            'async_socket_io_handler.h',
-            'async_socket_io_handler_posix.cc',
-            'async_socket_io_handler_win.cc',
             'auto_reset.h',
             'linux_util.cc',
             'linux_util.h',
@@ -1072,18 +1088,6 @@
     }],
     ['OS == "win"', {
       'targets': [
-        {
-          'target_name': 'debug_message',
-          'type': 'executable',
-          'sources': [
-            'debug_message.cc',
-          ],
-          'msvs_settings': {
-            'VCLinkerTool': {
-              'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
-            },
-          },
-        },
         {
           # Target to manually rebuild pe_image_test.dll which is checked into
           # base/test/data/pe_image.

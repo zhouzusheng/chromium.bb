@@ -113,10 +113,6 @@ public:
     virtual void setFromStrings(const WebString& name, const WebString& value) = 0;
 
     virtual bool mainFrameResizesAreOrientationChanges() const = 0;
-    virtual int availablePointerTypes() const = 0;
-    virtual PointerType primaryPointerType() const = 0;
-    virtual int availableHoverTypes() const = 0;
-    virtual HoverType primaryHoverType() const = 0;
     virtual bool shrinksViewportContentToFit() const = 0;
     virtual bool viewportEnabled() const = 0;
     virtual void setAccelerated2dCanvasEnabled(bool) = 0;
@@ -144,6 +140,7 @@ public:
     virtual void setAntialiased2dCanvasEnabled(bool) = 0;
     virtual void setAntialiasedClips2dCanvasEnabled(bool) = 0;
     virtual void setAsynchronousSpellCheckingEnabled(bool) = 0;
+    virtual void setAutoplayExperimentMode(const WebString&) = 0;
     virtual void setAutoZoomFocusedNodeToLegibleScale(bool) = 0;
     virtual void setCaretBrowsingEnabled(bool) = 0;
     virtual void setClobberUserAgentInitialScaleQuirk(bool) = 0;
@@ -181,7 +178,7 @@ public:
     virtual void setImagesEnabled(bool) = 0;
     virtual void setInlineTextBoxAccessibilityEnabled(bool) = 0;
     virtual void setInvertViewportScrollOrder(bool) = 0;
-    virtual void setJavaEnabled(bool) = 0;
+    virtual void setInertVisualViewport(bool) = 0;
     virtual void setJavaScriptCanAccessClipboard(bool) = 0;
     virtual void setJavaScriptCanOpenWindowsAutomatically(bool) = 0;
     virtual void setJavaScriptEnabled(bool) = 0;

@@ -26,6 +26,7 @@
 #include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 #include "webrtc/modules/rtp_rtcp/source/tmmbr_help.h"
+#include "webrtc/transport.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -70,17 +71,15 @@ public:
    ModuleRtpRtcpImpl* module;
  };
 
- RTCPSender(int32_t id,
-            bool audio,
+ RTCPSender(bool audio,
             Clock* clock,
             ReceiveStatistics* receive_statistics,
-            RtcpPacketTypeCounterObserver* packet_type_counter_observer);
+            RtcpPacketTypeCounterObserver* packet_type_counter_observer,
+            Transport* outgoing_transport);
  virtual ~RTCPSender();
 
- int32_t RegisterSendTransport(Transport* outgoingTransport);
-
- RTCPMethod Status() const;
- void SetRTCPStatus(RTCPMethod method);
+ RtcpMode Status() const;
+ void SetRTCPStatus(RtcpMode method);
 
  bool Sending() const;
  int32_t SetSendingStatus(const FeedbackState& feedback_state,
@@ -147,6 +146,7 @@ public:
  void SetCsrcs(const std::vector<uint32_t>& csrcs);
 
  void SetTargetBitrate(unsigned int target_bitrate);
+ bool SendFeedbackPacket(const rtcp::TransportFeedback& packet);
 
 private:
  struct RtcpContext;
@@ -223,13 +223,11 @@ private:
      EXCLUSIVE_LOCKS_REQUIRED(critical_section_rtcp_sender_);
 
 private:
- const int32_t id_;
  const bool audio_;
  Clock* const clock_;
- RTCPMethod method_ GUARDED_BY(critical_section_rtcp_sender_);
+ RtcpMode method_ GUARDED_BY(critical_section_rtcp_sender_);
 
- rtc::scoped_ptr<CriticalSectionWrapper> critical_section_transport_;
- Transport* cbTransport_ GUARDED_BY(critical_section_transport_);
+ Transport* const transport_;
 
  rtc::scoped_ptr<CriticalSectionWrapper> critical_section_rtcp_sender_;
  bool using_nack_ GUARDED_BY(critical_section_rtcp_sender_);

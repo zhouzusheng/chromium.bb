@@ -21,14 +21,10 @@
 #include "config.h"
 #include "core/css/CSSPrimitiveValue.h"
 
-#include "core/css/CSSBasicShapes.h"
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSHelper.h"
 #include "core/css/CSSMarkup.h"
 #include "core/css/CSSToLengthConversionData.h"
-#include "core/css/Counter.h"
-#include "core/css/Pair.h"
-#include "core/css/Rect.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Node.h"
 #include "core/style/ComputedStyle.h"
@@ -51,7 +47,7 @@ namespace {
 const int maxValueForCssLength = INT_MAX / kFixedPointDenominator - 2;
 const int minValueForCssLength = INT_MIN / kFixedPointDenominator + 2;
 
-typedef HashMap<String, CSSPrimitiveValue::UnitType> StringToUnitTable;
+using StringToUnitTable = HashMap<String, CSSPrimitiveValue::UnitType>;
 
 StringToUnitTable createStringToUnitTable()
 {
@@ -159,7 +155,7 @@ bool CSSPrimitiveValue::colorIsDerivedFromElement() const
     }
 }
 
-typedef HashMap<const CSSPrimitiveValue*, String> CSSTextCache;
+using CSSTextCache = HashMap<const CSSPrimitiveValue*, String>;
 static CSSTextCache& cssTextCache()
 {
     AtomicallyInitializedStaticReference(ThreadSpecific<CSSTextCache>, cache, new ThreadSpecific<CSSTextCache>());
@@ -245,12 +241,6 @@ CSSPrimitiveValue::CSSPrimitiveValue(const String& str, UnitType type)
         m_value.string->ref();
 }
 
-CSSPrimitiveValue::CSSPrimitiveValue(const LengthSize& lengthSize, const ComputedStyle& style)
-    : CSSValue(PrimitiveClass)
-{
-    init(lengthSize, style);
-}
-
 CSSPrimitiveValue::CSSPrimitiveValue(RGBA32 color)
     : CSSValue(PrimitiveClass)
 {
@@ -308,7 +298,7 @@ CSSPrimitiveValue::CSSPrimitiveValue(const Length& length, float zoom)
         if (calc.pixels() && calc.percent()) {
             init(CSSCalcValue::create(
                 CSSCalcValue::createExpressionNode(calc.pixels() / zoom, calc.percent()),
-                calc.isNonNegative() ? ValueRangeNonNegative : ValueRangeAll));
+                calc.valueRange()));
             break;
         }
         if (calc.percent()) {
@@ -335,53 +325,11 @@ void CSSPrimitiveValue::init(UnitType type)
     m_primitiveUnitType = static_cast<unsigned>(type);
 }
 
-void CSSPrimitiveValue::init(const LengthSize& lengthSize, const ComputedStyle& style)
-{
-    init(UnitType::Pair);
-    m_hasCachedCSSText = false;
-    m_value.pair = Pair::create(create(lengthSize.width(), style.effectiveZoom()), create(lengthSize.height(), style.effectiveZoom()), Pair::KeepIdenticalValues).leakRef();
-}
-
-void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<Counter> c)
-{
-    init(UnitType::Counter);
-    m_hasCachedCSSText = false;
-    m_value.counter = c.leakRef();
-}
-
-void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<Rect> r)
-{
-    init(UnitType::Rect);
-    m_hasCachedCSSText = false;
-    m_value.rect = r.leakRef();
-}
-
-void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<Quad> quad)
-{
-    init(UnitType::Quad);
-    m_hasCachedCSSText = false;
-    m_value.quad = quad.leakRef();
-}
-
-void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<Pair> p)
-{
-    init(UnitType::Pair);
-    m_hasCachedCSSText = false;
-    m_value.pair = p.leakRef();
-}
-
 void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<CSSCalcValue> c)
 {
     init(UnitType::Calc);
     m_hasCachedCSSText = false;
     m_value.calc = c.leakRef();
-}
-
-void CSSPrimitiveValue::init(PassRefPtrWillBeRawPtr<CSSBasicShape> shape)
-{
-    init(UnitType::Shape);
-    m_hasCachedCSSText = false;
-    m_value.shape = shape.leakRef();
 }
 
 CSSPrimitiveValue::~CSSPrimitiveValue()
@@ -395,33 +343,8 @@ void CSSPrimitiveValue::cleanup()
     case UnitType::CustomIdentifier:
     case UnitType::String:
     case UnitType::URI:
-    case UnitType::Attribute:
         if (m_value.string)
             m_value.string->deref();
-        break;
-    case UnitType::Counter:
-        // We must not call deref() when oilpan is enabled because m_value.counter is traced.
-#if !ENABLE(OILPAN)
-        m_value.counter->deref();
-#endif
-        break;
-    case UnitType::Rect:
-        // We must not call deref() when oilpan is enabled because m_value.rect is traced.
-#if !ENABLE(OILPAN)
-        m_value.rect->deref();
-#endif
-        break;
-    case UnitType::Quad:
-        // We must not call deref() when oilpan is enabled because m_value.quad is traced.
-#if !ENABLE(OILPAN)
-        m_value.quad->deref();
-#endif
-        break;
-    case UnitType::Pair:
-        // We must not call deref() when oilpan is enabled because m_value.pair is traced.
-#if !ENABLE(OILPAN)
-        m_value.pair->deref();
-#endif
         break;
     case UnitType::Calc:
         // We must not call deref() when oilpan is enabled because m_value.calc is traced.
@@ -432,12 +355,6 @@ void CSSPrimitiveValue::cleanup()
     case UnitType::CalcPercentageWithNumber:
     case UnitType::CalcPercentageWithLength:
         ASSERT_NOT_REACHED();
-        break;
-    case UnitType::Shape:
-        // We must not call deref() when oilpan is enabled because m_value.shape is traced.
-#if !ENABLE(OILPAN)
-        m_value.shape->deref();
-#endif
         break;
     case UnitType::Number:
     case UnitType::Integer:
@@ -481,7 +398,7 @@ void CSSPrimitiveValue::cleanup()
     }
 }
 
-double CSSPrimitiveValue::computeSeconds()
+double CSSPrimitiveValue::computeSeconds() const
 {
     ASSERT(isTime() || (isCalculated() && cssCalcValue()->category() == CalcTime));
     UnitType currentType = isCalculated() ? cssCalcValue()->expressionNode()->typeWithCalcResolved() : type();
@@ -512,42 +429,42 @@ double CSSPrimitiveValue::computeDegrees() const
     }
 }
 
-template<> int CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData)
+template<> int CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData) const
 {
     return roundForImpreciseConversion<int>(computeLengthDouble(conversionData));
 }
 
-template<> unsigned CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData)
+template<> unsigned CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData) const
 {
     return roundForImpreciseConversion<unsigned>(computeLengthDouble(conversionData));
 }
 
-template<> Length CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData)
+template<> Length CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData) const
 {
     return Length(clampToCSSLengthRange(computeLengthDouble(conversionData)), Fixed);
 }
 
-template<> short CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData)
+template<> short CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData) const
 {
     return roundForImpreciseConversion<short>(computeLengthDouble(conversionData));
 }
 
-template<> unsigned short CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData)
+template<> unsigned short CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData) const
 {
     return roundForImpreciseConversion<unsigned short>(computeLengthDouble(conversionData));
 }
 
-template<> float CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData)
+template<> float CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData) const
 {
     return static_cast<float>(computeLengthDouble(conversionData));
 }
 
-template<> double CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData)
+template<> double CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData) const
 {
     return computeLengthDouble(conversionData);
 }
 
-double CSSPrimitiveValue::computeLengthDouble(const CSSToLengthConversionData& conversionData)
+double CSSPrimitiveValue::computeLengthDouble(const CSSToLengthConversionData& conversionData) const
 {
     // The logic in this function is duplicated in MediaValues::computeLength
     // because MediaValues::computeLength needs nearly identical logic, but we haven't found a way to make
@@ -559,6 +476,7 @@ double CSSPrimitiveValue::computeLengthDouble(const CSSToLengthConversionData& c
 
     switch (type()) {
     case UnitType::Ems:
+    case UnitType::QuirkyEms:
         factor = conversionData.emFontSize();
         break;
     case UnitType::Exs:
@@ -696,7 +614,7 @@ double CSSPrimitiveValue::conversionToCanonicalUnitsScaleFactor(UnitType unitTyp
     return factor;
 }
 
-Length CSSPrimitiveValue::convertToLength(const CSSToLengthConversionData& conversionData)
+Length CSSPrimitiveValue::convertToLength(const CSSToLengthConversionData& conversionData) const
 {
     if (isLength())
         return computeLength<Length>(conversionData);
@@ -747,6 +665,7 @@ bool CSSPrimitiveValue::unitTypeToLengthUnitType(UnitType unitType, LengthUnitTy
         lengthType = UnitTypePixels;
         return true;
     case CSSPrimitiveValue::UnitType::Ems:
+    case CSSPrimitiveValue::UnitType::QuirkyEms:
         lengthType = UnitTypeFontSize;
         return true;
     case CSSPrimitiveValue::UnitType::Exs:
@@ -813,17 +732,13 @@ String CSSPrimitiveValue::getStringValue() const
     switch (type()) {
     case UnitType::CustomIdentifier:
     case UnitType::String:
-    case UnitType::Attribute:
     case UnitType::URI:
         return m_value.string;
-    case UnitType::ValueID:
-        return valueName(m_value.valueID);
-    case UnitType::PropertyID:
-        return propertyName(m_value.propertyID);
     default:
         break;
     }
 
+    ASSERT_NOT_REACHED();
     return String();
 }
 
@@ -860,6 +775,7 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
     case UnitType::Percentage:
         return "%";
     case UnitType::Ems:
+    case UnitType::QuirkyEms:
         return "em";
     case UnitType::Exs:
         return "ex";
@@ -917,17 +833,10 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
     case UnitType::URI:
     case UnitType::ValueID:
     case UnitType::PropertyID:
-    case UnitType::Attribute:
-    case UnitType::Counter:
-    case UnitType::Rect:
-    case UnitType::Quad:
     case UnitType::RGBColor:
-    case UnitType::Pair:
     case UnitType::Calc:
-    case UnitType::Shape:
     case UnitType::CalcPercentageWithNumber:
     case UnitType::CalcPercentageWithLength:
-    case UnitType::QuirkyEms:
         break;
     };
     ASSERT_NOT_REACHED();
@@ -952,6 +861,7 @@ String CSSPrimitiveValue::customCSSText() const
     case UnitType::Number:
     case UnitType::Percentage:
     case UnitType::Ems:
+    case UnitType::QuirkyEms:
     case UnitType::Exs:
     case UnitType::Rems:
     case UnitType::Chs:
@@ -987,7 +897,7 @@ String CSSPrimitiveValue::customCSSText() const
         break;
     }
     case UnitType::URI:
-        text = "url(" + quoteCSSURLIfNeeded(m_value.string) + ")";
+        text = serializeURI(m_value.string);
         break;
     case UnitType::ValueID:
         text = valueName(m_value.valueID);
@@ -995,62 +905,15 @@ String CSSPrimitiveValue::customCSSText() const
     case UnitType::PropertyID:
         text = propertyName(m_value.propertyID);
         break;
-    case UnitType::Attribute: {
-        StringBuilder result;
-        result.reserveCapacity(6 + m_value.string->length());
-        result.appendLiteral("attr(");
-        result.append(m_value.string);
-        result.append(')');
-
-        text = result.toString();
-        break;
-    }
-    case UnitType::Counter: {
-        StringBuilder result;
-        String separator = m_value.counter->separator();
-        if (separator.isEmpty())
-            result.appendLiteral("counter(");
-        else
-            result.appendLiteral("counters(");
-
-        result.append(m_value.counter->identifier());
-        if (!separator.isEmpty()) {
-            result.appendLiteral(", ");
-            result.append(serializeString(separator));
-        }
-        String listStyle = m_value.counter->listStyle();
-        bool isDefaultListStyle = m_value.counter->listStyleIdent() == CSSValueDecimal;
-        if (!listStyle.isEmpty() && !isDefaultListStyle) {
-            result.appendLiteral(", ");
-            result.append(listStyle);
-        }
-        result.append(')');
-
-        text = result.toString();
-        break;
-    }
-    case UnitType::Rect:
-        text = getRectValue()->cssText();
-        break;
-    case UnitType::Quad:
-        text = getQuadValue()->cssText();
-        break;
     case UnitType::RGBColor: {
         text = Color(m_value.rgbcolor).serializedAsCSSComponentValue();
         break;
     }
-    case UnitType::Pair:
-        text = getPairValue()->cssText();
-        break;
     case UnitType::Calc:
         text = m_value.calc->customCSSText();
         break;
-    case UnitType::Shape:
-        text = m_value.shape->cssText();
-        break;
     case UnitType::CalcPercentageWithNumber:
     case UnitType::CalcPercentageWithLength:
-    case UnitType::QuirkyEms:
         ASSERT_NOT_REACHED();
         break;
     }
@@ -1104,22 +967,11 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
     case UnitType::CustomIdentifier:
     case UnitType::String:
     case UnitType::URI:
-    case UnitType::Attribute:
         return equal(m_value.string, other.m_value.string);
-    case UnitType::Counter:
-        return m_value.counter && other.m_value.counter && m_value.counter->equals(*other.m_value.counter);
-    case UnitType::Rect:
-        return m_value.rect && other.m_value.rect && m_value.rect->equals(*other.m_value.rect);
-    case UnitType::Quad:
-        return m_value.quad && other.m_value.quad && m_value.quad->equals(*other.m_value.quad);
     case UnitType::RGBColor:
         return m_value.rgbcolor == other.m_value.rgbcolor;
-    case UnitType::Pair:
-        return m_value.pair && other.m_value.pair && m_value.pair->equals(*other.m_value.pair);
     case UnitType::Calc:
         return m_value.calc && other.m_value.calc && m_value.calc->equals(*other.m_value.calc);
-    case UnitType::Shape:
-        return m_value.shape && other.m_value.shape && m_value.shape->equals(*other.m_value.shape);
     case UnitType::Integer:
     case UnitType::Chs:
     case UnitType::CalcPercentageWithNumber:
@@ -1134,23 +986,8 @@ DEFINE_TRACE_AFTER_DISPATCH(CSSPrimitiveValue)
 {
 #if ENABLE(OILPAN)
     switch (type()) {
-    case UnitType::Counter:
-        visitor->trace(m_value.counter);
-        break;
-    case UnitType::Rect:
-        visitor->trace(m_value.rect);
-        break;
-    case UnitType::Quad:
-        visitor->trace(m_value.quad);
-        break;
-    case UnitType::Pair:
-        visitor->trace(m_value.pair);
-        break;
     case UnitType::Calc:
         visitor->trace(m_value.calc);
-        break;
-    case UnitType::Shape:
-        visitor->trace(m_value.shape);
         break;
     default:
         break;

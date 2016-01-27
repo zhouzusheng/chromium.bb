@@ -82,7 +82,7 @@ public:
 
     // Widget methods
     void setFrameRect(const IntRect&) override;
-    void paint(GraphicsContext*, const IntRect&) override;
+    void paint(GraphicsContext*, const IntRect&) const override;
     void invalidateRect(const IntRect&) override;
     void setFocus(bool, WebFocusType) override;
     void show() override;
@@ -94,7 +94,6 @@ public:
     void widgetPositionsUpdated() override;
     bool isPluginContainer() const override { return true; }
     void eventListenersRemoved() override;
-    bool pluginShouldPersist() const override;
 
     // WebPluginContainer methods
     WebElement element() override;

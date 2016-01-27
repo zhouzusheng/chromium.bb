@@ -123,7 +123,7 @@ int shadowDepthOf<EditingInComposedTreeStrategy>(const Node& startContainer, con
 } // namespace
 
 template<typename Strategy>
-TextIteratorAlgorithm<Strategy>::TextIteratorAlgorithm(const PositionAlgorithm<Strategy>& start, const PositionAlgorithm<Strategy>& end, TextIteratorBehaviorFlags behavior)
+TextIteratorAlgorithm<Strategy>::TextIteratorAlgorithm(const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end, TextIteratorBehaviorFlags behavior)
     : m_offset(0)
     , m_startContainer(nullptr)
     , m_startOffset(0)
@@ -891,8 +891,8 @@ bool TextIteratorAlgorithm<Strategy>::shouldRepresentNodeOffsetZero()
     // and in that case we'll get null. We don't want to put in newlines at the start in that case.
     // The currPos.isNotNull() check is needed because positions in non-HTML content
     // (like SVG) do not have visible positions, and we don't want to emit for them either.
-    VisiblePosition startPos = VisiblePosition(Position(m_startContainer, m_startOffset));
-    VisiblePosition currPos = VisiblePosition(positionBeforeNode(m_node));
+    VisiblePosition startPos = createVisiblePosition(Position(m_startContainer, m_startOffset));
+    VisiblePosition currPos = createVisiblePosition(positionBeforeNode(m_node));
     return startPos.isNotNull() && currPos.isNotNull() && !inSameLine(startPos, currPos);
 }
 
@@ -1005,12 +1005,12 @@ EphemeralRangeTemplate<Strategy> TextIteratorAlgorithm<Strategy>::range() const
     // use the current run information, if we have it
     if (m_textState.positionNode()) {
         m_textState.flushPositionOffsets();
-        return EphemeralRangeTemplate<Strategy>(PositionAlgorithm<Strategy>(m_textState.positionNode(), m_textState.positionStartOffset()), PositionAlgorithm<Strategy>(m_textState.positionNode(), m_textState.positionEndOffset()));
+        return EphemeralRangeTemplate<Strategy>(PositionTemplate<Strategy>(m_textState.positionNode(), m_textState.positionStartOffset()), PositionTemplate<Strategy>(m_textState.positionNode(), m_textState.positionEndOffset()));
     }
 
     // otherwise, return the end of the overall range we were given
     if (m_endContainer)
-        return EphemeralRangeTemplate<Strategy>(PositionAlgorithm<Strategy>(m_endContainer, m_endOffset));
+        return EphemeralRangeTemplate<Strategy>(PositionTemplate<Strategy>(m_endContainer, m_endOffset));
 
     return EphemeralRangeTemplate<Strategy>();
 }
@@ -1070,19 +1070,19 @@ Node* TextIteratorAlgorithm<Strategy>::currentContainer() const
 }
 
 template<typename Strategy>
-PositionAlgorithm<Strategy> TextIteratorAlgorithm<Strategy>::startPositionInCurrentContainer() const
+PositionTemplate<Strategy> TextIteratorAlgorithm<Strategy>::startPositionInCurrentContainer() const
 {
-    return PositionAlgorithm<Strategy>::editingPositionOf(currentContainer(), startOffsetInCurrentContainer());
+    return PositionTemplate<Strategy>::editingPositionOf(currentContainer(), startOffsetInCurrentContainer());
 }
 
 template<typename Strategy>
-PositionAlgorithm<Strategy> TextIteratorAlgorithm<Strategy>::endPositionInCurrentContainer() const
+PositionTemplate<Strategy> TextIteratorAlgorithm<Strategy>::endPositionInCurrentContainer() const
 {
-    return PositionAlgorithm<Strategy>::editingPositionOf(currentContainer(), endOffsetInCurrentContainer());
+    return PositionTemplate<Strategy>::editingPositionOf(currentContainer(), endOffsetInCurrentContainer());
 }
 
 template<typename Strategy>
-int TextIteratorAlgorithm<Strategy>::rangeLength(const PositionAlgorithm<Strategy>& start, const PositionAlgorithm<Strategy>& end, bool forSelectionPreservation)
+int TextIteratorAlgorithm<Strategy>::rangeLength(const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end, bool forSelectionPreservation)
 {
     int length = 0;
     TextIteratorBehaviorFlags behaviorFlags = TextIteratorEmitsObjectReplacementCharacter;
@@ -1103,19 +1103,20 @@ static String createPlainText(const EphemeralRangeTemplate<Strategy>& range, Tex
         return emptyString();
 
     TextIteratorAlgorithm<Strategy> it(range.startPosition(), range.endPosition(), behavior);
+
+    if (it.atEnd())
+        return emptyString();
+
     // The initial buffer size can be critical for performance: https://bugs.webkit.org/show_bug.cgi?id=81192
     static const unsigned initialCapacity = 1 << 15;
 
-    unsigned bufferLength = 0;
     StringBuilder builder;
     builder.reserveCapacity(initialCapacity);
 
-    for (; !it.atEnd(); it.advance()) {
+    for (; !it.atEnd(); it.advance())
         it.text().appendTextToStringBuilder(builder);
-        bufferLength += it.length();
-    }
 
-    if (!bufferLength)
+    if (builder.isEmpty())
         return emptyString();
 
     return builder.toString();

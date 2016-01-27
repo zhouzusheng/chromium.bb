@@ -25,7 +25,6 @@
  */
 
 #include "config.h"
-
 #include "core/workers/WorkerThread.h"
 
 #include "bindings/core/v8/ScriptSourceCode.h"
@@ -51,13 +50,9 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/WeakPtr.h"
 #include "wtf/text/WTFString.h"
+#include <limits.h>
 
 namespace blink {
-
-namespace {
-const double kLongIdlePeriodSecs = 1.0;
-
-} // namespace
 
 class WorkerMicrotaskRunner : public WebThread::TaskObserver {
 public:
@@ -110,7 +105,7 @@ unsigned WorkerThread::workerThreadCount()
     return workerThreads().size();
 }
 
-class WorkerThreadTask : public WebThread::Task {
+class WorkerThreadTask : public WebTaskRunner::Task {
     WTF_MAKE_NONCOPYABLE(WorkerThreadTask); WTF_MAKE_FAST_ALLOCATED(WorkerThreadTask);
 public:
     static PassOwnPtr<WorkerThreadTask> create(WorkerThread& workerThread, PassOwnPtr<ExecutionContextTask> task, bool isInstrumented)
@@ -154,10 +149,71 @@ private:
     bool m_isInstrumented;
 };
 
+class WorkerThread::DebuggerTaskQueue {
+    WTF_MAKE_NONCOPYABLE(DebuggerTaskQueue);
+public:
+    using Task = WebTaskRunner::Task;
+    using Result = WorkerThread::TaskQueueResult;
+
+    DebuggerTaskQueue() { }
+
+    // Returns true if the queue is still alive, false if the queue has been
+    // killed.
+    bool append(PassOwnPtr<Task> task)
+    {
+        MutexLocker lock(m_mutex);
+        m_queue.append(task);
+        m_condition.signal();
+        return !m_killed;
+    }
+
+    PassOwnPtr<Task> waitWithTimeout(Result& result, double absoluteTime)
+    {
+        MutexLocker lock(m_mutex);
+        bool timedOut = false;
+
+        while (!m_killed && !timedOut && m_queue.isEmpty())
+            timedOut = !m_condition.timedWait(m_mutex, absoluteTime);
+
+        ASSERT(!timedOut || absoluteTime != infiniteTime());
+
+        if (m_killed) {
+            result = Terminated;
+            return nullptr;
+        }
+
+        if (timedOut) {
+            result = Timeout;
+            return nullptr;
+        }
+
+        ASSERT_WITH_SECURITY_IMPLICATION(!m_queue.isEmpty());
+        result = TaskReceived;
+
+        return m_queue.takeFirst();
+    }
+
+    void kill()
+    {
+        MutexLocker lock(m_mutex);
+        m_killed = true;
+        m_condition.broadcast();
+    }
+
+    static double infiniteTime() { return std::numeric_limits<double>::max(); }
+
+private:
+    Mutex m_mutex;
+    ThreadCondition m_condition;
+    Deque<OwnPtr<Task>> m_queue;
+    bool m_killed = false;
+};
+
 WorkerThread::WorkerThread(PassRefPtr<WorkerLoaderProxy> workerLoaderProxy, WorkerReportingProxy& workerReportingProxy)
     : m_started(false)
     , m_terminated(false)
     , m_shutdown(false)
+    , m_debuggerTaskQueue(adoptPtr(new DebuggerTaskQueue))
     , m_workerLoaderProxy(workerLoaderProxy)
     , m_workerReportingProxy(workerReportingProxy)
     , m_webScheduler(nullptr)
@@ -260,8 +316,6 @@ void WorkerThread::initialize(PassOwnPtr<WorkerThreadStartupData> startupData)
     m_workerReportingProxy.didEvaluateWorkerScript(success);
 
     postInitialize();
-
-    m_webScheduler->postIdleTaskAfterWakeup(FROM_HERE, WTF::bind<double>(&WorkerThread::performIdleWork, this));
 }
 
 void WorkerThread::shutdown()
@@ -274,10 +328,10 @@ void WorkerThread::shutdown()
         m_shutdown = true;
     }
 
-    workerGlobalScope()->dispose();
-
     // This should be called before we start the shutdown procedure.
     workerReportingProxy().willDestroyWorkerGlobalScope();
+
+    workerGlobalScope()->dispose();
 
     backingThread().removeTaskObserver(m_microtaskRunner.get());
     postTask(FROM_HERE, createSameThreadTask(&WorkerThread::performShutdownTask, this));
@@ -364,7 +418,7 @@ void WorkerThread::terminateInternal()
     terminateV8Execution();
 
     InspectorInstrumentation::didKillAllExecutionContextTasks(m_workerGlobalScope.get());
-    m_debuggerMessageQueue.kill();
+    m_debuggerTaskQueue->kill();
     backingThread().postTask(FROM_HERE, new Task(threadSafeBind(&WorkerThread::shutdown, AllowCrossThreadAccess(this))));
 }
 
@@ -395,29 +449,6 @@ void WorkerThread::terminateAndWaitForAllWorkers()
 bool WorkerThread::isCurrentThread()
 {
     return m_started && backingThread().isCurrentThread();
-}
-
-void WorkerThread::performIdleWork(double deadlineSeconds)
-{
-    double gcDeadlineSeconds = deadlineSeconds;
-
-    // The V8 GC does some GC steps (e.g. compaction) only when the idle notification is ~1s.
-    // TODO(rmcilroy): Refactor so extending the deadline like this this isn't needed.
-    if (m_webScheduler->canExceedIdleDeadlineIfRequired())
-        gcDeadlineSeconds = Platform::current()->monotonicallyIncreasingTime() + kLongIdlePeriodSecs;
-
-    if (doIdleGc(gcDeadlineSeconds))
-        m_webScheduler->postIdleTaskAfterWakeup(FROM_HERE, WTF::bind<double>(&WorkerThread::performIdleWork, this));
-    else
-        m_webScheduler->postIdleTask(FROM_HERE, WTF::bind<double>(&WorkerThread::performIdleWork, this));
-}
-
-bool WorkerThread::doIdleGc(double deadlineSeconds)
-{
-    bool gcFinished = false;
-    if (deadlineSeconds > Platform::current()->monotonicallyIncreasingTime())
-        gcFinished = isolate()->IdleNotificationDeadline(deadlineSeconds);
-    return gcFinished;
 }
 
 void WorkerThread::postTask(const WebTraceLocation& location, PassOwnPtr<ExecutionContextTask> task)
@@ -475,30 +506,30 @@ void WorkerThread::terminateV8Execution()
     v8::V8::TerminateExecution(m_isolate);
 }
 
-void WorkerThread::appendDebuggerTask(PassOwnPtr<WebThread::Task> task)
+void WorkerThread::appendDebuggerTask(PassOwnPtr<WebTaskRunner::Task> task)
 {
     {
         MutexLocker lock(m_threadStateMutex);
         if (m_shutdown)
             return;
     }
-    m_debuggerMessageQueue.append(task);
+    m_debuggerTaskQueue->append(task);
 }
 
-MessageQueueWaitResult WorkerThread::runDebuggerTask(WaitMode waitMode)
+WorkerThread::TaskQueueResult WorkerThread::runDebuggerTask(WaitMode waitMode)
 {
     ASSERT(isCurrentThread());
-    MessageQueueWaitResult result;
-    double absoluteTime = MessageQueue<WebThread::Task>::infiniteTime();
-    OwnPtr<WebThread::Task> task;
+    TaskQueueResult result;
+    double absoluteTime = DebuggerTaskQueue::infiniteTime();
+    OwnPtr<WebTaskRunner::Task> task;
     {
-        if (waitMode == DontWaitForMessage)
+        if (waitMode == DontWaitForTask)
             absoluteTime = 0.0;
         SafePointScope safePointScope(ThreadState::NoHeapPointersOnStack);
-        task = m_debuggerMessageQueue.waitForMessageWithTimeout(result, absoluteTime);
+        task = m_debuggerTaskQueue->waitWithTimeout(result, absoluteTime);
     }
 
-    if (result == MessageQueueMessageReceived) {
+    if (result == TaskReceived) {
         InspectorInstrumentation::willProcessTask(workerGlobalScope());
         task->run();
         InspectorInstrumentation::didProcessTask(workerGlobalScope());
@@ -507,12 +538,12 @@ MessageQueueWaitResult WorkerThread::runDebuggerTask(WaitMode waitMode)
     return result;
 }
 
-void WorkerThread::willEnterNestedLoop()
+void WorkerThread::willRunDebuggerTasks()
 {
     InspectorInstrumentation::willEnterNestedRunLoop(m_workerGlobalScope.get());
 }
 
-void WorkerThread::didLeaveNestedLoop()
+void WorkerThread::didRunDebuggerTasks()
 {
     InspectorInstrumentation::didLeaveNestedRunLoop(m_workerGlobalScope.get());
 }

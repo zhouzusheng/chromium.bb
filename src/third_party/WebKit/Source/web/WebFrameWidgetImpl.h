@@ -50,7 +50,7 @@ class Frame;
 class Element;
 class LocalFrame;
 class Page;
-class DeprecatedPaintLayerCompositor;
+class PaintLayerCompositor;
 class UserGestureToken;
 class WebCompositorAnimationTimeline;
 class WebLayer;
@@ -102,6 +102,7 @@ public:
     bool confirmComposition(const WebString& text) override;
     bool compositionRange(size_t* location, size_t* length) override;
     WebTextInputInfo textInputInfo() override;
+    WebTextInputType textInputType() override;
     WebColor backgroundColor() const override;
     bool selectionBounds(WebRect& anchor, WebRect& focus) const override;
     bool selectionTextDirection(WebTextDirection& start, WebTextDirection& end) const override;
@@ -121,8 +122,7 @@ public:
 
     void scheduleAnimation();
 
-    DeprecatedPaintLayerCompositor* compositor() const;
-    void suppressInvalidations(bool enable);
+    PaintLayerCompositor* compositor() const;
     void setRootGraphicsLayer(GraphicsLayer*);
     void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*);
     void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*);
@@ -139,6 +139,9 @@ public:
     // Returns the page object associated with this widget. This may be null when
     // the page is shutting down, but will be valid at all other times.
     Page* page() const { return view()->page(); }
+
+    // Event related methods:
+    void mouseContextMenu(const WebMouseEvent&);
 
     WebLayerTreeView* layerTreeView() const { return m_layerTreeView; }
 
@@ -160,6 +163,9 @@ private:
 
     explicit WebFrameWidgetImpl(WebWidgetClient*, WebLocalFrame*);
     ~WebFrameWidgetImpl();
+
+    // Perform a hit test for a point relative to the root frame of the page.
+    HitTestResult hitTestResultForRootFramePos(const IntPoint& posInRootFrame);
 
     // Returns true if the event was actually processed.
     bool keyEventDefault(const WebKeyboardEvent&);

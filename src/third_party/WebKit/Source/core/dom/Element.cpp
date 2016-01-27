@@ -116,8 +116,10 @@
 #include "core/page/Page.h"
 #include "core/page/PointerLockController.h"
 #include "core/page/SpatialNavigation.h"
+#include "core/page/scrolling/ScrollCustomizationCallbacks.h"
 #include "core/page/scrolling/ScrollState.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/page/scrolling/ScrollStateCallback.h"
+#include "core/paint/PaintLayer.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGElement.h"
 #include "platform/EventDispatchForbiddenScope.h"
@@ -131,6 +133,25 @@
 #include "wtf/text/TextPosition.h"
 
 namespace blink {
+
+namespace {
+
+// We need to retain the scroll customization callbacks until the element
+// they're associated with is destroyed. It would be simplest if the callbacks
+// could be stored in ElementRareData, but we can't afford the space
+// increase. Instead, keep the scroll customization callbacks here. The other
+// option would be to store these callbacks on the FrameHost or document, but
+// that necessitates a bunch more logic for transferring the callbacks between
+// FrameHosts when elements are moved around.
+ScrollCustomizationCallbacks& scrollCustomizationCallbacks()
+{
+    ASSERT(RuntimeEnabledFeatures::scrollCustomizationEnabled());
+    DEFINE_STATIC_LOCAL(Persistent<ScrollCustomizationCallbacks>,
+        scrollCustomizationCallbacks, (new ScrollCustomizationCallbacks()));
+    return *scrollCustomizationCallbacks;
+}
+
+} // namespace
 
 using namespace HTMLNames;
 using namespace XMLNames;
@@ -158,6 +179,9 @@ Element::~Element()
 
     if (isCustomElement())
         CustomElement::wasDestroyed(this);
+
+    if (RuntimeEnabledFeatures::scrollCustomizationEnabled())
+        scrollCustomizationCallbacks().removeCallbacksForElement(this);
 
     // With Oilpan, either the Element has been removed from the Document
     // or the Document is dead as well. If the Element has been removed from
@@ -346,7 +370,7 @@ ElementAnimations& Element::ensureElementAnimations()
 {
     ElementRareData& rareData = ensureElementRareData();
     if (!rareData.elementAnimations())
-        rareData.setElementAnimations(adoptPtrWillBeNoop(new ElementAnimations()));
+        rareData.setElementAnimations(new ElementAnimations());
     return *rareData.elementAnimations();
 }
 
@@ -474,7 +498,19 @@ void Element::scrollIntoViewIfNeeded(bool centerIfNeeded)
         layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignToEdgeIfNeeded);
 }
 
-void Element::distributeScroll(ScrollState& scrollState)
+void Element::setDistributeScroll(ScrollStateCallback* scrollStateCallback, String nativeScrollBehavior)
+{
+    scrollStateCallback->setNativeScrollBehavior(ScrollStateCallback::toNativeScrollBehavior(nativeScrollBehavior));
+    scrollCustomizationCallbacks().setDistributeScroll(this, scrollStateCallback);
+}
+
+void Element::setApplyScroll(ScrollStateCallback* scrollStateCallback, String nativeScrollBehavior)
+{
+    scrollStateCallback->setNativeScrollBehavior(ScrollStateCallback::toNativeScrollBehavior(nativeScrollBehavior));
+    scrollCustomizationCallbacks().setApplyScroll(this, scrollStateCallback);
+}
+
+void Element::nativeDistributeScroll(ScrollState& scrollState)
 {
     ASSERT(RuntimeEnabledFeatures::scrollCustomizationEnabled());
     if (scrollState.fullyConsumed())
@@ -494,13 +530,29 @@ void Element::distributeScroll(ScrollState& scrollState)
     const double deltaX = scrollState.deltaX();
     const double deltaY = scrollState.deltaY();
 
-    applyScroll(scrollState);
+    callApplyScroll(scrollState);
 
     if (deltaX != scrollState.deltaX() || deltaY != scrollState.deltaY())
         scrollState.setCurrentNativeScrollingElement(this);
 }
 
-void Element::applyScroll(ScrollState& scrollState)
+void Element::callDistributeScroll(ScrollState& scrollState)
+{
+    ScrollStateCallback* callback = scrollCustomizationCallbacks().getDistributeScroll(this);
+    if (!callback) {
+        nativeDistributeScroll(scrollState);
+        return;
+    }
+
+    if (callback->nativeScrollBehavior() != NativeScrollBehavior::PerformAfterNativeScroll)
+        callback->handleEvent(&scrollState);
+    if (callback->nativeScrollBehavior() != NativeScrollBehavior::DisableNativeScroll)
+        nativeDistributeScroll(scrollState);
+    if (callback->nativeScrollBehavior() == NativeScrollBehavior::PerformAfterNativeScroll)
+        callback->handleEvent(&scrollState);
+};
+
+void Element::nativeApplyScroll(ScrollState& scrollState)
 {
     ASSERT(RuntimeEnabledFeatures::scrollCustomizationEnabled());
     if (scrollState.fullyConsumed())
@@ -510,8 +562,11 @@ void Element::applyScroll(ScrollState& scrollState)
     const double deltaY = scrollState.deltaY();
     bool scrolled = false;
 
-    // Handle the documentElement separately, as it scrolls the FrameView.
-    if (this == document().documentElement()) {
+    if (deltaY || deltaX)
+        document().updateLayoutIgnorePendingStylesheets();
+
+    // Handle the scrollingElement separately, as it scrolls the viewport.
+    if (this == document().scrollingElement()) {
         FloatSize delta(deltaX, deltaY);
         if (document().frame()->applyScrollDelta(delta, scrollState.isBeginning()).didScroll()) {
             scrolled = true;
@@ -546,6 +601,22 @@ void Element::applyScroll(ScrollState& scrollState)
         if (DocumentLoader* documentLoader = document().loader())
             documentLoader->initialScrollState().wasScrolledByUser = true;
     }
+};
+
+void Element::callApplyScroll(ScrollState& scrollState)
+{
+    ScrollStateCallback* callback = scrollCustomizationCallbacks().getApplyScroll(this);
+    if (!callback) {
+        nativeApplyScroll(scrollState);
+        return;
+    }
+
+    if (callback->nativeScrollBehavior() != NativeScrollBehavior::PerformAfterNativeScroll)
+        callback->handleEvent(&scrollState);
+    if (callback->nativeScrollBehavior() != NativeScrollBehavior::DisableNativeScroll)
+        nativeApplyScroll(scrollState);
+    if (callback->nativeScrollBehavior() == NativeScrollBehavior::PerformAfterNativeScroll)
+        callback->handleEvent(&scrollState);
 };
 
 static float localZoomForLayoutObject(LayoutObject& layoutObject)
@@ -656,12 +727,10 @@ int Element::clientWidth()
     bool inQuirksMode = document().inQuirksMode();
     if ((!inQuirksMode && document().documentElement() == this)
         || (inQuirksMode && isHTMLElement() && document().body() == this)) {
-        if (FrameView* view = document().view()) {
-            if (LayoutView* layoutView = document().layoutView()) {
-                if (document().page()->settings().forceZeroLayoutHeight())
-                    return adjustLayoutUnitForAbsoluteZoom(view->visibleContentSize().width(), *layoutView);
-                return adjustLayoutUnitForAbsoluteZoom(view->layoutSize().width(), *layoutView);
-            }
+        if (LayoutView* layoutView = document().layoutView()) {
+            if (document().page()->settings().forceZeroLayoutHeight())
+                return adjustLayoutUnitForAbsoluteZoom(layoutView->overflowClipRect(LayoutPoint()).width(), *layoutView);
+            return adjustLayoutUnitForAbsoluteZoom(layoutView->layoutSize().width(), *layoutView);
         }
     }
 
@@ -680,12 +749,10 @@ int Element::clientHeight()
 
     if ((!inQuirksMode && document().documentElement() == this)
         || (inQuirksMode && isHTMLElement() && document().body() == this)) {
-        if (FrameView* view = document().view()) {
-            if (LayoutView* layoutView = document().layoutView()) {
-                if (document().page()->settings().forceZeroLayoutHeight())
-                    return adjustLayoutUnitForAbsoluteZoom(view->visibleContentSize().height(), *layoutView);
-                return adjustLayoutUnitForAbsoluteZoom(view->layoutSize().height(), *layoutView);
-            }
+        if (LayoutView* layoutView = document().layoutView()) {
+            if (document().page()->settings().forceZeroLayoutHeight())
+                return adjustLayoutUnitForAbsoluteZoom(layoutView->overflowClipRect(LayoutPoint()).height(), *layoutView);
+            return adjustLayoutUnitForAbsoluteZoom(layoutView->layoutSize().height(), *layoutView);
         }
     }
 
@@ -874,13 +941,13 @@ void Element::scrollFrameBy(const ScrollToOptions& scrollToOptions)
     LocalFrame* frame = document().frame();
     if (!frame)
         return;
-    FrameView* view = frame->view();
-    if (!view)
+    ScrollableArea* viewport = frame->view() ? frame->view()->scrollableArea() : 0;
+    if (!viewport)
         return;
 
-    double newScaledLeft = left * frame->pageZoomFactor() + view->scrollPositionDouble().x();
-    double newScaledTop = top * frame->pageZoomFactor() + view->scrollPositionDouble().y();
-    view->setScrollPosition(DoublePoint(newScaledLeft, newScaledTop), ProgrammaticScroll, scrollBehavior);
+    double newScaledLeft = left * frame->pageZoomFactor() + viewport->scrollPositionDouble().x();
+    double newScaledTop = top * frame->pageZoomFactor() + viewport->scrollPositionDouble().y();
+    viewport->setScrollPosition(DoublePoint(newScaledLeft, newScaledTop), ProgrammaticScroll, scrollBehavior);
 }
 
 void Element::scrollFrameTo(const ScrollToOptions& scrollToOptions)
@@ -890,17 +957,17 @@ void Element::scrollFrameTo(const ScrollToOptions& scrollToOptions)
     LocalFrame* frame = document().frame();
     if (!frame)
         return;
-    FrameView* view = frame->view();
-    if (!view)
+    ScrollableArea* viewport = frame->view() ? frame->view()->scrollableArea() : 0;
+    if (!viewport)
         return;
 
-    double scaledLeft = view->scrollPositionDouble().x();
-    double scaledTop = view->scrollPositionDouble().y();
+    double scaledLeft = viewport->scrollPositionDouble().x();
+    double scaledTop = viewport->scrollPositionDouble().y();
     if (scrollToOptions.hasLeft())
         scaledLeft = ScrollableArea::normalizeNonFiniteScroll(scrollToOptions.left()) * frame->pageZoomFactor();
     if (scrollToOptions.hasTop())
         scaledTop = ScrollableArea::normalizeNonFiniteScroll(scrollToOptions.top()) * frame->pageZoomFactor();
-    view->setScrollPosition(DoublePoint(scaledLeft, scaledTop), ProgrammaticScroll, scrollBehavior);
+    viewport->setScrollPosition(DoublePoint(scaledLeft, scaledTop), ProgrammaticScroll, scrollBehavior);
 }
 
 void Element::incrementProxyCount()
@@ -936,17 +1003,17 @@ void Element::bbRequestSpellCheck()
         else if (element->isTextFormControl()) {
             HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerEditorElement();
             if (innerElement && innerElement->hasEditableStyle() && innerElement->isSpellCheckingEnabled()) {
-                VisiblePosition startPos(firstPositionInNode(innerElement));
-                VisiblePosition endPos(lastPositionInNode(innerElement));
-                RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
+                VisiblePosition startPos = createVisiblePosition(firstPositionInNode(innerElement));
+                VisiblePosition endPos = createVisiblePosition(lastPositionInNode(innerElement));
+                EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
                 spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             }
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->hasEditableStyle() && element->isSpellCheckingEnabled()) {
-            VisiblePosition startPos(firstPositionInNode(element));
-            VisiblePosition endPos(lastPositionInNode(element));
-            RefPtr<Range> rangeToCheck = Range::create(element->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
+            VisiblePosition startPos = createVisiblePosition(firstPositionInNode(element));
+            VisiblePosition endPos = createVisiblePosition(lastPositionInNode(element));
+            EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
             spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
@@ -1022,10 +1089,8 @@ IntRect Element::boundsInViewportSpace()
     Vector<FloatQuad> quads;
     if (isSVGElement() && layoutObject()) {
         // Get the bounding rectangle from the SVG model.
-        SVGElement* svgElement = toSVGElement(this);
-        FloatRect localRect;
-        if (svgElement->getBoundingBox(localRect))
-            quads.append(layoutObject()->localToAbsoluteQuad(localRect));
+        if (toSVGElement(this)->isSVGGraphicsElement())
+            quads.append(layoutObject()->localToAbsoluteQuad(layoutObject()->objectBoundingBox()));
     } else {
         // Get the bounding rectangle from the box model.
         if (layoutBoxModelObject())
@@ -1068,10 +1133,8 @@ ClientRect* Element::getBoundingClientRect()
     if (elementLayoutObject) {
         if (isSVGElement() && !elementLayoutObject->isSVGRoot()) {
             // Get the bounding rectangle from the SVG model.
-            SVGElement* svgElement = toSVGElement(this);
-            FloatRect localRect;
-            if (svgElement->getBoundingBox(localRect))
-                quads.append(elementLayoutObject->localToAbsoluteQuad(localRect));
+            if (toSVGElement(this)->isSVGGraphicsElement())
+                quads.append(elementLayoutObject->localToAbsoluteQuad(elementLayoutObject->objectBoundingBox()));
         } else if (elementLayoutObject->isBoxModelObject() || elementLayoutObject->isBR()) {
             elementLayoutObject->absoluteQuads(quads);
         }
@@ -1915,7 +1978,7 @@ void Element::setNeedsCompositingUpdate()
         return;
     layoutObject->layer()->setNeedsCompositingInputsUpdate();
     // Changes in the return value of requiresAcceleratedCompositing change if
-    // the DeprecatedPaintLayer is self-painting.
+    // the PaintLayer is self-painting.
     layoutObject->layer()->updateSelfPaintingLayer();
 }
 
@@ -3461,7 +3524,7 @@ void Element::styleAttributeChanged(const AtomicString& newStyleString, Attribut
 
     if (newStyleString.isNull()) {
         ensureUniqueElementData().m_inlineStyle.clear();
-    } else if (modificationReason == ModifiedByCloning || document().contentSecurityPolicy()->allowInlineStyle(document().url(), startLineNumber, newStyleString)) {
+    } else if (modificationReason == ModifiedByCloning || ContentSecurityPolicy::shouldBypassMainWorld(&document()) || document().contentSecurityPolicy()->allowInlineStyle(document().url(), startLineNumber, newStyleString)) {
         setInlineStyleFromString(newStyleString);
     }
 

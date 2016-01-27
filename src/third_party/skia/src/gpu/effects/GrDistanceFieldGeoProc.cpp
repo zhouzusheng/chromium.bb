@@ -21,8 +21,7 @@
 
 class GrGLDistanceFieldA8TextGeoProc : public GrGLGeometryProcessor {
 public:
-    GrGLDistanceFieldA8TextGeoProc(const GrGeometryProcessor&,
-                                   const GrBatchTracker&)
+    GrGLDistanceFieldA8TextGeoProc()
         : fViewMatrix(SkMatrix::InvalidMatrix())
         , fColor(GrColor_ILLEGAL)
 #ifdef SK_GAMMA_APPLY_TO_A8
@@ -45,7 +44,7 @@ public:
 
 #ifdef SK_GAMMA_APPLY_TO_A8
         // adjust based on gamma
-        const char* distanceAdjustUniName = NULL;
+        const char* distanceAdjustUniName = nullptr;
         // width, height, 1/(3*width)
         fDistanceAdjustUni = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
             kFloat_GrSLType, kDefault_GrSLPrecision,
@@ -144,9 +143,7 @@ public:
         fsBuilder->codeAppendf("%s = vec4(val);", args.fOutputCoverage);
     }
 
-    virtual void setData(const GrGLProgramDataManager& pdman,
-                         const GrPrimitiveProcessor& proc,
-                         const GrBatchTracker& bt) override {
+    void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& proc) override {
 #ifdef SK_GAMMA_APPLY_TO_A8
         const GrDistanceFieldA8TextGeoProc& dfTexEffect = proc.cast<GrDistanceFieldA8TextGeoProc>();
         float distanceAdjust = dfTexEffect.getDistanceAdjust();
@@ -173,7 +170,6 @@ public:
     }
 
     static inline void GenKey(const GrGeometryProcessor& gp,
-                              const GrBatchTracker& bt,
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder* b) {
         const GrDistanceFieldA8TextGeoProc& dfTexEffect = gp.cast<GrDistanceFieldA8TextGeoProc>();
@@ -222,7 +218,7 @@ GrDistanceFieldA8TextGeoProc::GrDistanceFieldA8TextGeoProc(GrColor color,
     , fDistanceAdjust(distanceAdjust)
 #endif
     , fFlags(flags & kNonLCD_DistanceFieldEffectMask)
-    , fInColor(NULL)
+    , fInColor(nullptr)
     , fUsesLocalCoords(usesLocalCoords) {
     SkASSERT(!(flags & ~kNonLCD_DistanceFieldEffectMask));
     this->initClassID<GrDistanceFieldA8TextGeoProc>();
@@ -236,23 +232,20 @@ GrDistanceFieldA8TextGeoProc::GrDistanceFieldA8TextGeoProc(GrColor color,
     this->addTextureAccess(&fTextureAccess);
 }
 
-void GrDistanceFieldA8TextGeoProc::getGLProcessorKey(const GrBatchTracker& bt,
-                                                     const GrGLSLCaps& caps,
+void GrDistanceFieldA8TextGeoProc::getGLProcessorKey(const GrGLSLCaps& caps,
                                                      GrProcessorKeyBuilder* b) const {
-    GrGLDistanceFieldA8TextGeoProc::GenKey(*this, bt, caps, b);
+    GrGLDistanceFieldA8TextGeoProc::GenKey(*this, caps, b);
 }
 
-GrGLPrimitiveProcessor*
-GrDistanceFieldA8TextGeoProc::createGLInstance(const GrBatchTracker& bt,
-                                               const GrGLSLCaps&) const {
-    return SkNEW_ARGS(GrGLDistanceFieldA8TextGeoProc, (*this, bt));
+GrGLPrimitiveProcessor* GrDistanceFieldA8TextGeoProc::createGLInstance(const GrGLSLCaps&) const {
+    return new GrGLDistanceFieldA8TextGeoProc();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(GrDistanceFieldA8TextGeoProc);
 
-GrGeometryProcessor* GrDistanceFieldA8TextGeoProc::TestCreate(GrProcessorTestData* d) {
+const GrGeometryProcessor* GrDistanceFieldA8TextGeoProc::TestCreate(GrProcessorTestData* d) {
     int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
                                           GrProcessorUnitTest::kAlphaTextureIdx;
     static const SkShader::TileMode kTileModes[] = {
@@ -282,8 +275,7 @@ GrGeometryProcessor* GrDistanceFieldA8TextGeoProc::TestCreate(GrProcessorTestDat
 
 class GrGLDistanceFieldPathGeoProc : public GrGLGeometryProcessor {
 public:
-    GrGLDistanceFieldPathGeoProc(const GrGeometryProcessor&,
-                                          const GrBatchTracker&)
+    GrGLDistanceFieldPathGeoProc()
         : fViewMatrix(SkMatrix::InvalidMatrix())
         , fColor(GrColor_ILLEGAL)
         , fTextureSize(SkISize::Make(-1, -1)) {}
@@ -322,7 +314,7 @@ public:
         this->emitTransforms(args.fPB, gpArgs->fPositionVar, dfTexEffect.inPosition()->fName,
                              args.fTransformsIn, args.fTransformsOut);
 
-        const char* textureSizeUniName = NULL;
+        const char* textureSizeUniName = nullptr;
         fTextureSizeUni = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                               kVec2f_GrSLType, kDefault_GrSLPrecision,
                                               "TextureSize", &textureSizeUniName);
@@ -378,9 +370,7 @@ public:
         fsBuilder->codeAppendf("%s = vec4(val);", args.fOutputCoverage);
     }
 
-    virtual void setData(const GrGLProgramDataManager& pdman,
-                         const GrPrimitiveProcessor& proc,
-                         const GrBatchTracker& bt) override {
+    void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& proc) override {
         SkASSERT(fTextureSizeUni.isValid());
 
         GrTexture* texture = proc.texture(0);
@@ -410,7 +400,6 @@ public:
     }
 
     static inline void GenKey(const GrGeometryProcessor& gp,
-                              const GrBatchTracker& bt,
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder* b) {
         const GrDistanceFieldPathGeoProc& dfTexEffect = gp.cast<GrDistanceFieldPathGeoProc>();
@@ -446,7 +435,7 @@ GrDistanceFieldPathGeoProc::GrDistanceFieldPathGeoProc(
     , fViewMatrix(viewMatrix)
     , fTextureAccess(texture, params)
     , fFlags(flags & kNonLCD_DistanceFieldEffectMask)
-    , fInColor(NULL)
+    , fInColor(nullptr)
     , fUsesLocalCoords(usesLocalCoords) {
     SkASSERT(!(flags & ~kNonLCD_DistanceFieldEffectMask));
     this->initClassID<GrDistanceFieldPathGeoProc>();
@@ -460,22 +449,20 @@ GrDistanceFieldPathGeoProc::GrDistanceFieldPathGeoProc(
     this->addTextureAccess(&fTextureAccess);
 }
 
-void GrDistanceFieldPathGeoProc::getGLProcessorKey(const GrBatchTracker& bt,
-                                                   const GrGLSLCaps& caps,
+void GrDistanceFieldPathGeoProc::getGLProcessorKey(const GrGLSLCaps& caps,
                                                    GrProcessorKeyBuilder* b) const {
-    GrGLDistanceFieldPathGeoProc::GenKey(*this, bt, caps, b);
+    GrGLDistanceFieldPathGeoProc::GenKey(*this, caps, b);
 }
 
-GrGLPrimitiveProcessor*
-GrDistanceFieldPathGeoProc::createGLInstance(const GrBatchTracker& bt, const GrGLSLCaps&) const {
-    return SkNEW_ARGS(GrGLDistanceFieldPathGeoProc, (*this, bt));
+GrGLPrimitiveProcessor* GrDistanceFieldPathGeoProc::createGLInstance(const GrGLSLCaps&) const {
+    return new GrGLDistanceFieldPathGeoProc();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(GrDistanceFieldPathGeoProc);
 
-GrGeometryProcessor* GrDistanceFieldPathGeoProc::TestCreate(GrProcessorTestData* d) {
+const GrGeometryProcessor* GrDistanceFieldPathGeoProc::TestCreate(GrProcessorTestData* d) {
     int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx
                                         : GrProcessorUnitTest::kAlphaTextureIdx;
     static const SkShader::TileMode kTileModes[] = {
@@ -503,7 +490,7 @@ GrGeometryProcessor* GrDistanceFieldPathGeoProc::TestCreate(GrProcessorTestData*
 
 class GrGLDistanceFieldLCDTextGeoProc : public GrGLGeometryProcessor {
 public:
-    GrGLDistanceFieldLCDTextGeoProc(const GrGeometryProcessor&, const GrBatchTracker&)
+    GrGLDistanceFieldLCDTextGeoProc()
         : fViewMatrix(SkMatrix::InvalidMatrix()), fColor(GrColor_ILLEGAL) {
         fDistanceAdjust = GrDistanceFieldLCDTextGeoProc::DistanceAdjust::Make(1.0f, 1.0f, 1.0f);
     }
@@ -606,7 +593,7 @@ public:
            "vec3(" SK_DistanceFieldMultiplier ")*(distance - vec3(" SK_DistanceFieldThreshold"));");
 
         // adjust width based on gamma
-        const char* distanceAdjustUniName = NULL;
+        const char* distanceAdjustUniName = nullptr;
         fDistanceAdjustUni = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
             kVec3f_GrSLType, kDefault_GrSLPrecision,
             "DistanceAdjust", &distanceAdjustUniName);
@@ -646,13 +633,14 @@ public:
 
         fsBuilder->codeAppend(
                       "vec4 val = vec4(smoothstep(vec3(-afwidth), vec3(afwidth), distance), 1.0);");
+        // set alpha to be max of rgb coverage
+        fsBuilder->codeAppend("val.a = max(max(val.r, val.g), val.b);");
 
-        fsBuilder->codeAppendf("%s = vec4(val);", args.fOutputCoverage);
+        fsBuilder->codeAppendf("%s = val;", args.fOutputCoverage);
     }
 
-    virtual void setData(const GrGLProgramDataManager& pdman,
-                         const GrPrimitiveProcessor& processor,
-                         const GrBatchTracker& bt) override {
+    void setData(const GrGLProgramDataManager& pdman,
+                 const GrPrimitiveProcessor& processor) override {
         SkASSERT(fDistanceAdjustUni.isValid());
 
         const GrDistanceFieldLCDTextGeoProc& dflcd = processor.cast<GrDistanceFieldLCDTextGeoProc>();
@@ -681,7 +669,6 @@ public:
     }
 
     static inline void GenKey(const GrGeometryProcessor& gp,
-                              const GrBatchTracker& bt,
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder* b) {
         const GrDistanceFieldLCDTextGeoProc& dfTexEffect = gp.cast<GrDistanceFieldLCDTextGeoProc>();
@@ -732,23 +719,20 @@ GrDistanceFieldLCDTextGeoProc::GrDistanceFieldLCDTextGeoProc(
     this->addTextureAccess(&fTextureAccess);
 }
 
-void GrDistanceFieldLCDTextGeoProc::getGLProcessorKey(const GrBatchTracker& bt,
-                                                      const GrGLSLCaps& caps,
+void GrDistanceFieldLCDTextGeoProc::getGLProcessorKey(const GrGLSLCaps& caps,
                                                       GrProcessorKeyBuilder* b) const {
-    GrGLDistanceFieldLCDTextGeoProc::GenKey(*this, bt, caps, b);
+    GrGLDistanceFieldLCDTextGeoProc::GenKey(*this, caps, b);
 }
 
-GrGLPrimitiveProcessor*
-GrDistanceFieldLCDTextGeoProc::createGLInstance(const GrBatchTracker& bt,
-                                                const GrGLSLCaps&) const {
-    return SkNEW_ARGS(GrGLDistanceFieldLCDTextGeoProc, (*this, bt));
+GrGLPrimitiveProcessor* GrDistanceFieldLCDTextGeoProc::createGLInstance(const GrGLSLCaps&) const {
+    return new GrGLDistanceFieldLCDTextGeoProc();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(GrDistanceFieldLCDTextGeoProc);
 
-GrGeometryProcessor* GrDistanceFieldLCDTextGeoProc::TestCreate(GrProcessorTestData* d) {
+const GrGeometryProcessor* GrDistanceFieldLCDTextGeoProc::TestCreate(GrProcessorTestData* d) {
     int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
                                           GrProcessorUnitTest::kAlphaTextureIdx;
     static const SkShader::TileMode kTileModes[] = {

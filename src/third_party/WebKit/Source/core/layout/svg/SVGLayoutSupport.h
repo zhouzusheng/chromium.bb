@@ -27,6 +27,7 @@
 #include "core/layout/LayoutObject.h"
 #include "core/style/SVGComputedStyleDefs.h"
 #include "platform/graphics/DashArray.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -45,6 +46,7 @@ class StrokeData;
 class TransformState;
 
 class SVGLayoutSupport {
+    STATIC_ONLY(SVGLayoutSupport);
 public:
     // Shares child layouting code between LayoutSVGRoot/LayoutSVG(Hidden)Container
     static void layoutChildren(LayoutObject*, bool selfNeedsLayout);
@@ -62,12 +64,12 @@ public:
     static bool filtersForceContainerLayout(LayoutObject*);
 
     // Determines whether the passed point lies in a clipping area
-    static bool pointInClippingArea(LayoutObject*, const FloatPoint&);
+    static bool pointInClippingArea(const LayoutObject*, const FloatPoint&);
 
     // Transform |pointInParent| to |object|'s user-space and check if it is
     // within the clipping area. Returns false if the transform is singular or
     // the point is outside the clipping area.
-    static bool transformToUserSpaceAndCheckClipping(LayoutObject*, const AffineTransform& localTransform, const FloatPoint& pointInParent, FloatPoint& localPoint);
+    static bool transformToUserSpaceAndCheckClipping(const LayoutObject*, const AffineTransform& localTransform, const FloatPoint& pointInParent, FloatPoint& localPoint);
 
     static void computeContainerBoundingBoxes(const LayoutObject* container, FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, FloatRect& strokeBoundingBox, FloatRect& paintInvalidationBoundingBox);
 
@@ -111,6 +113,7 @@ private:
 };
 
 class SubtreeContentTransformScope {
+    STACK_ALLOCATED();
 public:
     SubtreeContentTransformScope(const AffineTransform&);
     ~SubtreeContentTransformScope();

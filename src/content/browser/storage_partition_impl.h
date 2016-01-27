@@ -7,6 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/background_sync/background_sync_context_impl.h"
@@ -47,8 +48,7 @@ class StoragePartitionImpl : public StoragePartition {
   storage::DatabaseTracker* GetDatabaseTracker() override;
   DOMStorageContextWrapper* GetDOMStorageContext() override;
   IndexedDBContextImpl* GetIndexedDBContext() override;
-  // TODO(jsbell): Expose this on the public API as well. crbug.com/466371
-  CacheStorageContextImpl* GetCacheStorageContext();
+  CacheStorageContextImpl* GetCacheStorageContext() override;
   ServiceWorkerContextWrapper* GetServiceWorkerContext() override;
   GeofencingManager* GetGeofencingManager() override;
   HostZoomMap* GetHostZoomMap() override;

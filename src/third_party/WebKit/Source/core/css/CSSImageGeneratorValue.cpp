@@ -42,7 +42,7 @@ CSSImageGeneratorValue::~CSSImageGeneratorValue()
 {
 }
 
-void CSSImageGeneratorValue::addClient(LayoutObject* layoutObject, const IntSize& size)
+void CSSImageGeneratorValue::addClient(const LayoutObject* layoutObject, const IntSize& size)
 {
     ASSERT(layoutObject);
 #if !ENABLE(OILPAN)
@@ -66,7 +66,14 @@ void CSSImageGeneratorValue::addClient(LayoutObject* layoutObject, const IntSize
     }
 }
 
-void CSSImageGeneratorValue::removeClient(LayoutObject* layoutObject)
+PassRefPtrWillBeRawPtr<CSSImageGeneratorValue> CSSImageGeneratorValue::valueWithURLsMadeAbsolute()
+{
+    if (isCrossfadeValue())
+        return toCSSCrossfadeValue(this)->valueWithURLsMadeAbsolute();
+    return this;
+}
+
+void CSSImageGeneratorValue::removeClient(const LayoutObject* layoutObject)
 {
     ASSERT(layoutObject);
     LayoutObjectSizeCountMap::iterator it = m_clients.find(layoutObject);
@@ -94,7 +101,7 @@ void CSSImageGeneratorValue::removeClient(LayoutObject* layoutObject)
 #endif
 }
 
-Image* CSSImageGeneratorValue::getImage(LayoutObject* layoutObject, const IntSize& size)
+Image* CSSImageGeneratorValue::getImage(const LayoutObject* layoutObject, const IntSize& size)
 {
     LayoutObjectSizeCountMap::iterator it = m_clients.find(layoutObject);
     if (it != m_clients.end()) {
@@ -109,7 +116,7 @@ Image* CSSImageGeneratorValue::getImage(LayoutObject* layoutObject, const IntSiz
 
     // Don't generate an image for empty sizes.
     if (size.isEmpty())
-        return 0;
+        return nullptr;
 
     // Look up the image in our cache.
     return m_images.get(size);
@@ -120,7 +127,7 @@ void CSSImageGeneratorValue::putImage(const IntSize& size, PassRefPtr<Image> ima
     m_images.add(size, image);
 }
 
-PassRefPtr<Image> CSSImageGeneratorValue::image(LayoutObject* layoutObject, const IntSize& size)
+PassRefPtr<Image> CSSImageGeneratorValue::image(const LayoutObject* layoutObject, const IntSize& size)
 {
     switch (classType()) {
     case CanvasClass:

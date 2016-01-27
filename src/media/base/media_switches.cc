@@ -9,13 +9,14 @@ namespace switches {
 // Allow users to specify a custom buffer size for debugging purpose.
 const char kAudioBufferSize[] = "audio-buffer-size";
 
-// Disables the new vsync driven video renderering path.
-const char kDisableNewVideoRenderer[] = "disable-new-video-renderer";
-
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
 
 #if defined(OS_ANDROID)
+// Sets the MediaSource player that uses UI thread for frame processing.
+const char kDisableMediaThreadForMediaPlayback[] =
+    "disable-media-thread-for-media-playback";
+
 // Sets the MediaSource player that uses the separate media thread
 const char kEnableMediaThreadForMediaPlayback[] =
     "enable-media-thread-for-media-playback";

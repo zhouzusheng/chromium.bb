@@ -28,6 +28,7 @@
       'c/ppb_audio.h',
       'c/ppb_audio_buffer.h',
       'c/ppb_audio_config.h',
+      'c/ppb_audio_encoder.h',
       'c/ppb_compositor.h',
       'c/ppb_console.h',
       'c/ppb_core.h',
@@ -64,6 +65,7 @@
       'c/ppb_var_array_buffer.h',
       'c/ppb_var_dictionary.h',
       'c/ppb_video_decoder.h',
+      'c/ppb_video_encoder.h',
       'c/ppb_video_frame.h',
       'c/ppb_view.h',
       'c/ppb_websocket.h',
@@ -151,6 +153,8 @@
       'cpp/audio_buffer.h',
       'cpp/audio_config.cc',
       'cpp/audio_config.h',
+      'cpp/audio_encoder.cc',
+      'cpp/audio_encoder.h',
       'cpp/completion_callback.h',
       'cpp/compositor.cc',
       'cpp/compositor.h',
@@ -509,6 +513,8 @@
     #
     'test_nacl_source_files': [
       # Test cases (PLEASE KEEP THIS SECTION IN ALPHABETICAL ORDER)
+      'tests/test_nacl_irt_stack_alignment.cc',
+      'tests/test_nacl_irt_stack_alignment.h',
       'tests/test_tcp_server_socket_private_disallowed.cc',
       'tests/test_tcp_socket_private_disallowed.cc',
       'tests/test_udp_socket_private_disallowed.cc',
@@ -528,6 +534,8 @@
       'tests/test_char_set.h',
       'tests/test_crypto.cc',
       'tests/test_crypto.h',
+      'tests/test_file_chooser.cc',
+      'tests/test_file_chooser.h',
       'tests/test_flash.cc',
       'tests/test_flash.h',
       'tests/test_flash_clipboard.cc',

@@ -39,7 +39,6 @@ class CompositorDependencies {
   virtual bool IsLcdTextEnabled() = 0;
   virtual bool IsDistanceFieldTextEnabled() = 0;
   virtual bool IsZeroCopyEnabled() = 0;
-  virtual bool IsOneCopyEnabled() = 0;
   virtual bool IsPersistentGpuMemoryBufferEnabled() = 0;
   virtual bool IsElasticOverscrollEnabled() = 0;
   virtual std::vector<unsigned> GetImageTextureTargets() = 0;
@@ -56,7 +55,7 @@ class CompositorDependencies {
   virtual scoped_ptr<cc::BeginFrameSource> CreateExternalBeginFrameSource(
       int routing_id) = 0;
   virtual cc::TaskGraphRunner* GetTaskGraphRunner() = 0;
-  virtual bool IsGatherPixelRefsEnabled() = 0;
+  virtual bool AreImageDecodeTasksEnabled() = 0;
   virtual bool IsThreadedAnimationEnabled() = 0;
 
   virtual ~CompositorDependencies() {}

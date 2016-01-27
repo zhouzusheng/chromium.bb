@@ -149,6 +149,7 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       request_headers_(),
       read_buf_len_(0),
       total_received_bytes_(0),
+      total_sent_bytes_(0),
       next_state_(STATE_NONE),
       establishing_tunnel_(false),
       websocket_handshake_stream_base_create_helper_(NULL) {
@@ -159,28 +160,18 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
 
 HttpNetworkTransaction::~HttpNetworkTransaction() {
   if (stream_.get()) {
-    HttpResponseHeaders* headers = GetResponseHeaders();
     // TODO(mbelshe): The stream_ should be able to compute whether or not the
     //                stream should be kept alive.  No reason to compute here
     //                and pass it in.
-    bool try_to_keep_alive =
-        next_state_ == STATE_NONE &&
-        stream_->CanFindEndOfResponse() &&
-        (!headers || headers->IsKeepAlive());
-    if (!try_to_keep_alive) {
+    if (!stream_->CanReuseConnection() || next_state_ != STATE_NONE) {
       stream_->Close(true /* not reusable */);
+    } else if (stream_->IsResponseBodyComplete()) {
+      // If the response body is complete, we can just reuse the socket.
+      stream_->Close(false /* reusable */);
     } else {
-      if (stream_->IsResponseBodyComplete()) {
-        // If the response body is complete, we can just reuse the socket.
-        stream_->Close(false /* reusable */);
-      } else if (stream_->IsSpdyHttpStream()) {
-        // Doesn't really matter for SpdyHttpStream. Just close it.
-        stream_->Close(true /* not reusable */);
-      } else {
-        // Otherwise, we try to drain the response body.
-        HttpStream* stream = stream_.release();
-        stream->Drain(session_);
-      }
+      // Otherwise, we try to drain the response body.
+      HttpStream* stream = stream_.release();
+      stream->Drain(session_);
     }
   }
 
@@ -293,8 +284,7 @@ void HttpNetworkTransaction::PrepareForAuthRestart(HttpAuth::Target target) {
   bool keep_alive = false;
   // Even if the server says the connection is keep-alive, we have to be
   // able to find the end of each response in order to reuse the connection.
-  if (GetResponseHeaders()->IsKeepAlive() &&
-      stream_->CanFindEndOfResponse()) {
+  if (stream_->CanReuseConnection()) {
     // If the response body hasn't been completely read, we need to drain
     // it first.
     if (!stream_->IsResponseBodyComplete()) {
@@ -316,8 +306,9 @@ void HttpNetworkTransaction::DidDrainBodyForAuthRestart(bool keep_alive) {
 
   if (stream_.get()) {
     total_received_bytes_ += stream_->GetTotalReceivedBytes();
+    total_sent_bytes_ += stream_->GetTotalSentBytes();
     HttpStream* new_stream = NULL;
-    if (keep_alive && stream_->IsConnectionReusable()) {
+    if (keep_alive && stream_->CanReuseConnection()) {
       // We should call connection_->set_idle_time(), but this doesn't occur
       // often enough to be worth the trouble.
       stream_->SetConnectionReused();
@@ -331,8 +322,9 @@ void HttpNetworkTransaction::DidDrainBodyForAuthRestart(bool keep_alive) {
       stream_->Close(true);
       next_state_ = STATE_CREATE_STREAM;
     } else {
-      // Renewed streams shouldn't carry over received bytes.
+      // Renewed streams shouldn't carry over sent or received bytes.
       DCHECK_EQ(0, new_stream->GetTotalReceivedBytes());
+      DCHECK_EQ(0, new_stream->GetTotalSentBytes());
       next_state_ = STATE_INIT_STREAM;
     }
     stream_.reset(new_stream);
@@ -395,11 +387,18 @@ bool HttpNetworkTransaction::GetFullRequestHeaders(
   return true;
 }
 
-int64 HttpNetworkTransaction::GetTotalReceivedBytes() const {
-  int64 total_received_bytes = total_received_bytes_;
+int64_t HttpNetworkTransaction::GetTotalReceivedBytes() const {
+  int64_t total_received_bytes = total_received_bytes_;
   if (stream_)
     total_received_bytes += stream_->GetTotalReceivedBytes();
   return total_received_bytes;
+}
+
+int64_t HttpNetworkTransaction::GetTotalSentBytes() const {
+  int64_t total_sent_bytes = total_sent_bytes_;
+  if (stream_)
+    total_sent_bytes += stream_->GetTotalSentBytes();
+  return total_sent_bytes;
 }
 
 void HttpNetworkTransaction::DoneReading() {}
@@ -452,6 +451,14 @@ bool HttpNetworkTransaction::GetLoadTimingInfo(
   return true;
 }
 
+bool HttpNetworkTransaction::GetRemoteEndpoint(IPEndPoint* endpoint) const {
+  if (!remote_endpoint_.address().size())
+    return false;
+
+  *endpoint = remote_endpoint_;
+  return true;
+}
+
 void HttpNetworkTransaction::SetPriority(RequestPriority priority) {
   priority_ = priority;
   if (stream_request_)
@@ -486,8 +493,10 @@ void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,
   DCHECK_EQ(STATE_CREATE_STREAM_COMPLETE, next_state_);
   DCHECK(stream_request_.get());
 
-  if (stream_)
+  if (stream_) {
     total_received_bytes_ += stream_->GetTotalReceivedBytes();
+    total_sent_bytes_ += stream_->GetTotalSentBytes();
+  }
   stream_.reset(stream);
   server_ssl_config_ = used_ssl_config;
   proxy_info_ = used_proxy_info;
@@ -586,8 +595,10 @@ void HttpNetworkTransaction::OnHttpsProxyTunnelResponse(
   response_ = response_info;
   server_ssl_config_ = used_ssl_config;
   proxy_info_ = used_proxy_info;
-  if (stream_)
+  if (stream_) {
     total_received_bytes_ += stream_->GetTotalReceivedBytes();
+    total_sent_bytes_ += stream_->GetTotalSentBytes();
+  }
   stream_.reset(stream);
   stream_request_.reset();  // we're done with the stream request
   OnIOComplete(ERR_HTTPS_PROXY_TUNNEL_RESPONSE);
@@ -810,6 +821,9 @@ int HttpNetworkTransaction::DoCreateStreamComplete(int result) {
 int HttpNetworkTransaction::DoInitStream() {
   DCHECK(stream_.get());
   next_state_ = STATE_INIT_STREAM_COMPLETE;
+
+  stream_->GetRemoteEndpoint(&remote_endpoint_);
+
   return stream_->InitializeStream(request_, priority_, net_log_, io_callback_);
 }
 
@@ -821,8 +835,10 @@ int HttpNetworkTransaction::DoInitStreamComplete(int result) {
       result = HandleIOError(result);
 
     // The stream initialization failed, so this stream will never be useful.
-    if (stream_)
-        total_received_bytes_ += stream_->GetTotalReceivedBytes();
+    if (stream_) {
+      total_received_bytes_ += stream_->GetTotalReceivedBytes();
+      total_sent_bytes_ += stream_->GetTotalSentBytes();
+    }
     stream_.reset();
   }
 
@@ -1115,26 +1131,18 @@ int HttpNetworkTransaction::DoReadBodyComplete(int result) {
     done = true;
   }
 
-  bool keep_alive = false;
-  if (stream_->IsResponseBodyComplete()) {
+  // Clean up connection if we are done.
+  if (done) {
     // Note: Just because IsResponseBodyComplete is true, we're not
     // necessarily "done".  We're only "done" when it is the last
     // read on this HttpNetworkTransaction, which will be signified
     // by a zero-length read.
-    // TODO(mbelshe): The keepalive property is really a property of
+    // TODO(mbelshe): The keep-alive property is really a property of
     //    the stream.  No need to compute it here just to pass back
     //    to the stream's Close function.
-    // TODO(rtenneti): CanFindEndOfResponse should return false if there are no
-    // ResponseHeaders.
-    if (stream_->CanFindEndOfResponse()) {
-      HttpResponseHeaders* headers = GetResponseHeaders();
-      if (headers)
-        keep_alive = headers->IsKeepAlive();
-    }
-  }
+    bool keep_alive =
+        stream_->IsResponseBodyComplete() && stream_->CanReuseConnection();
 
-  // Clean up connection if we are done.
-  if (done) {
     stream_->Close(!keep_alive);
     // Note: we don't reset the stream here.  We've closed it, but we still
     // need it around so that callers can call methods such as
@@ -1204,6 +1212,7 @@ int HttpNetworkTransaction::HandleCertificateRequest(int error) {
     // renegotiation.
     DCHECK(!stream_request_.get());
     total_received_bytes_ += stream_->GetTotalReceivedBytes();
+    total_sent_bytes_ += stream_->GetTotalSentBytes();
     stream_->Close(true);
     stream_.reset();
   }
@@ -1427,8 +1436,10 @@ int HttpNetworkTransaction::HandleIOError(int error) {
 
 void HttpNetworkTransaction::ResetStateForRestart() {
   ResetStateForAuthRestart();
-  if (stream_)
+  if (stream_) {
     total_received_bytes_ += stream_->GetTotalReceivedBytes();
+    total_sent_bytes_ += stream_->GetTotalSentBytes();
+  }
   stream_.reset();
 }
 
@@ -1443,6 +1454,7 @@ void HttpNetworkTransaction::ResetStateForAuthRestart() {
   request_headers_.Clear();
   response_ = HttpResponseInfo();
   establishing_tunnel_ = false;
+  remote_endpoint_ = IPEndPoint();
 }
 
 void HttpNetworkTransaction::RecordSSLFallbackMetrics(int result) {

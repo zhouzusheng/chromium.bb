@@ -39,6 +39,14 @@ const char kHomePageIsNewTabPage[] = "homepage_is_newtabpage";
 // This is the URL of the page to load when opening new tabs.
 const char kHomePage[] = "homepage";
 
+#if defined(OS_WIN)
+// This is a timestamp of the last time this profile was reset by a third party
+// tool. On Windows, a third party tool may set a registry value that will be
+// compared to this value and if different will result in a profile reset
+// prompt. See triggered_profile_resetter.h for more information.
+const char kLastProfileResetTimestamp[] = "profile.last_reset_timestamp";
+#endif
+
 // An integer that keeps track of the profile icon version. This allows us to
 // determine the state of the profile icon for icon format changes.
 const char kProfileIconVersion[] = "profile.icon_version";
@@ -298,7 +306,6 @@ const char kWebKitUsesUniversalDetector[] =
     "webkit.webprefs.uses_universal_detector";
 const char kWebKitTextAreasAreResizable[] =
     "webkit.webprefs.text_areas_are_resizable";
-const char kWebKitJavaEnabled[] = "webkit.webprefs.java_enabled";
 const char kWebkitTabsToLinks[] = "webkit.webprefs.tabs_to_links";
 const char kWebKitAllowDisplayingInsecureContent[] =
     "webkit.webprefs.allow_displaying_insecure_content";
@@ -415,15 +422,6 @@ const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
 // Prefix URL for the experimental Instant ZeroSuggest provider.
 const char kInstantUIZeroSuggestUrlPrefix[] =
     "instant_ui.zero_suggest_url_prefix";
-
-// A boolean pref set to true if prediction of network actions is allowed.
-// Actions include DNS prefetching, TCP and SSL preconnection, prerendering
-// of web pages, and resource prefetching.
-// NOTE: The "dns_prefetching.enabled" value is used so that historical user
-// preferences are not lost.
-// TODO(bnc): Remove kNetworkPredictionEnabled once kNetworkPredictionOptions
-// is functioning as per crbug.com/334602.
-const char kNetworkPredictionEnabled[] = "dns_prefetching.enabled";
 
 // A preference of enum chrome_browser_net::NetworkPredictionOptions shows
 // if prediction of network actions is allowed, depending on network type.
@@ -810,6 +808,13 @@ const char kForceMaximizeOnFirstRun[] = "ui.force_maximize_on_first_run";
 // A dictionary pref mapping public keys that identify platform keys to its
 // properties like whether it's meant for corporate usage.
 const char kPlatformKeys[] = "platform_keys";
+
+// A boolean pref. If set to true, the Unified Desktop feature is made
+// available and turned on by default, which allows applications to span
+// multiple screens. Users may turn the feature off and on in the settings
+// while this is set to true.
+const char kUnifiedDesktopEnabledByDefault[] =
+    "settings.display.unified_desktop_enabled_by_default";
 #endif  // defined(OS_CHROMEOS)
 
 // A boolean pref set to true if a Home button to open the Home pages should be
@@ -836,9 +841,6 @@ const char kLastClearBrowsingDataTime[] =
 
 // Boolean pref to define the default values for using spellchecker.
 const char kEnableContinuousSpellcheck[] = "browser.enable_spellchecking";
-
-// List of names of the enabled labs experiments (see chrome/browser/labs.cc).
-const char kEnabledLabsExperiments[] = "browser.enabled_labs_experiments";
 
 // Boolean pref to define the default values for using auto spell correct.
 const char kEnableAutoSpellCorrect[] = "browser.enable_autospellcorrect";
@@ -912,7 +914,7 @@ const char kPluginsEnabledPlugins[] = "plugins.plugins_enabled";
 const char kNpapiFlashMigratedToPepperFlash[] =
     "plugins.npapi_flash_migrated_to_pepper_flash";
 
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_PLUGINS)
 // Whether about:plugins is shown in the details mode or not.
 const char kPluginsShowDetails[] = "plugins.show_details";
 #endif
@@ -935,6 +937,10 @@ const char kPluginsResourceCacheUpdate[] = "plugins.resource_cache_update";
 // Boolean that indicates whether we should check if we are the default browser
 // on start-up.
 const char kCheckDefaultBrowser[] = "browser.check_default_browser";
+// Boolean that indicates whether the kCheckDefaultBrowser preference should be
+// reset on start-up.
+const char kResetCheckDefaultBrowser[] =
+    "browser.should_reset_check_default_browser";
 
 // Policy setting whether default browser check should be disabled and default
 // browser registration should take place.
@@ -953,15 +959,11 @@ const char kShowUpdatePromotionInfoBar[] =
 // true, we draw a custom chrome frame (thicker title bar and blue border).
 const char kUseCustomChromeFrame[] = "browser.custom_chrome_frame";
 
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_PLUGINS)
 // Which plugins have been whitelisted manually by the user.
 const char kContentSettingsPluginWhitelist[] =
     "profile.content_settings.plugin_whitelist";
 #endif
-
-// Boolean that is true when all locally stored site data (e.g. cookies, local
-// storage, etc..) should be deleted on exit.
-const char kClearSiteDataOnExit[] = "profile.clear_site_data_on_exit";
 
 // Double that indicates the default zoom level.
 const char kPartitionDefaultZoomLevel[] = "partition.default_zoom_level";
@@ -1193,10 +1195,16 @@ const char kToolbarIconSurfacingBubbleLastShowTime[] =
     "toolbar_icon_surfacing_bubble_show_time";
 #endif
 
+#if defined(ENABLE_WEBRTC)
 // Whether WebRTC should bind to individual NICs to explore all possible routing
 // options. Default is true.
-#if defined(ENABLE_WEBRTC)
 const char kWebRTCMultipleRoutesEnabled[] = "webrtc.multiple_routes_enabled";
+// Whether WebRTC should use non-proxied UDP. If false, WebRTC will not send UDP
+// unless it goes through a proxy (i.e RETURN when it's available).  If no UDP
+// proxy is configured, it will not send UDP.  If true, WebRTC will send UDP
+// regardless of whether or not a proxy is configured.
+const char kWebRTCNonProxiedUdpEnabled[] =
+    "webrtc.nonproxied_udp_enabled";
 #endif
 
 // *************** LOCAL STATE ***************
@@ -1245,12 +1253,6 @@ const char kSSLVersionMin[] = "ssl.version_min";
 const char kSSLVersionMax[] = "ssl.version_max";
 const char kSSLVersionFallbackMin[] = "ssl.version_fallback_min";
 const char kCipherSuiteBlacklist[] = "ssl.cipher_suites.blacklist";
-const char kDisableSSLRecordSplitting[] = "ssl.ssl_record_splitting.disabled";
-
-// Boolean that specifies whether or not crash reporting and metrics reporting
-// are sent over the network for analysis.
-const char kMetricsReportingEnabled[] =
-    "user_experience_metrics.reporting_enabled";
 
 // Boolean that specifies whether or not crash reports are sent
 // over the network for analysis.
@@ -1259,32 +1261,9 @@ const char kCrashReportingEnabled[] =
     "user_experience_metrics_crash.reporting_enabled";
 #endif
 
-// Number of times a page load event occurred since the last report.
-const char kStabilityPageLoadCount[] =
-    "user_experience_metrics.stability.page_load_count";
-
-// Number of times a renderer process crashed since the last report.
-const char kStabilityRendererCrashCount[] =
-    "user_experience_metrics.stability.renderer_crash_count";
-
-// Number of times an extension renderer process crashed since the last report.
-const char kStabilityExtensionRendererCrashCount[] =
-    "user_experience_metrics.stability.extension_renderer_crash_count";
-
 // This is the location of a list of dictionaries of plugin stability stats.
 const char kStabilityPluginStats[] =
     "user_experience_metrics.stability.plugin_stats2";
-
-// Number of times the renderer has become non-responsive since the last
-// report.
-const char kStabilityRendererHangCount[] =
-    "user_experience_metrics.stability.renderer_hang_count";
-
-// Total number of child process crashes (other than renderer / extension
-// renderer ones, and plugin children, which are counted separately) since the
-// last report.
-const char kStabilityChildProcessCrashCount[] =
-    "user_experience_metrics.stability.child_process_crash_count";
 
 // On Chrome OS, total number of non-Chrome user process crashes
 // since the last report.
@@ -1334,8 +1313,6 @@ const char kStabilityPluginLoadingErrors[] = "loading_errors";
 // The keys below are strictly increasing counters over the lifetime of
 // a chrome installation. They are (optionally) sent up to the uninstall
 // survey in the event of uninstallation.
-const char kUninstallMetricsPageLoadCount[] =
-    "uninstall_metrics.page_load_count";
 const char kUninstallLastLaunchTimeSec[] =
     "uninstall_metrics.last_launch_time_sec";
 const char kUninstallLastObservedRunTimeSec[] =
@@ -1491,6 +1468,15 @@ const char kNtpCollapsedSyncPromo[] = "ntp.collapsed_sync_promo";
 
 // Which page should be visible on the new tab page v4
 const char kNtpShownPage[] = "ntp.shown_page";
+
+#if defined(OS_ANDROID)
+// Ordered list of website suggestions shown on the new tab page that will allow
+// retaining the order even if the suggestions change over time.
+const char kNTPSuggestionsURL[] = "ntp.suggestions_url";
+
+// Whether the suggestion was derived from personal data.
+const char kNTPSuggestionsIsPersonal[] = "ntp.suggestions_is_personal";
+#endif
 
 // A private RSA key for ADB handshake.
 const char kDevToolsAdbKey[] = "devtools.adb_key";
@@ -1812,6 +1798,10 @@ const char kOobeComplete[] = "OobeComplete";
 // The name of the screen that has to be shown if OOBE has been interrupted.
 const char kOobeScreenPending[] = "OobeScreenPending";
 
+// A boolean pref for whether the Goodies promotion webpage has been displayed,
+// or otherwise disqualified for auto-display, on this device.
+const char kCanShowOobeGoodiesPage[] = "CanShowOobeGoodiesPage";
+
 // A boolean pref of the device registered flag (second part after first login).
 const char kDeviceRegistered[] = "DeviceRegistered";
 
@@ -1879,18 +1869,6 @@ const char kFactoryResetRequested[] = "FactoryResetRequested";
 // Indicates that debugging features were requested from oobe screen.
 const char kDebuggingFeaturesRequested[] = "DebuggingFeaturesRequested";
 
-// Boolean recording whether we have showed a balloon that calls out the message
-// center for desktop notifications.
-const char kMessageCenterShowedFirstRunBalloon[] =
-    "message_center.showed_first_run_balloon";
-
-// Boolean recording whether the user has disabled the notifications
-// menubar or systray icon.
-const char kMessageCenterShowIcon[] = "message_center.show_icon";
-
-const char kMessageCenterForcedOnTaskbar[] =
-    "message_center.was_forced_on_taskbar";
-
 #if defined(OS_CHROMEOS)
 // This setting starts periodic timezone refresh when not in user session.
 // (user session is controlled by user profile preference
@@ -1935,7 +1913,6 @@ const char kCloudPrintPrinters[] = "cloud_print.user_settings.printers";
 const char kCloudPrintSubmitEnabled[] = "cloud_print.submit_enabled";
 
 // Preference to store proxy settings.
-const char kProxy[] = "proxy";
 const char kMaxConnectionsPerProxy[] = "net.max_connections_per_proxy";
 
 #if defined(OS_MACOSX)

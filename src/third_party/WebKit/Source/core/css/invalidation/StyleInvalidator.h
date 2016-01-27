@@ -10,7 +10,7 @@
 
 namespace blink {
 
-class DescendantInvalidationSet;
+class InvalidationSet;
 class Document;
 class Element;
 
@@ -21,7 +21,7 @@ public:
     StyleInvalidator();
     ~StyleInvalidator();
     void invalidate(Document&);
-    void scheduleInvalidation(PassRefPtrWillBeRawPtr<DescendantInvalidationSet>, Element&);
+    void scheduleInvalidation(PassRefPtrWillBeRawPtr<InvalidationSet>, Element&);
     void clearInvalidation(Element&);
 
     void clearPendingInvalidations();
@@ -29,9 +29,7 @@ public:
     DECLARE_TRACE();
 
 private:
-    class RecursionData {
-        STACK_ALLOCATED();
-    public:
+    struct RecursionData {
         RecursionData()
             : m_invalidateCustomPseudo(false)
             , m_wholeSubtreeInvalid(false)
@@ -39,7 +37,7 @@ private:
             , m_insertionPointCrossing(false)
         { }
 
-        void pushInvalidationSet(const DescendantInvalidationSet&);
+        void pushInvalidationSet(const InvalidationSet&);
         bool matchesCurrentInvalidationSets(Element&);
         bool hasInvalidationSets() const { return !wholeSubtreeInvalid() && m_invalidationSets.size(); }
 
@@ -49,7 +47,7 @@ private:
         bool treeBoundaryCrossing() const { return m_treeBoundaryCrossing; }
         bool insertionPointCrossing() const { return m_insertionPointCrossing; }
 
-        using InvalidationSets = WillBeHeapVector<RawPtrWillBeMember<const DescendantInvalidationSet>, 16>;
+        using InvalidationSets = Vector<const InvalidationSet*, 16>;
         InvalidationSets m_invalidationSets;
         bool m_invalidateCustomPseudo;
         bool m_wholeSubtreeInvalid;
@@ -62,7 +60,6 @@ private:
     bool checkInvalidationSetsAgainstElement(Element&, RecursionData&);
 
     class RecursionCheckpoint {
-        STACK_ALLOCATED();
     public:
         RecursionCheckpoint(RecursionData* data)
             : m_prevInvalidationSetsSize(data->m_invalidationSets.size())
@@ -87,11 +84,10 @@ private:
         bool m_prevWholeSubtreeInvalid;
         bool m_treeBoundaryCrossing;
         bool m_insertionPointCrossing;
-        // This is a stack reference and need not separate tracing.
         RecursionData* m_data;
     };
 
-    using InvalidationList = WillBeHeapVector<RefPtrWillBeMember<DescendantInvalidationSet>>;
+    using InvalidationList = WillBeHeapVector<RefPtrWillBeMember<InvalidationSet>>;
     using PendingInvalidationMap = WillBeHeapHashMap<RawPtrWillBeMember<Element>, OwnPtrWillBeMember<InvalidationList>>;
 
     InvalidationList& ensurePendingInvalidationList(Element&);

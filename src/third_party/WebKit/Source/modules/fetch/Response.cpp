@@ -10,13 +10,13 @@
 #include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMArrayBufferView.h"
 #include "core/fileapi/Blob.h"
-#include "core/html/DOMFormData.h"
+#include "core/html/FormData.h"
 #include "modules/fetch/BodyStreamBuffer.h"
 #include "modules/fetch/FetchBlobDataConsumerHandle.h"
 #include "modules/fetch/ResponseInit.h"
-#include "platform/network/FormData.h"
+#include "platform/network/EncodedFormData.h"
 #include "platform/network/HTTPHeaderMap.h"
-#include "public/platform/WebServiceWorkerResponse.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerResponse.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
@@ -130,10 +130,10 @@ Response* Response::create(ExecutionContext* context, const BodyInit& body, cons
         return create(context, blob, ResponseInit(responseInit, exceptionState), exceptionState);
     }
     if (body.isFormData()) {
-        DOMFormData* domFormData = body.getAsFormData();
+        FormData* domFormData = body.getAsFormData();
         OwnPtr<BlobData> blobData = BlobData::create();
         // FIXME: the same code exist in RequestInit::RequestInit().
-        RefPtr<FormData> httpBody = domFormData->createMultiPartFormData();
+        RefPtr<EncodedFormData> httpBody = domFormData->encodeMultiPartFormData();
         for (size_t i = 0; i < httpBody->elements().size(); ++i) {
             const FormDataElement& element = httpBody->elements()[i];
             switch (element.m_type) {
@@ -354,6 +354,8 @@ bool Response::hasPendingActivity() const
 {
     if (!executionContext() || executionContext()->activeDOMObjectsAreStopped())
         return false;
+    if (!internalBodyBuffer())
+        return false;
     if (internalBodyBuffer()->hasPendingActivity())
         return true;
     return Body::hasPendingActivity();
@@ -385,7 +387,7 @@ Response::Response(ExecutionContext* context, FetchResponseData* response, Heade
 
 bool Response::hasBody() const
 {
-    return m_response->internalBuffer()->hasBody();
+    return m_response->internalBuffer();
 }
 
 String Response::mimeType() const

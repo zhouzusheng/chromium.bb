@@ -31,10 +31,11 @@
 #include "config.h"
 #include "core/inspector/InjectedScriptHost.h"
 
+#include "bindings/core/v8/ScriptValue.h"
 #include "core/inspector/EventListenerInfo.h"
 #include "core/inspector/InspectorConsoleAgent.h"
-#include "core/inspector/V8DebuggerAgent.h"
 #include "core/inspector/v8/V8Debugger.h"
+#include "core/inspector/v8/V8DebuggerAgent.h"
 #include "platform/JSONValues.h"
 
 #include "wtf/RefPtr.h"
@@ -63,7 +64,6 @@ InjectedScriptHost::~InjectedScriptHost()
 DEFINE_TRACE(InjectedScriptHost)
 {
     visitor->trace(m_consoleAgent);
-    visitor->trace(m_debuggerAgent);
     visitor->trace(m_inspectedObjects);
     visitor->trace(m_defaultInspectableObject);
 }

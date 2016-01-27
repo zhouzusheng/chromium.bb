@@ -33,7 +33,7 @@ void CSSParser::parseDeclarationListForInspector(const CSSParserContext& context
 void CSSParser::parseSelector(const CSSParserContext& context, const String& selector, CSSSelectorList& selectorList)
 {
     CSSTokenizer::Scope scope(selector);
-    CSSSelectorParser::parseSelector(scope.tokenRange(), context, starAtom, nullptr, selectorList);
+    CSSSelectorParser::parseSelector(scope.tokenRange(), context, nullptr, selectorList);
 }
 
 PassRefPtrWillBeRawPtr<StyleRuleBase> CSSParser::parseRule(const CSSParserContext& context, StyleSheetContents* styleSheet, const String& rule)
@@ -51,11 +51,12 @@ void CSSParser::parseSheetForInspector(const CSSParserContext& context, StyleShe
     return CSSParserImpl::parseStyleSheetForInspector(text, context, styleSheet, observer);
 }
 
-bool CSSParser::parseValue(MutableStylePropertySet* declaration, CSSPropertyID unresolvedProperty, const String& string, bool important, CSSParserMode parserMode, StyleSheetContents* styleSheet)
+bool CSSParser::parseValue(MutableStylePropertySet* declaration, CSSPropertyID unresolvedProperty, const String& string, bool important, StyleSheetContents* styleSheet)
 {
     if (string.isEmpty())
         return false;
     CSSPropertyID resolvedProperty = resolveCSSPropertyID(unresolvedProperty);
+    CSSParserMode parserMode = declaration->cssParserMode();
     RefPtrWillBeRawPtr<CSSValue> value = CSSParserFastPaths::maybeParseValue(resolvedProperty, string, parserMode);
     if (value)
         return declaration->setProperty(CSSProperty(resolvedProperty, value.release(), important));
@@ -78,7 +79,7 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSParser::parseSingleValue(CSSPropertyID prope
         return nullptr;
     if (RefPtrWillBeRawPtr<CSSValue> value = CSSParserFastPaths::maybeParseValue(propertyID, string, context.mode()))
         return value;
-    RefPtrWillBeRawPtr<MutableStylePropertySet> stylePropertySet = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> stylePropertySet = MutableStylePropertySet::create(HTMLQuirksMode);
     bool changed = parseValue(stylePropertySet.get(), propertyID, string, false, context);
     ASSERT_UNUSED(changed, changed == stylePropertySet->hasProperty(propertyID));
     return stylePropertySet->getPropertyCSSValue(propertyID);

@@ -13,7 +13,6 @@
       'type': 'static_library',
       'dependencies': [
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
-        '<(webrtc_root)/modules/modules.gyp:paced_sender',
         '<(webrtc_root)/modules/modules.gyp:remote_bitrate_estimator',
       ],
       'sources': [
@@ -78,6 +77,8 @@
         'source/forward_error_correction.h',
         'source/forward_error_correction_internal.cc',
         'source/forward_error_correction_internal.h',
+        'source/h264_bitstream_parser.cc',
+        'source/h264_bitstream_parser.h',
         'source/h264_sps_parser.cc',
         'source/h264_sps_parser.h',
         'source/producer_fec.cc',

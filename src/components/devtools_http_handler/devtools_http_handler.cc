@@ -23,6 +23,7 @@
 #include "components/devtools_http_handler/devtools_http_handler_delegate.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/devtools_external_agent_proxy_delegate.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/user_agent.h"
 #include "net/base/escape.h"
@@ -376,6 +377,9 @@ static std::string GetMimeType(const std::string& filename) {
   } else if (base::EndsWith(filename, ".json",
                             base::CompareCase::INSENSITIVE_ASCII)) {
     return "application/json";
+  } else if (base::EndsWith(filename, ".svg",
+                            base::CompareCase::INSENSITIVE_ASCII)) {
+    return "image/svg+xml";
   }
   LOG(ERROR) << "GetMimeType doesn't know mime type for: "
              << filename
@@ -701,6 +705,18 @@ void DevToolsHttpHandler::OnWebSocketRequest(
     return;
   }
 
+  // Handle external connections (such as frontend api) on the embedder level.
+  content::DevToolsExternalAgentProxyDelegate* external_delegate =
+      delegate_->HandleWebSocketConnection(request.path);
+  if (external_delegate) {
+    scoped_refptr<DevToolsAgentHost> agent_host =
+        DevToolsAgentHost::Create(external_delegate);
+    connection_to_client_[connection_id] = new DevToolsAgentHostClientImpl(
+        thread_->message_loop(), server_wrapper_, connection_id, agent_host);
+    AcceptWebSocket(connection_id, request);
+    return;
+  }
+
   size_t pos = request.path.find(kPageUrlPrefix);
   if (pos != 0) {
     Send404(connection_id);
@@ -801,7 +817,7 @@ void ServerWrapper::WriteActivePortToUserProfile(
   // Write this port to a well-known file in the profile directory
   // so Telemetry can pick it up.
   base::FilePath path = output_directory.Append(kDevToolsActivePortFileName);
-  std::string port_string = base::IntToString(endpoint.port());
+  std::string port_string = base::UintToString(endpoint.port());
   if (base::WriteFile(path, port_string.c_str(),
                       static_cast<int>(port_string.length())) < 0) {
     LOG(ERROR) << "Error writing DevTools active port to file";

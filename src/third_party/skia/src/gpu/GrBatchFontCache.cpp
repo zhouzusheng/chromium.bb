@@ -40,9 +40,9 @@ bool GrBatchFontCache::initAtlas(GrMaskFormat format) {
 
 GrBatchFontCache::GrBatchFontCache(GrContext* context)
     : fContext(context)
-    , fPreserveStrike(NULL) {
+    , fPreserveStrike(nullptr) {
     for (int i = 0; i < kMaskFormatCount; ++i) {
-        fAtlases[i] = NULL;
+        fAtlases[i] = nullptr;
     }
 
     // setup default atlas configs
@@ -70,7 +70,7 @@ GrBatchFontCache::~GrBatchFontCache() {
         ++iter;
     }
     for (int i = 0; i < kMaskFormatCount; ++i) {
-        SkDELETE(fAtlases[i]);
+        delete fAtlases[i];
     }
 }
 
@@ -83,8 +83,8 @@ void GrBatchFontCache::freeAll() {
     }
     fCache.rewind();
     for (int i = 0; i < kMaskFormatCount; ++i) {
-        SkDELETE(fAtlases[i]);
-        fAtlases[i] = NULL;
+        delete fAtlases[i];
+        fAtlases[i] = nullptr;
     }
 }
 
@@ -130,8 +130,8 @@ void GrBatchFontCache::setAtlasSizes_ForTesting(const GrBatchAtlasConfig configs
     // flush
     for (int i = 0; i < kMaskFormatCount; i++) {
         if (fAtlases[i]) {
-            SkDELETE(fAtlases[i]);
-            fAtlases[i] = NULL;
+            delete fAtlases[i];
+            fAtlases[i] = nullptr;
         }
     }
     memcpy(fAtlasConfigs, configs, sizeof(fAtlasConfigs));
@@ -169,16 +169,16 @@ GrGlyph* GrBatchTextStrike::generateGlyph(const SkGlyph& skGlyph, GrGlyph::Packe
     SkIRect bounds;
     if (GrGlyph::kDistance_MaskStyle == GrGlyph::UnpackMaskStyle(packed)) {
         if (!scaler->getPackedGlyphDFBounds(skGlyph, &bounds)) {
-            return NULL;
+            return nullptr;
         }
     } else {
         if (!scaler->getPackedGlyphBounds(skGlyph, &bounds)) {
-            return NULL;
+            return nullptr;
         }
     }
     GrMaskFormat format = scaler->getPackedGlyphMaskFormat(skGlyph);
 
-    GrGlyph* glyph = (GrGlyph*)fPool.alloc(sizeof(GrGlyph), SK_MALLOC_THROW);
+    GrGlyph* glyph = (GrGlyph*)fPool.alloc(sizeof(GrGlyph));
     glyph->init(packed, bounds, format);
     fCache.add(glyph);
     return glyph;

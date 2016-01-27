@@ -44,6 +44,7 @@ WebRemoteFrameImpl::~WebRemoteFrameImpl()
 #if ENABLE(OILPAN)
 DEFINE_TRACE(WebRemoteFrameImpl)
 {
+    visitor->trace(m_frameClient);
     visitor->trace(m_frame);
     visitor->trace(m_ownersForChildren);
     visitor->template registerWeakMembers<WebFrame, &WebFrame::clearWeakFrames>(this);
@@ -282,6 +283,11 @@ v8::Local<v8::Context> WebRemoteFrameImpl::mainWorldScriptContext() const
 {
     ASSERT_NOT_REACHED();
     return v8::Local<v8::Context>();
+}
+
+v8::Local<v8::Context> WebRemoteFrameImpl::deprecatedMainWorldScriptContext() const
+{
+    return toV8Context(frame(), DOMWrapperWorld::mainWorld());
 }
 
 v8::Isolate* WebRemoteFrameImpl::scriptIsolate() const
@@ -733,7 +739,7 @@ WebLocalFrame* WebRemoteFrameImpl::createLocalChild(WebTreeScopeType scope, cons
 
 void WebRemoteFrameImpl::initializeCoreFrame(FrameHost* host, FrameOwner* owner, const AtomicString& name)
 {
-    setCoreFrame(RemoteFrame::create(&m_frameClient, host, owner));
+    setCoreFrame(RemoteFrame::create(m_frameClient.get(), host, owner));
     frame()->createView();
     m_frame->tree().setName(name, nullAtom);
 }
@@ -765,12 +771,9 @@ void WebRemoteFrameImpl::initializeFromFrame(WebLocalFrame* source) const
     ASSERT(source);
     WebLocalFrameImpl* localFrameImpl = toWebLocalFrameImpl(source);
 
-    // TODO(bokan): The scale_factor argument here used to be the now-removed
-    // FrameView::visibleContentScaleFactor but the callee uses this parameter
-    // to set the device scale factor. crbug.com/493262
     client()->initializeChildFrame(
         localFrameImpl->frame()->view()->frameRect(),
-        1);
+        localFrameImpl->frame()->page()->deviceScaleFactor());
 }
 
 void WebRemoteFrameImpl::setReplicatedOrigin(const WebSecurityOrigin& origin) const
@@ -814,7 +817,7 @@ void WebRemoteFrameImpl::didStopLoading()
 
 WebRemoteFrameImpl::WebRemoteFrameImpl(WebTreeScopeType scope, WebRemoteFrameClient* client)
     : WebRemoteFrame(scope)
-    , m_frameClient(this)
+    , m_frameClient(RemoteFrameClientImpl::create(this))
     , m_client(client)
 #if ENABLE(OILPAN)
     , m_selfKeepAlive(this)

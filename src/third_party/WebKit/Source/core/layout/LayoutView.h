@@ -24,14 +24,12 @@
 
 #include "core/CoreExport.h"
 #include "core/compositing/DisplayListCompositingBuilder.h"
-#include "core/editing/Position.h"
 #include "core/frame/FrameView.h"
 #include "core/layout/HitTestCache.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutState.h"
 #include "core/layout/PaintInvalidationState.h"
-#include "core/layout/PendingSelection.h"
 #include "platform/PODFreeListArena.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/heap/Handle.h"
@@ -40,13 +38,25 @@
 
 namespace blink {
 
-class DeprecatedPaintLayerCompositor;
+class PaintLayerCompositor;
 class LayoutQuote;
 
-// The root of the layout tree, corresponding to the CSS initial containing block.
-// It's dimensions match that of the logical viewport (which may be different from
-// the visible viewport in fixed-layout mode), and it is always at position (0,0)
-// relative to the document (and so isn't necessarily in view).
+// LayoutView is the root of the layout tree and the Document's LayoutObject.
+//
+// It corresponds to the CSS concept of 'initial containing block' (or ICB).
+// http://www.w3.org/TR/CSS2/visudet.html#containing-block-details
+//
+// Its dimensions match that of the layout viewport. This viewport is used to
+// size elements, in particular fixed positioned elements.
+// LayoutView is always at position (0,0) relative to the document (and so isn't
+// necessarily in view).
+// See
+// https://www.chromium.org/developers/design-documents/blink-coordinate-spaces
+// about the different viewports.
+//
+// Because there is one LayoutView per rooted layout tree (or Frame), this class
+// is used to add members shared by this tree (e.g. m_layoutState or
+// m_layoutQuoteHead).
 class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
 public:
     explicit LayoutView(Document*);
@@ -67,7 +77,7 @@ public:
 
     bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutView || LayoutBlockFlow::isOfType(type); }
 
-    DeprecatedPaintLayerType layerTypeRequired() const override { return NormalDeprecatedPaintLayer; }
+    PaintLayerType layerTypeRequired() const override { return NormalPaintLayer; }
 
     bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
@@ -107,14 +117,13 @@ public:
 
     void invalidatePaintForViewAndCompositedLayers();
 
-    void paint(const PaintInfo&, const LayoutPoint&) override;
-    void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
+    void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&) const override;
 
     enum SelectionPaintInvalidationMode { PaintInvalidationNewXOROld, PaintInvalidationNewMinusOld };
     void setSelection(LayoutObject* start, int startPos, LayoutObject*, int endPos, SelectionPaintInvalidationMode = PaintInvalidationNewXOROld);
     void clearSelection();
-    void setSelection(const FrameSelection&);
-    bool hasPendingSelection() const { return m_pendingSelection->hasPendingSelection(); }
+    bool hasPendingSelection() const;
     void commitPendingSelection();
     LayoutObject* selectionStart();
     LayoutObject* selectionEnd();
@@ -148,7 +157,7 @@ public:
     // Notification that this view moved into or out of a native window.
     void setIsInWindow(bool);
 
-    DeprecatedPaintLayerCompositor* compositor();
+    PaintLayerCompositor* compositor();
     bool usesCompositing() const;
 
     // TODO(trchen): All pinch-zoom implementation should now use compositor raster scale based zooming,
@@ -192,9 +201,6 @@ public:
 private:
     void mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = nullptr, const PaintInvalidationState* = nullptr) const override;
 
-    template <typename Strategy>
-    void commitPendingSelectionAlgorithm();
-
     const LayoutObject* pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap&) const override;
     void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const override;
     void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const override;
@@ -214,16 +220,38 @@ private:
     GC_PLUGIN_IGNORE("http://crbug.com/509911")
     FrameView* m_frameView;
 
+    // The current selection represented as 2 boundaries.
+    // Selection boundaries are represented in LayoutView by a tuple
+    // (LayoutObject, DOM node offset).
+    // See http://www.w3.org/TR/dom/#range for more information.
+    //
+    // |m_selectionStartPos| and |m_selectionEndPos| are only valid for
+    // |Text| node without 'transform' or 'first-letter'.
+    //
+    // Those are used for selection painting and paint invalidation upon
+    // selection change.
     LayoutObject* m_selectionStart;
     LayoutObject* m_selectionEnd;
 
+    // TODO(yosin): Clarify the meaning of these variables. editing/ passes
+    // them as offsets in the DOM tree  but layout uses them as offset in the
+    // layout tree.
     int m_selectionStartPos;
     int m_selectionEndPos;
 
+    // The page logical height.
+    // This is only used during printing to split the content into pages.
+    // Outside of printing, this is 0.
     LayoutUnit m_pageLogicalHeight;
     bool m_pageLogicalHeightChanged;
+
+    // LayoutState is an optimization used during layout.
+    // |m_layoutState| will be nullptr outside of layout.
+    //
+    // See the class comment for more details.
     LayoutState* m_layoutState;
-    OwnPtr<DeprecatedPaintLayerCompositor> m_compositor;
+
+    OwnPtr<PaintLayerCompositor> m_compositor;
     RefPtr<IntervalArena> m_intervalArena;
 
     LayoutQuote* m_layoutQuoteHead;
@@ -232,8 +260,6 @@ private:
     unsigned m_hitTestCount;
     unsigned m_hitTestCacheHits;
     OwnPtrWillBePersistent<HitTestCache> m_hitTestCache;
-
-    OwnPtrWillBePersistent<PendingSelection> m_pendingSelection;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutView, isLayoutView());
@@ -243,6 +269,7 @@ DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutView, isLayoutView());
 // containers don't follow the common tree-walk algorithm (e.g. when an absolute positioned descendant
 // is nested under a relatively positioned inline-block child).
 class ForceHorriblySlowRectMapping {
+    STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(ForceHorriblySlowRectMapping);
 public:
     ForceHorriblySlowRectMapping(const PaintInvalidationState* paintInvalidationState)

@@ -32,6 +32,7 @@
 #include "core/dom/Range.h"
 #include "core/editing/EphemeralRange.h"
 #include "core/editing/VisiblePosition.h"
+#include "core/editing/VisibleUnits.h"
 #include "core/editing/iterators/TextIterator.h"
 
 namespace blink {
@@ -112,7 +113,7 @@ EphemeralRange PlainTextRange::createRangeFor(const ContainerNode& scope, GetRan
                 if (!it.atEnd()) {
                     textRunEndPosition = it.startPositionInCurrentContainer();
                 } else {
-                    Position runEnd = VisiblePosition(textRunStartPosition).next().deepEquivalent();
+                    Position runEnd = nextPositionOf(createVisiblePosition(textRunStartPosition)).deepEquivalent();
                     if (runEnd.isNotNull())
                         textRunEndPosition = runEnd;
                 }

@@ -15,7 +15,7 @@
 namespace blink {
 
 // Implements the PresentationRequest interface from the Presentation API from
-// which websites can start or join presentation sessions.
+// which websites can start or join presentation connections.
 class PresentationRequest final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<PresentationRequest>
     , public ActiveDOMObject {
@@ -36,12 +36,12 @@ public:
     bool hasPendingActivity() const;
 
     ScriptPromise start(ScriptState*);
-    ScriptPromise join(ScriptState*, const String& id);
+    ScriptPromise reconnect(ScriptState*, const String& id);
     ScriptPromise getAvailability(ScriptState*);
 
     const KURL& url() const;
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(sessionconnect);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(connectionavailable);
 
     DECLARE_VIRTUAL_TRACE();
 

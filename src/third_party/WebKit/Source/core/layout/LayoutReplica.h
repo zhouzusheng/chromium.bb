@@ -40,11 +40,11 @@ public:
 
     const char* name() const override { return "LayoutReplica"; }
 
-    DeprecatedPaintLayerType layerTypeRequired() const override { return NormalDeprecatedPaintLayer; }
+    PaintLayerType layerTypeRequired() const override { return NormalPaintLayer; }
 
     void layout() override;
 
-    void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
 
 private:
     LayoutReplica();

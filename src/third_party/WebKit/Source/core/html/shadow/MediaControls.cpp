@@ -261,7 +261,6 @@ void MediaControls::reset()
     m_fullScreenButton->setIsWanted(shouldShowFullscreenButton(mediaElement()));
 
     refreshCastButtonVisibilityWithoutUpdate();
-    makeOpaque();
 
     // Set the panel width here, and force a layout, before the controls update.
     // This would be harmless for the !useNewUi case too, but it causes
@@ -458,23 +457,6 @@ void MediaControls::refreshClosedCaptionsButtonVisibility()
     BatchedControlUpdate batch(this);
 }
 
-static Element* elementFromCenter(Element& element)
-{
-    ClientRect* clientRect = element.getBoundingClientRect();
-    int centerX = static_cast<int>((clientRect->left() + clientRect->right()) / 2);
-    int centerY = static_cast<int>((clientRect->top() + clientRect->bottom()) / 2);
-
-    return element.document().elementFromPoint(centerX , centerY);
-}
-
-void MediaControls::tryShowOverlayCastButton()
-{
-    // The element needs to be shown to have its dimensions and position.
-    m_overlayCastButton->setIsWanted(true);
-    if (elementFromCenter(*m_overlayCastButton) != &mediaElement())
-        m_overlayCastButton->setIsWanted(false);
-}
-
 void MediaControls::refreshCastButtonVisibility()
 {
     refreshCastButtonVisibilityWithoutUpdate();
@@ -498,7 +480,7 @@ void MediaControls::refreshCastButtonVisibilityWithoutUpdate()
             // non-cast changes (e.g., resize) occur.  If the panel button
             // is shown, however, compute...() will take control of the
             // overlay cast button if it needs to hide it from the panel.
-            tryShowOverlayCastButton();
+            m_overlayCastButton->tryShowOverlay();
             m_castButton->setIsWanted(false);
         } else if (mediaElement().shouldShowControls()) {
             m_overlayCastButton->setIsWanted(false);
@@ -509,7 +491,7 @@ void MediaControls::refreshCastButtonVisibilityWithoutUpdate()
             if ( !RuntimeEnabledFeatures::newMediaPlaybackUiEnabled()
                 && m_fullScreenButton->getBoundingClientRect()->right() > m_panel->getBoundingClientRect()->right()) {
                 m_castButton->setIsWanted(false);
-                tryShowOverlayCastButton();
+                m_overlayCastButton->tryShowOverlay();
             }
         }
     } else {
@@ -520,7 +502,7 @@ void MediaControls::refreshCastButtonVisibilityWithoutUpdate()
 
 void MediaControls::showOverlayCastButton()
 {
-    tryShowOverlayCastButton();
+    m_overlayCastButton->tryShowOverlay();
     resetHideMediaControlsTimer();
 }
 
@@ -712,8 +694,12 @@ void MediaControls::computeWhichControlsFit()
 
     // Special case for cast: if we want a cast button but dropped it, then
     // show the overlay cast button instead.
-    if (m_castButton->isWanted())
-        m_overlayCastButton->setIsWanted(droppedCastButton);
+    if (m_castButton->isWanted()) {
+        if (droppedCastButton)
+            m_overlayCastButton->tryShowOverlay();
+        else
+            m_overlayCastButton->setIsWanted(false);
+    }
 }
 
 void MediaControls::setAllowHiddenVolumeControls(bool allow)

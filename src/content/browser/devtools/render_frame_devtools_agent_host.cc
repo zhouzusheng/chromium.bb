@@ -14,6 +14,7 @@
 #include "content/browser/devtools/protocol/emulation_handler.h"
 #include "content/browser/devtools/protocol/input_handler.h"
 #include "content/browser/devtools/protocol/inspector_handler.h"
+#include "content/browser/devtools/protocol/io_handler.h"
 #include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/devtools/protocol/page_handler.h"
 #include "content/browser/devtools/protocol/power_handler.h"
@@ -293,6 +294,7 @@ RenderFrameDevToolsAgentHost::RenderFrameDevToolsAgentHost(
     : dom_handler_(new devtools::dom::DOMHandler()),
       input_handler_(new devtools::input::InputHandler()),
       inspector_handler_(new devtools::inspector::InspectorHandler()),
+      io_handler_(new devtools::io::IOHandler(GetIOContext())),
       network_handler_(new devtools::network::NetworkHandler()),
       page_handler_(nullptr),
       power_handler_(new devtools::power::PowerHandler()),
@@ -300,7 +302,8 @@ RenderFrameDevToolsAgentHost::RenderFrameDevToolsAgentHost(
       service_worker_handler_(
           new devtools::service_worker::ServiceWorkerHandler()),
       tracing_handler_(new devtools::tracing::TracingHandler(
-          devtools::tracing::TracingHandler::Renderer)),
+          devtools::tracing::TracingHandler::Renderer,
+          GetIOContext())),
       emulation_handler_(nullptr),
       frame_trace_recorder_(nullptr),
       protocol_handler_(new DevToolsProtocolHandler(
@@ -312,6 +315,7 @@ RenderFrameDevToolsAgentHost::RenderFrameDevToolsAgentHost(
   dispatcher->SetDOMHandler(dom_handler_.get());
   dispatcher->SetInputHandler(input_handler_.get());
   dispatcher->SetInspectorHandler(inspector_handler_.get());
+  dispatcher->SetIOHandler(io_handler_.get());
   dispatcher->SetNetworkHandler(network_handler_.get());
   dispatcher->SetPowerHandler(power_handler_.get());
   dispatcher->SetServiceWorkerHandler(service_worker_handler_.get());
@@ -530,6 +534,7 @@ void RenderFrameDevToolsAgentHost::RenderProcessGone(
 #if defined(OS_ANDROID)
     case base::TERMINATION_STATUS_OOM_PROTECTED:
 #endif
+    case base::TERMINATION_STATUS_LAUNCH_FAILED:
       inspector_handler_->TargetCrashed();
       current_frame_crashed_ = true;
       break;

@@ -6,9 +6,10 @@
 #define PermissionCallback_h
 
 #include "platform/heap/Handle.h"
-#include "public/platform/WebCallbacks.h"
+#include "public/platform/modules/permissions/WebPermissionClient.h"
 #include "public/platform/modules/permissions/WebPermissionStatus.h"
 #include "public/platform/modules/permissions/WebPermissionType.h"
+#include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 
 namespace blink {
@@ -19,20 +20,19 @@ class ScriptPromiseResolver;
 // that will resolve the underlying promise depending on the result passed to
 // the callback. It takes a WebPermissionType in its constructor and will pass
 // it to the PermissionStatus.
-class PermissionCallback final
-    : public WebCallbacks<WebPermissionStatus*, void> {
+class PermissionCallback final : public WebPermissionCallback {
+    WTF_MAKE_FAST_ALLOCATED(PermissionCallback);
+    WTF_MAKE_NONCOPYABLE(PermissionCallback);
 public:
     PermissionCallback(ScriptPromiseResolver*, WebPermissionType);
     ~PermissionCallback() override;
 
-    void onSuccess(WebPermissionStatus*) override;
+    void onSuccess(WebPermissionStatus) override;
     void onError() override;
 
 private:
     Persistent<ScriptPromiseResolver> m_resolver;
     WebPermissionType m_permissionType;
-
-    WTF_MAKE_NONCOPYABLE(PermissionCallback);
 };
 
 } // namespace blink

@@ -322,8 +322,7 @@ bool WebPluginDelegateProxy::Initialize(
     }
 
     channel_host = PluginChannelHost::GetPluginChannelHost(
-        channel_handle, ChildProcess::current()->io_task_runner(),
-        RenderThreadImpl::current()->GetAttachmentBroker());
+        channel_handle, ChildProcess::current()->io_task_runner());
     if (!channel_host.get()) {
       LOG(ERROR) << "Couldn't get PluginChannelHost";
       continue;
@@ -502,10 +501,7 @@ static void CopySharedMemoryHandleForMessage(
   *handle_out = base::SharedMemory::DuplicateHandle(handle_in);
 #elif defined(OS_WIN)
   // On Windows we need to duplicate the handle for the plugin process.
-  *handle_out = NULL;
-  BrokerDuplicateHandle(handle_in, peer_pid, handle_out,
-                        FILE_MAP_READ | FILE_MAP_WRITE, 0);
-  DCHECK(*handle_out != NULL);
+  BrokerDuplicateSharedMemoryHandle(handle_in, peer_pid, handle_out);
 #else
 #error Shared memory copy not implemented.
 #endif
@@ -646,7 +642,8 @@ bool WebPluginDelegateProxy::CreateSharedBitmap(
 #else
   canvas->reset(skia::CreatePlatformCanvas(
       plugin_rect_.width(), plugin_rect_.height(), true,
-      (*memory)->shared_memory()->handle(), skia::RETURN_NULL_ON_FAILURE));
+      (*memory)->shared_memory()->handle().GetHandle(),
+      skia::RETURN_NULL_ON_FAILURE));
 #endif
   return !!canvas->get();
 }

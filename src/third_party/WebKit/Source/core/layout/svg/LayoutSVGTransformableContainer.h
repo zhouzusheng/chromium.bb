@@ -34,6 +34,8 @@ public:
 
     bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGTransformableContainer || LayoutSVGContainer::isOfType(type); }
     const AffineTransform& localToParentTransform() const override { return m_localTransform; }
+    const FloatSize& additionalTranslation() const { return m_additionalTranslation; }
+
     void setNeedsTransformUpdate() override { m_needsTransformUpdate = true; }
     bool didTransformToRootUpdate() override { return m_didTransformToRootUpdate; }
 
@@ -44,8 +46,10 @@ private:
     bool m_needsTransformUpdate : 1;
     bool m_didTransformToRootUpdate : 1;
     AffineTransform m_localTransform;
-    FloatSize m_lastTranslation;
+    FloatSize m_additionalTranslation;
 };
+
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutSVGTransformableContainer, isSVGTransformableContainer());
 
 }
 

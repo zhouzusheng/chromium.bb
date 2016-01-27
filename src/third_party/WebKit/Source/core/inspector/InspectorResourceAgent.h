@@ -38,6 +38,7 @@
 #include "core/inspector/InspectorPageAgent.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
+#include "platform/network/ResourceRequest.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -47,8 +48,8 @@ class Resource;
 struct FetchInitiatorInfo;
 class Document;
 class DocumentLoader;
+class EncodedFormData;
 class ExecutionContext;
-class FormData;
 class LocalFrame;
 class HTTPHeaderMap;
 class InspectorFrontend;
@@ -58,7 +59,6 @@ class KURL;
 class NetworkResourcesData;
 class ResourceError;
 class ResourceLoader;
-class ResourceRequest;
 class ResourceResponse;
 class ThreadableLoaderClient;
 class XHRReplayData;
@@ -83,6 +83,7 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
     // Called from instrumentation.
+    void didBlockRequest(LocalFrame*, const ResourceRequest&, DocumentLoader*, const FetchInitiatorInfo&, ResourceRequestBlockedReason);
     void willSendRequest(LocalFrame*, unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
     void markResourceAsCached(unsigned long identifier);
     void didReceiveResourceResponse(LocalFrame*, unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
@@ -96,7 +97,7 @@ public:
     bool shouldForceCORSPreflight();
 
     void documentThreadableLoaderStartedLoadingForClient(unsigned long identifier, ThreadableLoaderClient*);
-    void willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData> body, const HTTPHeaderMap& headers, bool includeCrendentials);
+    void willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString& method, const KURL&, bool async, PassRefPtr<EncodedFormData> body, const HTTPHeaderMap& headers, bool includeCrendentials);
     void didFailXHRLoading(ExecutionContext*, XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString&, const String&);
     void didFinishXHRLoading(ExecutionContext*, XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString&, const String&);
 
@@ -135,6 +136,8 @@ public:
     void setUserAgentOverride(ErrorString*, const String& userAgent) override;
     void setExtraHTTPHeaders(ErrorString*, const RefPtr<JSONObject>&) override;
     void getResponseBody(ErrorString*, const String& requestId, PassRefPtrWillBeRawPtr<GetResponseBodyCallback>) override;
+    void addBlockedURL(ErrorString*, const String& url) override;
+    void removeBlockedURL(ErrorString*, const String& url) override;
 
     void replayXHR(ErrorString*, const String& requestId) override;
     void setMonitoringXHREnabled(ErrorString*, bool) override;
@@ -149,11 +152,13 @@ public:
     // Called from other agents.
     void setHostId(const String&);
     bool fetchResourceContent(Document*, const KURL&, String* content, bool* base64Encoded);
+    bool shouldBlockRequest(const ResourceRequest&);
 
 private:
     explicit InspectorResourceAgent(InspectorPageAgent*);
 
     void enable();
+    void willSendRequestInternal(LocalFrame*, unsigned long identifier, DocumentLoader*, const ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
     void delayedRemoveReplayXHR(XMLHttpRequest*);
     void removeFinishedReplayXHRFired(Timer<InspectorResourceAgent>*);
     void didFinishXHRInternal(ExecutionContext*, XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString&, const String&, bool);

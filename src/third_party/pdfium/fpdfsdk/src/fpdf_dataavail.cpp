@@ -7,7 +7,6 @@
 #include "../../public/fpdf_dataavail.h"
 #include "../include/fsdk_define.h"
 
-extern void ProcessParseError(FX_DWORD err_code);
 class CFPDF_FileAvailWrap : public IFX_FileAvail {
  public:
   CFPDF_FileAvailWrap() { m_pfileAvail = NULL; }
@@ -94,8 +93,6 @@ DLLEXPORT int STDCALL FPDFAvail_IsDocAvail(FPDF_AVAIL avail,
   CFPDF_DownloadHintsWrap hints_wrap(hints);
   return ((CFPDF_DataAvail*)avail)->m_pDataAvail->IsDocAvail(&hints_wrap);
 }
-
-extern void CheckUnSupportError(CPDF_Document* pDoc, FX_DWORD err_code);
 
 DLLEXPORT FPDF_DOCUMENT STDCALL
 FPDFAvail_GetDocument(FPDF_AVAIL avail, FPDF_BYTESTRING password) {

@@ -4,6 +4,8 @@
 
 #include "ui/views/controls/throbber.h"
 
+#include "base/bind.h"
+#include "base/location.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
@@ -11,7 +13,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/paint_throbber.h"
 #include "ui/gfx/paint_vector_icon.h"
-#include "ui/gfx/vector_icons_public2.h"
+#include "ui/gfx/vector_icons_public.h"
 #include "ui/native_theme/common_theme.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/resources/grit/ui_resources.h"
@@ -39,8 +41,8 @@ void Throbber::Start() {
 
   start_time_ = base::TimeTicks::Now();
   const int kFrameTimeMs = 30;
-  timer_.Start(FROM_HERE, base::TimeDelta::FromMilliseconds(kFrameTimeMs), this,
-               &Throbber::SchedulePaint);
+  timer_.Start(FROM_HERE, base::TimeDelta::FromMilliseconds(kFrameTimeMs),
+               base::Bind(&Throbber::SchedulePaint, base::Unretained(this)));
   SchedulePaint();  // paint right away
 }
 

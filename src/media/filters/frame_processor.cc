@@ -7,8 +7,8 @@
 #include <cstdlib>
 
 #include "base/stl_util.h"
-#include "media/base/buffers.h"
 #include "media/base/stream_parser_buffer.h"
+#include "media/base/timestamp_constants.h"
 
 namespace media {
 
@@ -286,6 +286,11 @@ void FrameProcessor::Reset() {
   for (TrackBufferMap::iterator itr = track_buffers_.begin();
        itr != track_buffers_.end(); ++itr) {
     itr->second->Reset();
+  }
+
+  if (sequence_mode_) {
+    DCHECK(kNoTimestamp() != group_end_timestamp_);
+    group_start_timestamp_ = group_end_timestamp_;
   }
 }
 

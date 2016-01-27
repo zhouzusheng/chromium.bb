@@ -46,7 +46,7 @@
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/RemoteObjectId.h"
-#include "core/inspector/V8DebuggerAgent.h"
+#include "core/inspector/v8/V8DebuggerAgent.h"
 #include "platform/JSONValues.h"
 
 namespace {
@@ -113,7 +113,6 @@ DEFINE_TRACE(InspectorDOMDebuggerAgent)
 {
     visitor->trace(m_injectedScriptManager);
     visitor->trace(m_domAgent);
-    visitor->trace(m_debuggerAgent);
 #if ENABLE(OILPAN)
     visitor->trace(m_domBreakpoints);
 #endif
@@ -375,8 +374,10 @@ PassRefPtr<TypeBuilder::DOMDebugger::EventListener> InspectorDOMDebuggerAgent::b
         .setType(type)
         .setUseCapture(useCapture)
         .setLocation(location);
-    if (!objectGroupId.isEmpty())
+    if (!objectGroupId.isEmpty()) {
         value->setHandler(injectedScript.wrapObject(ScriptValue(scriptState, function), objectGroupId));
+        value->setOriginalHandler(injectedScript.wrapObject(ScriptValue(scriptState, handler), objectGroupId));
+    }
     return value.release();
 }
 
@@ -526,6 +527,11 @@ void InspectorDOMDebuggerAgent::willFireTimer(ExecutionContext*, int)
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(timerFiredEventName, 0), false);
 }
 
+void InspectorDOMDebuggerAgent::didFireTimer()
+{
+    m_debuggerAgent->cancelPauseOnNextStatement();
+}
+
 void InspectorDOMDebuggerAgent::didRequestAnimationFrame(ExecutionContext*, int)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(requestAnimationFrameEventName, 0), true);
@@ -546,6 +552,11 @@ void InspectorDOMDebuggerAgent::willHandleEvent(EventTarget* target, Event* even
     Node* node = target->toNode();
     String targetName = node ? node->nodeName() : target->interfaceName();
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(event->type(), &targetName), false);
+}
+
+void InspectorDOMDebuggerAgent::didHandleEvent()
+{
+    m_debuggerAgent->cancelPauseOnNextStatement();
 }
 
 void InspectorDOMDebuggerAgent::willEvaluateScript()

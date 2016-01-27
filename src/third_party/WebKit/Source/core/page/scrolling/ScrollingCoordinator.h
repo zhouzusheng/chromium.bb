@@ -52,6 +52,7 @@ class WebCompositorAnimationTimeline;
 
 class CORE_EXPORT ScrollingCoordinator final : public NoBaseWillBeGarbageCollectedFinalized<ScrollingCoordinator> {
     WTF_MAKE_NONCOPYABLE(ScrollingCoordinator);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScrollingCoordinator);
 public:
     static PassOwnPtrWillBeRawPtr<ScrollingCoordinator> create(Page*);
 
@@ -65,17 +66,19 @@ public:
 
     // Called when any frame has done its layout.
     void notifyLayoutUpdated();
+    // Called when any frame recalculates its overflows after style change.
+    void notifyOverflowUpdated();
 
     void updateAfterCompositingChangeIfNeeded();
 
     void updateHaveWheelEventHandlers();
     void updateHaveScrollEventHandlers();
 
-    // Should be called whenever scrollable area set changes.
+    // Should be called whenever a scrollable area is added or removed, or gains/loses a composited layer.
     void scrollableAreasDidChange();
 
     // Should be called whenever the slow repaint objects counter changes between zero and one.
-    void frameViewHasSlowRepaintObjectsDidChange(FrameView*);
+    void frameViewHasBackgroundAttachmentFixedObjectsDidChange(FrameView*);
 
     // Should be called whenever the set of fixed objects changes.
     void frameViewFixedObjectsDidChange(FrameView*);
@@ -89,7 +92,7 @@ public:
 #endif
 
     enum MainThreadScrollingReasonFlags {
-        HasSlowRepaintObjects = 1 << 0,
+        HasBackgroundAttachmentFixedObjects = 1 << 0,
         HasNonLayerViewportConstrainedObjects = 1 << 1,
         ThreadedScrollingDisabled = 1 << 2
     };
@@ -104,12 +107,12 @@ public:
     bool scrollableAreaScrollLayerDidChange(ScrollableArea*);
     void scrollableAreaScrollbarLayerDidChange(ScrollableArea*, ScrollbarOrientation);
     void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool);
-    void updateLayerPositionConstraint(DeprecatedPaintLayer*);
+    void updateLayerPositionConstraint(PaintLayer*);
     void touchEventTargetRectsDidChange();
-    void willDestroyLayer(DeprecatedPaintLayer*);
+    void willDestroyLayer(PaintLayer*);
 
-    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, DeprecatedPaintLayer* parent);
-    void updateClipParentForGraphicsLayer(GraphicsLayer* child, DeprecatedPaintLayer* parent);
+    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, PaintLayer* parent);
+    void updateClipParentForGraphicsLayer(GraphicsLayer* child, PaintLayer* parent);
 
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
@@ -157,7 +160,7 @@ private:
     using ScrollbarMap = WillBeHeapHashMap<RawPtrWillBeMember<ScrollableArea>, OwnPtr<WebScrollbarLayer>>;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
-    HashSet<const DeprecatedPaintLayer*> m_layersWithTouchRects;
+    HashSet<const PaintLayer*> m_layersWithTouchRects;
     bool m_wasFrameScrollable;
 
     MainThreadScrollingReasons m_lastMainThreadScrollingReasons;

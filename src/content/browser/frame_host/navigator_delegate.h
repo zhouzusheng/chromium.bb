@@ -34,11 +34,12 @@ class CONTENT_EXPORT NavigatorDelegate {
   // Called when a navigation was redirected.
   virtual void DidRedirectNavigation(NavigationHandle* navigation_handle) {}
 
-  // Called when a navigation committed.
-  virtual void DidCommitNavigation(NavigationHandle* navigation_handle) {}
+  // Called when the navigation is about to be committed in a renderer.
+  virtual void ReadyToCommitNavigation(NavigationHandle* navigation_handle) {}
 
-  // Called when a document load resulting from the navigation stopped. Note
-  // that |navigation_handle| will be destroyed at the end of this call.
+  // Called when the navigation finished: it was either committed or canceled
+  // before commit.  Note that |navigation_handle| will be destroyed at the end
+  // of this call.
   virtual void DidFinishNavigation(NavigationHandle* navigation_handle) {}
 
   // TODO(clamy): all methods below that are related to navigation

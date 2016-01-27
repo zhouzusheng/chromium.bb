@@ -38,7 +38,7 @@ SkPDFUnion::~SkPDFUnion() {
 SkPDFUnion& SkPDFUnion::operator=(SkPDFUnion&& other) {
     if (this != &other) {
         this->~SkPDFUnion();
-        SkNEW_PLACEMENT_ARGS(this, SkPDFUnion, (other.move()));
+        new (this) SkPDFUnion(other.move());
     }
     return *this;
 }
@@ -56,8 +56,7 @@ SkPDFUnion SkPDFUnion::copy() const {
     switch (fType) {
         case Type::kNameSkS:
         case Type::kStringSkS:
-            SkNEW_PLACEMENT_ARGS(pun(u.fSkString), SkString,
-                                 (*pun(fSkString)));
+            new (pun(u.fSkString))  SkString                                   (*pun(fSkString));
             return u.move();
         case Type::kObjRef:
         case Type::kObject:
@@ -226,13 +225,13 @@ SkPDFUnion SkPDFUnion::String(const char* value) {
 
 SkPDFUnion SkPDFUnion::Name(const SkString& s) {
     SkPDFUnion u(Type::kNameSkS);
-    SkNEW_PLACEMENT_ARGS(pun(u.fSkString), SkString, (s));
+    new (pun(u.fSkString)) SkString(s);
     return u.move();
 }
 
 SkPDFUnion SkPDFUnion::String(const SkString& s) {
     SkPDFUnion u(Type::kStringSkS);
-    SkNEW_PLACEMENT_ARGS(pun(u.fSkString), SkString, (s));
+    new (pun(u.fSkString)) SkString(s);
     return u.move();
 }
 
@@ -298,9 +297,7 @@ void SkPDFArray::addResources(SkPDFObjNumMap* catalog,
     }
 }
 
-void SkPDFArray::append(SkPDFUnion&& value) {
-    SkNEW_PLACEMENT_ARGS(fValues.append(), SkPDFUnion, (value.move()));
-}
+void SkPDFArray::append(SkPDFUnion&& value) { new (fValues.append()) SkPDFUnion(value.move()); }
 
 void SkPDFArray::appendInt(int32_t value) {
     this->append(SkPDFUnion::Int(value));
@@ -378,8 +375,8 @@ void SkPDFDict::addResources(SkPDFObjNumMap* catalog,
 void SkPDFDict::set(SkPDFUnion&& name, SkPDFUnion&& value) {
     Record* rec = fRecords.append();
     SkASSERT(name.isName());
-    SkNEW_PLACEMENT_ARGS(&rec->fKey, SkPDFUnion, (name.move()));
-    SkNEW_PLACEMENT_ARGS(&rec->fValue, SkPDFUnion, (value.move()));
+    new (&rec->fKey) SkPDFUnion(name.move());
+    new (&rec->fValue) SkPDFUnion(value.move());
 }
 
 int SkPDFDict::size() const { return fRecords.count(); }
@@ -509,3 +506,17 @@ int32_t SkPDFObjNumMap::getObjectNumber(SkPDFObject* obj) const {
     return *objectNumberFound;
 }
 
+#ifdef SK_PDF_IMAGE_STATS
+SkAtomic<int> gDrawImageCalls(0);
+SkAtomic<int> gJpegImageObjects(0);
+SkAtomic<int> gRegularImageObjects(0);
+
+void SkPDFImageDumpStats() {
+    SkDebugf("\ntotal PDF drawImage/drawBitmap calls: %d\n"
+             "total PDF jpeg images: %d\n"
+             "total PDF regular images: %d\n",
+             gDrawImageCalls.load(),
+             gJpegImageObjects.load(),
+             gRegularImageObjects.load());
+}
+#endif // SK_PDF_IMAGE_STATS

@@ -85,19 +85,19 @@ void EventDispatcher::dispatchSimulatedClick(Node& node, Event* underlyingEvent,
     nodesDispatchingSimulatedClicks->add(&node);
 
     if (mouseEventOptions == SendMouseOverUpDownEvents)
-        EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mouseover, node.document().domWindow(), underlyingEvent, creationScope)).dispatch();
+        EventDispatcher(node, MouseEvent::create(EventTypeNames::mouseover, node.document().domWindow(), underlyingEvent, creationScope)).dispatch();
 
     if (mouseEventOptions != SendNoEvents) {
-        EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mousedown, node.document().domWindow(), underlyingEvent, creationScope)).dispatch();
+        EventDispatcher(node, MouseEvent::create(EventTypeNames::mousedown, node.document().domWindow(), underlyingEvent, creationScope)).dispatch();
         node.setActive(true);
-        EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mouseup, node.document().domWindow(), underlyingEvent, creationScope)).dispatch();
+        EventDispatcher(node, MouseEvent::create(EventTypeNames::mouseup, node.document().domWindow(), underlyingEvent, creationScope)).dispatch();
     }
     // Some elements (e.g. the color picker) may set active state to true before
     // calling this method and expect the state to be reset during the call.
     node.setActive(false);
 
     // always send click
-    EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::click, node.document().domWindow(), underlyingEvent, creationScope)).dispatch();
+    EventDispatcher(node, MouseEvent::create(EventTypeNames::click, node.document().domWindow(), underlyingEvent, creationScope)).dispatch();
 
     nodesDispatchingSimulatedClicks->remove(&node);
 }
@@ -132,7 +132,7 @@ bool EventDispatcher::dispatch()
     // Ensure that after event dispatch, the event's target object is the
     // outermost shadow DOM boundary.
     m_event->setTarget(m_event->eventPath().windowEventContext().target());
-    m_event->setCurrentTarget(0);
+    m_event->setCurrentTarget(nullptr);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", TRACE_EVENT_SCOPE_THREAD, "data", InspectorUpdateCountersEvent::data());
 
     return !m_event->defaultPrevented();
@@ -197,7 +197,7 @@ inline void EventDispatcher::dispatchEventAtBubbling()
 inline void EventDispatcher::dispatchEventPostProcess(void* preDispatchEventHandlerResult)
 {
     m_event->setTarget(EventPath::eventTargetRespectingTargetRules(*m_node));
-    m_event->setCurrentTarget(0);
+    m_event->setCurrentTarget(nullptr);
     m_event->setEventPhase(0);
 
     // Pass the data from the preDispatchEventHandler to the postDispatchEventHandler.

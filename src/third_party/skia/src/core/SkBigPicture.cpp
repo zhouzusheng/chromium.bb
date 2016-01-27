@@ -10,6 +10,7 @@
 #include "SkPictureCommon.h"
 #include "SkRecord.h"
 #include "SkRecordDraw.h"
+#include "SkTraceEvent.h"
 
 SkBigPicture::SkBigPicture(const SkRect& cull,
                            SkRecord* record,
@@ -57,8 +58,7 @@ void SkBigPicture::partialPlayback(SkCanvas* canvas,
 }
 
 const SkBigPicture::Analysis& SkBigPicture::analysis() const {
-    auto create = [&]() { return SkNEW_ARGS(Analysis, (*fRecord)); };
-    return *fAnalysis.get(create);
+    return *fAnalysis.get([&]{ return new Analysis(*fRecord); });
 }
 
 SkRect SkBigPicture::cullRect()            const { return fCullRect; }
@@ -81,6 +81,7 @@ SkPicture const* const* SkBigPicture::drawablePicts() const {
 }
 
 SkBigPicture::Analysis::Analysis(const SkRecord& record) {
+    TRACE_EVENT0("disabled-by-default-skia", "SkBigPicture::Analysis::Analysis()");
     SkTextHunter   text;
     SkBitmapHunter bitmap;
     SkPathCounter  path;

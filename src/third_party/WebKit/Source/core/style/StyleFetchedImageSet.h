@@ -48,11 +48,12 @@ public:
     ~StyleFetchedImageSet() override;
 
     PassRefPtrWillBeRawPtr<CSSValue> cssValue() const override;
+    PassRefPtrWillBeRawPtr<CSSValue> computedCSSValue() const override;
 
     // FIXME: This is used by StyleImage for equals comparison, but this implementation
     // only looks at the image from the set that we have loaded. I'm not sure if that is
     // meaningful enough or not.
-    WrappedImagePtr data() const override { return m_bestFitImage.get(); }
+    WrappedImagePtr data() const override;
 
 #if !ENABLE(OILPAN)
     void clearImageSetValue() { m_imageSetValue = nullptr; }
@@ -69,10 +70,10 @@ public:
     void setContainerSizeForLayoutObject(const LayoutObject*, const IntSize&, float) override;
     void addClient(LayoutObject*) override;
     void removeClient(LayoutObject*) override;
-    PassRefPtr<Image> image(LayoutObject*, const IntSize&) const override;
+    PassRefPtr<Image> image(const LayoutObject*, const IntSize&) const override;
     float imageScaleFactor() const override { return m_imageScaleFactor; }
     bool knownToBeOpaque(const LayoutObject*) const override;
-    ImageResource* cachedImage() const override { return m_bestFitImage.get(); }
+    ImageResource* cachedImage() const override;
 
     DECLARE_VIRTUAL_TRACE();
 

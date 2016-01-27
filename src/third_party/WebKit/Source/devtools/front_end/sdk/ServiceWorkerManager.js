@@ -111,11 +111,34 @@ WebInspector.ServiceWorkerManager.prototype = {
     },
 
     /**
+     * @param {string} registrationId
+     * @param {boolean} flag
+     */
+    setForceUpdateOnPageLoad: function(registrationId, flag)
+    {
+        this._agent.setForceUpdateOnPageLoad(registrationId, flag);
+    },
+
+    /**
      * @return {!Map.<string, !WebInspector.ServiceWorkerRegistration>}
      */
     registrations: function()
     {
         return this._registrations;
+    },
+
+    /**
+     * @param {string} versionId
+     * @return {?WebInspector.ServiceWorkerVersion}
+     */
+    findVersion: function(versionId)
+    {
+        for (var registration of this.registrations().values()) {
+           var version = registration.versions.get(versionId);
+           if (version)
+              return version;
+        }
+        return null;
     },
 
     /**
@@ -202,14 +225,6 @@ WebInspector.ServiceWorkerManager.prototype = {
     },
 
     /**
-     * @param {string} versionId
-     */
-    skipWaiting: function(versionId)
-    {
-        this._agent.skipWaiting(versionId);
-    },
-
-    /**
      * @param {!ServiceWorkerAgent.TargetID} targetId
      * @param {function(?WebInspector.TargetInfo)=} callback
      */
@@ -237,10 +252,11 @@ WebInspector.ServiceWorkerManager.prototype = {
     /**
      * @param {string} workerId
      * @param {string} url
+     * @param {string} versionId
      */
-    _workerCreated: function(workerId, url)
+    _workerCreated: function(workerId, url, versionId)
     {
-        new WebInspector.ServiceWorker(this, workerId, url);
+        new WebInspector.ServiceWorker(this, workerId, url, versionId);
     },
 
     /**
@@ -354,14 +370,16 @@ WebInspector.ServiceWorkerManager.prototype = {
  * @param {!WebInspector.ServiceWorkerManager} manager
  * @param {string} workerId
  * @param {string} url
+ * @param {string} versionId
  */
-WebInspector.ServiceWorker = function(manager, workerId, url)
+WebInspector.ServiceWorker = function(manager, workerId, url, versionId)
 {
     this._manager = manager;
     this._agent = manager.target().serviceWorkerAgent();
     this._workerId = workerId;
     this._connection = new WebInspector.ServiceWorkerConnection(this._agent, workerId);
     this._url = url;
+    this._versionId = versionId;
     var parsedURL = url.asParsedURL();
     this._name = parsedURL ? parsedURL.lastPathComponentWithFragment()  : "#" + (++WebInspector.ServiceWorker._lastAnonymousTargetId);
     this._scope = parsedURL.host + parsedURL.folderPathComponents;
@@ -376,10 +394,11 @@ WebInspector.ServiceWorker = function(manager, workerId, url)
      */
     function targetCreated(target)
     {
-        if (!target) {
+        if (!this._connection || !target) {
             this._manager._workers.delete(workerId);
             return;
         }
+        this._target = target;
         this._manager.dispatchEventToListeners(WebInspector.ServiceWorkerManager.Events.WorkersUpdated);
         target.runtimeAgent().run();
     }
@@ -407,6 +426,14 @@ WebInspector.ServiceWorker.prototype = {
     /**
      * @return {string}
      */
+    versionId: function()
+    {
+        return this._versionId;
+    },
+
+    /**
+     * @return {string}
+     */
     scope: function()
     {
         return this._scope;
@@ -419,7 +446,10 @@ WebInspector.ServiceWorker.prototype = {
 
     _closeConnection: function()
     {
+        if (!this._target)
+            return;
         this._connection._close();
+        delete this._connection;
     }
 }
 
@@ -438,10 +468,11 @@ WebInspector.ServiceWorkerDispatcher.prototype = {
      * @override
      * @param {string} workerId
      * @param {string} url
+     * @param {string} versionId
      */
-    workerCreated: function(workerId, url)
+    workerCreated: function(workerId, url, versionId)
     {
-        this._manager._workerCreated(workerId, url);
+        this._manager._workerCreated(workerId, url, versionId);
     },
 
     /**
@@ -581,7 +612,7 @@ WebInspector.ServiceWorkerErrorMessage = function(payload)
  */
 WebInspector.ServiceWorkerVersion = function(registration, payload)
 {
-    this._registration = registration;
+    this.registration = registration;
     this._update(payload);
     /** @type {!Array<!WebInspector.ServiceWorkerErrorMessage>} */
     this.errorMessages = [];
@@ -620,7 +651,7 @@ WebInspector.ServiceWorkerVersion.prototype = {
      */
     isStartable: function()
     {
-        return !this._registration.isDeleted && this.isActivated() && this.isStopped();
+        return !this.registration.isDeleted && this.isActivated() && this.isStopped();
     },
 
     /**
@@ -755,6 +786,7 @@ WebInspector.ServiceWorkerRegistration.prototype = {
         this.id = payload.registrationId;
         this.scopeURL = payload.scopeURL;
         this.isDeleted = payload.isDeleted;
+        this.forceUpdateOnPageLoad = payload.forceUpdateOnPageLoad;
     },
 
     /**

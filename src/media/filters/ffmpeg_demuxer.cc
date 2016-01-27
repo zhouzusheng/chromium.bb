@@ -10,7 +10,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
@@ -25,6 +25,7 @@
 #include "media/base/decrypt_config.h"
 #include "media/base/limits.h"
 #include "media/base/media_log.h"
+#include "media/base/timestamp_constants.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_aac_bitstream_converter.h"
 #include "media/filters/ffmpeg_bitstream_converter.h"
@@ -32,6 +33,10 @@
 #include "media/filters/ffmpeg_h264_to_annex_b_bitstream_converter.h"
 #include "media/filters/webvtt_util.h"
 #include "media/formats/webm/webm_crypto_helpers.h"
+
+#if defined(ENABLE_HEVC_DEMUXING)
+#include "media/filters/ffmpeg_h265_to_annex_b_bitstream_converter.h"
+#endif
 
 namespace media {
 
@@ -143,7 +148,7 @@ static void RecordVideoCodecStats(const VideoDecoderConfig& video_config,
                              video_config.visible_rect().width());
   UmaHistogramAspectRatio("Media.VideoVisibleAspectRatio",
                           video_config.visible_rect());
-  UMA_HISTOGRAM_ENUMERATION("Media.VideoFramePixelFormat",
+  UMA_HISTOGRAM_ENUMERATION("Media.VideoPixelFormatUnion",
                             video_config.format(), PIXEL_FORMAT_MAX + 1);
   UMA_HISTOGRAM_ENUMERATION("Media.VideoFrameColorSpace",
                             video_config.color_space(), COLOR_SPACE_MAX + 1);
@@ -155,14 +160,70 @@ static void RecordVideoCodecStats(const VideoDecoderConfig& video_config,
                             AVCOL_RANGE_NB);  // PRESUBMIT_IGNORE_UMA_MAX
 }
 
+static int32_t GetCodecHash(const AVCodecContext* context) {
+  if (context->codec_descriptor)
+    return HashCodecName(context->codec_descriptor->name);
+  const AVCodecDescriptor* codec_descriptor =
+      avcodec_descriptor_get(context->codec_id);
+  if (codec_descriptor)
+    return HashCodecName(codec_descriptor->name);
+
+  // If the codec name can't be determined, return none for tracking.
+  return HashCodecName("none");
+}
+
+scoped_ptr<FFmpegDemuxerStream> FFmpegDemuxerStream::Create(
+    FFmpegDemuxer* demuxer,
+    AVStream* stream) {
+  if (!demuxer || !stream)
+    return nullptr;
+
+  scoped_ptr<FFmpegDemuxerStream> demuxer_stream;
+  scoped_ptr<AudioDecoderConfig> audio_config;
+  scoped_ptr<VideoDecoderConfig> video_config;
+
+  if (stream->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+    audio_config.reset(new AudioDecoderConfig());
+
+    // IsValidConfig() checks that the codec is supported and that the channel
+    // layout and sample format are valid.
+    //
+    // TODO(chcunningham): Change AVStreamToAudioDecoderConfig to check
+    // IsValidConfig internally and return a null scoped_ptr if not valid.
+    if (!AVStreamToAudioDecoderConfig(stream, audio_config.get()) ||
+        !audio_config->IsValidConfig())
+      return nullptr;
+
+  } else if (stream->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+    video_config.reset(new VideoDecoderConfig());
+
+    // IsValidConfig() checks that the codec is supported and that the channel
+    // layout and sample format are valid.
+    //
+    // TODO(chcunningham): Change AVStreamToVideoDecoderConfig to check
+    // IsValidConfig internally and return a null scoped_ptr if not valid.
+    if (!AVStreamToVideoDecoderConfig(stream, video_config.get()) ||
+        !video_config->IsValidConfig())
+      return nullptr;
+  }
+
+  return make_scoped_ptr(new FFmpegDemuxerStream(
+      demuxer, stream, audio_config.Pass(), video_config.Pass()));
+}
+
 //
 // FFmpegDemuxerStream
 //
-FFmpegDemuxerStream::FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
-                                         AVStream* stream)
+FFmpegDemuxerStream::FFmpegDemuxerStream(
+    FFmpegDemuxer* demuxer,
+    AVStream* stream,
+    scoped_ptr<AudioDecoderConfig> audio_config,
+    scoped_ptr<VideoDecoderConfig> video_config)
     : demuxer_(demuxer),
       task_runner_(base::ThreadTaskRunnerHandle::Get()),
       stream_(stream),
+      audio_config_(audio_config.release()),
+      video_config_(video_config.release()),
       type_(UNKNOWN),
       liveness_(LIVENESS_UNKNOWN),
       end_of_stream_(false),
@@ -179,14 +240,14 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
   // Determine our media format.
   switch (stream->codec->codec_type) {
     case AVMEDIA_TYPE_AUDIO:
+      DCHECK(audio_config_.get() && !video_config_.get());
       type_ = AUDIO;
-      AVStreamToAudioDecoderConfig(stream, &audio_config_);
-      is_encrypted = audio_config_.is_encrypted();
+      is_encrypted = audio_config_->is_encrypted();
       break;
     case AVMEDIA_TYPE_VIDEO:
+      DCHECK(video_config_.get() && !audio_config_.get());
       type_ = VIDEO;
-      AVStreamToVideoDecoderConfig(stream, &video_config_);
-      is_encrypted = video_config_.is_encrypted();
+      is_encrypted = video_config_->is_encrypted();
 
       rotation_entry = av_dict_get(stream->metadata, "rotate", NULL, 0);
       if (rotation_entry && rotation_entry->value && rotation_entry->value[0])
@@ -211,6 +272,7 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
 
       break;
     case AVMEDIA_TYPE_SUBTITLE:
+      DCHECK(!video_config_.get() && !audio_config_.get());
       type_ = TEXT;
       break;
     default:
@@ -298,8 +360,8 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
 
     scoped_ptr<DecryptConfig> decrypt_config;
     int data_offset = 0;
-    if ((type() == DemuxerStream::AUDIO && audio_config_.is_encrypted()) ||
-        (type() == DemuxerStream::VIDEO && video_config_.is_encrypted())) {
+    if ((type() == DemuxerStream::AUDIO && audio_config_->is_encrypted()) ||
+        (type() == DemuxerStream::VIDEO && video_config_->is_encrypted())) {
       if (!WebMCreateDecryptConfig(
           packet->data, packet->size,
           reinterpret_cast<const uint8*>(encryption_key_id_.data()),
@@ -547,6 +609,11 @@ void FFmpegDemuxerStream::InitBitstreamConverter() {
   if (stream_->codec->codec_id == AV_CODEC_ID_H264) {
     bitstream_converter_.reset(
         new FFmpegH264ToAnnexBBitstreamConverter(stream_->codec));
+#if defined(ENABLE_HEVC_DEMUXING)
+  } else if (stream_->codec->codec_id == AV_CODEC_ID_HEVC) {
+    bitstream_converter_.reset(
+        new FFmpegH265ToAnnexBBitstreamConverter(stream_->codec));
+#endif
   } else if (stream_->codec->codec_id == AV_CODEC_ID_AAC) {
     bitstream_converter_.reset(
         new FFmpegAACBitstreamConverter(stream_->codec));
@@ -558,14 +625,16 @@ bool FFmpegDemuxerStream::SupportsConfigChanges() { return false; }
 
 AudioDecoderConfig FFmpegDemuxerStream::audio_decoder_config() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  CHECK_EQ(type_, AUDIO);
-  return audio_config_;
+  DCHECK_EQ(type_, AUDIO);
+  DCHECK(audio_config_.get());
+  return *audio_config_;
 }
 
 VideoDecoderConfig FFmpegDemuxerStream::video_decoder_config() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  CHECK_EQ(type_, VIDEO);
-  return video_config_;
+  DCHECK_EQ(type_, VIDEO);
+  DCHECK(video_config_.get());
+  return *video_config_;
 }
 
 VideoRotation FFmpegDemuxerStream::video_rotation() {
@@ -965,7 +1034,6 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
 
   AVStream* audio_stream = NULL;
   AudioDecoderConfig audio_config;
-
   AVStream* video_stream = NULL;
   VideoDecoderConfig video_config;
 
@@ -983,28 +1051,36 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
         continue;
 
       // Log the codec detected, whether it is supported or not.
-      UMA_HISTOGRAM_SPARSE_SLOWLY("Media.DetectedAudioCodec",
-                                  codec_context->codec_id);
-      // Ensure the codec is supported. IsValidConfig() also checks that the
-      // channel layout and sample format are valid.
-      AVStreamToAudioDecoderConfig(stream, &audio_config);
-      if (!audio_config.IsValidConfig())
-        continue;
-      audio_stream = stream;
+      UMA_HISTOGRAM_SPARSE_SLOWLY("Media.DetectedAudioCodecHash",
+                                  GetCodecHash(codec_context));
     } else if (codec_type == AVMEDIA_TYPE_VIDEO) {
       if (video_stream)
         continue;
 
+#if defined(ENABLE_HEVC_DEMUXING)
+      if (stream->codec->codec_id == AV_CODEC_ID_HEVC) {
+        // If ffmpeg is built without HEVC parser/decoder support, it will be
+        // able to demux HEVC based solely on container-provided information,
+        // but unable to get some of the parameters without parsing the stream
+        // (e.g. coded size needs to be read from SPS, pixel format is typically
+        // deduced from decoder config in hvcC box). These are not really needed
+        // when using external decoder (e.g. hardware decoder), so override them
+        // here, to make sure this translates into a valid VideoDecoderConfig.
+        if (stream->codec->coded_width == 0 &&
+            stream->codec->coded_height == 0) {
+          DCHECK(stream->codec->width > 0);
+          DCHECK(stream->codec->height > 0);
+          stream->codec->coded_width = stream->codec->width;
+          stream->codec->coded_height = stream->codec->height;
+        }
+        if (stream->codec->pix_fmt == AV_PIX_FMT_NONE) {
+          stream->codec->pix_fmt = AV_PIX_FMT_YUV420P;
+        }
+      }
+#endif
       // Log the codec detected, whether it is supported or not.
-      UMA_HISTOGRAM_SPARSE_SLOWLY("Media.DetectedVideoCodec",
-                                  codec_context->codec_id);
-      // Ensure the codec is supported. IsValidConfig() also checks that the
-      // frame size and visible size are valid.
-      AVStreamToVideoDecoderConfig(stream, &video_config);
-
-      if (!video_config.IsValidConfig())
-        continue;
-      video_stream = stream;
+      UMA_HISTOGRAM_SPARSE_SLOWLY("Media.DetectedVideoCodecHash",
+                                  GetCodecHash(codec_context));
     } else if (codec_type == AVMEDIA_TYPE_SUBTITLE) {
       if (codec_context->codec_id != AV_CODEC_ID_WEBVTT || !text_enabled_) {
         continue;
@@ -1013,15 +1089,30 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
       continue;
     }
 
-    streams_[i] = new FFmpegDemuxerStream(this, stream);
+    // Attempt to create a FFmpegDemuxerStream from the AVStream. This will
+    // return nullptr if the AVStream is invalid. Validity checks will verify
+    // things like: codec, channel layout, sample/pixel format, etc...
+    scoped_ptr<FFmpegDemuxerStream> demuxer_stream =
+        FFmpegDemuxerStream::Create(this, stream);
+    if (demuxer_stream.get()) {
+      streams_[i] = demuxer_stream.release();
+    } else {
+      // This AVStream does not successfully convert.
+      continue;
+    }
 
-    // Record audio or video src= playback UMA stats for the stream's decoder
-    // config.
+    // Note when we find our audio/video stream (we only want one of each) and
+    // record src= playback UMA stats for the stream's decoder config.
     if (codec_type == AVMEDIA_TYPE_AUDIO) {
-      RecordAudioCodecStats(streams_[i]->audio_decoder_config());
+      CHECK(!audio_stream);
+      audio_stream = stream;
+      audio_config = streams_[i]->audio_decoder_config();
+      RecordAudioCodecStats(audio_config);
     } else if (codec_type == AVMEDIA_TYPE_VIDEO) {
-      RecordVideoCodecStats(streams_[i]->video_decoder_config(),
-                            stream->codec->color_range);
+      CHECK(!video_stream);
+      video_stream = stream;
+      video_config = streams_[i]->video_decoder_config();
+      RecordVideoCodecStats(video_config, stream->codec->color_range);
     }
 
     max_duration = std::max(max_duration, streams_[i]->duration());

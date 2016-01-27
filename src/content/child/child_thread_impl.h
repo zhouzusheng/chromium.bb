@@ -87,7 +87,6 @@ class CONTENT_EXPORT ChildThreadImpl
   void PreCacheFont(const LOGFONT& log_font) override;
   void ReleaseCachedFonts() override;
 #endif
-  IPC::AttachmentBroker* GetAttachmentBroker() override;
 
   // Perform deferred channel initialization for the case where ChildThread
   // was constructed with an empty channel_name.
@@ -195,6 +194,7 @@ class CONTENT_EXPORT ChildThreadImpl
   void OnProcessFinalRelease();
 
   virtual bool OnControlMessageReceived(const IPC::Message& msg);
+  virtual void OnProcessBackgrounded(bool backgrounded);
 
   void set_on_channel_error_called(bool on_channel_error_called) {
     on_channel_error_called_ = on_channel_error_called;
@@ -233,7 +233,6 @@ class CONTENT_EXPORT ChildThreadImpl
   void OnSetProfilerStatus(tracked_objects::ThreadData::Status status);
   void OnGetChildProfilerData(int sequence_number, int current_profiling_phase);
   void OnProfilingPhaseCompleted(int profiling_phase);
-  void OnProcessBackgrounded(bool background);
 #ifdef IPC_MESSAGE_LOG_ENABLED
   void OnSetIPCLoggingEnabled(bool enable);
 #endif

@@ -125,7 +125,8 @@ UtilityProcessHostImpl::UtilityProcessHostImpl(
       child_flags_(ChildProcessHost::CHILD_NORMAL),
 #endif
       started_(false),
-      name_(base::ASCIIToUTF16("utility process")) {
+      name_(base::ASCIIToUTF16("utility process")),
+      weak_ptr_factory_(this) {
 }
 
 UtilityProcessHostImpl::~UtilityProcessHostImpl() {
@@ -139,6 +140,10 @@ UtilityProcessHostImpl::~UtilityProcessHostImpl() {
   // To guarantee proper shutdown of the Mojo channel, do it explicitly here.
   if (mojo_application_host_)
     mojo_application_host_->ShutdownOnIOThread();
+}
+
+base::WeakPtr<UtilityProcessHost> UtilityProcessHostImpl::AsWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 bool UtilityProcessHostImpl::Send(IPC::Message* message) {

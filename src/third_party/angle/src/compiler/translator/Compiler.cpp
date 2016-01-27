@@ -16,6 +16,7 @@
 #include "compiler/translator/RegenerateStructNames.h"
 #include "compiler/translator/RemovePow.h"
 #include "compiler/translator/RenameFunction.h"
+#include "compiler/translator/RewriteDoWhile.h"
 #include "compiler/translator/ScalarizeVecAndMatConstructorArgs.h"
 #include "compiler/translator/UnfoldShortCircuitAST.h"
 #include "compiler/translator/ValidateLimitations.h"
@@ -143,7 +144,8 @@ TCompiler::TCompiler(sh::GLenum type, ShShaderSpec spec, ShShaderOutput output)
       fragmentPrecisionHigh(false),
       clampingStrategy(SH_CLAMP_WITH_CLAMP_INTRINSIC),
       builtInFunctionEmulator(),
-      mSourcePath(NULL)
+      mSourcePath(NULL),
+      mTemporaryIndex(0)
 {
 }
 
@@ -182,8 +184,9 @@ TIntermNode *TCompiler::compileTreeForTesting(const char* const shaderStrings[],
     return compileTreeImpl(shaderStrings, numStrings, compileOptions);
 }
 
-TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
-    size_t numStrings, int compileOptions)
+TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
+                                        size_t numStrings,
+                                        const int compileOptions)
 {
     clearResults();
 
@@ -192,10 +195,6 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
 
     // Reset the extension behavior for each compilation unit.
     ResetExtensionBehavior(extensionBehavior);
-
-    // If compiling for WebGL, validate loop and indexing as well.
-    if (IsWebGLBasedSpec(shaderSpec))
-        compileOptions |= SH_VALIDATE_LOOP_INDEXING;
 
     // First string is path of source file if flag is set. The actual source follows.
     size_t firstSource = 0;
@@ -230,6 +229,12 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
         infoSink.info << "unsupported shader version";
         success = false;
     }
+
+    // If compiling an ESSL 1.00 shader for WebGL, or if its been requested through the API,
+    // validate loop and indexing as well (to verify that the shader only uses minimal functionality
+    // of ESSL 1.00 as in Appendix A of the spec).
+    bool validateLoopAndIndexing = (IsWebGLBasedSpec(shaderSpec) && shaderVersion == 100) ||
+                                   (compileOptions & SH_VALIDATE_LOOP_INDEXING);
 
     TIntermNode *root = nullptr;
 
@@ -273,7 +278,7 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
         if (success && shaderVersion == 300 && shaderType == GL_FRAGMENT_SHADER)
             success = validateOutputs(root);
 
-        if (success && (compileOptions & SH_VALIDATE_LOOP_INDEXING))
+        if (success && validateLoopAndIndexing)
             success = validateLimitations(root);
 
         if (success && (compileOptions & SH_TIMING_RESTRICTIONS))
@@ -314,6 +319,10 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
         if (success && shaderType == GL_VERTEX_SHADER && (compileOptions & SH_INIT_GL_POSITION))
             initializeGLPosition(root);
 
+        // This pass might emit short circuits so keep it before the short circuit unfolding
+        if (success && (compileOptions & SH_REWRITE_DO_WHILE_LOOPS))
+            RewriteDoWhile(root, getTemporaryIndex());
+
         if (success && (compileOptions & SH_UNFOLD_SHORT_CIRCUIT))
         {
             UnfoldShortCircuitAST unfoldShortCircuit;
@@ -326,7 +335,7 @@ TIntermNode *TCompiler::compileTreeImpl(const char* const shaderStrings[],
             RemovePow(root);
         }
 
-        if (success && (compileOptions & SH_VARIABLES))
+        if (success && shouldCollectVariables(compileOptions))
         {
             collectVariables(root);
             if (compileOptions & SH_ENFORCE_PACKING_RESTRICTIONS)
@@ -497,6 +506,7 @@ void TCompiler::clearResults()
     nameMap.clear();
 
     mSourcePath = NULL;
+    mTemporaryIndex = 0;
 }
 
 bool TCompiler::initCallDag(TIntermNode *root)

@@ -59,6 +59,7 @@ int PartitionRootBase::gInitializedLock = 0;
 bool PartitionRootBase::gInitialized = false;
 PartitionPage PartitionRootBase::gSeedPage;
 PartitionBucket PartitionRootBase::gPagedBucket;
+void (*PartitionRootBase::gOomHandlingFunction)() = nullptr;
 
 static uint16_t partitionBucketNumSystemPages(size_t size)
 {
@@ -98,7 +99,7 @@ static uint16_t partitionBucketNumSystemPages(size_t size)
     return bestPages;
 }
 
-static void parititonAllocBaseInit(PartitionRootBase* root)
+static void partitionAllocBaseInit(PartitionRootBase* root)
 {
     ASSERT(!root->initialized);
 
@@ -138,9 +139,15 @@ static void partitionBucketInitBase(PartitionBucket* bucket, PartitionRootBase* 
     bucket->numSystemPagesPerSlotSpan = partitionBucketNumSystemPages(bucket->slotSize);
 }
 
+void partitionAllocGlobalInit(void (*oomHandlingFunction)())
+{
+    ASSERT(oomHandlingFunction);
+    PartitionRootBase::gOomHandlingFunction = oomHandlingFunction;
+}
+
 void partitionAllocInit(PartitionRoot* root, size_t numBuckets, size_t maxAllocation)
 {
-    parititonAllocBaseInit(root);
+    partitionAllocBaseInit(root);
 
     root->numBuckets = numBuckets;
     root->maxAllocation = maxAllocation;
@@ -157,9 +164,9 @@ void partitionAllocInit(PartitionRoot* root, size_t numBuckets, size_t maxAlloca
 
 void partitionAllocGenericInit(PartitionRootGeneric* root)
 {
-    parititonAllocBaseInit(root);
+    spinLockLock(&root->lock);
 
-    root->lock = 0;
+    partitionAllocBaseInit(root);
 
     // Precalculate some shift and mask constants used in the hot path.
     // Example: malloc(41) == 101001 binary.
@@ -234,6 +241,8 @@ void partitionAllocGenericInit(PartitionRootGeneric* root)
     // And there's one last bucket lookup that will be hit for e.g. malloc(-1),
     // which tries to overflow to a non-existant order.
     *bucketPtr = &PartitionRootGeneric::gPagedBucket;
+
+    spinLockUnlock(&root->lock);
 }
 
 static bool partitionAllocShutdownBucket(PartitionBucket* bucket)
@@ -282,6 +291,7 @@ bool partitionAllocShutdown(PartitionRoot* root)
 
 bool partitionAllocGenericShutdown(PartitionRootGeneric* root)
 {
+    spinLockLock(&root->lock);
     bool foundLeak = false;
     size_t i;
     for (i = 0; i < kGenericNumBuckets; ++i) {
@@ -289,6 +299,7 @@ bool partitionAllocGenericShutdown(PartitionRootGeneric* root)
         foundLeak |= partitionAllocShutdownBucket(bucket);
     }
     foundLeak |= partitionAllocBaseShutdown(root);
+    spinLockUnlock(&root->lock);
     return !foundLeak;
 }
 
@@ -308,6 +319,8 @@ static NEVER_INLINE void partitionOutOfMemory(const PartitionRootBase* root)
         partitionOutOfMemoryWithLotsOfUncommitedPages();
     }
 #endif
+    if (PartitionRootBase::gOomHandlingFunction)
+        (*PartitionRootBase::gOomHandlingFunction)();
     IMMEDIATE_CRASH();
 }
 

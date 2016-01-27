@@ -936,17 +936,26 @@ class IFX_Pause {
 template <typename T>
 class CFX_AutoRestorer {
  public:
-  explicit CFX_AutoRestorer(T* location) {
-    m_Location = location;
-    m_OldValue = *location;
-  }
+  explicit CFX_AutoRestorer(T* location)
+      : m_Location(location), m_OldValue(*location) {}
   ~CFX_AutoRestorer() { *m_Location = m_OldValue; }
 
  private:
-  T* m_Location;
-  T m_OldValue;
+  T* const m_Location;
+  const T m_OldValue;
 };
 
+struct FxFreeDeleter {
+  inline void operator()(void* ptr) const { FX_Free(ptr); }
+};
+
+// Used with nonstd::unique_ptr to Release() objects that can't be deleted.
+template <class T>
+struct ReleaseDeleter {
+  inline void operator()(T* ptr) const { ptr->Release(); }
+};
+
+// TODO(thestig) Remove in favor of nonstd::unique_ptr.
 template <class T>
 class CFX_SmartPointer {
  public:
@@ -959,6 +968,7 @@ class CFX_SmartPointer {
  protected:
   T* m_pObj;
 };
+
 #define FX_DATALIST_LENGTH 1024
 template <size_t unit>
 class CFX_SortListArray {

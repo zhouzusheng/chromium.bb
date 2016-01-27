@@ -62,6 +62,7 @@ class ANGLEInstancedArrays;
 class CHROMIUMSubscribeUniform;
 class CHROMIUMValuebuffer;
 class EXTBlendMinMax;
+class EXTDisjointTimerQuery;
 class EXTFragDepth;
 class EXTShaderTextureLOD;
 class EXTsRGB;
@@ -81,6 +82,7 @@ class OESTextureHalfFloatLinear;
 class OESVertexArrayObject;
 class WebGLActiveInfo;
 class WebGLBuffer;
+class WebGLCompressedTextureASTC;
 class WebGLCompressedTextureATC;
 class WebGLCompressedTextureETC1;
 class WebGLCompressedTexturePVRTC;
@@ -119,6 +121,33 @@ struct FormatTypeCompare {
             || ((lhs.internalformat == rhs.internalformat) && (lhs.format < rhs.format))
             || ((lhs.internalformat == rhs.internalformat) && (lhs.format == rhs.format) && (lhs.type < rhs.type)));
     }
+};
+
+// ScopedDrawingBufferBinder is used for ReadPixels/CopyTexImage2D/CopySubImage2D to read from
+// a multisampled DrawingBuffer. In this situation, we need to blit to a single sampled buffer
+// for reading, during which the bindings could be changed and need to be recovered.
+class ScopedDrawingBufferBinder {
+    STACK_ALLOCATED();
+public:
+    ScopedDrawingBufferBinder(DrawingBuffer* drawingBuffer, WebGLFramebuffer* framebufferBinding)
+        : m_drawingBuffer(drawingBuffer)
+        , m_readFramebufferBinding(framebufferBinding)
+    {
+        // Commit DrawingBuffer if needed (e.g., for multisampling)
+        if (!m_readFramebufferBinding && m_drawingBuffer)
+            m_drawingBuffer->commit();
+    }
+
+    ~ScopedDrawingBufferBinder()
+    {
+        // Restore DrawingBuffer if needed
+        if (!m_readFramebufferBinding && m_drawingBuffer)
+            m_drawingBuffer->restoreFramebufferBindings();
+    }
+
+private:
+    DrawingBuffer* m_drawingBuffer;
+    Member<WebGLFramebuffer> m_readFramebufferBinding;
 };
 
 class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext, public Page::MultisamplingChangedObserver {
@@ -249,7 +278,7 @@ public:
     void linkProgram(WebGLProgram*);
     void pixelStorei(GLenum pname, GLint param);
     void polygonOffset(GLfloat factor, GLfloat units);
-    void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, DOMArrayBufferView* pixels);
+    virtual void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, DOMArrayBufferView* pixels);
     void renderbufferStorage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
     void sampleCoverage(GLfloat value, GLboolean invert);
     void scissor(GLint x, GLint y, GLsizei width, GLsizei height);
@@ -323,17 +352,17 @@ public:
     void validateProgram(WebGLProgram*);
 
     void vertexAttrib1f(GLuint index, GLfloat x);
-    void vertexAttrib1fv(GLuint index, DOMFloat32Array* values);
-    void vertexAttrib1fv(GLuint index, Vector<GLfloat>& values);
+    void vertexAttrib1fv(GLuint index, const DOMFloat32Array* values);
+    void vertexAttrib1fv(GLuint index, const Vector<GLfloat>& values);
     void vertexAttrib2f(GLuint index, GLfloat x, GLfloat y);
-    void vertexAttrib2fv(GLuint index, DOMFloat32Array* values);
-    void vertexAttrib2fv(GLuint index, Vector<GLfloat>& values);
+    void vertexAttrib2fv(GLuint index, const DOMFloat32Array* values);
+    void vertexAttrib2fv(GLuint index, const Vector<GLfloat>& values);
     void vertexAttrib3f(GLuint index, GLfloat x, GLfloat y, GLfloat z);
-    void vertexAttrib3fv(GLuint index, DOMFloat32Array* values);
-    void vertexAttrib3fv(GLuint index, Vector<GLfloat>& values);
+    void vertexAttrib3fv(GLuint index, const DOMFloat32Array* values);
+    void vertexAttrib3fv(GLuint index, const Vector<GLfloat>& values);
     void vertexAttrib4f(GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w);
-    void vertexAttrib4fv(GLuint index, DOMFloat32Array* values);
-    void vertexAttrib4fv(GLuint index, Vector<GLfloat>& values);
+    void vertexAttrib4fv(GLuint index, const DOMFloat32Array* values);
+    void vertexAttrib4fv(GLuint index, const Vector<GLfloat>& values);
     void vertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized,
         GLsizei stride, long long offset);
 
@@ -404,12 +433,14 @@ public:
     bool isWebGL2OrHigher() { return version() >= 2; }
 
 protected:
+    friend class EXTDisjointTimerQuery;
     friend class WebGLDrawBuffers;
     friend class WebGLFramebuffer;
     friend class WebGLObject;
     friend class WebGLContextObject;
     friend class OESVertexArrayObject;
     friend class WebGLDebugShaders;
+    friend class WebGLCompressedTextureASTC;
     friend class WebGLCompressedTextureATC;
     friend class WebGLCompressedTextureETC1;
     friend class WebGLCompressedTexturePVRTC;
@@ -456,7 +487,7 @@ protected:
     void addCompressedTextureFormat(GLenum);
     void removeAllCompressedTextureFormats();
 
-    PassRefPtr<Image> drawImageIntoBuffer(Image*, int width, int height, const char* functionName);
+    PassRefPtr<Image> drawImageIntoBuffer(PassRefPtr<Image>, int width, int height, const char* functionName);
 
     PassRefPtr<Image> videoFrameToImage(HTMLVideoElement*);
 
@@ -550,7 +581,6 @@ protected:
     PersistentWillBeMember<WebGLRenderbuffer> m_renderbufferBinding;
     PersistentWillBeMember<CHROMIUMValuebuffer> m_valuebufferBinding;
 
-    GC_PLUGIN_IGNORE("crbug.com/496496")
     PersistentHeapVectorWillBeHeapVector<TextureUnitState> m_textureUnits;
     unsigned long m_activeTextureUnit;
 
@@ -564,7 +594,7 @@ protected:
     public:
         LRUImageBufferCache(int capacity);
         // The pointer returned is owned by the image buffer map.
-        ImageBuffer* imageBuffer(const IntSize& size);
+        ImageBuffer* imageBuffer(const IntSize&);
     private:
         void bubbleToFront(int idx);
         OwnPtr<OwnPtr<ImageBuffer>[]> m_buffers;
@@ -725,6 +755,33 @@ protected:
         return m_extensionEnabled[name];
     }
 
+    // ScopedDrawingBufferBinder is used for ReadPixels/CopyTexImage2D/CopySubImage2D to read from
+    // a multisampled DrawingBuffer. In this situation, we need to blit to a single sampled buffer
+    // for reading, during which the bindings could be changed and need to be recovered.
+    class ScopedDrawingBufferBinder {
+        STACK_ALLOCATED();
+    public:
+        ScopedDrawingBufferBinder(DrawingBuffer* drawingBuffer, WebGLFramebuffer* framebufferBinding)
+            : m_drawingBuffer(drawingBuffer)
+            , m_readFramebufferBinding(framebufferBinding)
+        {
+            // Commit DrawingBuffer if needed (e.g., for multisampling)
+            if (!m_readFramebufferBinding && m_drawingBuffer)
+                m_drawingBuffer->commit();
+        }
+
+        ~ScopedDrawingBufferBinder()
+        {
+            // Restore DrawingBuffer if needed
+            if (!m_readFramebufferBinding && m_drawingBuffer)
+                m_drawingBuffer->restoreFramebufferBindings();
+        }
+
+    private:
+        DrawingBuffer* m_drawingBuffer;
+        Member<WebGLFramebuffer> m_readFramebufferBinding;
+    };
+
     // Errors raised by synthesizeGLError() while the context is lost.
     Vector<GLenum> m_lostContextErrors;
 
@@ -744,6 +801,7 @@ protected:
     ScriptValue getBooleanArrayParameter(ScriptState*, GLenum);
     ScriptValue getFloatParameter(ScriptState*, GLenum);
     ScriptValue getIntParameter(ScriptState*, GLenum);
+    ScriptValue getInt64Parameter(ScriptState*, GLenum);
     ScriptValue getUnsignedIntParameter(ScriptState*, GLenum);
     ScriptValue getWebGLFloatArrayParameter(ScriptState*, GLenum);
     ScriptValue getWebGLIntArrayParameter(ScriptState*, GLenum);
@@ -798,7 +856,7 @@ protected:
 
     // Helper function to check if size is non-negative.
     // Generate GL error and return false for negative inputs; otherwise, return true.
-    bool validateSize(const char* functionName, GLint x, GLint y);
+    bool validateSize(const char* functionName, GLint x, GLint y, GLint z = 0);
 
     // Helper function to check if all characters in the string belong to the
     // ASCII subset as defined in GLSL ES 1.0 spec section 3.1.
@@ -829,6 +887,10 @@ protected:
     // Helper function to check format/type combination for readPixels.
     // Generates INVALID_OPERATION and returns false if the combination is unsupported.
     bool validateReadPixelsFormatTypeCombination(GLenum format, GLenum type, GLenum readBufferInternalFormat, GLenum readBufferType);
+
+    // Helper function to check parameters of readPixels. Returns true if all parameters
+    // are valid. Otherwise, generates appropriate error and returns false.
+    bool validateReadPixelsFuncParameters(GLsizei width, GLsizei height, GLenum format, GLenum type, long long bufferSize);
 
     virtual GLint getMaxTextureLevelForTarget(GLenum target);
 
@@ -869,7 +931,10 @@ protected:
     // Helper function to validate that the given ArrayBufferView
     // is of the correct type and contains enough data for the texImage call.
     // Generates GL error and returns false if parameters are invalid.
-    bool validateTexFuncData(const char* functionName, GLint level, GLsizei width, GLsizei height, GLenum internalformat, GLenum format, GLenum type, DOMArrayBufferView* pixels, NullDisposition);
+    bool validateTexFuncData(const char* functionName, GLint level, GLsizei width, GLsizei height, GLenum format, GLenum type, DOMArrayBufferView* pixels, NullDisposition);
+
+    // Helper function to validate that a copyTexSubImage call is valid.
+    bool validateCopyTexSubImage(const char* functionName, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height);
 
     // Helper function to validate a given texture format is settable as in
     // you can supply data to texImage2D, or call texImage2D, copyTexImage2D and
@@ -938,7 +1003,14 @@ protected:
     bool validateUniformMatrixParameters(const char* functionName, const WebGLUniformLocation*, GLboolean transpose, void*, GLsizei, GLsizei mod);
 
     template<typename WTFTypedArray>
-    bool validateUniformParameters(const char*, const WebGLUniformLocation*,  const TypedFlexibleArrayBufferView<WTFTypedArray>&, GLsizei);
+    bool validateUniformParameters(const char* functionName, const WebGLUniformLocation* location, const TypedFlexibleArrayBufferView<WTFTypedArray>& v, GLsizei requiredMinSize)
+    {
+        if (!v.dataMaybeOnStack()) {
+            synthesizeGLError(GL_INVALID_VALUE, functionName, "no array");
+            return false;
+        }
+        return validateUniformMatrixParameters(functionName, location, false, v.dataMaybeOnStack(), v.length(), requiredMinSize);
+    }
 
     // Helper function to validate the target for bufferData and getBufferParameter.
     virtual bool validateBufferTarget(const char* functionName, GLenum target);
@@ -946,6 +1018,8 @@ protected:
     // Helper function to validate the target for bufferData.
     // Return the current bound buffer to target, or 0 if the target is invalid.
     virtual WebGLBuffer* validateBufferDataTarget(const char* functionName, GLenum target);
+    // Helper function to validate the usage for bufferData.
+    virtual bool validateBufferDataUsage(const char* functionName, GLenum usage);
 
     virtual bool validateAndUpdateBufferBindTarget(const char* functionName, GLenum target, WebGLBuffer*);
 
@@ -971,12 +1045,12 @@ protected:
 
     // Helper functions for vertexAttribNf{v}.
     void vertexAttribfImpl(const char* functionName, GLuint index, GLsizei expectedSize, GLfloat, GLfloat, GLfloat, GLfloat);
-    void vertexAttribfvImpl(const char* functionName, GLuint index, DOMFloat32Array*, GLsizei expectedSize);
-    void vertexAttribfvImpl(const char* functionName, GLuint index, GLfloat*, GLsizei, GLsizei expectedSize);
+    void vertexAttribfvImpl(const char* functionName, GLuint index, const DOMFloat32Array*, GLsizei expectedSize);
+    void vertexAttribfvImpl(const char* functionName, GLuint index, const GLfloat*, GLsizei, GLsizei expectedSize);
 
     // Helper functions to bufferData() and bufferSubData().
     void bufferDataImpl(GLenum target, long long size, const void* data, GLenum usage);
-    void bufferSubDataImpl(GLenum target, long long offset, GLsizeiptr size, const void* data);
+    void bufferSubDataImpl(GLenum target, long long offset, GLsizeiptr, const void* data);
 
     // Helper function for delete* (deleteBuffer, deleteProgram, etc) functions.
     // Return false if caller should return without further processing.

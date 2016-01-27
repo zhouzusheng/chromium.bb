@@ -95,7 +95,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      ReadbackRequestCallback& callback,
+      const ReadbackRequestCallback& callback,
       const SkColorType preferred_color_type) override;
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
@@ -105,9 +105,12 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   bool HasAcceleratedSurface(const gfx::Size& desired_size) override;
   void OnSwapCompositorFrame(uint32 output_surface_id,
                              scoped_ptr<cc::CompositorFrame> frame) override;
+  // Since the URL of content rendered by this class is not displayed in
+  // the URL bar, this method does not need an implementation.
+  void ClearCompositorFrame() override {}
   void GetScreenInfo(blink::WebScreenInfo* results) override;
+  bool GetScreenColorProfile(std::vector<char>* color_profile) override;
   gfx::Rect GetBoundsInRootWindow() override;
-  gfx::GLSurfaceHandle GetCompositingSurface() override;
 #if defined(USE_AURA)
   void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                               InputEventAckState ack_result) override;
@@ -115,6 +118,9 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   bool LockMouse() override;
   void UnlockMouse() override;
   uint32_t GetSurfaceIdNamespace() override;
+  void ProcessKeyboardEvent(const NativeWebKeyboardEvent& event) override;
+  void ProcessMouseEvent(const blink::WebMouseEvent& event) override;
+  void ProcessMouseWheelEvent(const blink::WebMouseWheelEvent& event) override;
 
 #if defined(OS_MACOSX)
   // RenderWidgetHostView implementation.

@@ -40,7 +40,6 @@
 #include "net/http/http_util.h"
 #include "net/ssl/ssl_cipher_suite_names.h"
 #include "net/ssl/ssl_connection_status_flags.h"
-#include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request_data_job.h"
 #include "third_party/WebKit/public/platform/WebHTTPLoadInfo.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -165,134 +164,6 @@ int GetInfoFromDataURL(const GURL& url,
   return net::OK;
 }
 
-#define STATIC_ASSERT_MATCHING_ENUMS(content_name, blink_name)       \
-  static_assert(                                                     \
-      static_cast<int>(content_name) == static_cast<int>(blink_name), \
-      "mismatching enums: " #content_name)
-
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_REQUEST_MODE_SAME_ORIGIN,
-                             WebURLRequest::FetchRequestModeSameOrigin);
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_REQUEST_MODE_NO_CORS,
-                             WebURLRequest::FetchRequestModeNoCORS);
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_REQUEST_MODE_CORS,
-                             WebURLRequest::FetchRequestModeCORS);
-STATIC_ASSERT_MATCHING_ENUMS(
-    FETCH_REQUEST_MODE_CORS_WITH_FORCED_PREFLIGHT,
-    WebURLRequest::FetchRequestModeCORSWithForcedPreflight);
-
-FetchRequestMode GetFetchRequestMode(const WebURLRequest& request) {
-  return static_cast<FetchRequestMode>(request.fetchRequestMode());
-}
-
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_CREDENTIALS_MODE_OMIT,
-                             WebURLRequest::FetchCredentialsModeOmit);
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_CREDENTIALS_MODE_SAME_ORIGIN,
-                             WebURLRequest::FetchCredentialsModeSameOrigin);
-STATIC_ASSERT_MATCHING_ENUMS(FETCH_CREDENTIALS_MODE_INCLUDE,
-                             WebURLRequest::FetchCredentialsModeInclude);
-
-FetchCredentialsMode GetFetchCredentialsMode(const WebURLRequest& request) {
-  return static_cast<FetchCredentialsMode>(request.fetchCredentialsMode());
-}
-
-STATIC_ASSERT_MATCHING_ENUMS(FetchRedirectMode::FOLLOW_MODE,
-                             WebURLRequest::FetchRedirectModeFollow);
-STATIC_ASSERT_MATCHING_ENUMS(FetchRedirectMode::ERROR_MODE,
-                             WebURLRequest::FetchRedirectModeError);
-STATIC_ASSERT_MATCHING_ENUMS(FetchRedirectMode::MANUAL_MODE,
-                             WebURLRequest::FetchRedirectModeManual);
-
-FetchRedirectMode GetFetchRedirectMode(const WebURLRequest& request) {
-  return static_cast<FetchRedirectMode>(request.fetchRedirectMode());
-}
-
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_AUXILIARY,
-                             WebURLRequest::FrameTypeAuxiliary);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_NESTED,
-                             WebURLRequest::FrameTypeNested);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_NONE,
-                             WebURLRequest::FrameTypeNone);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,
-                             WebURLRequest::FrameTypeTopLevel);
-
-RequestContextFrameType GetRequestContextFrameType(
-    const WebURLRequest& request) {
-  return static_cast<RequestContextFrameType>(request.frameType());
-}
-
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_UNSPECIFIED,
-                             WebURLRequest::RequestContextUnspecified);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_AUDIO,
-                             WebURLRequest::RequestContextAudio);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_BEACON,
-                             WebURLRequest::RequestContextBeacon);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_CSP_REPORT,
-                             WebURLRequest::RequestContextCSPReport);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_DOWNLOAD,
-                             WebURLRequest::RequestContextDownload);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_EMBED,
-                             WebURLRequest::RequestContextEmbed);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_EVENT_SOURCE,
-                             WebURLRequest::RequestContextEventSource);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FAVICON,
-                             WebURLRequest::RequestContextFavicon);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FETCH,
-                             WebURLRequest::RequestContextFetch);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FONT,
-                             WebURLRequest::RequestContextFont);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FORM,
-                             WebURLRequest::RequestContextForm);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_FRAME,
-                             WebURLRequest::RequestContextFrame);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_HYPERLINK,
-                             WebURLRequest::RequestContextHyperlink);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_IFRAME,
-                             WebURLRequest::RequestContextIframe);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_IMAGE,
-                             WebURLRequest::RequestContextImage);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_IMAGE_SET,
-                             WebURLRequest::RequestContextImageSet);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_IMPORT,
-                             WebURLRequest::RequestContextImport);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_INTERNAL,
-                             WebURLRequest::RequestContextInternal);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_LOCATION,
-                             WebURLRequest::RequestContextLocation);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_MANIFEST,
-                             WebURLRequest::RequestContextManifest);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_OBJECT,
-                             WebURLRequest::RequestContextObject);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_PING,
-                             WebURLRequest::RequestContextPing);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_PLUGIN,
-                             WebURLRequest::RequestContextPlugin);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_PREFETCH,
-                             WebURLRequest::RequestContextPrefetch);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_SCRIPT,
-                             WebURLRequest::RequestContextScript);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_SERVICE_WORKER,
-                             WebURLRequest::RequestContextServiceWorker);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_SHARED_WORKER,
-                             WebURLRequest::RequestContextSharedWorker);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_SUBRESOURCE,
-                             WebURLRequest::RequestContextSubresource);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_STYLE,
-                             WebURLRequest::RequestContextStyle);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_TRACK,
-                             WebURLRequest::RequestContextTrack);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_VIDEO,
-                             WebURLRequest::RequestContextVideo);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_WORKER,
-                             WebURLRequest::RequestContextWorker);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_XML_HTTP_REQUEST,
-                             WebURLRequest::RequestContextXMLHttpRequest);
-STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_XSLT,
-                             WebURLRequest::RequestContextXSLT);
-
-RequestContextType GetRequestContextType(const WebURLRequest& request) {
-  return static_cast<RequestContextType>(request.requestContext());
-}
-
 void SetSecurityStyleAndDetails(const GURL& url,
                                 const std::string& security_info,
                                 WebURLResponse* response,
@@ -366,8 +237,8 @@ void SetSecurityStyleAndDetails(const GURL& url,
   blink::WebString key_exchange_string =
       blink::WebString::fromUTF8(key_exchange);
   blink::WebString mac_string = blink::WebString::fromUTF8(mac);
-  response->setSecurityDetails(protocol_string, cipher_string,
-                               key_exchange_string, mac_string,
+  response->setSecurityDetails(protocol_string, key_exchange_string,
+                               cipher_string, mac_string,
                                ssl_status.cert_id);
 }
 
@@ -599,12 +470,18 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   request_info.has_user_gesture = request.hasUserGesture();
   request_info.skip_service_worker = request.skipServiceWorker();
   request_info.should_reset_appcache = request.shouldResetAppCache();
-  request_info.fetch_request_mode = GetFetchRequestMode(request);
-  request_info.fetch_credentials_mode = GetFetchCredentialsMode(request);
-  request_info.fetch_redirect_mode = GetFetchRedirectMode(request);
-  request_info.fetch_request_context_type = GetRequestContextType(request);
-  request_info.fetch_frame_type = GetRequestContextFrameType(request);
+  request_info.fetch_request_mode =
+      GetFetchRequestModeForWebURLRequest(request);
+  request_info.fetch_credentials_mode =
+      GetFetchCredentialsModeForWebURLRequest(request);
+  request_info.fetch_redirect_mode =
+      GetFetchRedirectModeForWebURLRequest(request);
+  request_info.fetch_request_context_type =
+      GetRequestContextTypeForWebURLRequest(request);
+  request_info.fetch_frame_type =
+      GetRequestContextFrameTypeForWebURLRequest(request);
   request_info.extra_data = request.extraData();
+  request_info.report_raw_headers = request.reportRawHeaders();
 
   scoped_refptr<ResourceRequestBody> request_body =
       GetRequestBodyForWebURLRequest(request).get();
@@ -635,27 +512,11 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
   PopulateURLResponse(request_.url(), info, &response,
                       request_.reportRawHeaders());
 
-  // TODO(darin): We lack sufficient information to construct the actual
-  // request that resulted from the redirect.
-  WebURLRequest new_request(redirect_info.new_url);
-  new_request.setFirstPartyForCookies(
-      redirect_info.new_first_party_for_cookies);
-  new_request.setDownloadToFile(request_.downloadToFile());
-  new_request.setUseStreamOnResponse(request_.useStreamOnResponse());
-  new_request.setRequestContext(request_.requestContext());
-  new_request.setFrameType(request_.frameType());
-  new_request.setSkipServiceWorker(!info.was_fetched_via_service_worker);
-  new_request.setShouldResetAppCache(request_.shouldResetAppCache());
-  new_request.setFetchRequestMode(request_.fetchRequestMode());
-  new_request.setFetchCredentialsMode(request_.fetchCredentialsMode());
-
-  new_request.setHTTPReferrer(WebString::fromUTF8(redirect_info.new_referrer),
-                              referrer_policy_);
-
-  std::string old_method = request_.httpMethod().utf8();
-  new_request.setHTTPMethod(WebString::fromUTF8(redirect_info.new_method));
-  if (redirect_info.new_method == old_method)
-    new_request.setHTTPBody(request_.httpBody());
+  WebURLRequest new_request;
+  new_request.initialize();
+  PopulateURLRequestForRedirect(request_, redirect_info, referrer_policy_,
+                                !info.was_fetched_via_service_worker,
+                                &new_request);
 
   // Protect from deletion during call to willSendRequest.
   scoped_refptr<Context> protect(this);
@@ -1114,6 +975,35 @@ void WebURLLoaderImpl::PopulateURLResponse(const GURL& url,
     response->addHTTPHeaderField(WebString::fromLatin1(name),
                                  WebString::fromLatin1(value));
   }
+}
+
+void WebURLLoaderImpl::PopulateURLRequestForRedirect(
+    const blink::WebURLRequest& request,
+    const net::RedirectInfo& redirect_info,
+    blink::WebReferrerPolicy referrer_policy,
+    bool skip_service_worker,
+    blink::WebURLRequest* new_request) {
+  // TODO(darin): We lack sufficient information to construct the actual
+  // request that resulted from the redirect.
+  new_request->setURL(redirect_info.new_url);
+  new_request->setFirstPartyForCookies(
+      redirect_info.new_first_party_for_cookies);
+  new_request->setDownloadToFile(request.downloadToFile());
+  new_request->setUseStreamOnResponse(request.useStreamOnResponse());
+  new_request->setRequestContext(request.requestContext());
+  new_request->setFrameType(request.frameType());
+  new_request->setSkipServiceWorker(skip_service_worker);
+  new_request->setShouldResetAppCache(request.shouldResetAppCache());
+  new_request->setFetchRequestMode(request.fetchRequestMode());
+  new_request->setFetchCredentialsMode(request.fetchCredentialsMode());
+
+  new_request->setHTTPReferrer(WebString::fromUTF8(redirect_info.new_referrer),
+                              referrer_policy);
+
+  std::string old_method = request.httpMethod().utf8();
+  new_request->setHTTPMethod(WebString::fromUTF8(redirect_info.new_method));
+  if (redirect_info.new_method == old_method)
+    new_request->setHTTPBody(request.httpBody());
 }
 
 void WebURLLoaderImpl::loadSynchronously(const WebURLRequest& request,

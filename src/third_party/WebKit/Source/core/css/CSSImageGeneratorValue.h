@@ -50,15 +50,15 @@ struct SizeAndCount {
     int count;
 };
 
-typedef HashMap<const LayoutObject*, SizeAndCount> LayoutObjectSizeCountMap;
+using LayoutObjectSizeCountMap = HashMap<const LayoutObject*, SizeAndCount>;
 
 class CORE_EXPORT CSSImageGeneratorValue : public CSSValue {
 public:
     ~CSSImageGeneratorValue();
 
-    void addClient(LayoutObject*, const IntSize&);
-    void removeClient(LayoutObject*);
-    PassRefPtr<Image> image(LayoutObject*, const IntSize&);
+    void addClient(const LayoutObject*, const IntSize&);
+    void removeClient(const LayoutObject*);
+    PassRefPtr<Image> image(const LayoutObject*, const IntSize&);
 
     bool isFixedSize() const;
     IntSize fixedSize(const LayoutObject*);
@@ -68,12 +68,14 @@ public:
 
     void loadSubimages(Document*);
 
+    PassRefPtrWillBeRawPtr<CSSImageGeneratorValue> valueWithURLsMadeAbsolute();
+
     DEFINE_INLINE_TRACE_AFTER_DISPATCH() { CSSValue::traceAfterDispatch(visitor); }
 
 protected:
     explicit CSSImageGeneratorValue(ClassType);
 
-    Image* getImage(LayoutObject*, const IntSize&);
+    Image* getImage(const LayoutObject*, const IntSize&);
     void putImage(const IntSize&, PassRefPtr<Image>);
     const LayoutObjectSizeCountMap& clients() const { return m_clients; }
 

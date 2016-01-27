@@ -512,6 +512,14 @@ bool WebAXObject::ariaFlowTo(WebVector<WebAXObject>& flowToElements) const
     return true;
 }
 
+bool WebAXObject::isEditable() const
+{
+    if (isDetached())
+        return false;
+
+    return m_private->isEditable();
+}
+
 bool WebAXObject::isMultiline() const
 {
     if (isDetached())
@@ -711,7 +719,7 @@ WebAXObject WebAXObject::hitTest(const WebPoint& point) const
         return WebAXObject();
 
     IntPoint contentsPoint = m_private->documentFrameView()->soonToBeRemovedUnscaledViewportToContents(point);
-    RefPtrWillBeRawPtr<AXObject> hit = m_private->accessibilityHitTest(contentsPoint);
+    AXObject* hit = m_private->accessibilityHitTest(contentsPoint);
 
     if (hit)
         return WebAXObject(hit);
@@ -1104,8 +1112,8 @@ WebString WebAXObject::name(WebAXNameFrom& outNameFrom, WebVector<WebAXObject>& 
         return WebString();
 
     AXNameFrom nameFrom = AXNameFromAttribute;
-    WillBeHeapVector<RawPtrWillBeMember<AXObject>> nameObjects;
-    WebString result = m_private->name(nameFrom, nameObjects);
+    HeapVector<Member<AXObject>> nameObjects;
+    WebString result = m_private->name(nameFrom, &nameObjects);
     outNameFrom = static_cast<WebAXNameFrom>(nameFrom);
 
     WebVector<WebAXObject> webNameObjects(nameObjects.size());
@@ -1122,8 +1130,8 @@ WebString WebAXObject::description(WebAXNameFrom nameFrom, WebAXDescriptionFrom&
         return WebString();
 
     AXDescriptionFrom descriptionFrom;
-    WillBeHeapVector<RawPtrWillBeMember<AXObject>> descriptionObjects;
-    String result = m_private->description(static_cast<AXNameFrom>(nameFrom), descriptionFrom, descriptionObjects);
+    HeapVector<Member<AXObject>> descriptionObjects;
+    String result = m_private->description(static_cast<AXNameFrom>(nameFrom), descriptionFrom, &descriptionObjects);
     outDescriptionFrom = static_cast<WebAXDescriptionFrom>(descriptionFrom);
 
     WebVector<WebAXObject> webDescriptionObjects(descriptionObjects.size());
@@ -1239,7 +1247,7 @@ WebString WebAXObject::computedStyleDisplay() const
     if (!computedStyle)
         return WebString();
 
-    return WebString(CSSPrimitiveValue::create(computedStyle->display())->getStringValue());
+    return WebString(CSSPrimitiveValue::create(computedStyle->display())->cssText());
 }
 
 bool WebAXObject::accessibilityIsIgnored() const
@@ -1434,7 +1442,7 @@ unsigned WebAXObject::cellColumnIndex() const
     if (!m_private->isTableCell())
         return 0;
 
-    pair<unsigned, unsigned> columnRange;
+    std::pair<unsigned, unsigned> columnRange;
     toAXTableCell(m_private.get())->columnIndexRange(columnRange);
     return columnRange.first;
 }
@@ -1447,7 +1455,7 @@ unsigned WebAXObject::cellColumnSpan() const
     if (!m_private->isTableCell())
         return 0;
 
-    pair<unsigned, unsigned> columnRange;
+    std::pair<unsigned, unsigned> columnRange;
     toAXTableCell(m_private.get())->columnIndexRange(columnRange);
     return columnRange.second;
 }
@@ -1460,7 +1468,7 @@ unsigned WebAXObject::cellRowIndex() const
     if (!m_private->isTableCell())
         return 0;
 
-    pair<unsigned, unsigned> rowRange;
+    std::pair<unsigned, unsigned> rowRange;
     toAXTableCell(m_private.get())->rowIndexRange(rowRange);
     return rowRange.first;
 }
@@ -1473,7 +1481,7 @@ unsigned WebAXObject::cellRowSpan() const
     if (!m_private->isTableCell())
         return 0;
 
-    pair<unsigned, unsigned> rowRange;
+    std::pair<unsigned, unsigned> rowRange;
     toAXTableCell(m_private.get())->rowIndexRange(rowRange);
     return rowRange.second;
 }
@@ -1603,18 +1611,18 @@ void WebAXObject::scrollToGlobalPoint(const WebPoint& point) const
         m_private->scrollToGlobalPoint(point);
 }
 
-WebAXObject::WebAXObject(const PassRefPtrWillBeRawPtr<AXObject>& object)
+WebAXObject::WebAXObject(AXObject* object)
     : m_private(object)
 {
 }
 
-WebAXObject& WebAXObject::operator=(const PassRefPtrWillBeRawPtr<AXObject>& object)
+WebAXObject& WebAXObject::operator=(AXObject* object)
 {
     m_private = object;
     return *this;
 }
 
-WebAXObject::operator PassRefPtrWillBeRawPtr<AXObject>() const
+WebAXObject::operator AXObject*() const
 {
     return m_private.get();
 }

@@ -29,6 +29,7 @@
 #include "core/dom/Element.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
+#include "core/editing/EphemeralRange.h"
 #include "core/editing/iterators/SearchBuffer.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 #include "core/editing/spellcheck/SpellChecker.h"
@@ -92,7 +93,7 @@ void BBWindowHooks::appendTextContent(Node *node, StringBuilder& content,
 
 bool BBWindowHooks::isBlock(Node* node)
 {
-    return blink::isBlock(node);
+    return blink::isEnclosingBlock(node);
 }
 
 String BBWindowHooks::getPlainText(Node* node, const String& excluder, const String& mask)
@@ -117,7 +118,7 @@ bool BBWindowHooks::checkSpellingForRange(Range* range)
     }
 
     LocalFrame *frame = range->ownerDocument().frame();
-    VisibleSelection s(range);
+    VisibleSelection s(range->startPosition(), range->endPosition());
     frame->spellChecker().clearMisspellingsAndBadGrammar(s);
     frame->spellChecker().markMisspellingsAndBadGrammar(s, false, s);
     return true;
@@ -172,8 +173,8 @@ bool BBWindowHooks::checkSpellingForNode(Node* node)
 
 ClientRect* BBWindowHooks::getAbsoluteCaretRectAtOffset(Node* node, long offset)
 {
-    VisiblePosition visiblePos = VisiblePosition(Position(node, offset));
-    IntRect rc = visiblePos.absoluteCaretBounds();
+    VisiblePosition visiblePos = createVisiblePosition(Position(node, offset));
+    IntRect rc = absoluteCaretBoundsOf(visiblePos);
     return ClientRect::create(rc);
 }
 

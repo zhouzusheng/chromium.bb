@@ -35,7 +35,7 @@
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebString.h"
-#include "public/web/WebServiceWorkerContextProxy.h"
+#include "public/web/modules/serviceworker/WebServiceWorkerContextProxy.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 
@@ -71,7 +71,7 @@ public:
     ~ServiceWorkerGlobalScopeProxy() override;
 
     // WebServiceWorkerContextProxy overrides:
-    void setRegistration(WebServiceWorkerRegistration*) override;
+    void setRegistration(WebPassOwnPtr<WebServiceWorkerRegistration::Handle>) override;
     void dispatchActivateEvent(int) override;
     void dispatchCrossOriginMessageEvent(const WebCrossOriginServiceWorkerClient&, const WebString& message, const WebMessagePortChannelArray&) override;
     void dispatchFetchEvent(int, const WebServiceWorkerRequest&) override;

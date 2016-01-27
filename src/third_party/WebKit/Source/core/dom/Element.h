@@ -62,6 +62,7 @@ class MutableStylePropertySet;
 class PropertySetCSSStyleDeclaration;
 class PseudoElement;
 class ScrollState;
+class ScrollStateCallback;
 class ScrollToOptions;
 class ShadowRoot;
 class ShadowRootInit;
@@ -172,9 +173,6 @@ public:
     void scrollIntoView(bool alignToTop = true);
     void scrollIntoViewIfNeeded(bool centerIfNeeded = true);
 
-    void distributeScroll(ScrollState&);
-    void applyScroll(ScrollState&);
-
     int offsetLeft();
     int offsetTop();
     int offsetWidth();
@@ -185,12 +183,12 @@ public:
     int clientTop();
     int clientWidth();
     int clientHeight();
-    virtual double scrollLeft();
-    virtual double scrollTop();
-    virtual void setScrollLeft(double);
-    virtual void setScrollTop(double);
-    virtual int scrollWidth();
-    virtual int scrollHeight();
+    double scrollLeft();
+    double scrollTop();
+    void setScrollLeft(double);
+    void setScrollTop(double);
+    int scrollWidth();
+    int scrollHeight();
 
     void scrollBy(double x, double y);
     virtual void scrollBy(const ScrollToOptions&);
@@ -390,6 +388,15 @@ public:
     virtual void focus(bool restorePreviousSelection = true, WebFocusType = WebFocusTypeNone, InputDeviceCapabilities* sourceCapabilities = nullptr);
     virtual void updateFocusAppearance(bool restorePreviousSelection);
     virtual void blur();
+
+    void setDistributeScroll(ScrollStateCallback*, String nativeScrollBehavior);
+    void nativeDistributeScroll(ScrollState&);
+    void setApplyScroll(ScrollStateCallback*, String nativeScrollBehavior);
+    void nativeApplyScroll(ScrollState&);
+
+    void callDistributeScroll(ScrollState&);
+    void callApplyScroll(ScrollState&);
+
     // Whether this element can receive focus at all. Most elements are not
     // focusable but some elements, such as form controls and links, are. Unlike
     // layoutObjectIsFocusable(), this method may be called when layout is not up to
@@ -570,12 +577,12 @@ protected:
 
     virtual void parserDidSetAttributes() { }
 
+private:
     void scrollLayoutBoxBy(const ScrollToOptions&);
     void scrollLayoutBoxTo(const ScrollToOptions&);
     void scrollFrameBy(const ScrollToOptions&);
     void scrollFrameTo(const ScrollToOptions&);
 
-private:
     bool hasElementFlag(ElementFlags mask) const { return hasRareData() && hasElementFlagInternal(mask); }
     void setElementFlag(ElementFlags, bool value = true);
     void clearElementFlag(ElementFlags);
@@ -807,7 +814,7 @@ inline Node::InsertionNotificationRequest Node::insertedInto(ContainerNode* inse
 {
     ASSERT(!childNeedsStyleInvalidation());
     ASSERT(!needsStyleInvalidation());
-    ASSERT(insertionPoint->inDocument() || isContainerNode());
+    ASSERT(insertionPoint->inDocument() || insertionPoint->isInShadowTree() || isContainerNode());
     if (insertionPoint->inDocument()) {
         setFlag(InDocumentFlag);
         insertionPoint->document().incrementNodeCount();

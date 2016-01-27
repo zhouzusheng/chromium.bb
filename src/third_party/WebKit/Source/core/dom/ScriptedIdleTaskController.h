@@ -6,7 +6,7 @@
 #define ScriptedIdleTaskController_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "core/dom/IdleCallbackDeadline.h"
+#include "core/dom/IdleDeadline.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
@@ -17,14 +17,14 @@ namespace blink {
 
 class ExecutionContext;
 class IdleRequestCallback;
-class DocumentLoadTiming;
+class IdleRequestOptions;
 
 class ScriptedIdleTaskController : public RefCountedWillBeGarbageCollectedFinalized<ScriptedIdleTaskController>, public ActiveDOMObject {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ScriptedIdleTaskController);
 public:
-    static PassRefPtrWillBeRawPtr<ScriptedIdleTaskController> create(ExecutionContext* context, const DocumentLoadTiming& timing)
+    static PassRefPtrWillBeRawPtr<ScriptedIdleTaskController> create(ExecutionContext* context)
     {
-        return adoptRefWillBeNoop(new ScriptedIdleTaskController(context, timing));
+        return adoptRefWillBeNoop(new ScriptedIdleTaskController(context));
     }
     ~ScriptedIdleTaskController();
 
@@ -32,7 +32,7 @@ public:
 
     using CallbackId = int;
 
-    int registerCallback(IdleRequestCallback*, double timeoutMillis);
+    int registerCallback(IdleRequestCallback*, const IdleRequestOptions&);
     void cancelCallback(CallbackId);
 
     // ActiveDOMObject interface.
@@ -41,14 +41,13 @@ public:
     void resume() override;
     bool hasPendingActivity() const override;
 
-    void callbackFired(CallbackId, double deadlineSeconds, IdleCallbackDeadline::CallbackType);
+    void callbackFired(CallbackId, double deadlineSeconds, IdleDeadline::CallbackType);
 
 private:
-    ScriptedIdleTaskController(ExecutionContext*, const DocumentLoadTiming&);
+    explicit ScriptedIdleTaskController(ExecutionContext*);
 
-    void runCallback(CallbackId, double deadlineMillis, IdleCallbackDeadline::CallbackType);
+    void runCallback(CallbackId, double deadlineSeconds, IdleDeadline::CallbackType);
 
-    const DocumentLoadTiming& m_timing;
     WebScheduler* m_scheduler; // Not owned.
     PersistentHeapHashMapWillBeHeapHashMap<CallbackId, Member<IdleRequestCallback>> m_callbacks;
     Vector<CallbackId> m_pendingTimeouts;

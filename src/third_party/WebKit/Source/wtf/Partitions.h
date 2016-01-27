@@ -39,6 +39,10 @@ namespace WTF {
 
 class WTF_EXPORT Partitions {
 public:
+    // Name of allocator used by tracing for marking sub-allocations while take
+    // memory snapshots.
+    static const char* const kAllocatedObjectPoolName;
+
     static void initialize();
     // TODO(bashi): Remove this function and make initialize() take
     // HistogramEnumerationFunction when we can make sure that WTF::initialize()
@@ -117,6 +121,8 @@ public:
     {
         return partitionAllocActualSize(bufferPartition(), n);
     }
+
+    static void handleOutOfMemory();
 
 private:
     static int s_initializationLock;

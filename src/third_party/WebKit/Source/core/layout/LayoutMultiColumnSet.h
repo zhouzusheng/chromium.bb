@@ -153,7 +153,7 @@ public:
 
     LayoutRect fragmentsBoundingBox(const LayoutRect& boundingBoxInFlowThread) const;
 
-    void collectLayerFragments(DeprecatedPaintLayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect);
+    void collectLayerFragments(PaintLayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect);
 
     LayoutUnit columnGap() const;
 
@@ -176,7 +176,7 @@ private:
     void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
     PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
-    void paintObject(const PaintInfo&, const LayoutPoint& paintOffset) override;
+    void paintObject(const PaintInfo&, const LayoutPoint& paintOffset) const override;
 
     void addOverflowFromChildren() override;
 

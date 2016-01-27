@@ -130,7 +130,7 @@ class CC_EXPORT RenderSurfaceImpl {
 
   int OwningLayerId() const;
   bool HasReplica() const;
-  gfx::Transform ReplicaDrawTransform() const;
+  const LayerImpl* ReplicaLayer() const;
 
   void ResetPropertyChangedFlag() { surface_property_changed_ = false; }
   bool SurfacePropertyChanged() const;

@@ -34,24 +34,13 @@
 #include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/events/CustomEvent.h"
 #include "public/platform/WebString.h"
-#include "public/web/WebSerializedScriptValue.h"
 
 namespace blink {
 
-void WebDOMCustomEvent::initCustomEvent(const WebString& type, bool canBubble, bool cancelable, const WebSerializedScriptValue& webSerializedScriptValue)
+WebDOMCustomEvent::WebDOMCustomEvent(const WebString& type, bool canBubble, bool cancelable, const WebSerializedScriptValue& messageData)
+    : WebDOMEvent(CustomEvent::create())
 {
-    ASSERT(m_private.get());
-    RefPtr<SerializedScriptValue> serializedScriptValue;
-    serializedScriptValue = webSerializedScriptValue;
-    unwrap<CustomEvent>()->initCustomEvent(type, canBubble, cancelable, serializedScriptValue.get());
-}
-
-// static
-WebDOMCustomEvent WebDOMCustomEvent::create()
-{
-    WebDOMCustomEvent result;
-    result.m_private = CustomEvent::create();
-    return result;
+    unwrap<CustomEvent>()->initCustomEvent(type, canBubble, cancelable, messageData);
 }
 
 } // namespace blink

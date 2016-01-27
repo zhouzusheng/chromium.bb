@@ -9,11 +9,11 @@
 #define GrFragmentProcessor_DEFINED
 
 #include "GrProcessor.h"
-#include "GrStagedProcessor.h"
 
 class GrCoordTransform;
 class GrGLSLCaps;
 class GrGLFragmentProcessor;
+class GrInvariantOutput;
 class GrProcessorKeyBuilder;
 
 /** Provides custom fragment shader code. Fragment processors receive an input color (vec4f) and
@@ -23,18 +23,52 @@ class GrProcessorKeyBuilder;
  */
 class GrFragmentProcessor : public GrProcessor {
 public:
+    /**
+    *  In many instances (e.g. SkShader::asFragmentProcessor() implementations) it is desirable to
+    *  only consider the input color's alpha. However, there is a competing desire to have reusable
+    *  GrFragmentProcessor subclasses that can be used in other scenarios where the entire input
+    *  color is considered. This function exists to filter the input color and pass it to a FP. It
+    *  does so by returning a parent FP that multiplies the passed in FPs output by the parent's
+    *  input alpha. The passed in FP will not receive an input color.
+    */
+    static const GrFragmentProcessor* MulOutputByInputAlpha(const GrFragmentProcessor*);
+
+    /**
+     *  Similar to the above but it modulates the output r,g,b of the child processor by the input
+     *  rgb and then multiplies all the components by the input alpha. This effectively modulates
+     *  the child processor's premul color by a unpremul'ed input and produces a premul output
+     */
+    static const GrFragmentProcessor* MulOutputByInputUnpremulColor(const GrFragmentProcessor*);
+
+    /**
+     *  Returns a parent fragment processor that adopts the passed fragment processor as a child.
+     *  The parent will ignore its input color and instead feed the passed in color as input to the
+     *  child.
+     */
+    static const GrFragmentProcessor* OverrideInput(const GrFragmentProcessor*, GrColor);
+
+    /**
+     * Returns a fragment processor that runs the passed in array of fragment processors in a
+     * series. The original input is passed to the first, the first's output is passed to the
+     * second, etc. The output of the returned processor is the output of the last processor of the
+     * series.
+     */
+    static const GrFragmentProcessor* RunInSeries(const GrFragmentProcessor*[], int cnt);
+
     GrFragmentProcessor()
         : INHERITED()
         , fUsesLocalCoords(false)
         , fNumTexturesExclChildren(0)
         , fNumTransformsExclChildren(0) {}
 
+    ~GrFragmentProcessor() override;
+
     GrGLFragmentProcessor* createGLInstance() const;
 
     void getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
         this->onGetGLProcessorKey(caps, b);
         for (int i = 0; i < fChildProcessors.count(); ++i) {
-            fChildProcessors[i].processor()->getGLProcessorKey(caps, b);
+            fChildProcessors[i]->getGLProcessorKey(caps, b);
         }
     }
 
@@ -60,9 +94,7 @@ public:
 
     int numChildProcessors() const { return fChildProcessors.count(); }
 
-    const GrFragmentProcessor& childProcessor(int index) const {
-        return *fChildProcessors[index].processor();
-    }
+    const GrFragmentProcessor& childProcessor(int index) const { return *fChildProcessors[index]; }
 
     /** Do any of the coordtransforms for this processor require local coords? */
     bool usesLocalCoords() const { return fUsesLocalCoords; }
@@ -83,7 +115,9 @@ public:
      * inout to indicate known values of its output. A component of the color member only has
      * meaning if the corresponding bit in validFlags is set.
      */
-    void computeInvariantOutput(GrInvariantOutput* inout) const;
+    void computeInvariantOutput(GrInvariantOutput* inout) const {
+        this->onComputeInvariantOutput(inout);
+    }
 
 protected:
     void addTextureAccess(const GrTextureAccess* textureAccess) override;
@@ -127,6 +161,8 @@ protected:
     virtual void onComputeInvariantOutput(GrInvariantOutput* inout) const = 0;
 
 private:
+    void notifyRefCntIsZero() const final;
+
     /** Returns a new instance of the appropriate *GL* implementation class
         for the given GrFragmentProcessor; caller is responsible for deleting
         the object. */
@@ -176,7 +212,9 @@ private:
     int                                          fNumTexturesExclChildren;
     int                                          fNumTransformsExclChildren;
 
-    SkTArray<GrFragmentStage, false>             fChildProcessors;
+    // TODO: These must convert their processors to pending-execution refs when the parent is
+    // converted (do this automatically in GrProgramElement?).
+    SkTArray<const GrFragmentProcessor*, true>   fChildProcessors;
 
     typedef GrProcessor INHERITED;
 };

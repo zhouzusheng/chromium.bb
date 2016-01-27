@@ -40,8 +40,8 @@ public:
              (sizes[2].fHeight != sizes[0].fHeight)) ?
             GrTextureParams::kBilerp_FilterMode :
             GrTextureParams::kNone_FilterMode;
-        return SkNEW_ARGS(YUVtoRGBEffect, (procDataManager, yTexture, uTexture, vTexture, yuvMatrix,
-                                           uvFilterMode, colorSpace));
+        return new YUVtoRGBEffect(procDataManager, yTexture, uTexture, vTexture, yuvMatrix,
+                                  uvFilterMode, colorSpace);
     }
 
     const char* name() const override { return "YUV to RGB"; }
@@ -64,7 +64,7 @@ public:
         virtual void emitCode(EmitArgs& args) override {
             GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
 
-            const char* yuvMatrix   = NULL;
+            const char* yuvMatrix   = nullptr;
             fMatrixUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                              kMat44f_GrSLType, kDefault_GrSLPrecision,
                                              "YUVMatrix", &yuvMatrix);
@@ -123,9 +123,7 @@ private:
         this->addTextureAccess(&fVAccess);
     }
 
-    GrGLFragmentProcessor* onCreateGLInstance() const override {
-        return SkNEW_ARGS(GLProcessor, (*this));
-    }
+    GrGLFragmentProcessor* onCreateGLInstance() const override { return new GLProcessor(*this); }
 
     virtual void onGetGLProcessorKey(const GrGLSLCaps& caps,
                                      GrProcessorKeyBuilder* b) const override {

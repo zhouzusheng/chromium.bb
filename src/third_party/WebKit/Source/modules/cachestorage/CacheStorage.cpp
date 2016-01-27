@@ -9,11 +9,12 @@
 #include "bindings/core/v8/ScriptState.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "modules/cachestorage/CacheStorageError.h"
 #include "modules/fetch/Request.h"
 #include "modules/fetch/Response.h"
-#include "public/platform/WebServiceWorkerCacheError.h"
-#include "public/platform/WebServiceWorkerCacheStorage.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerCacheError.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerCacheStorage.h"
 
 namespace blink {
 
@@ -32,11 +33,21 @@ bool commonChecks(ScriptState* scriptState, ExceptionState& exceptionState)
         return false;
 
     String errorMessage;
-    if (!executionContext->isPrivilegedContext(errorMessage)) {
+    if (!executionContext->isSecureContext(errorMessage)) {
         exceptionState.throwSecurityError(errorMessage);
         return false;
     }
     return true;
+}
+
+void checkCacheQueryOptions(const CacheQueryOptions& options, ExecutionContext* context)
+{
+    if (options.ignoreSearch())
+        context->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "Cache.match() does not support 'ignoreSearch' option yet. See http://crbug.com/520784"));
+    if (options.ignoreMethod())
+        context->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "Cache.match() does not support 'ignoreMethod' option yet. See http://crbug.com/482256"));
+    if (options.ignoreVary())
+        context->addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, "Cache.match() does not support 'ignoreVary' option yet. See http://crbug.com/499216"));
 }
 
 }
@@ -203,7 +214,7 @@ private:
     Persistent<ScriptPromiseResolver> m_resolver;
 };
 
-CacheStorage* CacheStorage::create(WeakPtr<GlobalFetch::ScopedFetcher> fetcher, WebServiceWorkerCacheStorage* webCacheStorage)
+CacheStorage* CacheStorage::create(WeakPtrWillBeRawPtr<GlobalFetch::ScopedFetcher> fetcher, WebServiceWorkerCacheStorage* webCacheStorage)
 {
     return new CacheStorage(fetcher, adoptPtr(webCacheStorage));
 }
@@ -301,6 +312,7 @@ ScriptPromise CacheStorage::matchImpl(ScriptState* scriptState, const Request* r
 {
     WebServiceWorkerRequest webRequest;
     request->populateWebServiceWorkerRequest(webRequest);
+    checkCacheQueryOptions(options, scriptState->executionContext());
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     const ScriptPromise promise = resolver->promise();
@@ -313,7 +325,7 @@ ScriptPromise CacheStorage::matchImpl(ScriptState* scriptState, const Request* r
     return promise;
 }
 
-CacheStorage::CacheStorage(WeakPtr<GlobalFetch::ScopedFetcher> fetcher, PassOwnPtr<WebServiceWorkerCacheStorage> webCacheStorage)
+CacheStorage::CacheStorage(WeakPtrWillBeRawPtr<GlobalFetch::ScopedFetcher> fetcher, PassOwnPtr<WebServiceWorkerCacheStorage> webCacheStorage)
     : m_scopedFetcher(fetcher)
     , m_webCacheStorage(webCacheStorage)
 {
@@ -330,6 +342,7 @@ void CacheStorage::dispose()
 
 DEFINE_TRACE(CacheStorage)
 {
+    visitor->trace(m_scopedFetcher);
     visitor->trace(m_nameToCacheMap);
 }
 

@@ -15,31 +15,29 @@
 #include <vector>
 
 #include "webrtc/call.h"
+#include "webrtc/call/transport_adapter.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/video/encoded_frame_callback_adapter.h"
 #include "webrtc/video/send_statistics_proxy.h"
-#include "webrtc/video/transport_adapter.h"
 #include "webrtc/video/video_capture_input.h"
 #include "webrtc/video_receive_stream.h"
 #include "webrtc/video_send_stream.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 
 namespace webrtc {
 
 class ChannelGroup;
-class CpuOveruseObserver;
 class ProcessThread;
 class ViEChannel;
 class ViEEncoder;
 
 namespace internal {
 
-class VideoSendStream : public webrtc::VideoSendStream {
+class VideoSendStream : public webrtc::VideoSendStream,
+                        public webrtc::CpuOveruseObserver {
  public:
-  VideoSendStream(newapi::Transport* transport,
-                  CpuOveruseObserver* overuse_observer,
-                  int num_cpu_cores,
+  VideoSendStream(int num_cpu_cores,
                   ProcessThread* module_process_thread,
                   ChannelGroup* channel_group,
                   int channel_id,
@@ -59,6 +57,10 @@ class VideoSendStream : public webrtc::VideoSendStream {
   VideoCaptureInput* Input() override;
   bool ReconfigureVideoEncoder(const VideoEncoderConfig& config) override;
   Stats GetStats() override;
+
+  // webrtc::CpuOveruseObserver implementation.
+  void OveruseDetected() override;
+  void NormalUsage() override;
 
   typedef std::map<uint32_t, RtpState> RtpStateMap;
   RtpStateMap GetRtpStates() const;

@@ -108,14 +108,14 @@ private:
     RefPtr<WorkerThread> m_workerThread;
     RefPtr<WorkerLoaderProxy> m_loaderProxy;
     OwnPtr<ServiceWorkerGlobalScopeProxy> m_workerGlobalScopeProxy;
-    OwnPtr<WorkerInspectorProxy> m_workerInspectorProxy;
+    OwnPtrWillBePersistent<WorkerInspectorProxy> m_workerInspectorProxy;
 
     // 'shadow page' - created to proxy loading requests from the worker.
     // Both WebView and WebFrame objects are close()'ed (where they're
     // deref'ed) when this EmbeddedWorkerImpl is destructed, therefore they
     // are guaranteed to exist while this object is around.
     WebView* m_webView;
-    WebLocalFrameImpl* m_mainFrame;
+    RefPtrWillBePersistent<WebLocalFrameImpl> m_mainFrame;
 
     bool m_loadingShadowPage;
     bool m_askedToTerminate;

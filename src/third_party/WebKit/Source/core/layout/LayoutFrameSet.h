@@ -34,6 +34,7 @@ class MouseEvent;
 enum FrameEdge { LeftFrameEdge, RightFrameEdge, TopFrameEdge, BottomFrameEdge };
 
 struct FrameEdgeInfo {
+    STACK_ALLOCATED();
     FrameEdgeInfo(bool preventResize = false, bool allowBorder = true)
         : m_preventResize(4)
         , m_allowBorder(4)
@@ -79,6 +80,7 @@ public:
     HTMLFrameSetElement* frameSet() const;
 
     class GridAxis {
+        DISALLOW_ALLOCATION();
         WTF_MAKE_NONCOPYABLE(GridAxis);
     public:
         GridAxis();
@@ -92,8 +94,8 @@ public:
         int m_splitResizeOffset;
     };
 
-    const GridAxis& rows() { return m_rows; }
-    const GridAxis& columns() { return m_cols; }
+    const GridAxis& rows() const { return m_rows; }
+    const GridAxis& columns() const { return m_cols; }
 
     const char* name() const override { return "LayoutFrameSet"; }
 
@@ -106,7 +108,7 @@ private:
     bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectFrameSet || LayoutBox::isOfType(type); }
 
     void layout() override;
-    void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
     void computePreferredLogicalWidths() override;
     bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
     CursorDirective getCursor(const LayoutPoint&, Cursor&) const override;

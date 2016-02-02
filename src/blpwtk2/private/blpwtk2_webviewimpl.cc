@@ -401,7 +401,9 @@ void WebViewImpl::takeKeyboardFocus()
 {
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
-    d_widget->focus();
+    if (d_widget) {
+        d_widget->focus();
+    }
 }
 
 void WebViewImpl::setLogicalFocus(bool focused)

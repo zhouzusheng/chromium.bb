@@ -146,7 +146,9 @@ void TableCellPainter::paintBackgroundsBehindCell(const PaintInfo& paintInfo, co
     if (!tableElt->collapseBorders() && m_layoutTableCell.style()->emptyCells() == HIDE && !m_layoutTableCell.firstChild())
         return;
 
-    Color c = backgroundObject->resolveColor(CSSPropertyBackgroundColor);
+    Color c = m_layoutTableCell.isFullySelected()
+        ? m_layoutTableCell.selectionBackgroundColor()
+        : backgroundObject->resolveColor(CSSPropertyBackgroundColor);
     const FillLayer& bgLayer = backgroundObject->style()->backgroundLayers();
 
     LayoutRect paintRect = paintBounds(paintOffset, backgroundObject != &m_layoutTableCell ? AddOffsetFromParent : DoNotAddOffsetFromParent);

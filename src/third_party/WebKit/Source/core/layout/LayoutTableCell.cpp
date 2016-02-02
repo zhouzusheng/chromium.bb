@@ -27,6 +27,8 @@
 
 #include "core/HTMLNames.h"
 #include "core/css/StylePropertySet.h"
+#include "core/editing/FrameSelection.h"
+#include "core/editing/VisiblePosition.h"
 #include "core/html/HTMLTableCellElement.h"
 #include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutTableCol.h"
@@ -52,6 +54,7 @@ static_assert(sizeof(CollapsedBorderValue) == 8, "CollapsedBorderValue should st
 LayoutTableCell::LayoutTableCell(Element* element)
     : LayoutBlockFlow(element)
     , m_column(unsetColumnIndex)
+    , m_isFullySelected(false)
     , m_cellWidthChanged(false)
     , m_intrinsicPaddingBefore(0)
     , m_intrinsicPaddingAfter(0)
@@ -224,6 +227,42 @@ void LayoutTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth, SubtreeLa
 
     setLogicalWidth(tableLayoutLogicalWidth);
     setCellWidthChanged(true);
+}
+
+void LayoutTableCell::setSelectionState(SelectionState state)
+{
+    LayoutBlockFlow::setSelectionState(state);
+
+    if (!node() || !node()->document().frame()) {
+        m_isFullySelected = false;
+        return;
+    }
+
+    // Let's get back the *actual* selection state.
+    //
+    // NOTE: After calling 'setSelectionState(state)', the actual
+    //       'selectionState()' might be different from 'state'.
+    //       See the logic in 'LayoutBoxModelObject::setSelectionState'.
+    state = selectionState();
+
+    if (SelectionStart == state || SelectionBoth == state) {
+        VisiblePosition selectionStart = node()->document().frame()->selection().selection().visibleStart();
+        VisiblePosition firstPos = createVisiblePosition(firstPositionInNode(node()), TextAffinity::Downstream);
+        if (selectionStart.deepEquivalent() != firstPos.deepEquivalent()) {
+            m_isFullySelected = false;
+            return;
+        }
+    }
+    if (SelectionEnd == state || SelectionBoth == state) {
+        VisiblePosition selectionEnd = node()->document().frame()->selection().selection().visibleEnd();
+        VisiblePosition lastPos = createVisiblePosition(lastPositionInNode(node()), TextAffinity::Upstream);
+        if (selectionEnd.deepEquivalent() != lastPos.deepEquivalent()) {
+            m_isFullySelected = false;
+            return;
+        }
+    }
+
+    m_isFullySelected = (SelectionNone != state);
 }
 
 void LayoutTableCell::layout()

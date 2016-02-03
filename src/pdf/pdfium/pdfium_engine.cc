@@ -616,6 +616,11 @@ void TearDownV8() {
 }  // namespace
 
 bool InitializeSDK() {
+  if (g_isolate_holder) {
+    g_isolate_holder->isolate()->Enter();
+    return true;
+  }
+
   SetUpV8();
 
   FPDF_LIBRARY_CONFIG config;
@@ -636,8 +641,10 @@ bool InitializeSDK() {
 }
 
 void ShutdownSDK() {
-  TearDownV8();
-  FPDF_DestroyLibrary();
+  g_isolate_holder->isolate()->Exit();
+
+  //TearDownV8();
+  //FPDF_DestroyLibrary();
 }
 
 PDFEngine* PDFEngine::Create(PDFEngine::Client* client) {

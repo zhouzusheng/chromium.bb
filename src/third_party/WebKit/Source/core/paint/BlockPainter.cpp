@@ -11,6 +11,7 @@
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutFlexibleBox.h"
 #include "core/layout/LayoutInline.h"
+#include "core/layout/LayoutTableCell.h"
 #include "core/layout/api/LineLayoutBox.h"
 #include "core/page/Page.h"
 #include "core/paint/BoxClipper.h"
@@ -158,7 +159,7 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
 
     if ((paintPhase == PaintPhaseBlockBackground || paintPhase == PaintPhaseChildBlockBackground)
         && m_layoutBlock.style()->visibility() == VISIBLE
-        && m_layoutBlock.hasBoxDecorationBackground())
+        && (m_layoutBlock.hasBoxDecorationBackground() || (m_layoutBlock.isTableCell() && toLayoutTableCell(m_layoutBlock).isFullySelected())))
         m_layoutBlock.paintBoxDecorationBackground(paintInfo, paintOffset);
 
     if (paintPhase == PaintPhaseMask && m_layoutBlock.style()->visibility() == VISIBLE) {

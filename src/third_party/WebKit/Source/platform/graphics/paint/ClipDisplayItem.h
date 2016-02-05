@@ -30,8 +30,8 @@ public:
         m_roundedRectClips.swap(roundedRectClips);
     }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
 
 private:
 #ifndef NDEBUG
@@ -58,8 +58,8 @@ public:
         ASSERT(isEndClipType(type));
     }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
 
 private:
 #if ENABLE(ASSERT)

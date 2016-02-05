@@ -92,6 +92,13 @@ using blink::WebTextDirection;
 namespace content {
 namespace {
 
+// The amount of time after a mouse wheel event is sent to the delegate
+// OnUserInteraction method before another mouse wheel event will be sent. This
+// interval is used by the Blink EventHandler in its orthogonal heuristic for
+// detecting the end of a scroll event (if no event has been seen in 0.1
+// seconds, send an end scroll).
+const double kMouseWheelCoalesceIntervalInSeconds = 0.1;
+
 bool g_check_for_pending_resize_ack = true;
 
 // <process id, routing id>
@@ -141,6 +148,7 @@ inline blink::WebGestureEvent CreateScrollBeginForWrapping(
 
   blink::WebGestureEvent wrap_gesture_scroll_begin;
   wrap_gesture_scroll_begin.type = blink::WebInputEvent::GestureScrollBegin;
+  wrap_gesture_scroll_begin.sourceDevice = gesture_event.sourceDevice;
   wrap_gesture_scroll_begin.data.scrollBegin.deltaXHint = 0;
   wrap_gesture_scroll_begin.data.scrollBegin.deltaYHint = 0;
   wrap_gesture_scroll_begin.resendingPluginId = gesture_event.resendingPluginId;
@@ -154,6 +162,7 @@ inline blink::WebGestureEvent CreateScrollEndForWrapping(
 
   blink::WebGestureEvent wrap_gesture_scroll_end;
   wrap_gesture_scroll_end.type = blink::WebInputEvent::GestureScrollEnd;
+  wrap_gesture_scroll_end.sourceDevice = gesture_event.sourceDevice;
   wrap_gesture_scroll_end.resendingPluginId = gesture_event.resendingPluginId;
 
   return wrap_gesture_scroll_end;
@@ -169,12 +178,9 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
                                            int32_t routing_id,
                                            bool hidden)
     : view_(NULL),
-      hung_renderer_delay_(
-          base::TimeDelta::FromMilliseconds(kHungRendererDelayMs)),
-      new_content_rendering_delay_(
-          base::TimeDelta::FromMilliseconds(kNewContentRenderingDelayMs)),
       renderer_initialized_(false),
       delegate_(delegate),
+      owner_delegate_(nullptr),
       process_(process),
       routing_id_(routing_id),
       is_loading_(false),
@@ -201,6 +207,11 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       next_browser_snapshot_id_(1),
       owned_by_render_frame_host_(false),
       is_focused_(false),
+      hung_renderer_delay_(
+          base::TimeDelta::FromMilliseconds(kHungRendererDelayMs)),
+      new_content_rendering_delay_(
+          base::TimeDelta::FromMilliseconds(kNewContentRenderingDelayMs)),
+      mouse_wheel_coalesce_timer_(new base::ElapsedTimer()),
       weak_factory_(this) {
   CHECK(delegate_);
   CHECK_NE(MSG_ROUTING_NONE, routing_id_);
@@ -223,10 +234,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
 
   touch_emulator_.reset();
 
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      IsRenderView() ? RenderViewHost::From(this) : NULL);
-  if (BrowserPluginGuest::IsGuest(rvh) ||
-      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableHangMonitor)) {
     hang_monitor_timeout_.reset(new TimeoutMonitor(
         base::Bind(&RenderWidgetHostImpl::RendererIsUnresponsive,
@@ -271,44 +279,39 @@ RenderWidgetHostImpl* RenderWidgetHostImpl::FromID(
 
 // static
 scoped_ptr<RenderWidgetHostIterator> RenderWidgetHost::GetRenderWidgetHosts() {
-  RenderWidgetHostIteratorImpl* hosts = new RenderWidgetHostIteratorImpl();
-  RoutingIDWidgetMap* widgets = g_routing_id_widget_map.Pointer();
-  for (RoutingIDWidgetMap::const_iterator it = widgets->begin();
-       it != widgets->end();
-       ++it) {
-    RenderWidgetHost* widget = it->second;
+  scoped_ptr<RenderWidgetHostIteratorImpl> hosts(
+      new RenderWidgetHostIteratorImpl());
+  for (auto& it : g_routing_id_widget_map.Get()) {
+    RenderWidgetHost* widget = it.second;
 
-    if (!widget->IsRenderView()) {
+    RenderViewHost* rvh = RenderViewHost::From(widget);
+    if (!rvh) {
       hosts->Add(widget);
       continue;
     }
 
-    // Add only active RenderViewHosts.
-    RenderViewHost* rvh = RenderViewHost::From(widget);
+    // For RenderViewHosts, add only active ones.
     if (static_cast<RenderViewHostImpl*>(rvh)->is_active())
       hosts->Add(widget);
   }
 
-  return scoped_ptr<RenderWidgetHostIterator>(hosts);
+  return hosts.Pass();
 }
 
 // static
 scoped_ptr<RenderWidgetHostIterator>
 RenderWidgetHostImpl::GetAllRenderWidgetHosts() {
-  RenderWidgetHostIteratorImpl* hosts = new RenderWidgetHostIteratorImpl();
-  RoutingIDWidgetMap* widgets = g_routing_id_widget_map.Pointer();
-  for (RoutingIDWidgetMap::const_iterator it = widgets->begin();
-       it != widgets->end();
-       ++it) {
-    hosts->Add(it->second);
-  }
+  scoped_ptr<RenderWidgetHostIteratorImpl> hosts(
+      new RenderWidgetHostIteratorImpl());
+  for (auto& it : g_routing_id_widget_map.Get())
+    hosts->Add(it.second);
 
-  return scoped_ptr<RenderWidgetHostIterator>(hosts);
+  return hosts.Pass();
 }
 
 // static
 RenderWidgetHostImpl* RenderWidgetHostImpl::From(RenderWidgetHost* rwh) {
-  return rwh->AsRenderWidgetHostImpl();
+  return static_cast<RenderWidgetHostImpl*>(rwh);
 }
 
 void RenderWidgetHostImpl::SetView(RenderWidgetHostViewBase* view) {
@@ -336,12 +339,8 @@ int RenderWidgetHostImpl::GetRoutingID() const {
   return routing_id_;
 }
 
-RenderWidgetHostView* RenderWidgetHostImpl::GetView() const {
+RenderWidgetHostViewBase* RenderWidgetHostImpl::GetView() const {
   return view_;
-}
-
-RenderWidgetHostImpl* RenderWidgetHostImpl::AsRenderWidgetHostImpl() {
-  return this;
 }
 
 gfx::NativeViewId RenderWidgetHostImpl::GetNativeViewId() const {
@@ -437,10 +436,6 @@ bool RenderWidgetHostImpl::IsLoading() const {
   return is_loading_;
 }
 
-bool RenderWidgetHostImpl::IsRenderView() const {
-  return false;
-}
-
 bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostImpl, msg)
@@ -458,7 +453,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
                                 OnSwapCompositorFrame(msg))
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Focus, OnFocus)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_Blur, OnBlur)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
                         OnTextInputStateChanged)
@@ -579,7 +573,15 @@ bool RenderWidgetHostImpl::GetResizeParams(
   *resize_params = ViewMsg_Resize_Params();
 
   GetWebScreenInfo(&resize_params->screen_info);
-  resize_params->resizer_rect = GetRootWindowResizerRect();
+  if (delegate_) {
+    resize_params->resizer_rect = delegate_->GetRootWindowResizerRect(this);
+    resize_params->is_fullscreen_granted =
+        delegate_->IsFullscreenForCurrentTab(this);
+    resize_params->display_mode = delegate_->GetDisplayMode(this);
+  } else {
+    resize_params->is_fullscreen_granted = false;
+    resize_params->display_mode = blink::WebDisplayModeBrowser;
+  }
 
   if (view_) {
     resize_params->new_size = view_->GetRequestedRendererSize();
@@ -588,8 +590,6 @@ bool RenderWidgetHostImpl::GetResizeParams(
     resize_params->top_controls_shrink_blink_size =
         view_->DoTopControlsShrinkBlinkSize();
     resize_params->visible_viewport_size = view_->GetVisibleViewportSize();
-    resize_params->is_fullscreen_granted = IsFullscreenGranted();
-    resize_params->display_mode = GetDisplayMode();
   }
 
   const bool size_changed =
@@ -708,6 +708,11 @@ void RenderWidgetHostImpl::Focus() {
   is_focused_ = true;
 
   Send(new InputMsg_SetFocus(routing_id_, true));
+
+  // Also send page-level focus state to other SiteInstances involved in
+  // rendering the current FrameTree.
+  if (RenderViewHost::From(this) && delegate_)
+    delegate_->ReplicatePageFocus(true);
 }
 
 void RenderWidgetHostImpl::Blur() {
@@ -723,6 +728,11 @@ void RenderWidgetHostImpl::Blur() {
     touch_emulator_->CancelTouch();
 
   Send(new InputMsg_SetFocus(routing_id_, false));
+
+  // Also send page-level focus state to other SiteInstances involved in
+  // rendering the current FrameTree.
+  if (RenderViewHost::From(this) && delegate_)
+    delegate_->ReplicatePageFocus(false);
 }
 
 void RenderWidgetHostImpl::LostCapture() {
@@ -730,6 +740,9 @@ void RenderWidgetHostImpl::LostCapture() {
     touch_emulator_->CancelTouch();
 
   Send(new InputMsg_MouseCaptureLost(routing_id_));
+
+  if (delegate_)
+    delegate_->LostCapture(this);
 }
 
 void RenderWidgetHostImpl::SetActive(bool active) {
@@ -738,6 +751,9 @@ void RenderWidgetHostImpl::SetActive(bool active) {
 
 void RenderWidgetHostImpl::LostMouseLock() {
   Send(new ViewMsg_MouseLockLost(routing_id_));
+
+  if (delegate_)
+    delegate_->LostMouseLock(this);
 }
 
 void RenderWidgetHostImpl::ViewDestroyed() {
@@ -773,7 +789,6 @@ bool RenderWidgetHostImpl::CanCopyFromBackingStore() {
   return false;
 }
 
-#if defined(OS_ANDROID)
 void RenderWidgetHostImpl::LockBackingStore() {
   if (view_)
     view_->LockCompositingSurface();
@@ -783,7 +798,6 @@ void RenderWidgetHostImpl::UnlockBackingStore() {
   if (view_)
     view_->UnlockCompositingSurface();
 }
-#endif
 
 #if defined(OS_MACOSX)
 void RenderWidgetHostImpl::PauseForPendingResizeOrRepaints() {
@@ -1102,7 +1116,8 @@ void RenderWidgetHostImpl::ForwardKeyboardEvent(
   if (key_event.type == WebKeyboardEvent::Char &&
       (key_event.windowsKeyCode == ui::VKEY_RETURN ||
        key_event.windowsKeyCode == ui::VKEY_SPACE)) {
-    OnUserGesture();
+    if (delegate_)
+      delegate_->OnUserGesture(this);
   }
 
   // Double check the type to make sure caller hasn't sent us nonsense that
@@ -1145,8 +1160,9 @@ void RenderWidgetHostImpl::ForwardKeyboardEvent(
     return;
 
   NativeWebKeyboardEventWithLatencyInfo key_event_with_latency(key_event);
+  key_event_with_latency.event.isBrowserShortcut = is_shortcut;
   latency_tracker_.OnInputEvent(key_event, &key_event_with_latency.latency);
-  input_router_->SendKeyboardEvent(key_event_with_latency, is_shortcut);
+  input_router_->SendKeyboardEvent(key_event_with_latency);
 }
 
 void RenderWidgetHostImpl::QueueSyntheticGesture(
@@ -1372,17 +1388,6 @@ void RenderWidgetHostImpl::ImeCancelComposition() {
             std::vector<blink::WebCompositionUnderline>(), 0, 0));
 }
 
-gfx::Rect RenderWidgetHostImpl::GetRootWindowResizerRect() const {
-  return gfx::Rect();
-}
-
-void RenderWidgetHostImpl::RequestToLockMouse(bool user_gesture,
-                                              bool last_unlocked_by_target) {
-  // Directly reject to lock the mouse. Subclass can override this method to
-  // decide whether to allow mouse lock or not.
-  GotResponseToLockMouseRequest(false);
-}
-
 void RenderWidgetHostImpl::RejectMouseLockOrUnlockIfNecessary() {
   DCHECK(!pending_mouse_lock_request_ || !IsMouseLocked());
   if (pending_mouse_lock_request_) {
@@ -1395,14 +1400,6 @@ void RenderWidgetHostImpl::RejectMouseLockOrUnlockIfNecessary() {
 
 bool RenderWidgetHostImpl::IsMouseLocked() const {
   return view_ ? view_->IsMouseLocked() : false;
-}
-
-bool RenderWidgetHostImpl::IsFullscreenGranted() const {
-  return false;
-}
-
-blink::WebDisplayMode RenderWidgetHostImpl::GetDisplayMode() const {
-  return blink::WebDisplayModeBrowser;
 }
 
 void RenderWidgetHostImpl::SetAutoResize(bool enable,
@@ -1437,13 +1434,15 @@ void RenderWidgetHostImpl::RendererIsUnresponsive() {
       Source<RenderWidgetHost>(this),
       NotificationService::NoDetails());
   is_unresponsive_ = true;
-  NotifyRendererUnresponsive();
+  if (delegate_)
+    delegate_->RendererUnresponsive(this);
 }
 
 void RenderWidgetHostImpl::RendererIsResponsive() {
   if (is_unresponsive_) {
     is_unresponsive_ = false;
-    NotifyRendererResponsive();
+    if (delegate_)
+      delegate_->RendererResponsive(this);
   }
 }
 
@@ -1556,7 +1555,7 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
     cc::CompositorFrameAck ack;
     if (frame->gl_frame_data) {
       ack.gl_frame_data = frame->gl_frame_data.Pass();
-      ack.gl_frame_data->sync_point = 0;
+      ack.gl_frame_data->sync_token.Clear();
     } else if (frame->delegated_frame_data) {
       cc::TransferableResource::ReturnResources(
           frame->delegated_frame_data->resource_list,
@@ -1688,11 +1687,6 @@ void RenderWidgetHostImpl::OnFocus() {
   bad_message::ReceivedBadMessage(GetProcess(), bad_message::RWH_FOCUS);
 }
 
-void RenderWidgetHostImpl::OnBlur() {
-  // Only RenderViewHost can deal with that message.
-  bad_message::ReceivedBadMessage(GetProcess(), bad_message::RWH_BLUR);
-}
-
 void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
   SetCursor(cursor);
 }
@@ -1746,7 +1740,13 @@ void RenderWidgetHostImpl::OnLockMouse(bool user_gesture,
     // Directly approve to lock the mouse.
     GotResponseToLockMouseRequest(true);
   } else {
-    RequestToLockMouse(user_gesture, last_unlocked_by_target);
+    if (delegate_) {
+      delegate_->RequestToLockMouse(this, user_gesture,
+                                    last_unlocked_by_target);
+      return;
+    }
+    // If there's no delegate, just reject it.
+    GotResponseToLockMouseRequest(false);
   }
 }
 
@@ -1862,7 +1862,23 @@ InputEventAckState RenderWidgetHostImpl::FilterInputEvent(
 
   if (event.type == WebInputEvent::MouseDown ||
       event.type == WebInputEvent::GestureTapDown) {
-    OnUserGesture();
+    if (delegate_)
+      delegate_->OnUserGesture(this);
+  }
+
+  if (delegate_) {
+    if (event.type == WebInputEvent::MouseDown ||
+        event.type == WebInputEvent::GestureTapDown ||
+        event.type == WebInputEvent::RawKeyDown) {
+      delegate_->OnUserInteraction(event.type);
+    } else if (event.type == WebInputEvent::MouseWheel) {
+      if (mouse_wheel_coalesce_timer_->Elapsed().InSecondsF() >
+          kMouseWheelCoalesceIntervalInSeconds) {
+        delegate_->OnUserInteraction(event.type);
+      }
+
+      mouse_wheel_coalesce_timer_.reset(new base::ElapsedTimer());
+    }
   }
 
   return view_ ? view_->FilterInputEvent(event)
@@ -1988,10 +2004,6 @@ bool RenderWidgetHostImpl::IgnoreInputEvents() const {
   return ignore_input_events_ || process_->IgnoreInputEvents();
 }
 
-void RenderWidgetHostImpl::StartUserGesture() {
-  OnUserGesture();
-}
-
 void RenderWidgetHostImpl::SetBackgroundOpaque(bool opaque) {
   Send(new ViewMsg_SetBackgroundOpaque(GetRoutingID(), opaque));
 }
@@ -2072,7 +2084,8 @@ void RenderWidgetHostImpl::DelayedAutoResized() {
   if (!auto_resize_enabled_)
     return;
 
-  OnRenderAutoResized(new_size);
+  if (delegate_)
+    delegate_->ResizeDueToAutoResize(this, new_size);
 }
 
 void RenderWidgetHostImpl::DetachDelegate() {

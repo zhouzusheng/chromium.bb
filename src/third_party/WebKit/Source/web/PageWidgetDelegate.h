@@ -32,6 +32,7 @@
 #define PageWidgetDelegate_h
 
 #include "public/platform/WebCanvas.h"
+#include "public/web/WebInputEvent.h"
 #include "public/web/WebWidget.h"
 #include "wtf/OwnPtr.h"
 
@@ -58,6 +59,8 @@ public:
     virtual bool handleGestureEvent(const WebGestureEvent&) = 0;
     virtual bool handleTouchEvent(LocalFrame& mainFrame, const WebTouchEvent&);
     virtual ~PageWidgetEventHandler() { }
+protected:
+    const char* inputTypeToName(WebInputEvent::Type);
 };
 
 
@@ -66,12 +69,17 @@ class PageWidgetDelegate {
 public:
     static void animate(Page&, double monotonicFrameBeginTime);
 
-    // rootFrame arguments indicate a root localFrame from which to start performing the
-    // specified operation. If rootFrame is 0, these methods will attempt to use the
-    // Page's mainFrame(), if it is a LocalFrame.
-    static void layout(Page&, LocalFrame& root);
+    // For the following methods, the |root| argument indicates a root localFrame from which
+    // to start performing the specified operation.
+
+    // See documents of methods with the same names in FrameView class.
+    static void updateLifecycleToCompositingCleanPlusScrolling(Page&, LocalFrame& root);
+    static void updateAllLifecyclePhases(Page&, LocalFrame& root);
+
     static void paint(Page&, WebCanvas*, const WebRect&, LocalFrame& root);
     static void paintIgnoringCompositing(Page&, WebCanvas*, const WebRect&, LocalFrame& root);
+
+    // See FIXME in the function body about nullptr |root|.
     static bool handleInputEvent(PageWidgetEventHandler&, const WebInputEvent&, LocalFrame* root);
 
 private:

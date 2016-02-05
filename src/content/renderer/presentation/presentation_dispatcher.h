@@ -15,8 +15,8 @@
 #include "content/common/content_export.h"
 #include "content/common/presentation/presentation_service.mojom.h"
 #include "content/public/renderer/render_frame_observer.h"
+#include "mojo/public/cpp/bindings/binding.h"
 #include "third_party/WebKit/public/platform/modules/presentation/WebPresentationClient.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
 
 namespace blink {
 class WebPresentationAvailabilityObserver;
@@ -76,8 +76,8 @@ class CONTENT_EXPORT PresentationDispatcher
                     const blink::WebString& presentationId,
                     const uint8* data,
                     size_t length) override;
-  void closeSession(const blink::WebString& presentationUrl,
-                    const blink::WebString& presentationId) override;
+  void terminateSession(const blink::WebString& presentationUrl,
+                        const blink::WebString& presentationId) override;
   void getAvailability(
       const blink::WebString& availabilityUrl,
       blink::WebPresentationAvailabilityCallbacks* callbacks) override;
@@ -96,17 +96,17 @@ class CONTENT_EXPORT PresentationDispatcher
                                    bool available) override;
   void OnSessionStateChanged(
       presentation::PresentationSessionInfoPtr session_info,
-      presentation::PresentationSessionState new_state) override;
+      presentation::PresentationConnectionState new_state) override;
   void OnSessionMessagesReceived(
       presentation::PresentationSessionInfoPtr session_info,
       mojo::Array<presentation::SessionMessagePtr> messages) override;
+  void OnDefaultSessionStarted(
+      presentation::PresentationSessionInfoPtr session_info) override;
 
   void OnSessionCreated(
       blink::WebPresentationConnectionClientCallbacks* callback,
       presentation::PresentationSessionInfoPtr session_info,
       presentation::PresentationErrorPtr error);
-  void OnDefaultSessionStarted(
-      presentation::PresentationSessionInfoPtr session_info);
 
   // Call to PresentationService to send the message in |request|.
   // |session_info| and |message| of |reuqest| will be consumed.

@@ -54,6 +54,10 @@ namespace gfx {
 class ImageSkia;
 }
 
+namespace media {
+class CdmFactory;
+}
+
 namespace mojo {
 class ApplicationDelegate;
 }
@@ -80,6 +84,7 @@ class SelectFilePolicy;
 namespace storage {
 class ExternalMountPoints;
 class FileSystemBackend;
+class QuotaEvictionPolicy;
 }
 
 namespace content {
@@ -180,9 +185,22 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldUseProcessPerSite(BrowserContext* browser_context,
                                        const GURL& effective_url);
 
+  // Returns true if site isolation should be enabled for |effective_url|. This
+  // call allows the embedder to supplement the site isolation policy enforced
+  // by the content layer.
+  //
+  // Will only be called if both of the following happen:
+  //   1. The embedder asked to be consulted, by returning true from
+  //      ContentClient::IsSupplementarySiteIsolationModeEnabled().
+  //   2. The content layer didn't decide to isolate |effective_url| according
+  //      to its internal policy (e.g. because of --site-per-process).
+  virtual bool DoesSiteRequireDedicatedProcess(BrowserContext* browser_context,
+                                               const GURL& effective_url);
+
   // Returns true unless the effective URL is part of a site that cannot live in
-  // a process dedicated to that site.  This is only called if
-  // SiteIsolationPolicy::DoesSiteRequireDedicatedProcess returns true.
+  // a process restricted to just that site.  This is only called if site
+  // isolation is enabled for this URL, and is a bug workaround.
+  //
   // TODO(nick): Remove this function once https://crbug.com/160576 is fixed,
   // and origin lock can be applied to all URLs.
   virtual bool ShouldLockToOrigin(BrowserContext* browser_context,
@@ -432,6 +450,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Create and return a new quota permission context.
   virtual QuotaPermissionContext* CreateQuotaPermissionContext();
 
+  // Gives the embedder a chance to register a custom QuotaEvictionPolicy for
+  // temporary storage.
+  virtual scoped_ptr<storage::QuotaEvictionPolicy>
+  GetTemporaryStorageEvictionPolicy(BrowserContext* context);
+
   // Informs the embedder that a certificate error has occured.  If
   // |overridable| is true and if |strict_enforcement| is false, the user
   // can ignore the error and continue. The embedder can call the callback
@@ -624,6 +647,12 @@ class CONTENT_EXPORT ContentBrowserClient {
       ServiceRegistry* registry,
       RenderFrameHost* render_frame_host) {}
 
+  // Allows to register browser Mojo services exposed through the
+  // RenderFrameHost.
+  virtual void RegisterRenderFrameMojoServices(
+      ServiceRegistry* registry,
+      RenderFrameHost* render_frame_host) {}
+
   using StaticMojoApplicationMap =
       std::map<GURL, base::Callback<scoped_ptr<mojo::ApplicationDelegate>()>>;
 
@@ -684,6 +713,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual ScopedVector<NavigationThrottle> CreateThrottlesForNavigation(
       NavigationHandle* navigation_handle);
 
+  // Creates and returns a factory used for creating CDM instances for playing
+  // protected content.
+  virtual scoped_ptr<media::CdmFactory> CreateCdmFactory();
+
   // Populates |mappings| with all files that need to be mapped before launching
   // a child process.
 #if defined(OS_ANDROID)
@@ -706,8 +739,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the PROCESS_LAUNCHER thread before the renderer process
   // is launched. It gives the embedder a chance to add loosen the sandbox
   // policy.
-  virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
-                                bool* success) {}
+  virtual bool PreSpawnRenderer(sandbox::TargetPolicy* policy);
 
   // Returns the AppContainer SID for the specified sandboxed process type, or
   // empty string if this sandboxed process type does not support living inside

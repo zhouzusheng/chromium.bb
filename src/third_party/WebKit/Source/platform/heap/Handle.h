@@ -75,21 +75,18 @@ public:
     {
         initialize();
         checkPointer();
-        recordBacktrace();
     }
 
     PersistentBase(T& raw) : m_raw(&raw)
     {
         initialize();
         checkPointer();
-        recordBacktrace();
     }
 
     PersistentBase(const PersistentBase& other) : m_raw(other)
     {
         initialize();
         checkPointer();
-        recordBacktrace();
     }
 
     template<typename U>
@@ -97,7 +94,6 @@ public:
     {
         initialize();
         checkPointer();
-        recordBacktrace();
     }
 
     template<typename U>
@@ -105,7 +101,6 @@ public:
     {
         initialize();
         checkPointer();
-        recordBacktrace();
     }
 
     template<typename U>
@@ -113,7 +108,6 @@ public:
     {
         initialize();
         checkPointer();
-        recordBacktrace();
     }
 
     ~PersistentBase()
@@ -196,7 +190,6 @@ private:
     {
         m_raw = ptr;
         checkPointer();
-        recordBacktrace();
         if (m_raw) {
             if (!m_persistentNode)
                 initialize();
@@ -245,7 +238,7 @@ private:
 
     void checkPointer()
     {
-#if ENABLE(ASSERT)
+#if ENABLE(ASSERT) && defined(ADDRESS_SANITIZER)
         if (!m_raw)
             return;
 
@@ -261,17 +254,6 @@ private:
 #endif
     }
 
-#if ENABLE(GC_PROFILING)
-    void recordBacktrace()
-    {
-        if (m_raw)
-            m_tracingName = Heap::createBacktraceString();
-    }
-
-    String m_tracingName;
-#else
-    inline void recordBacktrace() const { }
-#endif
     // m_raw is accessed most, so put it at the first field.
     T* m_raw;
     PersistentNode* m_persistentNode = nullptr;
@@ -530,10 +512,10 @@ public:
 
 template<typename Collection>
 class PersistentHeapCollectionBase : public Collection {
-    // We overload the various new and delete operators with using the WTF DefaultAllocator to ensure persistent
+    // We overload the various new and delete operators with using the WTF PartitionAllocator to ensure persistent
     // heap collections are always allocated off-heap. This allows persistent collections to be used in
     // DEFINE_STATIC_LOCAL et. al.
-    WTF_USE_ALLOCATOR(PersistentHeapCollectionBase, WTF::DefaultAllocator);
+    WTF_USE_ALLOCATOR(PersistentHeapCollectionBase, WTF::PartitionAllocator);
 public:
     PersistentHeapCollectionBase()
     {
@@ -617,18 +599,48 @@ template<
     typename HashArg = typename DefaultHash<ValueArg>::Hash>
 class PersistentHeapListHashSet : public PersistentHeapCollectionBase<HeapListHashSet<ValueArg, inlineCapacity, HashArg>> { };
 
-template<typename T, typename U, typename V>
-class PersistentHeapHashCountedSet : public PersistentHeapCollectionBase<HeapHashCountedSet<T, U, V>> { };
+template<
+    typename ValueArg,
+    typename HashFunctions = typename DefaultHash<ValueArg>::Hash,
+    typename Traits = HashTraits<ValueArg>>
+class PersistentHeapHashCountedSet : public PersistentHeapCollectionBase<HeapHashCountedSet<ValueArg, HashFunctions, Traits>> { };
 
 template<typename T, size_t inlineCapacity = 0>
 class PersistentHeapVector : public PersistentHeapCollectionBase<HeapVector<T, inlineCapacity>> {
 public:
-    PersistentHeapVector() { }
+    PersistentHeapVector()
+    {
+        initializeUnusedSlots();
+    }
+
+    explicit PersistentHeapVector(size_t size)
+        : PersistentHeapCollectionBase<HeapVector<T, inlineCapacity>>(size)
+    {
+        initializeUnusedSlots();
+    }
+
+    PersistentHeapVector(const PersistentHeapVector& other)
+        : PersistentHeapCollectionBase<HeapVector<T, inlineCapacity>>(other)
+    {
+        initializeUnusedSlots();
+    }
 
     template<size_t otherCapacity>
     PersistentHeapVector(const HeapVector<T, otherCapacity>& other)
         : PersistentHeapCollectionBase<HeapVector<T, inlineCapacity>>(other)
     {
+        initializeUnusedSlots();
+    }
+
+private:
+    void initializeUnusedSlots()
+    {
+        // The PersistentHeapVector is allocated off heap along with its
+        // inline buffer (if any.) Maintain the invariant that unused
+        // slots are cleared for the off-heap inline buffer also.
+        size_t unusedSlots = this->capacity() - this->size();
+        if (unusedSlots)
+            this->clearUnusedSlots(this->end(), this->end() + unusedSlots);
     }
 };
 
@@ -767,7 +779,7 @@ public:
 protected:
     void checkPointer()
     {
-#if ENABLE(ASSERT)
+#if ENABLE(ASSERT) && defined(ADDRESS_SANITIZER)
         if (!m_raw)
             return;
         // HashTable can store a special value (which is not aligned to the
@@ -866,15 +878,83 @@ private:
     template<typename Derived> friend class VisitorHelper;
 };
 
-// Comparison operators between (Weak)Members and Persistents
+// UntracedMember is a pointer to an on-heap object that is not traced for some
+// reason. Please don't use this unless you understand what you're doing.
+// Basically, all pointers to on-heap objects must be stored in either of
+// Persistent, Member or WeakMember. It is not allowed to leave raw pointers to
+// on-heap objects. However, there can be scenarios where you have to use raw
+// pointers for some reason, and in that case you can use UntracedMember. Of
+// course, it must be guaranteed that the pointing on-heap object is kept alive
+// while the raw pointer is pointing to the object.
+template<typename T>
+class UntracedMember final : public Member<T> {
+public:
+    UntracedMember() : Member<T>() { }
+
+    UntracedMember(std::nullptr_t) : Member<T>(nullptr) { }
+
+    UntracedMember(T* raw) : Member<T>(raw) { }
+
+    template<typename U>
+    UntracedMember(const RawPtr<U>& other) : Member<T>(other) { }
+
+    template<typename U>
+    UntracedMember(const Persistent<U>& other) : Member<T>(other) { }
+
+    template<typename U>
+    UntracedMember(const Member<U>& other) : Member<T>(other) { }
+
+    UntracedMember(WTF::HashTableDeletedValueType x) : Member<T>(x) { }
+
+    template<typename U>
+    UntracedMember& operator=(const Persistent<U>& other)
+    {
+        this->m_raw = other;
+        this->checkPointer();
+        return *this;
+    }
+
+    template<typename U>
+    UntracedMember& operator=(const Member<U>& other)
+    {
+        this->m_raw = other;
+        this->checkPointer();
+        return *this;
+    }
+
+    template<typename U>
+    UntracedMember& operator=(U* other)
+    {
+        this->m_raw = other;
+        this->checkPointer();
+        return *this;
+    }
+
+    template<typename U>
+    UntracedMember& operator=(const RawPtr<U>& other)
+    {
+        this->m_raw = other;
+        this->checkPointer();
+        return *this;
+    }
+
+    UntracedMember& operator=(std::nullptr_t)
+    {
+        this->m_raw = nullptr;
+        return *this;
+    }
+};
+
+// Comparison operators between (Weak)Members, Persistents, and UntracedMembers.
 template<typename T, typename U> inline bool operator==(const Member<T>& a, const Member<U>& b) { return a.get() == b.get(); }
 template<typename T, typename U> inline bool operator!=(const Member<T>& a, const Member<U>& b) { return a.get() != b.get(); }
+template<typename T, typename U> inline bool operator==(const Persistent<T>& a, const Persistent<U>& b) { return a.get() == b.get(); }
+template<typename T, typename U> inline bool operator!=(const Persistent<T>& a, const Persistent<U>& b) { return a.get() != b.get(); }
+
 template<typename T, typename U> inline bool operator==(const Member<T>& a, const Persistent<U>& b) { return a.get() == b.get(); }
 template<typename T, typename U> inline bool operator!=(const Member<T>& a, const Persistent<U>& b) { return a.get() != b.get(); }
 template<typename T, typename U> inline bool operator==(const Persistent<T>& a, const Member<U>& b) { return a.get() == b.get(); }
 template<typename T, typename U> inline bool operator!=(const Persistent<T>& a, const Member<U>& b) { return a.get() != b.get(); }
-template<typename T, typename U> inline bool operator==(const Persistent<T>& a, const Persistent<U>& b) { return a.get() == b.get(); }
-template<typename T, typename U> inline bool operator!=(const Persistent<T>& a, const Persistent<U>& b) { return a.get() != b.get(); }
 
 template<typename T>
 class DummyBase {
@@ -882,6 +962,10 @@ public:
     DummyBase() { }
     ~DummyBase() { }
 };
+
+// We need this explicit instantiation for component build on Windows.
+template<>
+class PLATFORM_EXPORT DummyBase<void> { };
 
 // CPP-defined type names for the transition period where we want to
 // support both reference counting and garbage collection based on a
@@ -922,6 +1006,7 @@ public:
 #define RawPtrWillBePersistent blink::Persistent
 #define RawPtrWillBeWeakMember blink::WeakMember
 #define RawPtrWillBeWeakPersistent blink::WeakPersistent
+#define RawPtrWillBeUntracedMember blink::UntracedMember
 #define OwnPtrWillBeCrossThreadPersistent blink::CrossThreadPersistent
 #define OwnPtrWillBeMember blink::Member
 #define OwnPtrWillBePersistent blink::Persistent
@@ -974,7 +1059,7 @@ template<typename T> T* adoptPtrWillBeNoop(T* ptr)
     return ptr;
 }
 
-#define WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(type) // do nothing when oilpan is enabled.
+#define USING_FAST_MALLOC_WILL_BE_REMOVED(type) // do nothing when oilpan is enabled.
 #define DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(type) // do nothing
 #define DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(type) // do nothing
 #define DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(type) // do nothing
@@ -1005,6 +1090,7 @@ template<typename T> T* adoptPtrWillBeNoop(T* ptr)
 #define RawPtrWillBePersistent WTF::RawPtr
 #define RawPtrWillBeWeakMember WTF::RawPtr
 #define RawPtrWillBeWeakPersistent WTF::RawPtr
+#define RawPtrWillBeUntracedMember WTF::RawPtr
 #define OwnPtrWillBeCrossThreadPersistent WTF::OwnPtr
 #define OwnPtrWillBeMember WTF::OwnPtr
 #define OwnPtrWillBePersistent WTF::OwnPtr
@@ -1046,7 +1132,7 @@ template<typename T> T* adoptPtrWillBeNoop(T* ptr)
 template<typename T> PassRefPtrWillBeRawPtr<T> adoptRefWillBeNoop(T* ptr) { return adoptRef(ptr); }
 template<typename T> PassOwnPtrWillBeRawPtr<T> adoptPtrWillBeNoop(T* ptr) { return adoptPtr(ptr); }
 
-#define WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(type) WTF_MAKE_FAST_ALLOCATED(type)
+#define USING_FAST_MALLOC_WILL_BE_REMOVED(type) USING_FAST_MALLOC(type)
 #define DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(type) \
     public:                                            \
         ~type();                                       \
@@ -1195,6 +1281,13 @@ template <typename T> struct VectorTraits<blink::WeakMember<T>> : VectorTraitsBa
     static const bool canMoveWithMemcpy = true;
 };
 
+template <typename T> struct VectorTraits<blink::UntracedMember<T>> : VectorTraitsBase<blink::UntracedMember<T>> {
+    static const bool needsDestruction = false;
+    static const bool canInitializeWithMemset = true;
+    static const bool canClearUnusedSlotsWithMemset = true;
+    static const bool canMoveWithMemcpy = true;
+};
+
 template <typename T> struct VectorTraits<blink::HeapVector<T, 0>> : VectorTraitsBase<blink::HeapVector<T, 0>> {
     static const bool needsDestruction = false;
     static const bool canInitializeWithMemset = true;
@@ -1286,6 +1379,32 @@ template<typename T> struct HashTraits<blink::WeakMember<T>> : SimpleClassHashTr
     }
 };
 
+template<typename T> struct HashTraits<blink::UntracedMember<T>> : SimpleClassHashTraits<blink::UntracedMember<T>> {
+    static const bool needsDestruction = false;
+    // FIXME: The distinction between PeekInType and PassInType is there for
+    // the sake of the reference counting handles. When they are gone the two
+    // types can be merged into PassInType.
+    // FIXME: Implement proper const'ness for iterator types.
+    using PeekInType = RawPtr<T>;
+    using PassInType = RawPtr<T>;
+    using IteratorGetType = blink::UntracedMember<T>*;
+    using IteratorConstGetType = const blink::UntracedMember<T>*;
+    using IteratorReferenceType = blink::UntracedMember<T>&;
+    using IteratorConstReferenceType = const blink::UntracedMember<T>&;
+    static IteratorReferenceType getToReferenceConversion(IteratorGetType x) { return *x; }
+    static IteratorConstReferenceType getToReferenceConstConversion(IteratorConstGetType x) { return *x; }
+    // FIXME: Similarly, there is no need for a distinction between PeekOutType
+    // and PassOutType without reference counting.
+    using PeekOutType = T*;
+    using PassOutType = T*;
+
+    template<typename U>
+    static void store(const U& value, blink::UntracedMember<T>& storage) { storage = value; }
+
+    static PeekOutType peek(const blink::UntracedMember<T>& value) { return value; }
+    static PassOutType passOut(const blink::UntracedMember<T>& value) { return value; }
+};
+
 template<typename T> struct PtrHash<blink::Member<T>> : PtrHash<T*> {
     template<typename U>
     static unsigned hash(const U& key) { return PtrHash<T*>::hash(key); }
@@ -1298,6 +1417,9 @@ template<typename T> struct PtrHash<blink::Member<T>> : PtrHash<T*> {
 template<typename T> struct PtrHash<blink::WeakMember<T>> : PtrHash<blink::Member<T>> {
 };
 
+template<typename T> struct PtrHash<blink::UntracedMember<T>> : PtrHash<blink::Member<T>> {
+};
+
 // PtrHash is the default hash for hash tables with members.
 template<typename T> struct DefaultHash<blink::Member<T>> {
     using Hash = PtrHash<blink::Member<T>>;
@@ -1305,6 +1427,10 @@ template<typename T> struct DefaultHash<blink::Member<T>> {
 
 template<typename T> struct DefaultHash<blink::WeakMember<T>> {
     using Hash = PtrHash<blink::WeakMember<T>>;
+};
+
+template<typename T> struct DefaultHash<blink::UntracedMember<T>> {
+    using Hash = PtrHash<blink::UntracedMember<T>>;
 };
 
 template<typename T>

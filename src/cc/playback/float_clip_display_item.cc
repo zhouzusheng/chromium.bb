@@ -6,6 +6,8 @@
 
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event_argument.h"
+#include "cc/proto/display_item.pb.h"
+#include "cc/proto/gfx_conversions.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/skia_util.h"
 
@@ -24,16 +26,27 @@ void FloatClipDisplayItem::SetNew(const gfx::RectF& clip_rect) {
                       0 /* external_memory_usage */);
 }
 
+void FloatClipDisplayItem::ToProtobuf(proto::DisplayItem* proto) const {
+  proto->set_type(proto::DisplayItem::Type_FloatClip);
+
+  proto::FloatClipDisplayItem* details = proto->mutable_float_clip_item();
+  RectFToProto(clip_rect_, details->mutable_clip_rect());
+}
+
+void FloatClipDisplayItem::FromProtobuf(const proto::DisplayItem& proto) {
+  DCHECK_EQ(proto::DisplayItem::Type_FloatClip, proto.type());
+
+  const proto::FloatClipDisplayItem& details = proto.float_clip_item();
+  gfx::RectF clip_rect = ProtoToRectF(details.clip_rect());
+
+  SetNew(clip_rect);
+}
+
 void FloatClipDisplayItem::Raster(SkCanvas* canvas,
                                   const gfx::Rect& canvas_target_playback_rect,
                                   SkPicture::AbortCallback* callback) const {
   canvas->save();
   canvas->clipRect(gfx::RectFToSkRect(clip_rect_));
-}
-
-void FloatClipDisplayItem::ProcessForBounds(
-    DisplayItemListBoundsCalculator* calculator) const {
-  calculator->AddStartingDisplayItem();
 }
 
 void FloatClipDisplayItem::AsValueInto(
@@ -50,16 +63,19 @@ EndFloatClipDisplayItem::EndFloatClipDisplayItem() {
 EndFloatClipDisplayItem::~EndFloatClipDisplayItem() {
 }
 
+void EndFloatClipDisplayItem::ToProtobuf(proto::DisplayItem* proto) const {
+  proto->set_type(proto::DisplayItem::Type_EndFloatClip);
+}
+
+void EndFloatClipDisplayItem::FromProtobuf(const proto::DisplayItem& proto) {
+  DCHECK_EQ(proto::DisplayItem::Type_EndFloatClip, proto.type());
+}
+
 void EndFloatClipDisplayItem::Raster(
     SkCanvas* canvas,
     const gfx::Rect& canvas_target_playback_rect,
     SkPicture::AbortCallback* callback) const {
   canvas->restore();
-}
-
-void EndFloatClipDisplayItem::ProcessForBounds(
-    DisplayItemListBoundsCalculator* calculator) const {
-  calculator->AddEndingDisplayItem();
 }
 
 void EndFloatClipDisplayItem::AsValueInto(

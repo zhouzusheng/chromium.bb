@@ -332,6 +332,10 @@
     DOMString selectedTextForClipboard();
 
     void setVisualViewportOffset(long x, long y);
+    int visualViewportHeight();
+    int visualViewportWidth();
+    double visualViewportScrollX();
+    double visualViewportScrollY();
 
     bool magnifyScaleAroundAnchor(float offset, float x, float y);
 
@@ -353,4 +357,9 @@
 
     void forceRestrictIFramePermissions();
     [RaisesException] double monotonicTimeToZeroBasedDocumentTime(double platformTime);
+
+    [TypeChecking=Interface] void setMediaElementNetworkState(HTMLMediaElement element, long state);
+
+    // TODO(liberato): remove once autoplay gesture override experiment concludes.
+    [TypeChecking=Interface] void triggerAutoplayViewportCheck(HTMLMediaElement mediaElement);
 };

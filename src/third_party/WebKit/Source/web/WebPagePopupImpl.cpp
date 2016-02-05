@@ -130,6 +130,18 @@ private:
         m_popup->m_widgetClient->scheduleAnimation();
     }
 
+    void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline* timeline, LocalFrame*) override
+    {
+        if (m_popup->m_layerTreeView)
+            m_popup->m_layerTreeView->attachCompositorAnimationTimeline(timeline);
+    }
+
+    void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline* timeline, LocalFrame*) override
+    {
+        if (m_popup->m_layerTreeView)
+            m_popup->m_layerTreeView->detachCompositorAnimationTimeline(timeline);
+    }
+
     WebScreenInfo screenInfo() const override
     {
         return m_popup->m_webView->client() ? m_popup->m_webView->client()->screenInfo() : WebScreenInfo();
@@ -145,7 +157,7 @@ private:
         return IntSize(0, 0);
     }
 
-    void setCursor(const Cursor& cursor) override
+    void setCursor(const Cursor& cursor, LocalFrame* localRoot) override
     {
         if (m_popup->m_webView->client())
             m_popup->m_webView->client()->didChangeCursor(WebCursorInfo(cursor));
@@ -333,7 +345,7 @@ void WebPagePopupImpl::setIsAcceleratedCompositingActive(bool enter)
         if (m_layerTreeView) {
             m_layerTreeView->setVisible(true);
             m_isAcceleratedCompositingActive = true;
-            m_layerTreeView->setDeviceScaleFactor(m_widgetClient->deviceScaleFactor());
+            m_layerTreeView->setDeviceScaleFactor(m_webView->deviceScaleFactor());
         } else {
             m_isAcceleratedCompositingActive = false;
         }
@@ -345,11 +357,11 @@ WebSize WebPagePopupImpl::size()
     return m_popupClient->contentSize();
 }
 
-void WebPagePopupImpl::beginFrame(const WebBeginFrameArgs& frameTime)
+void WebPagePopupImpl::beginFrame(double lastFrameTimeMonotonic)
 {
     if (!m_page)
         return;
-    // FIXME: This should use frameTime.lastFrameTimeMonotonic but doing so
+    // FIXME: This should use lastFrameTimeMonotonic but doing so
     // breaks tests.
     PageWidgetDelegate::animate(*m_page, monotonicallyIncreasingTime());
 }
@@ -360,11 +372,11 @@ void WebPagePopupImpl::willCloseLayerTreeView()
     m_layerTreeView = 0;
 }
 
-void WebPagePopupImpl::layout()
+void WebPagePopupImpl::updateAllLifecyclePhases()
 {
     if (!m_page)
         return;
-    PageWidgetDelegate::layout(*m_page, *m_page->deprecatedLocalMainFrame());
+    PageWidgetDelegate::updateAllLifecyclePhases(*m_page, *m_page->deprecatedLocalMainFrame());
 }
 
 void WebPagePopupImpl::paint(WebCanvas* canvas, const WebRect& rect)

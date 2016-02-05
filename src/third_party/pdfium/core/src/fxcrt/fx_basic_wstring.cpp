@@ -6,8 +6,8 @@
 
 #include <stddef.h>  // For offsetof().
 
-#include "../../include/fxcrt/fx_basic.h"
-#include "../../../third_party/base/numerics/safe_math.h"
+#include "core/include/fxcrt/fx_basic.h"
+#include "third_party/base/numerics/safe_math.h"
 
 // static
 CFX_WideString::StringData* CFX_WideString::StringData::Create(int nLen) {
@@ -32,7 +32,7 @@ CFX_WideString::StringData* CFX_WideString::StringData::Create(int nLen) {
   int usableLen = (totalSize - overhead) / sizeof(FX_WCHAR);
   FXSYS_assert(usableLen >= nLen);
 
-  void* pData = FX_Alloc(uint8_t, iSize.ValueOrDie());
+  void* pData = FX_Alloc(uint8_t, totalSize);
   return new (pData) StringData(nLen, usableLen);
 }
 CFX_WideString::~CFX_WideString() {

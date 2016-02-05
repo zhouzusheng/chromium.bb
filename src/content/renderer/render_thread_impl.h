@@ -108,12 +108,16 @@ class RasterWorkerPool;
 class RenderProcessObserver;
 class RendererBlinkPlatformImpl;
 class RendererDemuxerAndroid;
+class RendererGpuVideoAcceleratorFactories;
 class ResourceDispatchThrottler;
-class ResourceSchedulingFilter;
 class V8SamplingProfiler;
 class VideoCaptureImplManager;
 class WebGraphicsContext3DCommandBufferImpl;
 class WebRTCIdentityService;
+
+#if defined(OS_ANDROID)
+class SynchronousCompositorFilter;
+#endif
 
 #if defined(COMPILER_MSVC)
 // See explanation for other RenderViewHostImpl which is the same issue.
@@ -193,7 +197,8 @@ class CONTENT_EXPORT RenderThreadImpl
   bool IsLcdTextEnabled() override;
   bool IsDistanceFieldTextEnabled() override;
   bool IsZeroCopyEnabled() override;
-  bool IsPersistentGpuMemoryBufferEnabled() override;
+  bool IsPartialRasterEnabled() override;
+  bool IsGpuMemoryBufferCompositorResourcesEnabled() override;
   bool IsElasticOverscrollEnabled() override;
   std::vector<unsigned> GetImageTextureTargets() override;
   scoped_refptr<base::SingleThreadTaskRunner>
@@ -279,6 +284,10 @@ class CONTENT_EXPORT RenderThreadImpl
   RendererDemuxerAndroid* renderer_demuxer() {
     return renderer_demuxer_.get();
   }
+
+  SynchronousCompositorFilter* sync_compositor_message_filter() {
+    return sync_compositor_message_filter_.get();
+  }
 #endif
 
   // Creates the embedder implementation of WebMediaStreamCenter.
@@ -333,7 +342,7 @@ class CONTENT_EXPORT RenderThreadImpl
   // not sent for at least one notification delay.
   void PostponeIdleNotification();
 
-  scoped_refptr<media::GpuVideoAcceleratorFactories> GetGpuFactories();
+  media::GpuVideoAcceleratorFactories* GetGpuFactories();
 
   scoped_refptr<cc_blink::ContextProviderWebContext>
   SharedMainThreadContextProvider();
@@ -382,7 +391,15 @@ class CONTENT_EXPORT RenderThreadImpl
     std::string ConvertToCustomHistogramName(const char* histogram_name) const;
 
    private:
+    FRIEND_TEST_ALL_PREFIXES(RenderThreadImplUnittest,
+                             IdentifyAlexaTop10NonGoogleSite);
     friend class RenderThreadImplUnittest;
+
+    // Converts a host name to a suffix for histograms
+    std::string HostToCustomHistogramSuffix(const std::string& host);
+
+    // Helper function to identify a certain set of top pages
+    bool IsAlexaTop10NonGoogleSite(const std::string& host);
 
     // Used for updating the information on which is the common host which all
     // RenderView's share (if any). If there is no common host, this function is
@@ -575,6 +592,12 @@ class CONTENT_EXPORT RenderThreadImpl
   // May be null if overridden by ContentRendererClient.
   scoped_ptr<base::Thread> compositor_thread_;
 
+  // Utility class to provide GPU functionalities to media.
+  // TODO(dcastagna): This should be just one scoped_ptr once
+  // http://crbug.com/580386 is fixed.
+  // NOTE(dcastagna): At worst this accumulates a few bytes per context lost.
+  ScopedVector<content::RendererGpuVideoAcceleratorFactories> gpu_factories_;
+
   // Thread for running multimedia operations (e.g., video decoding).
   scoped_ptr<base::Thread> media_thread_;
 
@@ -590,6 +613,10 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<CompositorForwardingMessageFilter> compositor_message_filter_;
 
+#if defined(OS_ANDROID)
+  scoped_refptr<SynchronousCompositorFilter> sync_compositor_message_filter_;
+#endif
+
   scoped_refptr<BluetoothMessageFilter> bluetooth_message_filter_;
 
   scoped_refptr<cc_blink::ContextProviderWebContext>
@@ -598,7 +625,6 @@ class CONTENT_EXPORT RenderThreadImpl
   base::ObserverList<RenderProcessObserver> observers_;
 
   scoped_refptr<ContextProviderCommandBuffer> shared_worker_context_provider_;
-  scoped_refptr<ContextProviderCommandBuffer> gpu_va_context_provider_;
 
   scoped_ptr<AudioRendererMixerManager> audio_renderer_mixer_manager_;
   scoped_ptr<media::AudioHardwareConfig> audio_hardware_config_;
@@ -616,8 +642,6 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_refptr<base::SingleThreadTaskRunner>
       main_thread_compositor_task_runner_;
 
-  scoped_refptr<ResourceSchedulingFilter> resource_scheduling_filter_;
-
   // Compositor settings.
   bool is_gpu_rasterization_enabled_;
   bool is_gpu_rasterization_forced_;
@@ -626,7 +650,8 @@ class CONTENT_EXPORT RenderThreadImpl
   bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;
   bool is_one_copy_enabled_;
-  bool is_persistent_gpu_memory_buffer_enabled_;
+  bool is_gpu_memory_buffer_compositor_resources_enabled_;
+  bool is_partial_raster_enabled_;
   bool is_elastic_overscroll_enabled_;
   std::vector<unsigned> use_image_texture_targets_;
   bool are_image_decode_tasks_enabled_;

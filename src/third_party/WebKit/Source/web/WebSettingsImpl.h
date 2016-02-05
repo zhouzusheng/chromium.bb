@@ -96,13 +96,11 @@ public:
     void setReportWheelOverscroll(bool) override;
     void setForceZeroLayoutHeight(bool) override;
     void setFullscreenSupported(bool) override;
-    void setHidePinchScrollbarsNearMinScale(bool) override;
     void setHyperlinkAuditingEnabled(bool) override;
     void setIgnoreMainFrameOverflowHiddenQuirk(bool) override;
     void setImageAnimationPolicy(ImageAnimationPolicy) override;
     void setImagesEnabled(bool) override;
     void setInlineTextBoxAccessibilityEnabled(bool) override;
-    void setInertVisualViewport(bool) override;
     void setInvertViewportScrollOrder(bool) override;
     void setJavaScriptCanAccessClipboard(bool) override;
     void setJavaScriptCanOpenWindowsAutomatically(bool) override;
@@ -171,7 +169,6 @@ public:
     void setTextTrackTextSize(const WebString&) override;
     void setThreadedScrollingEnabled(bool) override;
     void setTouchDragDropEnabled(bool) override;
-    void setTouchEditingEnabled(bool) override;
     void setUnifiedTextCheckerEnabled(bool) override;
     void setUnsafePluginPastingEnabled(bool) override;
     void setUsesEncodingDetector(bool) override;

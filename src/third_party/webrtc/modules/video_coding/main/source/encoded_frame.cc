@@ -89,7 +89,7 @@ void VCMEncodedFrame::Reset()
     _renderTimeMs = -1;
     _timeStamp = 0;
     _payloadType = 0;
-    _frameType = kDeltaFrame;
+    _frameType = kVideoFrameDelta;
     _encodedWidth = 0;
     _encodedHeight = 0;
     _completeFrame = false;
@@ -147,6 +147,12 @@ void VCMEncodedFrame::CopyCodecSpecific(const RTPVideoHeader* header)
             header->codecHeader.VP9.inter_pic_predicted;
         _codecSpecificInfo.codecSpecific.VP9.flexible_mode =
             header->codecHeader.VP9.flexible_mode;
+        _codecSpecificInfo.codecSpecific.VP9.num_ref_pics =
+            header->codecHeader.VP9.num_ref_pics;
+        for (uint8_t r = 0; r < header->codecHeader.VP9.num_ref_pics; ++r) {
+          _codecSpecificInfo.codecSpecific.VP9.p_diff[r] =
+              header->codecHeader.VP9.pid_diff[r];
+        }
         _codecSpecificInfo.codecSpecific.VP9.ss_data_available =
             header->codecHeader.VP9.ss_data_available;
         if (header->codecHeader.VP9.picture_id != kNoPictureId) {
@@ -226,40 +232,4 @@ void VCMEncodedFrame::VerifyAndAllocate(size_t minimumSize)
     }
 }
 
-webrtc::FrameType VCMEncodedFrame::ConvertFrameType(VideoFrameType frameType)
-{
-  switch(frameType) {
-    case kKeyFrame:
-      return  kVideoFrameKey;
-    case kDeltaFrame:
-      return kVideoFrameDelta;
-    case kSkipFrame:
-      return kFrameEmpty;
-    default:
-      return kVideoFrameDelta;
-  }
-}
-
-VideoFrameType VCMEncodedFrame::ConvertFrameType(webrtc::FrameType frame_type) {
-  switch (frame_type) {
-    case kVideoFrameKey:
-      return kKeyFrame;
-    case kVideoFrameDelta:
-      return kDeltaFrame;
-    default:
-      assert(false);
-      return kDeltaFrame;
-  }
-}
-
-void VCMEncodedFrame::ConvertFrameTypes(
-    const std::vector<webrtc::FrameType>& frame_types,
-    std::vector<VideoFrameType>* video_frame_types) {
-  assert(video_frame_types);
-  video_frame_types->reserve(frame_types.size());
-  for (size_t i = 0; i < frame_types.size(); ++i) {
-    (*video_frame_types)[i] = ConvertFrameType(frame_types[i]);
-  }
-}
-
-}
+}  // namespace webrtc

@@ -92,6 +92,11 @@ typedef int FX_STRSIZE;
 #define FALSE 0
 #endif
 
+#ifdef __cplusplus
+static_assert(TRUE == true, "true_needs_to_be_true");
+static_assert(FALSE == false, "false_needs_to_be_false");
+#endif
+
 #ifndef NULL
 #define NULL 0
 #endif
@@ -155,7 +160,7 @@ FXSYS_FILE* FXSYS_wfopen(const FX_WCHAR* filename, const FX_WCHAR* mode);
 
 #ifdef __cplusplus
 }  // extern "C"
-#include "../../../third_party/base/numerics/safe_conversions.h"
+#include "third_party/base/numerics/safe_conversions.h"
 #define FXSYS_strlen(ptr) pdfium::base::checked_cast<FX_STRSIZE>(strlen(ptr))
 #define FXSYS_wcslen(ptr) pdfium::base::checked_cast<FX_STRSIZE>(wcslen(ptr))
 extern "C" {
@@ -253,12 +258,10 @@ wchar_t* FXSYS_wcsupr(wchar_t* str);
 #define FXDWORD_FROM_MSBFIRST(i)                        \
   (((uint8_t)(i) << 24) | ((uint8_t)((i) >> 8) << 16) | \
    ((uint8_t)((i) >> 16) << 8) | (uint8_t)((i) >> 24))
-#define FXDWORD_GET_LSBFIRST(p)                              \
-  ((((uint8_t*)(p))[3] << 24) | (((uint8_t*)(p))[2] << 16) | \
-   (((uint8_t*)(p))[1] << 8) | (((uint8_t*)(p))[0]))
-#define FXDWORD_GET_MSBFIRST(p)                              \
-  ((((uint8_t*)(p))[0] << 24) | (((uint8_t*)(p))[1] << 16) | \
-   (((uint8_t*)(p))[2] << 8) | (((uint8_t*)(p))[3]))
+#define FXDWORD_GET_LSBFIRST(p) \
+  ((p[3] << 24) | (p[2] << 16) | (p[1] << 8) | (p[0]))
+#define FXDWORD_GET_MSBFIRST(p) \
+  ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | (p[3]))
 #define FXSYS_HIBYTE(word) ((uint8_t)((word) >> 8))
 #define FXSYS_LOBYTE(word) ((uint8_t)(word))
 #define FXSYS_HIWORD(dword) ((FX_WORD)((dword) >> 16))

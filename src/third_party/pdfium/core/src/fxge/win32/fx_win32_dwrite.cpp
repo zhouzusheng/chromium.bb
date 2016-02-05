@@ -4,11 +4,14 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fxge/fx_ge.h"
+#include "core/include/fxge/fx_ge.h"
+
 #if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
-#include "../../../include/fxge/fx_ge_win32.h"
-#include "dwrite_int.h"
 #include <dwrite.h>
+
+#include "core/include/fxge/fx_ge_win32.h"
+#include "dwrite_int.h"
+
 typedef HRESULT(__stdcall* FuncType_DWriteCreateFactory)(
     __in DWRITE_FACTORY_TYPE,
     __in REFIID,
@@ -240,7 +243,7 @@ FX_BOOL CDWriteExt::DwRendingString(void* renderTarget,
       stringRect, pClipRgn, pMatrix ? &transform : NULL, baselineOriginX,
       baselineOriginY, DWRITE_MEASURING_MODE_NATURAL, &glyphRun,
       RGB(FXARGB_R(text_color), FXARGB_G(text_color), FXARGB_B(text_color)));
-  return SUCCEEDED(hr) ? TRUE : FALSE;
+  return SUCCEEDED(hr);
 }
 void CDWriteExt::DwDeleteRenderingTarget(void* renderTarget) {
   delete (CDwGdiTextRenderer*)renderTarget;

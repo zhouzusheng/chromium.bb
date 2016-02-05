@@ -18,6 +18,7 @@
 #include "modules/webusb/USBDeviceFilter.h"
 #include "modules/webusb/USBDeviceRequestOptions.h"
 #include "modules/webusb/USBError.h"
+#include "platform/UserGestureIndicator.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebVector.h"
 #include "public/platform/modules/webusb/WebUSBClient.h"
@@ -59,7 +60,7 @@ void convertDeviceRequestOptions(const USBDeviceRequestOptions& options, WebUSBD
 // Allows using a CallbackPromiseAdapter with a WebVector to resolve the
 // getDevices() promise with a HeapVector owning USBDevices.
 class DeviceArray {
-    WTF_MAKE_NONCOPYABLE(DeviceArray);
+    STATIC_ONLY(DeviceArray);
 public:
     using WebType = OwnPtr<WebVector<WebUSBDevice*>>;
 
@@ -70,9 +71,6 @@ public:
             devices.append(USBDevice::create(adoptPtr(webDevice)));
         return devices;
     }
-
-private:
-    DeviceArray() = delete;
 };
 
 } // namespace
@@ -96,6 +94,10 @@ ScriptPromise USB::getDevices(ScriptState* scriptState)
     if (!m_client)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
 
+    String errorMessage;
+    if (!scriptState->executionContext()->isSecureContext(errorMessage))
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(SecurityError, errorMessage));
+
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
     m_client->getDevices(new CallbackPromiseAdapter<DeviceArray, USBError>(resolver));
@@ -107,6 +109,13 @@ ScriptPromise USB::requestDevice(ScriptState* scriptState, const USBDeviceReques
 {
     if (!m_client)
         return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError));
+
+    String errorMessage;
+    if (!scriptState->executionContext()->isSecureContext(errorMessage))
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(SecurityError, errorMessage));
+
+    if (!UserGestureIndicator::consumeUserGesture())
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(SecurityError, "Must be handling a user gesture to show a permission request."));
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();

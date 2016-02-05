@@ -17,9 +17,9 @@
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/pacing/include/paced_sender.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/logging.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -62,6 +62,15 @@ std::vector<K> Keys(const std::map<K, V>& map) {
     keys.push_back(it->first);
   }
   return keys;
+}
+
+uint32_t ConvertMsTo24Bits(int64_t time_ms) {
+  uint32_t time_24_bits =
+      static_cast<uint32_t>(
+          ((static_cast<uint64_t>(time_ms) << kAbsSendTimeFraction) + 500) /
+          1000) &
+      0x00FFFFFF;
+  return time_24_bits;
 }
 
 bool RemoteBitrateEstimatorAbsSendTime::IsWithinClusterBounds(
@@ -219,12 +228,8 @@ bool RemoteBitrateEstimatorAbsSendTime::IsBitrateImproving(
 void RemoteBitrateEstimatorAbsSendTime::IncomingPacketFeedbackVector(
     const std::vector<PacketInfo>& packet_feedback_vector) {
   for (const auto& packet_info : packet_feedback_vector) {
-    // TODO(holmer): We should get rid of this conversion if possible as we may
-    // lose precision.
-    uint32_t send_time_32bits = (packet_info.send_time_ms) / kTimestampToMs;
-    uint32_t send_time_24bits =
-        send_time_32bits >> kAbsSendTimeInterArrivalUpshift;
-    IncomingPacketInfo(packet_info.arrival_time_ms, send_time_24bits,
+    IncomingPacketInfo(packet_info.arrival_time_ms,
+                       ConvertMsTo24Bits(packet_info.send_time_ms),
                        packet_info.payload_size, 0, packet_info.was_paced);
   }
 }

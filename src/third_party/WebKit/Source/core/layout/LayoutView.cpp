@@ -24,14 +24,17 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/editing/FrameSelection.h"
+#include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLIFrameElement.h"
+#include "core/html/HTMLVideoElement.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutFlowThread.h"
 #include "core/layout/LayoutGeometryMap.h"
+#include "core/layout/LayoutMedia.h"
 #include "core/layout/LayoutPart.h"
 #include "core/layout/LayoutQuote.h"
 #include "core/layout/LayoutScrollbarPart.h"
@@ -44,7 +47,7 @@
 #include "platform/TracedValue.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/TransformState.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 #include <inttypes.h>
 
 namespace blink {
@@ -86,6 +89,7 @@ bool LayoutView::hitTest(HitTestResult& result)
     // into a child document, it could trigger a layout on the parent document, which can destroy PaintLayer
     // that are higher up in the call stack, leading to crashes.
     // Note that Document::updateLayout calls its parent's updateLayout.
+    DocumentLifecycle::PreventThrottlingScope preventThrottling(document().lifecycle());
     frameView()->updateLifecycleToCompositingCleanPlusScrolling();
     return hitTestNoLifecycleUpdate(result);
 }
@@ -133,13 +137,12 @@ void LayoutView::clearHitTestCache()
 
 void LayoutView::computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit, LogicalExtentComputedValues& computedValues) const
 {
-    computedValues.m_extent = (!shouldUsePrintingLayout() && m_frameView) ? LayoutUnit(viewLogicalHeightForBoxSizing()) : logicalHeight;
+    computedValues.m_extent = viewLogicalHeightForBoxSizing();
 }
 
 void LayoutView::updateLogicalWidth()
 {
-    if (!shouldUsePrintingLayout() && m_frameView)
-        setLogicalWidth(viewLogicalWidthForBoxSizing());
+    setLogicalWidth(viewLogicalWidthForBoxSizing());
 }
 
 bool LayoutView::isChildAllowed(LayoutObject* child, const ComputedStyle&) const
@@ -198,6 +201,11 @@ bool LayoutView::shouldDoFullPaintInvalidationForNextLayout() const
     }
 
     return false;
+}
+
+bool LayoutView::doingFullPaintInvalidation() const
+{
+    return m_frameView->needsFullPaintInvalidation();
 }
 
 void LayoutView::layout()
@@ -384,7 +392,7 @@ void LayoutView::invalidateTreeIfNeeded(PaintInvalidationState& paintInvalidatio
         const LayoutBoxModelObject& paintInvalidationContainer = paintInvalidationState.paintInvalidationContainer();
         PaintLayer::mapRectToPaintInvalidationBacking(this, &paintInvalidationContainer, dirtyRect, &paintInvalidationState);
         invalidatePaintUsingContainer(paintInvalidationContainer, dirtyRect, PaintInvalidationFull);
-        invalidateDisplayItemClients(paintInvalidationContainer);
+        invalidateDisplayItemClients(paintInvalidationContainer, PaintInvalidationFull, &dirtyRect);
     }
     LayoutBlock::invalidateTreeIfNeeded(paintInvalidationState);
 }
@@ -400,22 +408,6 @@ static void setShouldDoFullPaintInvalidationForViewAndAllDescendantsInternal(Lay
 void LayoutView::setShouldDoFullPaintInvalidationForViewAndAllDescendants()
 {
     setShouldDoFullPaintInvalidationForViewAndAllDescendantsInternal(this);
-}
-
-void LayoutView::invalidatePaintForRectangle(const LayoutRect& paintInvalidationRect, PaintInvalidationReason invalidationReason) const
-{
-    ASSERT(!paintInvalidationRect.isEmpty());
-
-    if (document().printing() || !m_frameView)
-        return;
-
-    ASSERT(layer()->compositingState() == PaintsIntoOwnBacking || !frame()->ownerLayoutObject());
-
-    if (layer()->compositingState() == PaintsIntoOwnBacking) {
-        setBackingNeedsPaintInvalidationInRect(paintInvalidationRect, invalidationReason);
-    } else {
-        m_frameView->contentRectangleForPaintInvalidation(enclosingIntRect(paintInvalidationRect));
-    }
 }
 
 void LayoutView::invalidatePaintForViewAndCompositedLayers()
@@ -847,7 +839,10 @@ IntRect LayoutView::documentRect() const
 
 IntSize LayoutView::layoutSize(IncludeScrollbarsInRect scrollbarInclusion) const
 {
-    if (!m_frameView || shouldUsePrintingLayout())
+    if (shouldUsePrintingLayout())
+        return IntSize(size().width(), pageLogicalHeight());
+
+    if (!m_frameView)
         return IntSize();
 
     IntSize result = m_frameView->layoutSize(IncludeScrollbars);
@@ -952,6 +947,26 @@ void LayoutView::willBeDestroyed()
 {
     LayoutBlockFlow::willBeDestroyed();
     m_compositor.clear();
+}
+
+void LayoutView::registerMediaForPositionChangeNotification(LayoutMedia& media)
+{
+    if (!m_mediaForPositionNotification.contains(&media))
+        m_mediaForPositionNotification.append(&media);
+}
+
+void LayoutView::unregisterMediaForPositionChangeNotification(LayoutMedia& media)
+{
+    size_t at = m_mediaForPositionNotification.find(&media);
+    if (at != kNotFound)
+        m_mediaForPositionNotification.remove(at);
+}
+
+void LayoutView::sendMediaPositionChangeNotifications(const IntRect& visibleRect)
+{
+    for (auto& media : m_mediaForPositionNotification) {
+        media->notifyPositionMayHaveChanged(visibleRect);
+    }
 }
 
 } // namespace blink

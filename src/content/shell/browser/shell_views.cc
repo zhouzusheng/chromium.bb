@@ -46,6 +46,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "device/bluetooth/dbus/bluez_dbus_manager.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/wm/test/wm_test_helper.h"
 #else  // !defined(OS_CHROMEOS)
@@ -494,6 +495,10 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 #endif
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Initialize();
+  bluez::BluezDBusManager::Initialize(
+      chromeos::DBusThreadManager::Get()->GetSystemBus(),
+      chromeos::DBusThreadManager::Get()->IsUsingStub(
+          chromeos::DBusClientBundle::BLUETOOTH));
   test_screen_ = aura::TestScreen::Create(gfx::Size());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen_);
   wm_test_helper_ = new wm::WMTestHelper(default_window_size,
@@ -519,6 +524,7 @@ void Shell::PlatformExit() {
   platform_ = NULL;
 #if defined(OS_CHROMEOS)
   device::BluetoothAdapterFactory::Shutdown();
+  bluez::BluezDBusManager::Shutdown();
   chromeos::DBusThreadManager::Shutdown();
 #endif
   aura::Env::DeleteInstance();

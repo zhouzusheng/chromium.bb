@@ -9,9 +9,11 @@
 
 #include "GrFragmentProcessor.h"
 #include "effects/GrConstColorProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/GrGLSLBlend.h"
-#include "gl/builders/GrGLProgramBuilder.h"
-#include "SkGr.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "SkGrPriv.h"
 
 class ComposeTwoFragmentProcessor : public GrFragmentProcessor {
 public:
@@ -87,7 +89,7 @@ GrGLFragmentProcessor* ComposeTwoFragmentProcessor::onCreateGLInstance() const{
 
 void GLComposeTwoFragmentProcessor::emitCode(EmitArgs& args) {
 
-    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+    GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
     const ComposeTwoFragmentProcessor& cs = args.fFp.cast<ComposeTwoFragmentProcessor>();
 
     const char* inputColor = nullptr;
@@ -217,7 +219,7 @@ public:
     GLComposeOneFragmentProcessor(const GrProcessor& processor) {}
 
     void emitCode(EmitArgs& args) override {
-        GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+        GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
         SkXfermode::Mode mode = args.fFp.cast<ComposeOneFragmentProcessor>().mode();
         ComposeOneFragmentProcessor::Child child =
             args.fFp.cast<ComposeOneFragmentProcessor>().child();

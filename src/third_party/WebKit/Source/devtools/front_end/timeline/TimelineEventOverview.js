@@ -259,42 +259,10 @@ WebInspector.TimelineEventOverview.Network.prototype = {
 WebInspector.TimelineEventOverview.CPUActivity = function(model)
 {
     WebInspector.TimelineEventOverview.call(this, "cpu-activity", WebInspector.UIString("CPU"), model);
-    this._fillStyles = {};
-    var categories = WebInspector.TimelineUIUtils.categories();
-    for (var category in categories) {
-        this._fillStyles[category] = categories[category].fillColorStop1;
-        categories[category].addEventListener(WebInspector.TimelineCategory.Events.VisibilityChanged, this._onCategoryVisibilityChanged, this);
-    }
-    this._disabledCategoryFillStyle = "hsl(0, 0%, 67%)";
     this._backgroundCanvas = this.element.createChild("canvas", "fill background");
 }
 
 WebInspector.TimelineEventOverview.CPUActivity.prototype = {
-    /**
-     * @override
-     */
-    dispose: function()
-    {
-        WebInspector.TimelineOverviewBase.prototype.dispose.call(this);
-        var categories = WebInspector.TimelineUIUtils.categories();
-        for (var category in categories)
-            categories[category].removeEventListener(WebInspector.TimelineCategory.Events.VisibilityChanged, this._onCategoryVisibilityChanged, this);
-    },
-
-    _onCategoryVisibilityChanged: function()
-    {
-        this.update();
-    },
-
-    /**
-     * @param {!WebInspector.TimelineCategory} category
-     * @return {string}
-     */
-    _categoryColor: function(category)
-    {
-        return category.hidden ? this._disabledCategoryFillStyle : this._fillStyles[category.name];
-    },
-
     /**
      * @override
      */
@@ -329,14 +297,13 @@ WebInspector.TimelineEventOverview.CPUActivity.prototype = {
 
         var backgroundContext = this._backgroundCanvas.getContext("2d");
         for (var thread of this._model.virtualThreads())
-            drawThreadEvents.call(this, backgroundContext, thread.events);
+            drawThreadEvents(backgroundContext, thread.events);
         applyPattern(backgroundContext);
-        drawThreadEvents.call(this, this._context, this._model.mainThreadEvents());
+        drawThreadEvents(this._context, this._model.mainThreadEvents());
 
         /**
          * @param {!CanvasRenderingContext2D} ctx
          * @param {!Array<!WebInspector.TracingModel.Event>} events
-         * @this {WebInspector.TimelineEventOverview}
          */
         function drawThreadEvents(ctx, events)
         {
@@ -388,7 +355,7 @@ WebInspector.TimelineEventOverview.CPUActivity.prototype = {
             quantizer.appendInterval(timeOffset + timeSpan + quantTime, idleIndex);  // Kick drawing the last bucket.
             for (var i = categoryOrder.length - 1; i > 0; --i) {
                 paths[i].lineTo(width, height);
-                ctx.fillStyle = this._categoryColor(categories[categoryOrder[i]]);
+                ctx.fillStyle = categories[categoryOrder[i]].fillColorStop1;
                 ctx.fill(paths[i]);
             }
         }
@@ -543,14 +510,14 @@ WebInspector.TimelineFilmStripOverview.prototype = {
 
         /**
          * @param {?string} data
-         * @return {!HTMLImageElement}
+         * @return {!Promise<!HTMLImageElement>}
          */
         function createImage(data)
         {
             var image = /** @type {!HTMLImageElement} */ (createElement("img"));
             if (data)
                 image.src = "data:image/jpg;base64," + data;
-            return image;
+            return image.completePromise();
         }
     },
 
@@ -565,13 +532,15 @@ WebInspector.TimelineFilmStripOverview.prototype = {
         var spanTime = this._tracingModel.maximumRecordTime() - zeroTime;
         var scale = spanTime / width;
         var context = this._canvas.getContext("2d");
+        var currentDrawGeneration = Symbol("drawGeneration");
+        this._lastDrawGeneration = currentDrawGeneration;
 
         context.beginPath();
         for (var x = 0; x < width; x += this._imageWidth + 5) {
-            var time = zeroTime + (x + this._imageWidth / 2)* scale;
+            var time = zeroTime + (x + this._imageWidth / 2) * scale;
             var frame = this._frameByTime(time);
             context.rect(x + 0.5, 3.5, this._imageWidth + 1, this._imageHeight + 1);
-            this._imageByFrame(frame).then(drawFrameImage.bind(null, x, this._imageWidth, this._imageHeight));
+            this._imageByFrame(frame).then(drawFrameImage.bind(this, x, this._imageWidth, this._imageHeight));
         }
         context.strokeStyle = "#ddd";
         context.stroke();
@@ -581,9 +550,13 @@ WebInspector.TimelineFilmStripOverview.prototype = {
          * @param {number} width
          * @param {number} height
          * @param {!HTMLImageElement} image
+         * @this {WebInspector.TimelineFilmStripOverview}
          */
         function drawFrameImage(x, width, height, image)
         {
+            // Ignore draws deferred from a previous update call.
+            if (this._lastDrawGeneration !== currentDrawGeneration)
+                return;
             context.drawImage(image, x + 1, 4, width, height);
         }
     },

@@ -6,7 +6,7 @@
 
 #include "JBig2_Segment.h"
 
-#include "../../../include/fxcrt/fx_memory.h"
+#include "core/include/fxcrt/fx_memory.h"
 
 CJBig2_Segment::CJBig2_Segment() {
   m_dwNumber = 0;
@@ -16,7 +16,8 @@ CJBig2_Segment::CJBig2_Segment() {
   m_dwPage_association = 0;
   m_dwData_length = 0;
   m_dwHeader_Length = 0;
-  m_pData = NULL;
+  m_dwObjNum = 0;
+  m_dwDataOffset = 0;
   m_State = JBIG2_SEGMENT_HEADER_UNPARSED;
   m_nResultType = JBIG2_VOID_POINTER;
   m_Result.vd = NULL;

@@ -27,7 +27,6 @@ class AudioEncoderIsacT final : public AudioEncoder {
   //  - 16000 Hz, 30 ms, 10000-32000 bps
   //  - 16000 Hz, 60 ms, 10000-32000 bps
   //  - 32000 Hz, 30 ms, 10000-56000 bps (if T has super-wideband support)
-  //  - 48000 Hz, 30 ms, 10000-56000 bps (if T has super-wideband support)
   struct Config {
     bool IsOk() const;
 
@@ -62,7 +61,7 @@ class AudioEncoderIsacT final : public AudioEncoder {
   size_t Max10MsFramesInAPacket() const override;
   int GetTargetBitrate() const override;
   EncodedInfo EncodeInternal(uint32_t rtp_timestamp,
-                             const int16_t* audio,
+                             rtc::ArrayView<const int16_t> audio,
                              size_t max_encoded_bytes,
                              uint8_t* encoded) override;
   void Reset() override;

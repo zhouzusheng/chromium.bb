@@ -62,6 +62,8 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   // intended behavior for which is in flux by itself.
   WebRuntimeFeatures::enableNotificationConstructor(false);
   WebRuntimeFeatures::enableNewMediaPlaybackUi(true);
+  // Android does not yet support switching of audio output devices
+  WebRuntimeFeatures::enableAudioOutputDevices(false);
 #else
   WebRuntimeFeatures::enableNavigatorContentUtils(true);
 #endif  // defined(OS_ANDROID)
@@ -163,9 +165,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (ui::IsOverlayScrollbarEnabled())
     WebRuntimeFeatures::enableOverlayScrollbars(true);
-
-  if (command_line.HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths))
-    WebRuntimeFeatures::enableBleedingEdgeFastPaths(true);
 
   if (command_line.HasSwitch(switches::kEnablePreciseMemoryInfo))
     WebRuntimeFeatures::enablePreciseMemoryInfo(true);

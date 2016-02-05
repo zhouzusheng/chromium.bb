@@ -273,8 +273,9 @@ int SimpleSynchronousEntry::DoomEntrySet(
     const std::vector<uint64>* key_hashes,
     const FilePath& path) {
   const size_t did_delete_count = std::count_if(
-      key_hashes->begin(), key_hashes->end(), std::bind1st(
-          std::ptr_fun(SimpleSynchronousEntry::DeleteFilesForEntryHash), path));
+      key_hashes->begin(), key_hashes->end(), [&path](const uint64& key_hash) {
+        return SimpleSynchronousEntry::DeleteFilesForEntryHash(path, key_hash);
+      });
   return (did_delete_count == key_hashes->size()) ? net::OK : net::ERR_FAILED;
 }
 
@@ -479,6 +480,7 @@ void SimpleSynchronousEntry::WriteSparseData(
     DVLOG(1) << "Truncating sparse data file (" << sparse_data_size << " + "
              << buf_len << " > " << max_sparse_data_size << ")";
     TruncateSparseFile();
+    out_entry_stat->set_sparse_data_size(0);
   }
 
   SparseRangeIterator it = sparse_ranges_.lower_bound(offset);
@@ -1226,6 +1228,7 @@ bool SimpleSynchronousEntry::TruncateSparseFile() {
   }
 
   sparse_ranges_.clear();
+  sparse_tail_offset_ = header_and_key_length;
 
   return true;
 }

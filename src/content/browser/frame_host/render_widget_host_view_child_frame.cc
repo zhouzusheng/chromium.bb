@@ -4,6 +4,9 @@
 
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 
+#include <algorithm>
+#include <vector>
+
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_factory.h"
 #include "cc/surfaces/surface_manager.h"
@@ -73,6 +76,8 @@ void RenderWidgetHostViewChildFrame::Focus() {
 }
 
 bool RenderWidgetHostViewChildFrame::HasFocus() const {
+  if (frame_connector_)
+    return frame_connector_->HasFocus();
   return false;
 }
 
@@ -162,6 +167,8 @@ void RenderWidgetHostViewChildFrame::MovePluginWindows(
 }
 
 void RenderWidgetHostViewChildFrame::UpdateCursor(const WebCursor& cursor) {
+  if (frame_connector_)
+    frame_connector_->UpdateCursor(cursor);
 }
 
 void RenderWidgetHostViewChildFrame::SetIsLoading(bool is_loading) {
@@ -223,13 +230,13 @@ void RenderWidgetHostViewChildFrame::SelectionBoundsChanged(
     const ViewHostMsg_SelectionBounds_Params& params) {
 }
 
-#if defined(OS_ANDROID)
 void RenderWidgetHostViewChildFrame::LockCompositingSurface() {
+  NOTIMPLEMENTED();
 }
 
 void RenderWidgetHostViewChildFrame::UnlockCompositingSurface() {
+  NOTIMPLEMENTED();
 }
-#endif
 
 void RenderWidgetHostViewChildFrame::SurfaceDrawn(uint32 output_surface_id,
                                                   cc::SurfaceDrawStatus drawn) {
@@ -413,11 +420,11 @@ void RenderWidgetHostViewChildFrame::CopyFromCompositingSurface(
 }
 
 void RenderWidgetHostViewChildFrame::CopyFromCompositingSurfaceToVideoFrame(
-      const gfx::Rect& src_subrect,
-      const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback) {
+    const gfx::Rect& src_subrect,
+    const scoped_refptr<media::VideoFrame>& target,
+    const base::Callback<void(const gfx::Rect&, bool)>& callback) {
   NOTIMPLEMENTED();
-  callback.Run(false);
+  callback.Run(gfx::Rect(), false);
 }
 
 bool RenderWidgetHostViewChildFrame::CanCopyToVideoFrame() const {
@@ -459,11 +466,22 @@ void RenderWidgetHostViewChildFrame::ReturnResources(
             std::back_inserter(surface_returned_resources_));
 }
 
+void RenderWidgetHostViewChildFrame::SetBeginFrameSource(
+    cc::SurfaceId surface_id,
+    cc::BeginFrameSource* begin_frame_source) {
+  // TODO(tansell): Hook this up.
+}
+
 BrowserAccessibilityManager*
 RenderWidgetHostViewChildFrame::CreateBrowserAccessibilityManager(
     BrowserAccessibilityDelegate* delegate) {
+  // TODO(mfomitchev): Accessibility on Android Aura: crbug.com/543262
+#if defined(OS_ANDROID) && defined(USE_AURA)
+  return nullptr;
+#else
   return BrowserAccessibilityManager::Create(
       BrowserAccessibilityManager::GetEmptyDocument(), delegate);
+#endif
 }
 
 void RenderWidgetHostViewChildFrame::ClearCompositorSurfaceIfNecessary() {

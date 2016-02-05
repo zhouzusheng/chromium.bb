@@ -242,10 +242,6 @@ WebInspector.ProfileType.prototype = {
      */
     setProfileBeingRecorded: function(profile)
     {
-        if (this._profileBeingRecorded && this._profileBeingRecorded.target())
-            WebInspector.targetManager.resumeAllTargets();
-        if (profile && profile.target())
-            WebInspector.targetManager.suspendAllTargets();
         this._profileBeingRecorded = profile;
     },
 
@@ -1302,11 +1298,13 @@ WebInspector.ProfilesPanel.RecordActionDelegate.prototype = {
      * @override
      * @param {!WebInspector.Context} context
      * @param {string} actionId
+     * @return {boolean}
      */
     handleAction: function(context, actionId)
     {
         var panel = WebInspector.context.flavor(WebInspector.ProfilesPanel);
         console.assert(panel && panel instanceof WebInspector.ProfilesPanel);
         panel.toggleRecordButton();
+        return true;
     }
 }

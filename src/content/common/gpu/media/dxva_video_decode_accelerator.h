@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
@@ -77,6 +78,9 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
 
   static media::VideoDecodeAccelerator::SupportedProfiles
       GetSupportedProfiles();
+
+  // Preload dlls required for decoding.
+  static void PreSandboxInitialization();
 
  private:
   typedef void* EGLConfig;
@@ -241,6 +245,17 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // Returns true on success.
   bool GetVideoFrameDimensions(IMFSample* sample, int* width, int* height);
 
+  // Sets the output type on the |transform| to the GUID identified by the
+  // the |output_type| parameter. The GUID can be MFVideoFormat_RGB32,
+  // MFVideoFormat_ARGB32, MFVideoFormat_NV12, etc.
+  // Additionally if the |width| and |height| parameters are non zero, then
+  // this function also sets the MF_MT_FRAME_SIZE attribute on the type.
+  // Returns true on success.
+  bool SetTransformOutputType(IMFTransform* transform,
+                              const GUID& output_type,
+                              int width,
+                              int height);
+
   // To expose client callbacks from VideoDecodeAccelerator.
   media::VideoDecodeAccelerator::Client* client_;
 
@@ -252,9 +267,10 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   base::win::ScopedComPtr<IDirect3DDeviceManager9> device_manager_;
   base::win::ScopedComPtr<IDirect3DQuery9> query_;
 
-  base::win::ScopedComPtr<ID3D11DeviceContext> d3d11_device_context_;
   base::win::ScopedComPtr<ID3D11Device > d3d11_device_;
   base::win::ScopedComPtr<IMFDXGIDeviceManager> d3d11_device_manager_;
+  base::win::ScopedComPtr<ID3D10Multithread> multi_threaded_;
+  base::win::ScopedComPtr<ID3D11DeviceContext> d3d11_device_context_;
   base::win::ScopedComPtr<ID3D11Query> d3d11_query_;
 
   // Ideally the reset token would be a stack variable which is used while
@@ -363,11 +379,16 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // The GLContext to be used by the decoder.
   scoped_refptr<gfx::GLContext> gl_context_;
 
+  // Set to true if we are sharing ANGLE's device.
+  bool using_angle_device_;
+
   // WeakPtrFactory for posting tasks back to |this|.
   base::WeakPtrFactory<DXVAVideoDecodeAccelerator> weak_this_factory_;
 
   // Function pointer for the MFCreateDXGIDeviceManager API.
   static CreateDXGIDeviceManager create_dxgi_device_manager_;
+
+  DISALLOW_COPY_AND_ASSIGN(DXVAVideoDecodeAccelerator);
 };
 
 }  // namespace content

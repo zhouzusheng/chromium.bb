@@ -4,14 +4,14 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../third_party/base/nonstd_unique_ptr.h"
-#include "../../include/fpdfapi/fpdf_page.h"
-#include "../../include/fpdfapi/fpdf_pageobj.h"
-#include "../../include/fpdfapi/fpdf_resource.h"
-#include "../../include/fpdftext/fpdf_text.h"
-#include "../../include/fxcrt/fx_bidi.h"
-#include "../../include/fxcrt/fx_ucd.h"
+#include "core/include/fpdfapi/fpdf_page.h"
+#include "core/include/fpdfapi/fpdf_pageobj.h"
+#include "core/include/fpdfapi/fpdf_resource.h"
+#include "core/include/fpdftext/fpdf_text.h"
+#include "core/include/fxcrt/fx_bidi.h"
+#include "core/include/fxcrt/fx_ucd.h"
 #include "text_int.h"
+#include "third_party/base/nonstd_unique_ptr.h"
 #include "txtproc.h"
 
 CFX_ByteString CharFromUnicodeAlt(FX_WCHAR unicode,
@@ -22,10 +22,7 @@ CFX_ByteString CharFromUnicodeAlt(FX_WCHAR unicode,
       return CFX_ByteString((char)unicode);
     }
     const FX_CHAR* altstr = FCS_GetAltStr(unicode);
-    if (altstr) {
-      return CFX_ByteString(altstr, -1);
-    }
-    return CFX_ByteString(defchar, -1);
+    return CFX_ByteString(altstr ? altstr : defchar);
   }
   char buf[10];
   int iDef = 0;
@@ -35,10 +32,7 @@ CFX_ByteString CharFromUnicodeAlt(FX_WCHAR unicode,
     return CFX_ByteString(buf, ret);
   }
   const FX_CHAR* altstr = FCS_GetAltStr(unicode);
-  if (altstr) {
-    return CFX_ByteString(altstr, -1);
-  }
-  return CFX_ByteString(defchar, -1);
+  return CFX_ByteString(altstr ? altstr : defchar);
 }
 CTextPage::CTextPage() {}
 CTextPage::~CTextPage() {

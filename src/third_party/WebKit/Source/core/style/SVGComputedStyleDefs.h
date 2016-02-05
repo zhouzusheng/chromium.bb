@@ -72,14 +72,6 @@ enum EShapeRendering {
     SR_AUTO, SR_OPTIMIZESPEED, SR_CRISPEDGES, SR_GEOMETRICPRECISION
 };
 
-enum SVGWritingMode {
-    WM_LRTB, WM_LR, WM_RLTB, WM_RL, WM_TBRL, WM_TB
-};
-
-enum EGlyphOrientation {
-    GO_0DEG, GO_90DEG, GO_180DEG, GO_270DEG, GO_AUTO
-};
-
 enum EAlignmentBaseline {
     AB_AUTO, AB_BASELINE, AB_BEFORE_EDGE, AB_TEXT_BEFORE_EDGE,
     AB_MIDDLE, AB_CENTRAL, AB_AFTER_EDGE, AB_TEXT_AFTER_EDGE,
@@ -151,7 +143,7 @@ private:
 };
 
 class UnzoomedLength {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     explicit UnzoomedLength(const Length& length) : m_length(length) { }
 

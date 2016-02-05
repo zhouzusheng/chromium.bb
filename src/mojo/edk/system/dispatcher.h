@@ -139,7 +139,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   //    that |signals| will ever be satisfied.
   MojoResult AddAwakable(Awakable* awakable,
                          MojoHandleSignals signals,
-                         uint32_t context,
+                         uintptr_t context,
                          HandleSignalsState* signals_state);
   // Removes an awakable from this dispatcher. (It is valid to call this
   // multiple times for the same |awakable| on the same object, so long as
@@ -261,7 +261,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   virtual HandleSignalsState GetHandleSignalsStateImplNoLock() const;
   virtual MojoResult AddAwakableImplNoLock(Awakable* awakable,
                                            MojoHandleSignals signals,
-                                           uint32_t context,
+                                           uintptr_t context,
                                            HandleSignalsState* signals_state);
   virtual void RemoveAwakableImplNoLock(Awakable* awakable,
                                         HandleSignalsState* signals_state);
@@ -269,13 +269,6 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // These implement the API used to serialize dispatchers (described below).
   // They will only be called on a dispatcher that's attached to and "owned" by
   // a |MessageInTransit|. See the non-"impl" versions for more information.
-  //
-  // Note: |StartSerializeImplNoLock()| is actually called with |lock_| NOT
-  // held, since the dispatcher should only be accessible to the calling thread.
-  // On Debug builds, |EndSerializeAndCloseImplNoLock()| is called with |lock_|
-  // held, to satisfy any |lock_.AssertAcquired()| (e.g., in |CloseImplNoLock()|
-  // -- and anything it calls); disentangling those assertions is
-  // difficult/fragile, and would weaken our general checking of invariants.
   //
   // TODO(vtl): Consider making these pure virtual once most things support
   // being passed over a message pipe.
@@ -331,8 +324,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher
   // Starts the serialization. Returns (via the two "out" parameters) the
   // maximum amount of space that may be needed to serialize this dispatcher (no
   // more than |TransportData::kMaxSerializedDispatcherSize|) and the maximum
-  // number of |PlatformHandle|s that may need to be attached (no more than
-  // |TransportData::kMaxSerializedDispatcherPlatformHandles|). If this
+  // number of |PlatformHandle|s that may need to be attached. If this
   // dispatcher cannot be serialized, |*max_size| and |*max_platform_handles|
   // should be set to zero. A call to this method will ALWAYS be followed by a
   // call to |EndSerializeAndClose()| (even if this dispatcher cannot be

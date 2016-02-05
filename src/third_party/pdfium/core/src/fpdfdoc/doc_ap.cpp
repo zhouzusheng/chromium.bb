@@ -4,9 +4,9 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../include/fpdfdoc/fpdf_ap.h"
-#include "../../include/fpdfdoc/fpdf_doc.h"
-#include "../../include/fpdfdoc/fpdf_vt.h"
+#include "core/include/fpdfdoc/fpdf_ap.h"
+#include "core/include/fpdfdoc/fpdf_doc.h"
+#include "core/include/fpdfdoc/fpdf_vt.h"
 #include "doc_utils.h"
 #include "pdf_vt.h"
 
@@ -427,11 +427,8 @@ static FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
     pAnnotDict->SetAt("AP", pAPDict);
   }
   CPDF_Stream* pNormalStream = pAPDict->GetStream("N");
-  if (pNormalStream == NULL) {
-    pNormalStream = CPDF_Stream::Create(NULL, 0, NULL);
-    if (pNormalStream == NULL) {
-      return FALSE;
-    }
+  if (!pNormalStream) {
+    pNormalStream = new CPDF_Stream(nullptr, 0, nullptr);
     int32_t objnum = pDoc->AddIndirectObject(pNormalStream);
     pAnnotDict->GetDict("AP")->SetAtReference("N", pDoc, objnum);
   }
@@ -618,12 +615,11 @@ static FX_BOOL GenerateWidgetAP(CPDF_Document* pDoc,
           }
           if (CPDF_Object* pOpt = pOpts->GetElementValue(i)) {
             CFX_WideString swItem;
-            if (pOpt->GetType() == PDFOBJ_STRING) {
+            if (pOpt->IsString())
               swItem = pOpt->GetUnicodeText();
-            } else if (pOpt->GetType() == PDFOBJ_ARRAY) {
-              swItem =
-                  ((CPDF_Array*)pOpt)->GetElementValue(1)->GetUnicodeText();
-            }
+            else if (CPDF_Array* pArray = pOpt->AsArray())
+              swItem = pArray->GetElementValue(1)->GetUnicodeText();
+
             FX_BOOL bSelected = FALSE;
             if (pSels) {
               for (FX_DWORD s = 0, ssz = pSels->GetCount(); s < ssz; s++) {

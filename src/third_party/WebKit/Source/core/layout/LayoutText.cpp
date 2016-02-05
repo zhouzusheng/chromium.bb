@@ -41,6 +41,7 @@
 #include "core/layout/line/GlyphOverflow.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/paint/PaintLayer.h"
+#include "platform/LayoutTestSupport.h"
 #include "platform/fonts/Character.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/geometry/FloatQuad.h"
@@ -81,7 +82,7 @@ public:
     {
         m_lastTypedCharacterOffset = lastTypedCharacterOffset;
         if (Settings* settings = m_layoutText->document().settings())
-            startOneShot(settings->passwordEchoDurationInSeconds(), FROM_HERE);
+            startOneShot(settings->passwordEchoDurationInSeconds(), BLINK_FROM_HERE);
     }
     void invalidate() { m_lastTypedCharacterOffset = -1; }
     unsigned lastTypedCharacterOffset() { return m_lastTypedCharacterOffset; }
@@ -1832,8 +1833,6 @@ int LayoutText::nextOffset(int current) const
 
 bool LayoutText::computeCanUseSimpleFontCodePath() const
 {
-    if (RuntimeEnabledFeatures::alwaysUseComplexTextEnabled())
-        return false;
     if (m_text.is8Bit())
         return true;
     return Character::characterRangeCodePath(characters16(), length()) == SimplePath;
@@ -1846,7 +1845,7 @@ void LayoutText::checkConsistency() const
 #ifdef CHECK_CONSISTENCY
     const InlineTextBox* prev = nullptr;
     for (const InlineTextBox* child = m_firstTextBox; child; child = child->nextTextBox()) {
-        ASSERT(child->layoutObject() == this);
+        ASSERT(child->lineLayoutItem().isEqual(this));
         ASSERT(child->prevTextBox() == prev);
         prev = child;
     }
@@ -1874,14 +1873,17 @@ PassRefPtr<AbstractInlineTextBox> LayoutText::firstAbstractInlineTextBox()
     return AbstractInlineTextBox::getOrCreate(this, m_firstTextBox);
 }
 
-void LayoutText::invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const
+void LayoutText::invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer, PaintInvalidationReason invalidationReason, const LayoutRect* paintInvalidationRect) const
 {
-    LayoutObject::invalidateDisplayItemClients(paintInvalidationContainer);
+    LayoutObject::invalidateDisplayItemClients(paintInvalidationContainer, invalidationReason, paintInvalidationRect);
+
+    // Use the paintInvalidationRect of LayoutText for inline boxes, which saves the cost to calculate paint invalidation rect
+    // for every inline box. This won't cause more rasterization invalidations because the whole LayoutText is being invalidated.
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {
-        paintInvalidationContainer.invalidateDisplayItemClientOnBacking(*box);
+        paintInvalidationContainer.invalidateDisplayItemClientOnBacking(*box, invalidationReason, paintInvalidationRect);
         if (box->truncation() != cNoTruncation) {
             if (EllipsisBox* ellipsisBox = box->root().ellipsisBox())
-                paintInvalidationContainer.invalidateDisplayItemClientOnBacking(*ellipsisBox);
+                paintInvalidationContainer.invalidateDisplayItemClientOnBacking(*ellipsisBox, invalidationReason, paintInvalidationRect);
         }
     }
 }

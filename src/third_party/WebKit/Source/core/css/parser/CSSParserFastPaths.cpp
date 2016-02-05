@@ -20,6 +20,8 @@ static inline bool isSimpleLengthPropertyID(CSSPropertyID propertyId, bool& acce
 {
     switch (propertyId) {
     case CSSPropertyFontSize:
+    case CSSPropertyGridColumnGap:
+    case CSSPropertyGridRowGap:
     case CSSPropertyHeight:
     case CSSPropertyWidth:
     case CSSPropertyMinHeight:
@@ -108,9 +110,13 @@ static PassRefPtrWillBeRawPtr<CSSValue> parseSimpleLengthValue(CSSPropertyID pro
 
     if (unit == CSSPrimitiveValue::UnitType::Number) {
         bool quirksMode = isQuirksModeBehavior(cssParserMode);
-        if (number && !quirksMode)
+        bool svgMode = cssParserMode == SVGAttributeMode;
+        if (number && (!quirksMode && !svgMode))
             return nullptr;
-        unit = CSSPrimitiveValue::UnitType::Pixels;
+        if (svgMode)
+            unit = CSSPrimitiveValue::UnitType::UserUnits;
+        else
+            unit = CSSPrimitiveValue::UnitType::Pixels;
     }
     if (number < 0 && !acceptsNegativeNumbers)
         return nullptr;
@@ -586,6 +592,8 @@ bool CSSParserFastPaths::isValidKeywordPropertyAndValue(CSSPropertyID propertyId
         return (valueID >= CSSValueLeft && valueID <= CSSValueJustify) || valueID == CSSValueStart || valueID == CSSValueEnd || valueID == CSSValueAuto;
     case CSSPropertyTextAnchor:
         return valueID == CSSValueStart || valueID == CSSValueMiddle || valueID == CSSValueEnd;
+    case CSSPropertyTextCombineUpright:
+        return valueID == CSSValueNone || valueID == CSSValueAll;
     case CSSPropertyTextDecorationStyle:
         // solid | double | dotted | dashed | wavy
         ASSERT(RuntimeEnabledFeatures::css3TextDecorationsEnabled());
@@ -594,6 +602,8 @@ bool CSSParserFastPaths::isValidKeywordPropertyAndValue(CSSPropertyID propertyId
         // auto | none | inter-word | distribute
         ASSERT(RuntimeEnabledFeatures::css3TextEnabled());
         return valueID == CSSValueInterWord || valueID == CSSValueDistribute || valueID == CSSValueAuto || valueID == CSSValueNone;
+    case CSSPropertyTextOrientation: // mixed | upright | sideways | sideways-right
+        return valueID == CSSValueMixed || valueID == CSSValueUpright || valueID == CSSValueSideways || valueID == CSSValueSidewaysRight;
     case CSSPropertyTextOverflow: // clip | ellipsis
         return valueID == CSSValueClip || valueID == CSSValueEllipsis;
     case CSSPropertyTextRendering: // auto | optimizeSpeed | optimizeLegibility | geometricPrecision
@@ -603,7 +613,8 @@ bool CSSParserFastPaths::isValidKeywordPropertyAndValue(CSSPropertyID propertyId
     case CSSPropertyUnicodeBidi:
         return valueID == CSSValueNormal || valueID == CSSValueEmbed
             || valueID == CSSValueBidiOverride || valueID == CSSValueWebkitIsolate
-            || valueID == CSSValueWebkitIsolateOverride || valueID == CSSValueWebkitPlaintext;
+            || valueID == CSSValueWebkitIsolateOverride || valueID == CSSValueWebkitPlaintext
+            || valueID == CSSValueIsolate || valueID == CSSValueIsolateOverride || valueID == CSSValuePlaintext;
     case CSSPropertyVectorEffect:
         return valueID == CSSValueNone || valueID == CSSValueNonScalingStroke;
     case CSSPropertyVisibility: // visible | hidden | collapse
@@ -681,9 +692,11 @@ bool CSSParserFastPaths::isValidKeywordPropertyAndValue(CSSPropertyID propertyId
     case CSSPropertyWebkitUserSelect: // auto | none | text | all
         return valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText || valueID == CSSValueAll;
     case CSSPropertyWebkitWritingMode:
-        return valueID >= CSSValueHorizontalTb && valueID <= CSSValueHorizontalBt;
+        return valueID >= CSSValueHorizontalTb && valueID <= CSSValueVerticalLr;
     case CSSPropertyWritingMode:
-        return valueID == CSSValueLrTb || valueID == CSSValueRlTb || valueID == CSSValueTbRl
+        return valueID == CSSValueHorizontalTb
+            || valueID == CSSValueVerticalRl || valueID == CSSValueVerticalLr
+            || valueID == CSSValueLrTb || valueID == CSSValueRlTb || valueID == CSSValueTbRl
             || valueID == CSSValueLr || valueID == CSSValueRl || valueID == CSSValueTb;
     case CSSPropertyWhiteSpace: // normal | pre | nowrap
         return valueID == CSSValueNormal || valueID == CSSValuePre || valueID == CSSValuePreWrap || valueID == CSSValuePreLine || valueID == CSSValueNowrap;
@@ -751,8 +764,10 @@ bool CSSParserFastPaths::isKeywordPropertyID(CSSPropertyID propertyId)
     case CSSPropertyTableLayout:
     case CSSPropertyTextAlignLast:
     case CSSPropertyTextAnchor:
+    case CSSPropertyTextCombineUpright:
     case CSSPropertyTextDecorationStyle:
     case CSSPropertyTextJustify:
+    case CSSPropertyTextOrientation:
     case CSSPropertyTextOverflow:
     case CSSPropertyTextRendering:
     case CSSPropertyTextTransform:

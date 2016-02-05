@@ -4,12 +4,12 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../include/javascript/JavaScript.h"
+#include "report.h"
+
 #include "../../include/javascript/IJavaScript.h"
-#include "../../include/javascript/JS_Define.h"
-#include "../../include/javascript/JS_Object.h"
-#include "../../include/javascript/JS_Value.h"
-#include "../../include/javascript/report.h"
+#include "JS_Define.h"
+#include "JS_Object.h"
+#include "JS_Value.h"
 
 /* ---------------------- report ---------------------- */
 
@@ -30,16 +30,16 @@ Report::Report(CJS_Object* pJSObject) : CJS_EmbedObj(pJSObject) {}
 
 Report::~Report() {}
 
-FX_BOOL Report::writeText(IFXJS_Context* cc,
-                          const CJS_Parameters& params,
+FX_BOOL Report::writeText(IJS_Context* cc,
+                          const std::vector<CJS_Value>& params,
                           CJS_Value& vRet,
                           CFX_WideString& sError) {
   // Unsafe, not supported.
   return TRUE;
 }
 
-FX_BOOL Report::save(IFXJS_Context* cc,
-                     const CJS_Parameters& params,
+FX_BOOL Report::save(IJS_Context* cc,
+                     const std::vector<CJS_Value>& params,
                      CJS_Value& vRet,
                      CFX_WideString& sError) {
   // Unsafe, not supported.

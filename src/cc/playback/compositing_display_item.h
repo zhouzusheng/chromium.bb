@@ -28,12 +28,12 @@ class CC_EXPORT CompositingDisplayItem : public DisplayItem {
               SkRect* bounds,
               skia::RefPtr<SkColorFilter> color_filter);
 
+  void ToProtobuf(proto::DisplayItem* proto) const override;
+  void FromProtobuf(const proto::DisplayItem& proto) override;
   void Raster(SkCanvas* canvas,
               const gfx::Rect& canvas_target_playback_rect,
               SkPicture::AbortCallback* callback) const override;
   void AsValueInto(base::trace_event::TracedValue* array) const override;
-  void ProcessForBounds(
-      DisplayItemListBoundsCalculator* calculator) const override;
 
  private:
   uint8_t alpha_;
@@ -52,12 +52,12 @@ class CC_EXPORT EndCompositingDisplayItem : public DisplayItem {
     return make_scoped_ptr(new EndCompositingDisplayItem());
   }
 
+  void ToProtobuf(proto::DisplayItem* proto) const override;
+  void FromProtobuf(const proto::DisplayItem& proto) override;
   void Raster(SkCanvas* canvas,
               const gfx::Rect& canvas_target_playback_rect,
               SkPicture::AbortCallback* callback) const override;
   void AsValueInto(base::trace_event::TracedValue* array) const override;
-  void ProcessForBounds(
-      DisplayItemListBoundsCalculator* calculator) const override;
 };
 
 }  // namespace cc

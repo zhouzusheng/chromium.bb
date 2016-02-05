@@ -27,10 +27,12 @@
 #include "core/editing/commands/UndoStack.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 #include "core/events/Event.h"
+#include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMTimer.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
+#include "core/frame/FrameView.h"
 #include "core/frame/RemoteFrame.h"
 #include "core/frame/RemoteFrameView.h"
 #include "core/frame/Settings.h"
@@ -47,28 +49,25 @@
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/paint/PaintLayer.h"
-#include "platform/MemoryPurgeController.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/plugins/PluginData.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebFrameHostScheduler.h"
 
 namespace blink {
 
 // static
-HashSet<Page*>& Page::allPages()
+WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<Page>>& Page::allPages()
 {
-    DEFINE_STATIC_LOCAL(HashSet<Page*>, allPages, ());
+    DEFINE_STATIC_LOCAL(WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<Page>>, allPages, ());
     return allPages;
 }
 
 // static
-HashSet<Page*>& Page::ordinaryPages()
+WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<Page>>& Page::ordinaryPages()
 {
-    DEFINE_STATIC_LOCAL(HashSet<Page*>, ordinaryPages, ());
+    DEFINE_STATIC_LOCAL(WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<Page>>, ordinaryPages, ());
     return ordinaryPages;
 }
-
 
 void Page::networkStateChanged(bool online)
 {
@@ -130,10 +129,14 @@ Page::Page(PageClients& pageClients)
 
     ASSERT(!allPages().contains(this));
     allPages().add(this);
+    memoryPurgeController().registerClient(this);
 }
 
 Page::~Page()
 {
+#if !ENABLE(OILPAN)
+    memoryPurgeController().unregisterClient(this);
+#endif
     // willBeDestroyed() must be called before Page destruction.
     ASSERT(!m_mainFrame);
 }
@@ -391,11 +394,12 @@ void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitia
 
     // TODO(alexclarke): Move throttling of timers to chromium.
     if (visibilityState == PageVisibilityStateVisible) {
-        m_frameHost->frameHostScheduler()->setPageInBackground(false);
         setTimerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval());
+        m_memoryPurgeController->pageBecameActive();
     } else {
-        m_frameHost->frameHostScheduler()->setPageInBackground(true);
         setTimerAlignmentInterval(DOMTimer::hiddenPageAlignmentInterval());
+        if (!isInitialState)
+            m_memoryPurgeController->pageBecameInactive();
     }
 
     if (!isInitialState)
@@ -540,14 +544,16 @@ void Page::acceptLanguagesChanged()
         frames[i]->localDOMWindow()->acceptLanguagesChanged();
 }
 
-void Page::setCompositedDisplayList(PassOwnPtr<CompositedDisplayList> compositedDisplayList)
+void Page::purgeMemory(MemoryPurgeMode mode, DeviceKind deviceKind)
 {
-    chromeClient().setCompositedDisplayList(compositedDisplayList);
-}
-
-CompositedDisplayList* Page::compositedDisplayListForTesting()
-{
-    return chromeClient().compositedDisplayListForTesting();
+    Frame* frame = mainFrame();
+    if (deviceKind != DeviceKind::LowEnd || !frame || !frame->isLocalFrame())
+        return;
+    if (mode == MemoryPurgeMode::InactiveTab) {
+        if (Document* document = toLocalFrame(frame)->document())
+            document->fetcher()->garbageCollectDocumentResources();
+        memoryCache()->pruneAll();
+    }
 }
 
 DEFINE_TRACE(Page)
@@ -555,6 +561,7 @@ DEFINE_TRACE(Page)
 #if ENABLE(OILPAN)
     visitor->trace(m_animator);
     visitor->trace(m_autoscrollController);
+    visitor->trace(m_chromeClient);
     visitor->trace(m_dragCaretController);
     visitor->trace(m_dragController);
     visitor->trace(m_focusController);
@@ -570,6 +577,13 @@ DEFINE_TRACE(Page)
     HeapSupplementable<Page>::trace(visitor);
 #endif
     PageLifecycleNotifier::trace(visitor);
+    MemoryPurgeClient::trace(visitor);
+}
+
+void Page::willCloseLayerTreeView()
+{
+    if (m_scrollingCoordinator)
+        m_scrollingCoordinator->willCloseLayerTreeView();
 }
 
 void Page::willBeDestroyed()
@@ -585,9 +599,9 @@ void Page::willBeDestroyed()
         toRemoteFrame(mainFrame.get())->setView(nullptr);
     }
 
+    ASSERT(allPages().contains(this));
     allPages().remove(this);
-    if (ordinaryPages().contains(this))
-        ordinaryPages().remove(this);
+    ordinaryPages().remove(this);
 
     if (m_scrollingCoordinator)
         m_scrollingCoordinator->willBeDestroyed();

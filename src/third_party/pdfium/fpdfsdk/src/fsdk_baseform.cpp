@@ -4,19 +4,15 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../third_party/base/nonstd_unique_ptr.h"
-#include "../include/fsdk_define.h"
-#include "../include/fsdk_mgr.h"
-#include "../include/fsdk_baseannot.h"
-#include "../include/fsdk_baseform.h"
 #include "../include/formfiller/FFL_FormFiller.h"
 #include "../include/fsdk_actionhandler.h"
+#include "../include/fsdk_baseannot.h"
+#include "../include/fsdk_baseform.h"
+#include "../include/fsdk_define.h"
+#include "../include/fsdk_mgr.h"
+#include "third_party/base/nonstd_unique_ptr.h"
 
 #include "../include/javascript/IJavaScript.h"
-
-//------------------------------------------------------------------------------------
-//*                                     CPDFSDK_Widget
-//------------------------------------------------------------------------------------
 
 #define IsFloatZero(f) ((f) < 0.01 && (f) > -0.01)
 #define IsFloatBigger(fa, fb) ((fa) > (fb) && !IsFloatZero((fa) - (fb)))
@@ -26,7 +22,7 @@
 CPDFSDK_Widget::CPDFSDK_Widget(CPDF_Annot* pAnnot,
                                CPDFSDK_PageView* pPageView,
                                CPDFSDK_InterForm* pInterForm)
-    : CPDFSDK_Annot(pAnnot, pPageView),
+    : CPDFSDK_BAAnnot(pAnnot, pPageView),
       m_pInterForm(pInterForm),
       m_nAppAge(0),
       m_nValueAge(0) {
@@ -38,7 +34,7 @@ CPDFSDK_Widget::~CPDFSDK_Widget() {}
 FX_BOOL CPDFSDK_Widget::IsWidgetAppearanceValid(
     CPDF_Annot::AppearanceMode mode) {
   CPDF_Dictionary* pAP = m_pAnnot->GetAnnotDict()->GetDict("AP");
-  if (pAP == NULL)
+  if (!pAP)
     return FALSE;
 
   // Choose the right sub-ap
@@ -52,7 +48,7 @@ FX_BOOL CPDFSDK_Widget::IsWidgetAppearanceValid(
 
   // Get the AP stream or subdirectory
   CPDF_Object* psub = pAP->GetElementValue(ap_entry);
-  if (psub == NULL)
+  if (!psub)
     return FALSE;
 
   int nFieldType = GetFieldType();
@@ -62,16 +58,14 @@ FX_BOOL CPDFSDK_Widget::IsWidgetAppearanceValid(
     case FIELDTYPE_LISTBOX:
     case FIELDTYPE_TEXTFIELD:
     case FIELDTYPE_SIGNATURE:
-      return psub->GetType() == PDFOBJ_STREAM;
+      return psub->IsStream();
     case FIELDTYPE_CHECKBOX:
     case FIELDTYPE_RADIOBUTTON:
-      if (psub->GetType() == PDFOBJ_DICTIONARY) {
-        CPDF_Dictionary* pSubDict = (CPDF_Dictionary*)psub;
+      if (CPDF_Dictionary* pSubDict = psub->AsDictionary()) {
         return pSubDict->GetStream(GetAppState()) != NULL;
       }
       return FALSE;
   }
-
   return TRUE;
 }
 
@@ -80,6 +74,12 @@ int CPDFSDK_Widget::GetFieldType() const {
   ASSERT(pField != NULL);
 
   return pField->GetFieldType();
+}
+
+FX_BOOL CPDFSDK_Widget::IsAppearanceValid() {
+  ASSERT(m_pPageView != NULL);
+
+  return CPDFSDK_BAAnnot::IsAppearanceValid();
 }
 
 int CPDFSDK_Widget::GetFieldFlags() const {
@@ -101,37 +101,23 @@ CFX_ByteString CPDFSDK_Widget::GetSubType() const {
 }
 
 CPDF_FormField* CPDFSDK_Widget::GetFormField() const {
-  ASSERT(m_pInterForm != NULL);
-
-  CPDF_FormControl* pCtrl = GetFormControl();
-  ASSERT(pCtrl != NULL);
-
-  return pCtrl->GetField();
+  return GetFormControl()->GetField();
 }
 
 CPDF_FormControl* CPDFSDK_Widget::GetFormControl() const {
-  ASSERT(m_pInterForm != NULL);
-
   CPDF_InterForm* pPDFInterForm = m_pInterForm->GetInterForm();
-  ASSERT(pPDFInterForm != NULL);
-
   return pPDFInterForm->GetControlByDict(GetAnnotDict());
 }
 
-CPDF_FormControl* CPDFSDK_Widget::GetFormControl(CPDF_InterForm* pInterForm,
-                                                 CPDF_Dictionary* pAnnotDict) {
-  ASSERT(pInterForm != NULL);
+CPDF_FormControl* CPDFSDK_Widget::GetFormControl(
+    CPDF_InterForm* pInterForm,
+    const CPDF_Dictionary* pAnnotDict) {
   ASSERT(pAnnotDict != NULL);
-
-  CPDF_FormControl* pControl = pInterForm->GetControlByDict(pAnnotDict);
-
-  return pControl;
+  return pInterForm->GetControlByDict(pAnnotDict);
 }
 
 int CPDFSDK_Widget::GetRotate() const {
   CPDF_FormControl* pCtrl = GetFormControl();
-  ASSERT(pCtrl != NULL);
-
   return pCtrl->GetRotation() % 360;
 }
 
@@ -186,15 +172,11 @@ FX_FLOAT CPDFSDK_Widget::GetFontSize() const {
 
 int CPDFSDK_Widget::GetSelectedIndex(int nIndex) const {
   CPDF_FormField* pFormField = GetFormField();
-  ASSERT(pFormField != NULL);
-
   return pFormField->GetSelectedIndex(nIndex);
 }
 
 CFX_WideString CPDFSDK_Widget::GetValue() const {
   CPDF_FormField* pFormField = GetFormField();
-  ASSERT(pFormField != NULL);
-
   return pFormField->GetValue();
 }
 
@@ -221,8 +203,6 @@ int CPDFSDK_Widget::CountOptions() const {
 
 FX_BOOL CPDFSDK_Widget::IsOptionSelected(int nIndex) const {
   CPDF_FormField* pFormField = GetFormField();
-  ASSERT(pFormField != NULL);
-
   return pFormField->IsItemSelected(nIndex);
 }
 
@@ -378,7 +358,7 @@ void CPDFSDK_Widget::DrawAppearance(CFX_RenderDevice* pDevice,
     pDevice->DrawPath(&pathData, pUser2Device, &gsd, 0, 0xFFAAAAAA,
                       FXFILL_ALTERNATE);
   } else {
-    CPDFSDK_Annot::DrawAppearance(pDevice, pUser2Device, mode, pOptions);
+    CPDFSDK_BAAnnot::DrawAppearance(pDevice, pUser2Device, mode, pOptions);
   }
 }
 
@@ -976,9 +956,9 @@ void CPDFSDK_Widget::ResetAppearance_ComboBox(const FX_WCHAR* sValue) {
 
     pEdit->Initialize();
 
-    if (sValue)
+    if (sValue) {
       pEdit->SetText(sValue);
-    else {
+    } else {
       int32_t nCurSel = pField->GetSelectedIndex(0);
 
       if (nCurSel < 0)
@@ -1418,8 +1398,7 @@ void CPDFSDK_Widget::AddImageToAppearance(const CFX_ByteString& sAPType,
                                           CPDF_Stream* pImage) {
   ASSERT(pImage != NULL);
 
-  CPDF_Document* pDoc =
-      m_pPageView->GetPDFDocument();  // pDocument->GetDocument();
+  CPDF_Document* pDoc = m_pPageView->GetPDFDocument();
   ASSERT(pDoc != NULL);
 
   CPDF_Dictionary* pAPDict = m_pAnnot->GetAnnotDict()->GetDict("AP");
@@ -1465,19 +1444,11 @@ FX_BOOL CPDFSDK_Widget::OnAAction(CPDF_AAction::AActionType type,
 
   if (action && action.GetType() != CPDF_Action::Unknown) {
     CPDFSDK_Document* pDocument = pPageView->GetSDKDocument();
-    ASSERT(pDocument != NULL);
-
     CPDFDoc_Environment* pEnv = pDocument->GetEnv();
-    ASSERT(pEnv != NULL);
-
-    CPDFSDK_ActionHandler* pActionHandler =
-        pEnv->GetActionHander(); /*(CPDFSDK_ActionHandler*)pApp->GetActionHandler();*/
-    ASSERT(pActionHandler != NULL);
-
+    CPDFSDK_ActionHandler* pActionHandler = pEnv->GetActionHander();
     return pActionHandler->DoAction_Field(action, type, pDocument,
                                           GetFormField(), data);
   }
-
   return FALSE;
 }
 
@@ -1493,7 +1464,7 @@ CPDF_Action CPDFSDK_Widget::GetAAction(CPDF_AAction::AActionType eAAT) {
     case CPDF_AAction::PageClose:
     case CPDF_AAction::PageVisible:
     case CPDF_AAction::PageInvisible:
-      return CPDFSDK_Annot::GetAAction(eAAT);
+      return CPDFSDK_BAAnnot::GetAAction(eAAT);
 
     case CPDF_AAction::KeyStroke:
     case CPDF_AAction::Format:
@@ -1502,8 +1473,7 @@ CPDF_Action CPDFSDK_Widget::GetAAction(CPDF_AAction::AActionType eAAT) {
       CPDF_FormField* pField = GetFormField();
       if (CPDF_AAction aa = pField->GetAdditionalAction())
         return aa.GetAction(eAAT);
-
-      return CPDFSDK_Annot::GetAAction(eAAT);
+      return CPDFSDK_BAAnnot::GetAAction(eAAT);
     }
     default:
       break;
@@ -1615,30 +1585,25 @@ CPDFSDK_Widget* CPDFSDK_InterForm::GetWidget(CPDF_FormControl* pControl) const {
   return (CPDFSDK_Widget*)pPage->GetAnnotByDict(pControlDict);
 }
 
-void CPDFSDK_InterForm::GetWidgets(const CFX_WideString& sFieldName,
-                                   CFX_PtrArray& widgets) {
-  ASSERT(m_pInterForm != NULL);
-
-  for (int i = 0, sz = m_pInterForm->CountFields(sFieldName); i < sz; i++) {
+void CPDFSDK_InterForm::GetWidgets(
+    const CFX_WideString& sFieldName,
+    std::vector<CPDFSDK_Widget*>* widgets) const {
+  for (int i = 0, sz = m_pInterForm->CountFields(sFieldName); i < sz; ++i) {
     CPDF_FormField* pFormField = m_pInterForm->GetField(i, sFieldName);
-    ASSERT(pFormField != NULL);
-
+    ASSERT(pFormField);
     GetWidgets(pFormField, widgets);
   }
 }
 
-void CPDFSDK_InterForm::GetWidgets(CPDF_FormField* pField,
-                                   CFX_PtrArray& widgets) {
-  ASSERT(pField != NULL);
-
-  for (int i = 0, isz = pField->CountControls(); i < isz; i++) {
+void CPDFSDK_InterForm::GetWidgets(
+    CPDF_FormField* pField,
+    std::vector<CPDFSDK_Widget*>* widgets) const {
+  for (int i = 0, sz = pField->CountControls(); i < sz; ++i) {
     CPDF_FormControl* pFormCtrl = pField->GetControl(i);
-    ASSERT(pFormCtrl != NULL);
-
+    ASSERT(pFormCtrl);
     CPDFSDK_Widget* pWidget = GetWidget(pFormCtrl);
-
     if (pWidget)
-      widgets.Add(pWidget);
+      widgets->push_back(pWidget);
   }
 }
 
@@ -1757,7 +1722,7 @@ void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
   m_bBusy = TRUE;
 
   if (IsCalculateEnabled()) {
-    IFXJS_Runtime* pRuntime = m_pDocument->GetJsRuntime();
+    IJS_Runtime* pRuntime = m_pDocument->GetJsRuntime();
     ASSERT(pRuntime != NULL);
 
     pRuntime->SetReaderDocument(m_pDocument);
@@ -1766,7 +1731,6 @@ void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
     for (int i = 0; i < nSize; i++) {
       if (CPDF_FormField* pField =
               m_pInterForm->GetFieldInCalculationOrder(i)) {
-        //          ASSERT(pField != NULL);
         int nType = pField->GetFieldType();
         if (nType == FIELDTYPE_COMBOBOX || nType == FIELDTYPE_TEXTFIELD) {
           CPDF_AAction aAction = pField->GetAdditionalAction();
@@ -1775,7 +1739,7 @@ void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
             if (action) {
               CFX_WideString csJS = action.GetJavaScript();
               if (!csJS.IsEmpty()) {
-                IFXJS_Context* pContext = pRuntime->NewContext();
+                IJS_Context* pContext = pRuntime->NewContext();
                 ASSERT(pContext != NULL);
 
                 CFX_WideString sOldValue = pField->GetValue();
@@ -1784,7 +1748,7 @@ void CPDFSDK_InterForm::OnCalculate(CPDF_FormField* pFormField) {
                 pContext->OnField_Calculate(pFormField, pField, sValue, bRC);
 
                 CFX_WideString sInfo;
-                FX_BOOL bRet = pContext->RunScript(csJS, sInfo);
+                FX_BOOL bRet = pContext->RunScript(csJS, &sInfo);
                 pRuntime->ReleaseContext(pContext);
 
                 if (bRet) {
@@ -1817,7 +1781,7 @@ CFX_WideString CPDFSDK_InterForm::OnFormat(CPDF_FormField* pFormField,
     return sValue;
   }
 
-  IFXJS_Runtime* pRuntime = m_pDocument->GetJsRuntime();
+  IJS_Runtime* pRuntime = m_pDocument->GetJsRuntime();
   ASSERT(pRuntime != NULL);
 
   pRuntime->SetReaderDocument(m_pDocument);
@@ -1833,20 +1797,20 @@ CFX_WideString CPDFSDK_InterForm::OnFormat(CPDF_FormField* pFormField,
   bFormated = FALSE;
 
   CPDF_AAction aAction = pFormField->GetAdditionalAction();
-  if (aAction != NULL && aAction.ActionExist(CPDF_AAction::Format)) {
+  if (aAction && aAction.ActionExist(CPDF_AAction::Format)) {
     CPDF_Action action = aAction.GetAction(CPDF_AAction::Format);
     if (action) {
       CFX_WideString script = action.GetJavaScript();
       if (!script.IsEmpty()) {
         CFX_WideString Value = sValue;
 
-        IFXJS_Context* pContext = pRuntime->NewContext();
+        IJS_Context* pContext = pRuntime->NewContext();
         ASSERT(pContext != NULL);
 
         pContext->OnField_Format(pFormField, Value, TRUE);
 
         CFX_WideString sInfo;
-        FX_BOOL bRet = pContext->RunScript(script, sInfo);
+        FX_BOOL bRet = pContext->RunScript(script, &sInfo);
         pRuntime->ReleaseContext(pContext);
 
         if (bRet) {
@@ -1903,7 +1867,7 @@ void CPDFSDK_InterForm::OnKeyStrokeCommit(CPDF_FormField* pFormField,
   ASSERT(pFormField != NULL);
 
   CPDF_AAction aAction = pFormField->GetAdditionalAction();
-  if (aAction != NULL && aAction.ActionExist(CPDF_AAction::KeyStroke)) {
+  if (aAction && aAction.ActionExist(CPDF_AAction::KeyStroke)) {
     CPDF_Action action = aAction.GetAction(CPDF_AAction::KeyStroke);
     if (action) {
       ASSERT(m_pDocument != NULL);
@@ -1931,7 +1895,7 @@ void CPDFSDK_InterForm::OnValidate(CPDF_FormField* pFormField,
   ASSERT(pFormField != NULL);
 
   CPDF_AAction aAction = pFormField->GetAdditionalAction();
-  if (aAction != NULL && aAction.ActionExist(CPDF_AAction::Validate)) {
+  if (aAction && aAction.ActionExist(CPDF_AAction::Validate)) {
     CPDF_Action action = aAction.GetAction(CPDF_AAction::Validate);
     if (action) {
       ASSERT(m_pDocument != NULL);
@@ -1959,42 +1923,27 @@ FX_BOOL CPDFSDK_InterForm::DoAction_Hide(const CPDF_Action& action) {
   ASSERT(action);
 
   CPDF_ActionFields af = action.GetWidgets();
-  CFX_PtrArray fieldObjects;
-  af.GetAllFields(fieldObjects);
-  CFX_PtrArray widgetArray;
-  CFX_PtrArray fields;
-  GetFieldFromObjects(fieldObjects, fields);
+  std::vector<CPDF_Object*> fieldObjects = af.GetAllFields();
+  std::vector<CPDF_FormField*> fields = GetFieldFromObjects(fieldObjects);
 
   FX_BOOL bHide = action.GetHideStatus();
-
   FX_BOOL bChanged = FALSE;
 
-  for (int i = 0, sz = fields.GetSize(); i < sz; i++) {
-    CPDF_FormField* pField = (CPDF_FormField*)fields[i];
-    ASSERT(pField != NULL);
-
-    for (int j = 0, jsz = pField->CountControls(); j < jsz; j++) {
-      CPDF_FormControl* pControl = pField->GetControl(j);
-      ASSERT(pControl != NULL);
+  for (CPDF_FormField* pField : fields) {
+    for (int i = 0, sz = pField->CountControls(); i < sz; ++i) {
+      CPDF_FormControl* pControl = pField->GetControl(i);
+      ASSERT(pControl);
 
       if (CPDFSDK_Widget* pWidget = GetWidget(pControl)) {
         int nFlags = pWidget->GetFlags();
-        if (bHide) {
-          nFlags &= (~ANNOTFLAG_INVISIBLE);
-          nFlags &= (~ANNOTFLAG_NOVIEW);
-          nFlags |= (ANNOTFLAG_HIDDEN);
-        } else {
-          nFlags &= (~ANNOTFLAG_INVISIBLE);
-          nFlags &= (~ANNOTFLAG_HIDDEN);
-          nFlags &= (~ANNOTFLAG_NOVIEW);
-        }
+        nFlags &= ~ANNOTFLAG_INVISIBLE;
+        nFlags &= ~ANNOTFLAG_NOVIEW;
+        if (bHide)
+          nFlags |= ANNOTFLAG_HIDDEN;
+        else
+          nFlags &= ~ANNOTFLAG_HIDDEN;
         pWidget->SetFlags(nFlags);
-
-        CPDFSDK_PageView* pPageView = pWidget->GetPageView();
-        ASSERT(pPageView != NULL);
-
-        pPageView->UpdateView(pWidget);
-
+        pWidget->GetPageView()->UpdateView(pWidget);
         bChanged = TRUE;
       }
     }
@@ -2013,31 +1962,28 @@ FX_BOOL CPDFSDK_InterForm::DoAction_SubmitForm(const CPDF_Action& action) {
   if (pActionDict->KeyExist("Fields")) {
     CPDF_ActionFields af = action.GetWidgets();
     FX_DWORD dwFlags = action.GetFlags();
-    CFX_PtrArray fieldObjects;
-    af.GetAllFields(fieldObjects);
-
-    CFX_PtrArray fields;
-    GetFieldFromObjects(fieldObjects, fields);
-    if (fields.GetSize() != 0) {
-      FX_BOOL bIncludeOrExclude = !(dwFlags & 0x01);
+    std::vector<CPDF_Object*> fieldObjects = af.GetAllFields();
+    std::vector<CPDF_FormField*> fields = GetFieldFromObjects(fieldObjects);
+    if (!fields.empty()) {
+      bool bIncludeOrExclude = !(dwFlags & 0x01);
       if (m_pInterForm->CheckRequiredFields(&fields, bIncludeOrExclude))
         return FALSE;
 
       return SubmitFields(sDestination, fields, bIncludeOrExclude, FALSE);
     }
   }
-  if (m_pInterForm->CheckRequiredFields())
+  if (m_pInterForm->CheckRequiredFields(nullptr, true))
     return FALSE;
 
   return SubmitForm(sDestination, FALSE);
 }
 
-FX_BOOL CPDFSDK_InterForm::SubmitFields(const CFX_WideString& csDestination,
-                                        const CFX_PtrArray& fields,
-                                        FX_BOOL bIncludeOrExclude,
-                                        FX_BOOL bUrlEncoded) {
+FX_BOOL CPDFSDK_InterForm::SubmitFields(
+    const CFX_WideString& csDestination,
+    const std::vector<CPDF_FormField*>& fields,
+    FX_BOOL bIncludeOrExclude,
+    FX_BOOL bUrlEncoded) {
   CPDFDoc_Environment* pEnv = m_pDocument->GetEnv();
-  ASSERT(pEnv != NULL);
 
   CFX_ByteTextBuf textBuf;
   ExportFieldsToFDFTextBuf(fields, bIncludeOrExclude, textBuf);
@@ -2045,45 +1991,11 @@ FX_BOOL CPDFSDK_InterForm::SubmitFields(const CFX_WideString& csDestination,
   uint8_t* pBuffer = textBuf.GetBuffer();
   FX_STRSIZE nBufSize = textBuf.GetLength();
 
-  if (bUrlEncoded) {
-    if (!FDFToURLEncodedData(pBuffer, nBufSize))
-      return FALSE;
-  }
+  if (bUrlEncoded && !FDFToURLEncodedData(pBuffer, nBufSize))
+    return FALSE;
 
   pEnv->JS_docSubmitForm(pBuffer, nBufSize, csDestination.c_str());
-
   return TRUE;
-}
-
-void CPDFSDK_InterForm::DoFDFBuffer(CFX_ByteString sBuffer) {
-  ASSERT(m_pDocument != NULL);
-
-  if (CFDF_Document* pFDFDocument = CFDF_Document::ParseMemory(
-          (const unsigned char*)sBuffer.GetBuffer(sBuffer.GetLength()),
-          sBuffer.GetLength())) {
-    CPDF_Dictionary* pRootDic = pFDFDocument->GetRoot();
-    if (pRootDic) {
-      CPDF_Dictionary* pFDFDict = pRootDic->GetDict("FDF");
-      if (pFDFDict) {
-        CPDF_Dictionary* pJSDict = pFDFDict->GetDict("JavaScript");
-        if (pJSDict) {
-          CFX_WideString csJS;
-
-          CPDF_Object* pJS = pJSDict->GetElementValue("Before");
-          if (pJS != NULL) {
-            int iType = pJS->GetType();
-            if (iType == PDFOBJ_STRING)
-              csJS = pJSDict->GetUnicodeText("Before");
-            else if (iType == PDFOBJ_STREAM)
-              csJS = pJS->GetUnicodeText();
-          }
-        }
-      }
-    }
-    delete pFDFDocument;
-  }
-
-  sBuffer.ReleaseBuffer();
 }
 
 FX_BOOL CPDFSDK_InterForm::FDFToURLEncodedData(CFX_WideString csFDFFile,
@@ -2096,19 +2008,19 @@ FX_BOOL CPDFSDK_InterForm::FDFToURLEncodedData(uint8_t*& pBuf,
   CFDF_Document* pFDF = CFDF_Document::ParseMemory(pBuf, nBufSize);
   if (pFDF) {
     CPDF_Dictionary* pMainDict = pFDF->GetRoot()->GetDict("FDF");
-    if (pMainDict == NULL)
+    if (!pMainDict)
       return FALSE;
 
     // Get fields
     CPDF_Array* pFields = pMainDict->GetArray("Fields");
-    if (pFields == NULL)
+    if (!pFields)
       return FALSE;
 
     CFX_ByteTextBuf fdfEncodedData;
 
     for (FX_DWORD i = 0; i < pFields->GetCount(); i++) {
       CPDF_Dictionary* pField = pFields->GetDict(i);
-      if (pField == NULL)
+      if (!pField)
         continue;
       CFX_WideString name;
       name = pField->GetUnicodeText("T");
@@ -2134,20 +2046,13 @@ FX_BOOL CPDFSDK_InterForm::FDFToURLEncodedData(uint8_t*& pBuf,
   return TRUE;
 }
 
-FX_BOOL CPDFSDK_InterForm::ExportFieldsToFDFTextBuf(const CFX_PtrArray& fields,
-                                                    FX_BOOL bIncludeOrExclude,
-                                                    CFX_ByteTextBuf& textBuf) {
-  ASSERT(m_pDocument != NULL);
-  ASSERT(m_pInterForm != NULL);
-
-  CFDF_Document* pFDF = m_pInterForm->ExportToFDF(
-      m_pDocument->GetPath(), (CFX_PtrArray&)fields, bIncludeOrExclude);
-  if (!pFDF)
-    return FALSE;
-  FX_BOOL bRet = pFDF->WriteBuf(textBuf);  // = FALSE;//
-  delete pFDF;
-
-  return bRet;
+FX_BOOL CPDFSDK_InterForm::ExportFieldsToFDFTextBuf(
+    const std::vector<CPDF_FormField*>& fields,
+    FX_BOOL bIncludeOrExclude,
+    CFX_ByteTextBuf& textBuf) {
+  nonstd::unique_ptr<CFDF_Document> pFDF(m_pInterForm->ExportToFDF(
+      m_pDocument->GetPath(), fields, bIncludeOrExclude));
+  return pFDF ? pFDF->WriteBuf(textBuf) : FALSE;
 }
 
 CFX_WideString CPDFSDK_InterForm::GetTemporaryFileName(
@@ -2164,14 +2069,14 @@ FX_BOOL CPDFSDK_InterForm::SubmitForm(const CFX_WideString& sDestination,
   CPDFDoc_Environment* pEnv = m_pDocument->GetEnv();
   ASSERT(pEnv != NULL);
 
-  if (NULL == m_pDocument)
+  if (!m_pDocument)
     return FALSE;
   CFX_WideString wsPDFFilePath = m_pDocument->GetPath();
 
-  if (NULL == m_pInterForm)
+  if (!m_pInterForm)
     return FALSE;
   CFDF_Document* pFDFDoc = m_pInterForm->ExportToFDF(wsPDFFilePath);
-  if (NULL == pFDFDoc)
+  if (!pFDFDoc)
     return FALSE;
 
   CFX_ByteTextBuf FdfBuffer;
@@ -2216,45 +2121,33 @@ FX_BOOL CPDFSDK_InterForm::DoAction_ResetForm(const CPDF_Action& action) {
   ASSERT(action);
 
   CPDF_Dictionary* pActionDict = action.GetDict();
-  if (pActionDict->KeyExist("Fields")) {
-    CPDF_ActionFields af = action.GetWidgets();
-    FX_DWORD dwFlags = action.GetFlags();
+  if (!pActionDict->KeyExist("Fields"))
+    return m_pInterForm->ResetForm(true);
 
-    CFX_PtrArray fieldObjects;
-    af.GetAllFields(fieldObjects);
-    CFX_PtrArray fields;
-    GetFieldFromObjects(fieldObjects, fields);
-    return m_pInterForm->ResetForm(fields, !(dwFlags & 0x01), TRUE);
-  }
+  CPDF_ActionFields af = action.GetWidgets();
+  FX_DWORD dwFlags = action.GetFlags();
 
-  return m_pInterForm->ResetForm(TRUE);
+  std::vector<CPDF_Object*> fieldObjects = af.GetAllFields();
+  std::vector<CPDF_FormField*> fields = GetFieldFromObjects(fieldObjects);
+  return m_pInterForm->ResetForm(fields, !(dwFlags & 0x01), true);
 }
 
 FX_BOOL CPDFSDK_InterForm::DoAction_ImportData(const CPDF_Action& action) {
   return FALSE;
 }
 
-void CPDFSDK_InterForm::GetFieldFromObjects(const CFX_PtrArray& objects,
-                                            CFX_PtrArray& fields) {
-  ASSERT(m_pInterForm != NULL);
-
-  int iCount = objects.GetSize();
-  for (int i = 0; i < iCount; i++) {
-    CPDF_Object* pObject = (CPDF_Object*)objects[i];
-    if (pObject == NULL)
-      continue;
-
-    int iType = pObject->GetType();
-    if (iType == PDFOBJ_STRING) {
+std::vector<CPDF_FormField*> CPDFSDK_InterForm::GetFieldFromObjects(
+    const std::vector<CPDF_Object*>& objects) const {
+  std::vector<CPDF_FormField*> fields;
+  for (CPDF_Object* pObject : objects) {
+    if (pObject && pObject->IsString()) {
       CFX_WideString csName = pObject->GetUnicodeText();
       CPDF_FormField* pField = m_pInterForm->GetField(0, csName);
-      if (pField != NULL)
-        fields.Add(pField);
-    } else if (iType == PDFOBJ_DICTIONARY) {
-      if (m_pInterForm->IsValidFormField(pObject))
-        fields.Add(pObject);
+      if (pField)
+        fields.push_back(pField);
     }
   }
+  return fields;
 }
 
 /* ----------------------------- CPDF_FormNotify -----------------------------
@@ -2477,58 +2370,45 @@ int CBA_AnnotIterator::CompareByTop(CPDFSDK_Annot* p1, CPDFSDK_Annot* p2) {
 }
 
 void CBA_AnnotIterator::GenerateResults() {
-  ASSERT(m_pPageView != NULL);
-
   switch (m_nTabs) {
     case BAI_STRUCTURE: {
-      for (int i = 0, sz = m_pPageView->CountAnnots(); i < sz; i++) {
+      for (size_t i = 0; i < m_pPageView->CountAnnots(); ++i) {
         CPDFSDK_Annot* pAnnot = m_pPageView->GetAnnot(i);
-        ASSERT(pAnnot != NULL);
-
         if (pAnnot->GetType() == m_sType && pAnnot->GetSubType() == m_sSubType)
           m_Annots.Add(pAnnot);
       }
-    } break;
+      break;
+    }
     case BAI_ROW: {
       CPDFSDK_SortAnnots sa;
-
-      {
-        for (int i = 0, sz = m_pPageView->CountAnnots(); i < sz; i++) {
-          CPDFSDK_Annot* pAnnot = m_pPageView->GetAnnot(i);
-          ASSERT(pAnnot != NULL);
-
-          if (pAnnot->GetType() == m_sType &&
-              pAnnot->GetSubType() == m_sSubType)
-            sa.Add(pAnnot);
-        }
+      for (size_t i = 0; i < m_pPageView->CountAnnots(); ++i) {
+        CPDFSDK_Annot* pAnnot = m_pPageView->GetAnnot(i);
+        if (pAnnot->GetType() == m_sType && pAnnot->GetSubType() == m_sSubType)
+          sa.Add(pAnnot);
       }
 
-      if (sa.GetSize() > 0) {
+      if (sa.GetSize() > 0)
         sa.Sort(CBA_AnnotIterator::CompareByLeft);
-      }
 
       while (sa.GetSize() > 0) {
         int nLeftTopIndex = -1;
+        FX_FLOAT fTop = 0.0f;
 
-        {
-          FX_FLOAT fTop = 0.0f;
+        for (int i = sa.GetSize() - 1; i >= 0; i--) {
+          CPDFSDK_Annot* pAnnot = sa.GetAt(i);
+          ASSERT(pAnnot);
 
-          for (int i = sa.GetSize() - 1; i >= 0; i--) {
-            CPDFSDK_Annot* pAnnot = sa.GetAt(i);
-            ASSERT(pAnnot != NULL);
+          CPDF_Rect rcAnnot = GetAnnotRect(pAnnot);
 
-            CPDF_Rect rcAnnot = GetAnnotRect(pAnnot);
-
-            if (rcAnnot.top > fTop) {
-              nLeftTopIndex = i;
-              fTop = rcAnnot.top;
-            }
+          if (rcAnnot.top > fTop) {
+            nLeftTopIndex = i;
+            fTop = rcAnnot.top;
           }
         }
 
         if (nLeftTopIndex >= 0) {
           CPDFSDK_Annot* pLeftTopAnnot = sa.GetAt(nLeftTopIndex);
-          ASSERT(pLeftTopAnnot != NULL);
+          ASSERT(pLeftTopAnnot);
 
           CPDF_Rect rcLeftTop = GetAnnotRect(pLeftTopAnnot);
 
@@ -2537,80 +2417,61 @@ void CBA_AnnotIterator::GenerateResults() {
 
           CFX_ArrayTemplate<int> aSelect;
 
-          {
-            for (int i = 0, sz = sa.GetSize(); i < sz; i++) {
-              CPDFSDK_Annot* pAnnot = sa.GetAt(i);
-              ASSERT(pAnnot != NULL);
+          for (int i = 0, sz = sa.GetSize(); i < sz; ++i) {
+            CPDFSDK_Annot* pAnnot = sa.GetAt(i);
+            ASSERT(pAnnot);
 
-              CPDF_Rect rcAnnot = GetAnnotRect(pAnnot);
-
-              FX_FLOAT fCenterY = (rcAnnot.top + rcAnnot.bottom) / 2.0f;
-
-              if (fCenterY > rcLeftTop.bottom && fCenterY < rcLeftTop.top)
-                aSelect.Add(i);
-            }
+            CPDF_Rect rcAnnot = GetAnnotRect(pAnnot);
+            FX_FLOAT fCenterY = (rcAnnot.top + rcAnnot.bottom) / 2.0f;
+            if (fCenterY > rcLeftTop.bottom && fCenterY < rcLeftTop.top)
+              aSelect.Add(i);
           }
 
-          {
-            for (int i = 0, sz = aSelect.GetSize(); i < sz; i++) {
-              m_Annots.Add(sa[aSelect[i]]);
-            }
-          }
+          for (int i = 0, sz = aSelect.GetSize(); i < sz; ++i)
+            m_Annots.Add(sa[aSelect[i]]);
 
-          {
-            for (int i = aSelect.GetSize() - 1; i >= 0; i--) {
+          for (int i = aSelect.GetSize() - 1; i >= 0; --i)
               sa.RemoveAt(aSelect[i]);
-            }
-          }
 
           aSelect.RemoveAll();
         }
       }
       sa.RemoveAll();
-    } break;
+      break;
+    }
     case BAI_COLUMN: {
       CPDFSDK_SortAnnots sa;
-
-      {
-        for (int i = 0, sz = m_pPageView->CountAnnots(); i < sz; i++) {
-          CPDFSDK_Annot* pAnnot = m_pPageView->GetAnnot(i);
-          ASSERT(pAnnot != NULL);
-
-          if (pAnnot->GetType() == m_sType &&
-              pAnnot->GetSubType() == m_sSubType)
-            sa.Add(pAnnot);
-        }
+      for (size_t i = 0; i < m_pPageView->CountAnnots(); ++i) {
+        CPDFSDK_Annot* pAnnot = m_pPageView->GetAnnot(i);
+        if (pAnnot->GetType() == m_sType && pAnnot->GetSubType() == m_sSubType)
+          sa.Add(pAnnot);
       }
 
-      if (sa.GetSize() > 0) {
+      if (sa.GetSize() > 0)
         sa.Sort(CBA_AnnotIterator::CompareByTop, FALSE);
-      }
 
       while (sa.GetSize() > 0) {
         int nLeftTopIndex = -1;
+        FX_FLOAT fLeft = -1.0f;
 
-        {
-          FX_FLOAT fLeft = -1.0f;
+        for (int i = sa.GetSize() - 1; i >= 0; --i) {
+          CPDFSDK_Annot* pAnnot = sa.GetAt(i);
+          ASSERT(pAnnot);
 
-          for (int i = sa.GetSize() - 1; i >= 0; i--) {
-            CPDFSDK_Annot* pAnnot = sa.GetAt(i);
-            ASSERT(pAnnot != NULL);
+          CPDF_Rect rcAnnot = GetAnnotRect(pAnnot);
 
-            CPDF_Rect rcAnnot = GetAnnotRect(pAnnot);
-
-            if (fLeft < 0) {
-              nLeftTopIndex = 0;
-              fLeft = rcAnnot.left;
-            } else if (rcAnnot.left < fLeft) {
-              nLeftTopIndex = i;
-              fLeft = rcAnnot.left;
-            }
+          if (fLeft < 0) {
+            nLeftTopIndex = 0;
+            fLeft = rcAnnot.left;
+          } else if (rcAnnot.left < fLeft) {
+            nLeftTopIndex = i;
+            fLeft = rcAnnot.left;
           }
         }
 
         if (nLeftTopIndex >= 0) {
           CPDFSDK_Annot* pLeftTopAnnot = sa.GetAt(nLeftTopIndex);
-          ASSERT(pLeftTopAnnot != NULL);
+          ASSERT(pLeftTopAnnot);
 
           CPDF_Rect rcLeftTop = GetAnnotRect(pLeftTopAnnot);
 
@@ -2618,49 +2479,33 @@ void CBA_AnnotIterator::GenerateResults() {
           sa.RemoveAt(nLeftTopIndex);
 
           CFX_ArrayTemplate<int> aSelect;
+          for (int i = 0, sz = sa.GetSize(); i < sz; ++i) {
+            CPDFSDK_Annot* pAnnot = sa.GetAt(i);
+            ASSERT(pAnnot);
 
-          {
-            for (int i = 0, sz = sa.GetSize(); i < sz; i++) {
-              CPDFSDK_Annot* pAnnot = sa.GetAt(i);
-              ASSERT(pAnnot != NULL);
-
-              CPDF_Rect rcAnnot = GetAnnotRect(pAnnot);
-
-              FX_FLOAT fCenterX = (rcAnnot.left + rcAnnot.right) / 2.0f;
-
-              if (fCenterX > rcLeftTop.left && fCenterX < rcLeftTop.right)
-                aSelect.Add(i);
-            }
+            CPDF_Rect rcAnnot = GetAnnotRect(pAnnot);
+            FX_FLOAT fCenterX = (rcAnnot.left + rcAnnot.right) / 2.0f;
+            if (fCenterX > rcLeftTop.left && fCenterX < rcLeftTop.right)
+              aSelect.Add(i);
           }
 
-          {
-            for (int i = 0, sz = aSelect.GetSize(); i < sz; i++) {
-              m_Annots.Add(sa[aSelect[i]]);
-            }
-          }
+          for (int i = 0, sz = aSelect.GetSize(); i < sz; ++i)
+            m_Annots.Add(sa[aSelect[i]]);
 
-          {
-            for (int i = aSelect.GetSize() - 1; i >= 0; i--) {
-              sa.RemoveAt(aSelect[i]);
-            }
-          }
+          for (int i = aSelect.GetSize() - 1; i >= 0; --i)
+            sa.RemoveAt(aSelect[i]);
 
           aSelect.RemoveAll();
         }
       }
       sa.RemoveAll();
-    } break;
+      break;
+    }
   }
 }
 
 CPDF_Rect CBA_AnnotIterator::GetAnnotRect(CPDFSDK_Annot* pAnnot) {
-  ASSERT(pAnnot != NULL);
-
-  CPDF_Annot* pPDFAnnot = pAnnot->GetPDFAnnot();
-  ASSERT(pPDFAnnot != NULL);
-
   CPDF_Rect rcAnnot;
-  pPDFAnnot->GetRect(rcAnnot);
-
+  pAnnot->GetPDFAnnot()->GetRect(rcAnnot);
   return rcAnnot;
 }

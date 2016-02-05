@@ -13,8 +13,8 @@
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/graphics/filters/SourceGraphic.h"
 #include "platform/graphics/paint/CompositingDisplayItem.h"
-#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/graphics/paint/DrawingDisplayItem.h"
+#include "platform/graphics/paint/PaintController.h"
 
 #define CHECK_CTM_FOR_TRANSFORMED_IMAGEFILTER
 
@@ -27,8 +27,8 @@ GraphicsContext* SVGFilterRecordingContext::beginContent(FilterData* filterData)
     GraphicsContext* context = paintingContext();
 
     // Create a new context so the contents of the filter can be drawn and cached.
-    m_displayItemList = DisplayItemList::create();
-    m_context = adoptPtr(new GraphicsContext(m_displayItemList.get()));
+    m_paintController = PaintController::create();
+    m_context = adoptPtr(new GraphicsContext(*m_paintController));
     context = m_context.get();
 
     filterData->m_state = FilterData::RecordingContent;
@@ -45,16 +45,17 @@ void SVGFilterRecordingContext::endContent(FilterData* filterData)
     GraphicsContext* context = paintingContext();
 
     // Use the context that contains the filtered content.
-    ASSERT(m_displayItemList);
+    ASSERT(m_paintController);
     ASSERT(m_context);
     context = m_context.get();
     context->beginRecording(filterData->filter->filterRegion());
-    m_displayItemList->commitNewDisplayItemsAndReplay(*context);
+    m_paintController->commitNewDisplayItems();
+    m_paintController->paintArtifact().replay(*context);
 
     sourceGraphic->setPicture(context->endRecording());
 
     // Content is cached by the source graphic so temporaries can be freed.
-    m_displayItemList = nullptr;
+    m_paintController = nullptr;
     m_context = nullptr;
 
     filterData->m_state = FilterData::ReadyToPaint;
@@ -122,31 +123,32 @@ GraphicsContext* SVGFilterPainter::prepareEffect(const LayoutObject& object, SVG
     }
 
     OwnPtrWillBeRawPtr<FilterData> filterData = FilterData::create();
-    FloatRect targetBoundingBox = object.objectBoundingBox();
+    FloatRect referenceBox = object.objectBoundingBox();
 
     SVGFilterElement* filterElement = toSVGFilterElement(m_filter.element());
-    FloatRect filterRegion = SVGLengthContext::resolveRectangle<SVGFilterElement>(filterElement, filterElement->filterUnits()->currentValue()->enumValue(), targetBoundingBox);
+    FloatRect filterRegion = SVGLengthContext::resolveRectangle<SVGFilterElement>(filterElement, filterElement->filterUnits()->currentValue()->enumValue(), referenceBox);
     if (filterRegion.isEmpty())
         return nullptr;
 
     // Create the SVGFilter object.
     bool primitiveBoundingBoxMode = filterElement->primitiveUnits()->currentValue()->enumValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX;
     Filter::UnitScaling unitScaling = primitiveBoundingBoxMode ? Filter::BoundingBox : Filter::UserSpace;
-    filterData->filter = Filter::create(targetBoundingBox, filterRegion, 1, unitScaling);
+    filterData->filter = Filter::create(referenceBox, filterRegion, 1, unitScaling);
+    filterData->nodeMap = SVGFilterGraphNodeMap::create();
 
     IntRect sourceRegion = enclosingIntRect(intersection(filterRegion, object.strokeBoundingBox()));
     filterData->filter->sourceGraphic()->setSourceRect(sourceRegion);
 
     // Create all relevant filter primitives.
-    filterData->builder = m_filter.buildPrimitives(filterData->filter.get());
-    if (!filterData->builder)
-        return nullptr;
+    SVGFilterBuilder builder(filterData->filter->sourceGraphic(), filterData->nodeMap.get());
+    builder.buildGraph(filterData->filter.get(), *filterElement, referenceBox);
 
-    FilterEffect* lastEffect = filterData->filter->lastEffect();
+    FilterEffect* lastEffect = builder.lastEffect();
     if (!lastEffect)
         return nullptr;
 
     lastEffect->determineFilterPrimitiveSubregion(ClipToFilterRegion);
+    filterData->filter->setLastEffect(lastEffect);
 
     FilterData* data = filterData.get();
     // TODO(pdr): Can this be moved out of painter?

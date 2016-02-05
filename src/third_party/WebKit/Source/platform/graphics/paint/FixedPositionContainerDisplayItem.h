@@ -16,8 +16,8 @@ public:
     BeginFixedPositionContainerDisplayItem(const DisplayItemClientWrapper& client)
         : PairedBeginDisplayItem(client, BeginFixedPositionContainer, sizeof(*this)) { }
 
-    void replay(GraphicsContext&) final { }
-    void appendToWebDisplayItemList(WebDisplayItemList*) const final;
+    void replay(GraphicsContext&) const final { }
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const final;
 };
 
 class PLATFORM_EXPORT EndFixedPositionContainerDisplayItem final : public PairedEndDisplayItem {
@@ -25,8 +25,8 @@ public:
     EndFixedPositionContainerDisplayItem(const DisplayItemClientWrapper& client)
         : PairedEndDisplayItem(client, EndFixedPositionContainer, sizeof(*this)) { }
 
-    void replay(GraphicsContext&) final { }
-    void appendToWebDisplayItemList(WebDisplayItemList*) const final;
+    void replay(GraphicsContext&) const final { }
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const final;
 
 private:
 #if ENABLE(ASSERT)

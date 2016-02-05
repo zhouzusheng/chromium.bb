@@ -317,7 +317,8 @@ const GrGLInterface* GrGLAssembleGLInterface(void* ctx, GrGLGetProc get) {
         GET_PROC(GetProgramResourceLocation);
     }
 
-    if (glVer >= GR_GL_VER(3,1) || extensions.has("GL_ARB_draw_instanced")) {
+    if (glVer >= GR_GL_VER(3,1) || extensions.has("GL_ARB_draw_instanced") ||
+        extensions.has("GL_EXT_draw_instanced")) {
         GET_PROC(DrawArraysInstanced);
         GET_PROC(DrawElementsInstanced);
     }
@@ -448,10 +449,6 @@ const GrGLInterface* GrGLAssembleGLInterface(void* ctx, GrGLGetProc get) {
             GET_PROC_SUFFIX(MapNamedBufferRange, EXT);
             GET_PROC_SUFFIX(FlushMappedNamedBufferRange, EXT);
         }
-    }
-
-    if (glVer >= GR_GL_VER(4,5)) {
-        GET_PROC(NamedFramebufferParameteri);
     }
 
     if (glVer >= GR_GL_VER(4,3) || extensions.has("GL_KHR_debug")) {
@@ -755,6 +752,18 @@ const GrGLInterface* GrGLAssembleGLESInterface(void* ctx, GrGLGetProc get) {
         GET_PROC_SUFFIX(PushDebugGroup, KHR);
         GET_PROC_SUFFIX(PopDebugGroup, KHR);
         GET_PROC_SUFFIX(ObjectLabel, KHR);
+        // In general we have a policy against removing extension strings when the driver does
+        // not provide function pointers for an advertised extension. However, because there is a
+        // known device that advertises GL_KHR_debug but fails to provide the functions and this is
+        // a debugging- only extension we've made an exception. This also can happen when using
+        // APITRACE.
+        if (!interface->fFunctions.fDebugMessageControl) {
+            extensions.remove("GL_KHR_debug");
+        }
+    }
+
+    if (extensions.has("GL_CHROMIUM_bind_uniform_location")) {
+        GET_PROC_SUFFIX(BindUniformLocation, CHROMIUM);
     }
 
     interface->fStandard = kGLES_GrGLStandard;

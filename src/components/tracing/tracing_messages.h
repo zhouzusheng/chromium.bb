@@ -46,7 +46,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(
 // Sent to all child processes to enable trace event recording.
 IPC_MESSAGE_CONTROL3(TracingMsg_BeginTracing,
                      std::string /*  trace_config_str */,
-                     base::TraceTicks /* browser_time */,
+                     base::TimeTicks /* browser_time */,
                      uint64 /* Tracing process id (hash of child id) */)
 
 // Sent to all child processes to disable trace event recording.
@@ -56,12 +56,12 @@ IPC_MESSAGE_CONTROL0(TracingMsg_EndTracing)
 IPC_MESSAGE_CONTROL0(TracingMsg_CancelTracing)
 
 // Sent to all child processes to start monitoring.
-IPC_MESSAGE_CONTROL2(TracingMsg_EnableMonitoring,
+IPC_MESSAGE_CONTROL2(TracingMsg_StartMonitoring,
                      std::string /*  trace_config_str */,
-                     base::TraceTicks /* browser_time */)
+                     base::TimeTicks /* browser_time */)
 
 // Sent to all child processes to stop monitoring.
-IPC_MESSAGE_CONTROL0(TracingMsg_DisableMonitoring)
+IPC_MESSAGE_CONTROL0(TracingMsg_StopMonitoring)
 
 // Sent to all child processes to capture the current monitorint snapshot.
 IPC_MESSAGE_CONTROL0(TracingMsg_CaptureMonitoringSnapshot)
@@ -87,10 +87,11 @@ IPC_MESSAGE_CONTROL2(TracingMsg_GlobalMemoryDumpResponse,
                      uint64 /* dump_guid */,
                      bool /* success */)
 
-IPC_MESSAGE_CONTROL3(TracingMsg_SetUMACallback,
+IPC_MESSAGE_CONTROL4(TracingMsg_SetUMACallback,
                      std::string /* histogram_name */,
                      base::HistogramBase::Sample /* histogram_lower_value */,
-                     base::HistogramBase::Sample /* histogram_uppwer_value */)
+                     base::HistogramBase::Sample /* histogram_uppwer_value */,
+                     bool /* repeat */)
 
 IPC_MESSAGE_CONTROL1(TracingMsg_ClearUMACallback,
                      std::string /* histogram_name */)
@@ -133,3 +134,5 @@ IPC_MESSAGE_CONTROL2(TracingHostMsg_ProcessMemoryDumpResponse,
 
 IPC_MESSAGE_CONTROL1(TracingHostMsg_TriggerBackgroundTrace,
                      std::string /* name */)
+
+IPC_MESSAGE_CONTROL0(TracingHostMsg_AbortBackgroundTrace)

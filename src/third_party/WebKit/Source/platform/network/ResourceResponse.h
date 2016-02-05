@@ -44,9 +44,13 @@ namespace blink {
 struct CrossThreadResourceResponseData;
 
 class PLATFORM_EXPORT ResourceResponse {
-    WTF_MAKE_FAST_ALLOCATED(ResourceResponse);
+    USING_FAST_MALLOC(ResourceResponse);
 public:
-    enum HTTPVersion { Unknown, HTTP_0_9, HTTP_1_0, HTTP_1_1 };
+    enum HTTPVersion { HTTPVersionUnknown,
+        HTTPVersion_0_9,
+        HTTPVersion_1_0,
+        HTTPVersion_1_1,
+        HTTPVersion_2_0 };
     enum SecurityStyle {
         SecurityStyleUnknown,
         SecurityStyleUnauthenticated,
@@ -339,7 +343,7 @@ inline bool operator==(const ResourceResponse& a, const ResourceResponse& b) { r
 inline bool operator!=(const ResourceResponse& a, const ResourceResponse& b) { return !(a == b); }
 
 struct CrossThreadResourceResponseData {
-    WTF_MAKE_NONCOPYABLE(CrossThreadResourceResponseData); WTF_MAKE_FAST_ALLOCATED(CrossThreadResourceResponseData);
+    WTF_MAKE_NONCOPYABLE(CrossThreadResourceResponseData); USING_FAST_MALLOC(CrossThreadResourceResponseData);
 public:
     CrossThreadResourceResponseData() { }
     KURL m_url;

@@ -321,35 +321,10 @@ enum NotificationType {
 
   // Sync --------------------------------------------------------------------
 
-  // The sync service has finished the datatype configuration process. The
-  // source is the ProfileSyncService object of the Profile. There are no
-  // details.
-  NOTIFICATION_SYNC_CONFIGURE_DONE,
-
-  // A service is requesting a sync datatype refresh for the current profile.
-  // The details value is a const syncer::ModelTypeSet.
-  // If the payload map is empty, it should be treated as an invalidation for
-  // all enabled types. This is used by session sync.
-  NOTIFICATION_SYNC_REFRESH_LOCAL,
-
   // The session service has been saved.  This notification type is only sent
   // if there were new SessionService commands to save, and not for no-op save
   // operations.
   NOTIFICATION_SESSION_SERVICE_SAVED,
-
-  // A foreign session has been updated.  If a new tab page is open, the
-  // foreign session handler needs to update the new tab page's foreign
-  // session data.
-  NOTIFICATION_FOREIGN_SESSION_UPDATED,
-
-  // Foreign sessions has been disabled. New tabs should not display foreign
-  // session data.
-  NOTIFICATION_FOREIGN_SESSION_DISABLED,
-
-  // All tab metadata has been loaded from disk asynchronously.
-  // Sent on the UI thread.
-  // The source is the Profile. There are no details.
-  NOTIFICATION_SESSION_RESTORE_COMPLETE,
 
   // Cookies -----------------------------------------------------------------
 

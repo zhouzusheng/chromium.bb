@@ -9,8 +9,8 @@
 
 namespace blink {
 
-class DisplayItemList;
 class GraphicsContext;
+class PaintController;
 
 // SubsequenceRecorder records BeginSubsequenceDisplayItem and EndSubsequenceDisplayItem
 // sentinels at either end of a continguous sequence of DisplayItems, and supports
@@ -22,18 +22,17 @@ class GraphicsContext;
 //
 class PLATFORM_EXPORT SubsequenceRecorder {
 public:
-    static bool useCachedSubsequenceIfPossible(GraphicsContext&, const DisplayItemClientWrapper&, DisplayItem::Type);
+    static bool useCachedSubsequenceIfPossible(GraphicsContext&, const DisplayItemClientWrapper&);
 
-    SubsequenceRecorder(GraphicsContext&, const DisplayItemClientWrapper&, DisplayItem::Type);
+    SubsequenceRecorder(GraphicsContext&, const DisplayItemClientWrapper&);
     ~SubsequenceRecorder();
 
     void setUncacheable();
 
 private:
-    DisplayItemList* m_displayItemList;
+    PaintController& m_paintController;
     DisplayItemClientWrapper m_client;
     size_t m_beginSubsequenceIndex;
-    DisplayItem::Type m_type;
 };
 
 } // namespace blink

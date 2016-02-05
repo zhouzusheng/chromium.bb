@@ -65,14 +65,16 @@ void InlineTextBoxPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& 
     LayoutUnit logicalStart = logicalVisualOverflow.x() + (m_inlineTextBox.isHorizontal() ? paintOffset.x() : paintOffset.y());
     LayoutUnit logicalExtent = logicalVisualOverflow.width();
 
-    LayoutUnit paintEnd = m_inlineTextBox.isHorizontal() ? paintInfo.rect.maxX() : paintInfo.rect.maxY();
-    LayoutUnit paintStart = m_inlineTextBox.isHorizontal() ? paintInfo.rect.x() : paintInfo.rect.y();
-
     // We round the y-axis to ensure consistent line heights.
     LayoutPoint adjustedPaintOffset = LayoutPoint(paintOffset.x(), paintOffset.y().round());
 
-    if (logicalStart >= paintEnd || logicalStart + logicalExtent <= paintStart)
-        return;
+    if (m_inlineTextBox.isHorizontal()) {
+        if (!paintInfo.cullRect().intersectsHorizontalRange(logicalStart, logicalStart + logicalExtent))
+            return;
+    } else {
+        if (!paintInfo.cullRect().intersectsVerticalRange(logicalStart, logicalStart + logicalExtent))
+            return;
+    }
 
     bool isPrinting = paintInfo.isPrinting();
 
@@ -493,6 +495,13 @@ void InlineTextBoxPainter::paintSelection(GraphicsContext* context, const Layout
         && !m_inlineTextBox.isLineBreak())
         expandToIncludeNewlineForSelection(selectionRect);
 
+    // Line breaks report themselves as having zero width for layout purposes,
+    // and so will end up positioned at (0, 0), even though we paint their
+    // selection highlight with character width. For RTL then, we have to
+    // explicitly shift the selection rect over to paint in the right location.
+    if (!m_inlineTextBox.isLeftToRightDirection() && m_inlineTextBox.isLineBreak())
+        selectionRect.move(-selectionRect.width(), 0);
+
     context->fillRect(FloatRect(selectionRect), c);
 }
 
@@ -789,12 +798,19 @@ void InlineTextBoxPainter::paintCompositionUnderline(GraphicsContext* ctx, const
     unsigned paintStart = underlinePaintStart(underline);
     unsigned paintEnd = underlinePaintEnd(underline);
 
-    // start of line to draw, relative to paintOffset.
+    // start of line to draw
     float start = paintStart == static_cast<unsigned>(m_inlineTextBox.start()) ? 0 :
         m_inlineTextBox.lineLayoutItem().width(m_inlineTextBox.start(), paintStart - m_inlineTextBox.start(), m_inlineTextBox.textPos(), m_inlineTextBox.isLeftToRightDirection() ? LTR : RTL, m_inlineTextBox.isFirstLineStyle());
     // how much line to draw
     float width = (paintStart == static_cast<unsigned>(m_inlineTextBox.start()) && paintEnd == static_cast<unsigned>(m_inlineTextBox.end()) + 1) ? m_inlineTextBox.logicalWidth().toFloat() :
         m_inlineTextBox.lineLayoutItem().width(paintStart, paintEnd - paintStart, m_inlineTextBox.textPos() + start, m_inlineTextBox.isLeftToRightDirection() ? LTR : RTL, m_inlineTextBox.isFirstLineStyle());
+    // In RTL mode, start and width are computed from the right end of the text box:
+    // starting at |logicalWidth| - |start| and continuing left by |width| to
+    // |logicalWidth| - |start| - |width|. We will draw that line, but
+    // backwards: |logicalWidth| - |start| - |width| to |logicalWidth| - |start|.
+    if (!m_inlineTextBox.isLeftToRightDirection())
+        start = m_inlineTextBox.logicalWidth().toFloat() - width - start;
+
 
     // Thick marked text underlines are 2px thick as long as there is room for the 2px line under the baseline.
     // All other marked text underlines are 1px thick.

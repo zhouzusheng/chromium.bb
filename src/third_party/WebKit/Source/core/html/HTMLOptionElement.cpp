@@ -117,7 +117,7 @@ bool HTMLOptionElement::supportsFocus() const
     return HTMLElement::supportsFocus();
 }
 
-String HTMLOptionElement::text() const
+String HTMLOptionElement::displayLabel() const
 {
     Document& document = this->document();
     String text;
@@ -133,6 +133,11 @@ String HTMLOptionElement::text() const
         text = collectOptionInnerText();
 
     return text.stripWhiteSpace(isHTMLSpace<UChar>).simplifyWhiteSpace(isHTMLSpace<UChar>);
+}
+
+String HTMLOptionElement::text() const
+{
+    return collectOptionInnerText().stripWhiteSpace(isHTMLSpace<UChar>).simplifyWhiteSpace(isHTMLSpace<UChar>);
 }
 
 void HTMLOptionElement::setText(const String &text, ExceptionState& exceptionState)
@@ -336,8 +341,8 @@ String HTMLOptionElement::textIndentedToRespectGroupLabel() const
 {
     ContainerNode* parent = parentNode();
     if (parent && isHTMLOptGroupElement(*parent))
-        return "    " + text();
-    return text();
+        return "    " + displayLabel();
+    return displayLabel();
 }
 
 bool HTMLOptionElement::isDisabledFormControl() const
@@ -403,7 +408,7 @@ void HTMLOptionElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 void HTMLOptionElement::updateLabel()
 {
     if (ShadowRoot* root = userAgentShadowRoot())
-        root->setTextContent(text());
+        root->setTextContent(displayLabel());
 }
 
 bool HTMLOptionElement::spatialNavigationFocused() const

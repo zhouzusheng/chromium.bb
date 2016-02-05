@@ -23,13 +23,23 @@ SkRect MapRect(const SkMatrix& matrix, const SkRect& src) {
   return dst;
 }
 
+SkSize ExtractScale(const SkMatrix& matrix) {
+  SkSize scale = SkSize::Make(matrix.getScaleX(), matrix.getScaleY());
+  if (matrix.getType() & SkMatrix::kAffine_Mask) {
+    if (!matrix.decomposeScale(&scale))
+      scale.set(1, 1);
+  }
+  return scale;
+}
+
 // We're using an NWay canvas with no added canvases, so in effect
 // non-overridden functions are no-ops.
 class DiscardableImagesMetadataCanvas : public SkNWayCanvas {
  public:
-  DiscardableImagesMetadataCanvas(int width,
-                                  int height,
-                                  std::vector<PositionImage>* image_set)
+  DiscardableImagesMetadataCanvas(
+      int width,
+      int height,
+      std::vector<std::pair<DrawImage, gfx::RectF>>* image_set)
       : SkNWayCanvas(width, height),
         image_set_(image_set),
         canvas_bounds_(SkRect::MakeIWH(width, height)) {}
@@ -87,11 +97,13 @@ class DiscardableImagesMetadataCanvas : public SkNWayCanvas {
       if (paint) {
         filter_quality = paint->getFilterQuality();
       }
-      image_set_->push_back(PositionImage(image, rect, matrix, filter_quality));
+      image_set_->push_back(
+          std::make_pair(DrawImage(image, ExtractScale(matrix), filter_quality),
+                         gfx::SkRectToRectF(rect)));
     }
   }
 
-  std::vector<PositionImage>* image_set_;
+  std::vector<std::pair<DrawImage, gfx::RectF>>* image_set_;
   const SkRect canvas_bounds_;
 };
 
@@ -109,18 +121,18 @@ scoped_ptr<SkCanvas> DiscardableImageMap::BeginGeneratingMetadata(
 }
 
 void DiscardableImageMap::EndGeneratingMetadata() {
-  images_rtree_.Build(all_images_, [](const PositionImage& image) {
-    return gfx::SkRectToRectF(image.image_rect);
-  });
+  images_rtree_.Build(
+      all_images_, [](const PositionDrawImage& image) { return image.second; });
 }
 
 void DiscardableImageMap::GetDiscardableImagesInRect(
     const gfx::Rect& rect,
-    std::vector<PositionImage>* images) {
+    float raster_scale,
+    std::vector<DrawImage>* images) const {
   std::vector<size_t> indices;
   images_rtree_.Search(gfx::RectF(rect), &indices);
   for (size_t index : indices)
-    images->push_back(all_images_[index]);
+    images->push_back(all_images_[index].first.ApplyScale(raster_scale));
 }
 
 DiscardableImageMap::ScopedMetadataGenerator::ScopedMetadataGenerator(

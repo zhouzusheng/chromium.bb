@@ -176,8 +176,8 @@ DiscardableSharedMemoryHeap::Split(Span* span, size_t blocks) {
 
   scoped_ptr<Span> leftover(new Span(
       span->shared_memory_, span->start_ + blocks, span->length_ - blocks));
-  DCHECK_IMPLIES(leftover->length_ > 1,
-                 spans_.find(leftover->start_) == spans_.end());
+  DCHECK(leftover->length_ == 1 ||
+         spans_.find(leftover->start_) == spans_.end());
   RegisterSpan(leftover.get());
   spans_[span->start_ + blocks - 1] = span;
   span->length_ = blocks;
@@ -281,7 +281,7 @@ DiscardableSharedMemoryHeap::Carve(Span* span, size_t blocks) {
     scoped_ptr<Span> leftover(
         new Span(serving->shared_memory_, serving->start_ + blocks, extra));
     leftover->set_is_locked(false);
-    DCHECK_IMPLIES(extra > 1, spans_.find(leftover->start_) == spans_.end());
+    DCHECK(extra == 1 || spans_.find(leftover->start_) == spans_.end());
     RegisterSpan(leftover.get());
 
     // No need to coalesce as the previous span of |leftover| was just split
@@ -369,23 +369,24 @@ void DiscardableSharedMemoryHeap::OnMemoryDump(
     int32_t segment_id,
     base::trace_event::ProcessMemoryDump* pmd) {
   size_t allocated_objects_count = 0;
-  size_t allocated_objects_blocks = 0;
-  size_t locked_objects_blocks = 0;
+  size_t allocated_objects_size_in_blocks = 0;
+  size_t locked_objects_size_in_blocks = 0;
   size_t offset =
       reinterpret_cast<size_t>(shared_memory->memory()) / block_size_;
   size_t end = offset + size / block_size_;
   while (offset < end) {
     Span* span = spans_[offset];
     if (!IsInFreeList(span)) {
-      allocated_objects_blocks += span->length_;
-      locked_objects_blocks += span->is_locked_ ? span->length_ : 0;
+      allocated_objects_size_in_blocks += span->length_;
+      locked_objects_size_in_blocks += span->is_locked_ ? span->length_ : 0;
       allocated_objects_count++;
     }
     offset += span->length_;
   }
   size_t allocated_objects_size_in_bytes =
-      allocated_objects_blocks * block_size_;
-  size_t locked_objects_size_in_bytes = locked_objects_blocks * block_size_;
+      allocated_objects_size_in_blocks * block_size_;
+  size_t locked_objects_size_in_bytes =
+      locked_objects_size_in_blocks * block_size_;
 
   std::string segment_dump_name =
       base::StringPrintf("discardable/segment_%d", segment_id);

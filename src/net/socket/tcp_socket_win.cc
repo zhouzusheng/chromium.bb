@@ -5,6 +5,7 @@
 #include "net/socket/tcp_socket.h"
 #include "net/socket/tcp_socket_win.h"
 
+#include <errno.h>
 #include <mstcpip.h>
 
 #include "base/callback_helpers.h"
@@ -698,6 +699,10 @@ void TCPSocketWin::Close() {
   connect_os_error_ = 0;
 }
 
+void TCPSocketWin::DetachFromThread() {
+  base::NonThreadSafe::DetachFromThread();
+}
+
 void TCPSocketWin::StartLoggingMultipleConnectAttempts(
     const AddressList& addresses) {
   if (!logging_multiple_connect_attempts_) {
@@ -841,7 +846,7 @@ void TCPSocketWin::DoConnectComplete(int result) {
   connect_os_error_ = 0;
   if (result != OK) {
     net_log_.EndEvent(NetLog::TYPE_TCP_CONNECT_ATTEMPT,
-                      NetLog::IntegerCallback("os_error", os_error));
+                      NetLog::IntCallback("os_error", os_error));
   } else {
     net_log_.EndEvent(NetLog::TYPE_TCP_CONNECT_ATTEMPT);
   }

@@ -37,7 +37,6 @@ namespace inspector { class InspectorHandler; }
 namespace io { class IOHandler; }
 namespace network { class NetworkHandler; }
 namespace page { class PageHandler; }
-namespace power { class PowerHandler; }
 namespace security { class SecurityHandler; }
 namespace service_worker { class ServiceWorkerHandler; }
 namespace tracing { class TracingHandler; }
@@ -51,6 +50,8 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
 
   static void OnCancelPendingNavigation(RenderFrameHost* pending,
                                         RenderFrameHost* current);
+  static void OnBeforeNavigation(RenderFrameHost* current,
+                                 RenderFrameHost* pending);
 
   void SynchronousSwapCompositorFrame(
       const cc::CompositorFrameMetadata& frame_metadata);
@@ -86,8 +87,6 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   void InspectElement(int x, int y) override;
 
   // WebContentsObserver overrides.
-  void AboutToNavigateRenderFrame(RenderFrameHost* old_host,
-                                  RenderFrameHost* new_host) override;
   void RenderFrameHostChanged(RenderFrameHost* old_host,
                               RenderFrameHost* new_host) override;
   void FrameDeleted(RenderFrameHost* rfh) override;
@@ -108,6 +107,9 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
       int error_code,
       const base::string16& error_description,
       bool was_ignored_by_handler) override;
+
+  void AboutToNavigateRenderFrame(RenderFrameHost* old_host,
+                                  RenderFrameHost* new_host);
 
   void SetPending(RenderFrameHostImpl* host);
   void CommitPending();
@@ -136,7 +138,6 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   scoped_ptr<devtools::io::IOHandler> io_handler_;
   scoped_ptr<devtools::network::NetworkHandler> network_handler_;
   scoped_ptr<devtools::page::PageHandler> page_handler_;
-  scoped_ptr<devtools::power::PowerHandler> power_handler_;
   scoped_ptr<devtools::security::SecurityHandler> security_handler_;
   scoped_ptr<devtools::service_worker::ServiceWorkerHandler>
       service_worker_handler_;

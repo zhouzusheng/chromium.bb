@@ -29,14 +29,14 @@
 #include "core/svg/SVGFitToViewBox.h"
 #include "core/svg/SVGPatternElement.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
 #include "third_party/skia/include/core/SkPicture.h"
 
 namespace blink {
 
 struct PatternData {
-    WTF_MAKE_FAST_ALLOCATED(PatternData);
+    USING_FAST_MALLOC(PatternData);
 public:
     RefPtr<Pattern> pattern;
     AffineTransform transform;

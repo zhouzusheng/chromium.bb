@@ -116,10 +116,10 @@ static Element* parentElement(const SelectorChecker::SelectorCheckingContext& co
 
 static bool scopeContainsLastMatchedElement(const SelectorChecker::SelectorCheckingContext& context)
 {
-    if (!context.scopeContainsLastMatchedElement)
+    // If this context isn't scoped, skip checking.
+    if (!context.scope)
         return true;
 
-    ASSERT(context.scope);
     if (context.scope->treeScope() == context.element->treeScope())
         return true;
 
@@ -295,24 +295,24 @@ SelectorChecker::Match SelectorChecker::matchForSubSelector(const SelectorChecki
     return matchSelector(nextContext, result);
 }
 
-static inline bool isOpenShadowRoot(const Node* node)
+static inline bool isV0ShadowRoot(const Node* node)
 {
-    return node && node->isShadowRoot() && toShadowRoot(node)->isOpen();
+    return node && node->isShadowRoot() && toShadowRoot(node)->type() == ShadowRootType::V0;
 }
 
 SelectorChecker::Match SelectorChecker::matchForPseudoShadow(const SelectorCheckingContext& context, const ContainerNode* node, MatchResult& result) const
 {
-    if (!isOpenShadowRoot(node))
+    if (!isV0ShadowRoot(node))
         return SelectorFailsCompletely;
     if (!context.previousElement)
         return SelectorFailsCompletely;
     return matchSelector(context, result);
 }
 
-static inline Element* parentOrShadowHostElementButDisallowClosedShadowTree(const Element& element)
+static inline Element* parentOrV0ShadowHostElement(const Element& element)
 {
     if (element.parentNode() && element.parentNode()->isShadowRoot()) {
-        if (!toShadowRoot(element.parentNode())->isOpen())
+        if (toShadowRoot(element.parentNode())->type() != ShadowRootType::V0)
             return nullptr;
     }
     return element.parentOrShadowHostElement();
@@ -443,7 +443,7 @@ SelectorChecker::Match SelectorChecker::matchForRelation(const SelectorCheckingC
             nextContext.isSubSelector = false;
             nextContext.inRightmostCompound = false;
 
-            for (nextContext.element = parentOrShadowHostElementButDisallowClosedShadowTree(*context.element); nextContext.element; nextContext.element = parentOrShadowHostElementButDisallowClosedShadowTree(*nextContext.element)) {
+            for (nextContext.element = parentOrV0ShadowHostElement(*context.element); nextContext.element; nextContext.element = parentOrV0ShadowHostElement(*nextContext.element)) {
                 Match match = matchSelector(nextContext, result);
                 if (match == SelectorMatches || match == SelectorFailsCompletely)
                     return match;
@@ -964,9 +964,9 @@ bool SelectorChecker::checkPseudoClass(const SelectorCheckingContext& context, M
     case CSSSelector::PseudoScope:
         if (m_mode == SharingRules)
             return true;
-        if (context.scope)
-            return context.scope == element;
-        return element == element.document().documentElement();
+        if (context.scope == element.document())
+            return element == element.document().documentElement();
+        return context.scope == element;
     case CSSSelector::PseudoUnresolved:
         return element.isUnresolvedCustomElement();
     case CSSSelector::PseudoHost:
@@ -1009,7 +1009,7 @@ bool SelectorChecker::checkPseudoElement(const SelectorCheckingContext& context,
         {
             SelectorCheckingContext subContext(context);
             subContext.isSubSelector = true;
-            subContext.scopeContainsLastMatchedElement = false;
+            subContext.scope = nullptr;
             subContext.treatShadowHostAsNormalScope = false;
 
             for (subContext.selector = selector.selectorList()->first(); subContext.selector; subContext.selector = CSSSelectorList::next(*subContext.selector)) {
@@ -1087,7 +1087,6 @@ bool SelectorChecker::checkPseudoHost(const SelectorCheckingContext& context, Ma
                 maxSpecificity = std::max(maxSpecificity, hostContext.selector->specificity() + subResult.specificity);
                 break;
             }
-            hostContext.scopeContainsLastMatchedElement = false;
             hostContext.treatShadowHostAsNormalScope = false;
             hostContext.scope = nullptr;
 

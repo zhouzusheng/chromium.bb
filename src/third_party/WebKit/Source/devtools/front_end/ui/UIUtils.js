@@ -198,12 +198,14 @@ WebInspector._elementDragEnd = function(event)
 /**
  * @constructor
  * @param {!Document} document
+ * @param {boolean=} dimmed
  */
-WebInspector.GlassPane = function(document)
+WebInspector.GlassPane = function(document, dimmed)
 {
     this.element = createElement("div");
-    this.element.style.cssText = "position:absolute;top:0;bottom:0;left:0;right:0;background-color:transparent;z-index:1000;overflow:hidden;";
-    this.element.id = "glass-pane";
+    var background = dimmed ? "rgba(255, 255, 255, 0.5)" : "transparent";
+    this._zIndex = WebInspector._glassPane ? WebInspector._glassPane._zIndex + 1000 : 3000; // Deliberately starts with 3000 to hide other z-indexed elements below.
+    this.element.style.cssText = "position:absolute;top:0;bottom:0;left:0;right:0;background-color:" + background + ";z-index:" + this._zIndex + ";overflow:hidden;";
     document.body.appendChild(this.element);
     WebInspector._glassPane = this;
 }
@@ -217,6 +219,9 @@ WebInspector.GlassPane.prototype = {
         this.element.remove();
     }
 }
+
+/** @type {!WebInspector.GlassPane|undefined} */
+WebInspector._glassPane;
 
 /**
  * @type {!Array.<!WebInspector.Widget|!WebInspector.Dialog>}
@@ -659,9 +664,9 @@ WebInspector.asyncStackTraceLabel = function(description)
 /**
  * @return {string}
  */
-WebInspector.manageBlackboxingButtonLabel = function()
+WebInspector.manageBlackboxingSettingsTabLabel = function()
 {
-    return WebInspector.UIString("Manage framework blackboxing...");
+    return WebInspector.UIString("Blackboxing");
 }
 
 /**
@@ -770,17 +775,17 @@ WebInspector.setCurrentFocusElement = function(x)
         WebInspector._previousFocusElement = WebInspector._currentFocusElement;
     WebInspector._currentFocusElement = x;
 
-    if (WebInspector._currentFocusElement) {
-        WebInspector._currentFocusElement.focus();
+    if (x) {
+        x.focus();
 
         // Make a caret selection inside the new element if there isn't a range selection and there isn't already a caret selection inside.
         // This is needed (at least) to remove caret from console when focus is moved to some element in the panel.
         // The code below should not be applied to text fields and text areas, hence _isTextEditingElement check.
         var selection = x.getComponentSelection();
-        if (!WebInspector._isTextEditingElement(WebInspector._currentFocusElement) && selection.isCollapsed && !WebInspector._currentFocusElement.isInsertionCaretInside()) {
-            var selectionRange = WebInspector._currentFocusElement.ownerDocument.createRange();
-            selectionRange.setStart(WebInspector._currentFocusElement, 0);
-            selectionRange.setEnd(WebInspector._currentFocusElement, 0);
+        if (!WebInspector._isTextEditingElement(x) && selection.isCollapsed && !x.isInsertionCaretInside()) {
+            var selectionRange = x.ownerDocument.createRange();
+            selectionRange.setStart(x, 0);
+            selectionRange.setEnd(x, 0);
 
             selection.removeAllRanges();
             selection.addRange(selectionRange);
@@ -849,9 +854,9 @@ WebInspector.highlightRangesWithStyleClass = function(element, resultRanges, sty
 {
     changes = changes || [];
     var highlightNodes = [];
-    var lineText = element.deepTextContent();
-    var ownerDocument = element.ownerDocument;
     var textNodes = element.childTextNodes();
+    var lineText = textNodes.map(function (node) { return node.textContent; }).join("");
+    var ownerDocument = element.ownerDocument;
 
     if (textNodes.length === 0)
         return highlightNodes;

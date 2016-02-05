@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/process/process.h"
+#include "base/synchronization/waitable_event.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/power_monitor_message_broadcaster.h"
@@ -20,7 +21,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_ptr.h"
+#include "mojo/public/cpp/bindings/interface_ptr.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gl/gpu_switching_observer.h"
 
@@ -113,6 +114,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void WidgetRestored() override;
   void WidgetHidden() override;
   int VisibleWidgetCount() const override;
+  void AudioStateChanged() override;
   bool IsForGuestsOnly() const override;
   StoragePartition* GetStoragePartition() const override;
   bool Shutdown(int exit_code, bool wait) override;
@@ -157,8 +159,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SendUpdateValueState(
       unsigned int target, const gpu::ValueState& state) override;
 #if defined(ENABLE_BROWSER_CDMS)
-  media::BrowserCdm* GetBrowserCdm(int render_frame_id,
-                                   int cdm_id) const override;
+  scoped_refptr<media::MediaKeys> GetCdm(int render_frame_id,
+                                         int cdm_id) const override;
 #endif
 
   // IPC::Sender via RenderProcessHost.
@@ -257,7 +259,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Called when the existence of the other renderer process which is connected
   // to the Worker in this renderer process has changed.
-  // It is only called when "enable-embedded-shared-worker" flag is set.
   void IncrementWorkerRefCount();
   void DecrementWorkerRefCount();
 
@@ -317,8 +318,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
       const base::CommandLine& browser_cmd,
       base::CommandLine* renderer_cmd) const;
 
-  // Callers can reduce the RenderProcess' priority.
-  void SetBackgrounded(bool backgrounded);
+  // Inspects the current object state and sets/removes background priority if
+  // appropriate. Should be called after any of the involved data members
+  // change.
+  void UpdateProcessPriority();
 
   // Handle termination of our process.
   void ProcessDied(bool already_dead, RendererClosedDetails* known_details);
@@ -350,8 +353,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // backgrounded.
   int32 visible_widgets_;
 
-  // Does this process have backgrounded priority.
-  bool backgrounded_;
+  // Whether this process currently has backgrounded priority. Tracked so that
+  // UpdateProcessPriority() can avoid redundantly setting the priority.
+  bool is_process_backgrounded_;
 
   // Used to allow a RenderWidgetHost to intercept various messages on the
   // IO thread.
@@ -496,6 +500,15 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   bool channel_connected_;
   bool sent_render_process_ready_;
+
+#if defined(OS_ANDROID)
+  // UI thread is the source of sync IPCs and all shutdown signals.
+  // Therefore a proper shutdown event to unblock the UI thread is not
+  // possible without massive refactoring shutdown code.
+  // Luckily Android never performs a clean shutdown. So explicitly
+  // ignore this problem.
+  base::WaitableEvent never_signaled_;
+#endif
 
   base::WeakPtrFactory<RenderProcessHostImpl> weak_factory_;
 

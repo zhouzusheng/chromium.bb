@@ -23,6 +23,7 @@
 #include "core/paint/ThemePainter.h"
 
 #include "core/InputTypeNames.h"
+#include "core/frame/FrameView.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLDataListOptionsCollection.h"
 #include "core/html/HTMLInputElement.h"
@@ -246,7 +247,7 @@ void ThemePainter::paintSliderTicks(const LayoutObject& o, const PaintInfo& pain
         return;
 
     HTMLInputElement* input = toHTMLInputElement(node);
-    if (input->type() != InputTypeNames::range)
+    if (input->type() != InputTypeNames::range || !input->userAgentShadowRoot()->hasChildren())
         return;
 
     HTMLDataListElement* dataList = input->dataList();

@@ -14,9 +14,10 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/ip_address_number.h"
 #include "net/base/net_export.h"
-#include "net/base/net_util.h"
 #include "net/quic/quic_bandwidth.h"
+#include "net/quic/quic_server_id.h"
 #include "net/socket/next_proto.h"
 #include "net/spdy/spdy_framer.h"  // TODO(willchan): Reconsider this.
 #include "net/spdy/spdy_protocol.h"
@@ -213,15 +214,23 @@ typedef base::MRUCache<HostPortPair, AlternativeServiceInfoVector>
     AlternativeServiceMap;
 typedef base::MRUCache<HostPortPair, SettingsMap> SpdySettingsMap;
 typedef base::MRUCache<HostPortPair, ServerNetworkStats> ServerNetworkStatsMap;
+typedef base::MRUCache<QuicServerId, std::string> QuicServerInfoMap;
+
+// Persist 5 QUIC Servers. This is mainly used by cronet.
+const int kMaxQuicServersToPersist = 5;
 
 extern const char kAlternateProtocolHeader[];
 extern const char kAlternativeServiceHeader[];
 
 // The interface for setting/retrieving the HTTP server properties.
 // Currently, this class manages servers':
-// * SPDY support (based on NPN results)
-// * alternative service support
-// * Spdy Settings (like CWND ID field)
+// * SPDY support (based on NPN results).
+// * alternative service support.
+// * SPDY Settings (like CWND ID field).
+// * QUIC data (like ServerNetworkStats and QuicServerInfo).
+//
+// Embedders must ensure that HttpServerProperites is completely initialized
+// before the first request is issued.
 class NET_EXPORT HttpServerProperties {
  public:
   HttpServerProperties() {}
@@ -359,6 +368,18 @@ class NET_EXPORT HttpServerProperties {
       const HostPortPair& host_port_pair) = 0;
 
   virtual const ServerNetworkStatsMap& server_network_stats_map() const = 0;
+
+  // Save QuicServerInfo (in std::string form) for the given |server_id|.
+  // Returns true if the value has changed otherwise it returns false.
+  virtual bool SetQuicServerInfo(const QuicServerId& server_id,
+                                 const std::string& server_info) = 0;
+
+  // Get QuicServerInfo (in std::string form) for the given |server_id|.
+  virtual const std::string* GetQuicServerInfo(
+      const QuicServerId& server_id) = 0;
+
+  // Returns all persistent QuicServerInfo objects.
+  virtual const QuicServerInfoMap& quic_server_info_map() const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HttpServerProperties);

@@ -20,7 +20,7 @@
 #include "webrtc/common_types.h"
 #include "webrtc/modules/video_coding/codecs/interface/video_codec_interface.h"
 #include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
-#include "webrtc/system_wrappers/interface/clock.h"
+#include "webrtc/system_wrappers/include/clock.h"
 #include "webrtc/video_engine/overuse_frame_detector.h"
 #include "webrtc/video_engine/vie_encoder.h"
 #include "webrtc/video_send_stream.h"
@@ -87,12 +87,27 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
                             uint32_t ssrc) override;
 
  private:
-  struct SampleCounter {
+  class SampleCounter {
+   public:
     SampleCounter() : sum(0), num_samples(0) {}
+    ~SampleCounter() {}
     void Add(int sample);
     int Avg(int min_required_samples) const;
 
    private:
+    int sum;
+    int num_samples;
+  };
+  class BoolSampleCounter {
+   public:
+    BoolSampleCounter() : sum(0), num_samples(0) {}
+    ~BoolSampleCounter() {}
+    void Add(bool sample);
+    int Percent(int min_required_samples) const;
+    int Permille(int min_required_samples) const;
+
+   private:
+    int Fraction(int min_required_samples, float multiplier) const;
     int sum;
     int num_samples;
   };
@@ -122,6 +137,13 @@ class SendStatisticsProxy : public CpuOveruseMetricsObserver,
   SampleCounter sent_width_counter_ GUARDED_BY(crit_);
   SampleCounter sent_height_counter_ GUARDED_BY(crit_);
   SampleCounter encode_time_counter_ GUARDED_BY(crit_);
+  BoolSampleCounter key_frame_counter_ GUARDED_BY(crit_);
+  BoolSampleCounter quality_limited_frame_counter_ GUARDED_BY(crit_);
+  SampleCounter quality_downscales_counter_ GUARDED_BY(crit_);
+  BoolSampleCounter bw_limited_frame_counter_ GUARDED_BY(crit_);
+  SampleCounter bw_resolutions_disabled_counter_ GUARDED_BY(crit_);
+  SampleCounter delay_counter_ GUARDED_BY(crit_);
+  SampleCounter max_delay_counter_ GUARDED_BY(crit_);
 };
 
 }  // namespace webrtc

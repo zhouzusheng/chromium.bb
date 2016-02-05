@@ -40,9 +40,6 @@ WebInspector.ResourceTreeModel = function(target)
     target.networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.RequestFinished, this._onRequestFinished, this);
     target.networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.RequestUpdateDropped, this._onRequestUpdateDropped, this);
 
-    target.consoleModel.addEventListener(WebInspector.ConsoleModel.Events.MessageAdded, this._consoleMessageAdded, this);
-    target.consoleModel.addEventListener(WebInspector.ConsoleModel.Events.ConsoleCleared, this._consoleCleared, this);
-
     this._agent = target.pageAgent();
     this._agent.enable();
 
@@ -50,7 +47,6 @@ WebInspector.ResourceTreeModel = function(target)
 
     target.registerPageDispatcher(new WebInspector.PageDispatcher(this));
 
-    this._pendingConsoleMessages = {};
     this._securityOriginFrameCount = {};
     this._inspectedPageURL = "";
     this._pendingReloadOptions = null;
@@ -117,9 +113,6 @@ WebInspector.ResourceTreeModel.prototype = {
     _processCachedResources: function(error, mainFramePayload)
     {
         if (error) {
-            // FIXME: support targets that don't have resourceTreeModel.
-            if (this.target().isPage() || this.target().isServiceWorker())
-                console.error(JSON.stringify(error));
             this._cachedResourcesProcessed = true;
             return;
         }
@@ -332,10 +325,8 @@ WebInspector.ResourceTreeModel.prototype = {
             return;
 
         var frame = this._frames[request.frameId];
-        if (frame) {
-            var resource = frame._addRequest(request);
-            this._addPendingConsoleMessagesToResource(resource);
-        }
+        if (frame)
+            frame._addRequest(request);
     },
 
     /**
@@ -385,72 +376,6 @@ WebInspector.ResourceTreeModel.prototype = {
     frames: function()
     {
         return Object.values(this._frames);
-    },
-
-    /**
-     * @param {!WebInspector.Event} event
-     */
-    _consoleMessageAdded: function(event)
-    {
-        var msg = /** @type {!WebInspector.ConsoleMessage} */ (event.data);
-        var resource = msg.url ? this.resourceForURL(msg.url) : null;
-        if (resource)
-            this._addConsoleMessageToResource(msg, resource);
-        else
-            this._addPendingConsoleMessage(msg);
-    },
-
-    /**
-     * @param {!WebInspector.ConsoleMessage} msg
-     */
-    _addPendingConsoleMessage: function(msg)
-    {
-        if (!msg.url)
-            return;
-        if (!this._pendingConsoleMessages[msg.url])
-            this._pendingConsoleMessages[msg.url] = [];
-        this._pendingConsoleMessages[msg.url].push(msg);
-    },
-
-    /**
-     * @param {!WebInspector.Resource} resource
-     */
-    _addPendingConsoleMessagesToResource: function(resource)
-    {
-        var messages = this._pendingConsoleMessages[resource.url];
-        if (messages) {
-            for (var i = 0; i < messages.length; i++)
-                this._addConsoleMessageToResource(messages[i], resource);
-            delete this._pendingConsoleMessages[resource.url];
-        }
-    },
-
-    /**
-     * @param {!WebInspector.ConsoleMessage} msg
-     * @param {!WebInspector.Resource} resource
-     */
-    _addConsoleMessageToResource: function(msg, resource)
-    {
-        switch (msg.level) {
-        case WebInspector.ConsoleMessage.MessageLevel.Warning:
-            resource.warnings++;
-            break;
-        case WebInspector.ConsoleMessage.MessageLevel.Error:
-            resource.errors++;
-            break;
-        }
-        resource.addMessage(msg);
-    },
-
-    _consoleCleared: function()
-    {
-        function callback(resource)
-        {
-            resource.clearErrorsAndWarnings();
-        }
-
-        this._pendingConsoleMessages = {};
-        this.forAllResources(callback);
     },
 
     /**

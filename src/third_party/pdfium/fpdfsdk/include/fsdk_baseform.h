@@ -15,10 +15,10 @@
 
 #include <map>
 
-#include "../../core/include/fpdfapi/fpdf_parser.h"
-#include "../../core/include/fpdfdoc/fpdf_doc.h"
-#include "../../core/include/fxcrt/fx_basic.h"
-#include "../../core/include/fxge/fx_dib.h"
+#include "core/include/fpdfapi/fpdf_parser.h"
+#include "core/include/fpdfdoc/fpdf_doc.h"
+#include "core/include/fxcrt/fx_basic.h"
+#include "core/include/fxge/fx_dib.h"
 #include "fsdk_baseannot.h"
 
 class CFFL_FormFiller;
@@ -57,7 +57,7 @@ typedef struct _PDFSDK_FieldAction {
   FX_BOOL bRC;               // in[out]
 } PDFSDK_FieldAction;
 
-class CPDFSDK_Widget : public CPDFSDK_Annot {
+class CPDFSDK_Widget : public CPDFSDK_BAAnnot {
  public:
   CPDFSDK_Widget(CPDF_Annot* pAnnot,
                  CPDFSDK_PageView* pPageView,
@@ -67,6 +67,7 @@ class CPDFSDK_Widget : public CPDFSDK_Annot {
   // CPDFSDK_Annot
   CFX_ByteString GetSubType() const override;
   CPDF_Action GetAAction(CPDF_AAction::AActionType eAAT) override;
+  FX_BOOL IsAppearanceValid() override;
 
   int GetLayoutOrder() const override { return 2; }
 
@@ -123,7 +124,7 @@ class CPDFSDK_Widget : public CPDFSDK_Annot {
   CPDF_FormField* GetFormField() const;
   CPDF_FormControl* GetFormControl() const;
   static CPDF_FormControl* GetFormControl(CPDF_InterForm* pInterForm,
-                                          CPDF_Dictionary* pAnnotDict);
+                                          const CPDF_Dictionary* pAnnotDict);
 
   void DrawShadow(CFX_RenderDevice* pDevice, CPDFSDK_PageView* pPageView);
 
@@ -161,9 +162,8 @@ class CPDFSDK_Widget : public CPDFSDK_Annot {
   void DrawAppearance(CFX_RenderDevice* pDevice,
                       const CPDF_Matrix* pUser2Device,
                       CPDF_Annot::AppearanceMode mode,
-                      const CPDF_RenderOptions* pOptions);
+                      const CPDF_RenderOptions* pOptions) override;
 
- public:
   FX_BOOL HitTest(FX_FLOAT pageX, FX_FLOAT pageY);
 
  private:
@@ -185,8 +185,10 @@ class CPDFSDK_InterForm : public CPDF_FormNotify {
 
   CPDFSDK_Widget* GetSibling(CPDFSDK_Widget* pWidget, FX_BOOL bNext) const;
   CPDFSDK_Widget* GetWidget(CPDF_FormControl* pControl) const;
-  void GetWidgets(const CFX_WideString& sFieldName, CFX_PtrArray& widgets);
-  void GetWidgets(CPDF_FormField* pField, CFX_PtrArray& widgets);
+  void GetWidgets(const CFX_WideString& sFieldName,
+                  std::vector<CPDFSDK_Widget*>* widgets) const;
+  void GetWidgets(CPDF_FormField* pField,
+                  std::vector<CPDFSDK_Widget*>* widgets) const;
 
   void AddMap(CPDF_FormControl* pControl, CPDFSDK_Widget* pWidget);
   void RemoveMap(CPDF_FormControl* pControl);
@@ -217,15 +219,16 @@ class CPDFSDK_InterForm : public CPDF_FormNotify {
   FX_BOOL DoAction_ResetForm(const CPDF_Action& action);
   FX_BOOL DoAction_ImportData(const CPDF_Action& action);
 
-  void GetFieldFromObjects(const CFX_PtrArray& objects, CFX_PtrArray& fields);
+  std::vector<CPDF_FormField*> GetFieldFromObjects(
+      const std::vector<CPDF_Object*>& objects) const;
   FX_BOOL IsValidField(CPDF_Dictionary* pFieldDict);
   FX_BOOL SubmitFields(const CFX_WideString& csDestination,
-                       const CFX_PtrArray& fields,
+                       const std::vector<CPDF_FormField*>& fields,
                        FX_BOOL bIncludeOrExclude,
                        FX_BOOL bUrlEncoded);
   FX_BOOL SubmitForm(const CFX_WideString& sDestination, FX_BOOL bUrlEncoded);
   FX_BOOL ExportFormToFDFTextBuf(CFX_ByteTextBuf& textBuf);
-  FX_BOOL ExportFieldsToFDFTextBuf(const CFX_PtrArray& fields,
+  FX_BOOL ExportFieldsToFDFTextBuf(const std::vector<CPDF_FormField*>& fields,
                                    FX_BOOL bIncludeOrExclude,
                                    CFX_ByteTextBuf& textBuf);
   CFX_WideString GetTemporaryFileName(const CFX_WideString& sFileExt);
@@ -250,7 +253,6 @@ class CPDFSDK_InterForm : public CPDF_FormNotify {
   FX_BOOL FDFToURLEncodedData(uint8_t*& pBuf, FX_STRSIZE& nBufSize);
   int GetPageIndexByAnnotDict(CPDF_Document* pDocument,
                               CPDF_Dictionary* pAnnotDict) const;
-  void DoFDFBuffer(CFX_ByteString sBuffer);
 
   using CPDFSDK_WidgetMap = std::map<CPDF_FormControl*, CPDFSDK_Widget*>;
 

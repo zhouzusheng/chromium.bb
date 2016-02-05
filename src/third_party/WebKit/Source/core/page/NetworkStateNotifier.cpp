@@ -104,6 +104,15 @@ void NetworkStateNotifier::removeObserver(NetworkStateObserver* observer, Execut
 void NetworkStateNotifier::setTestUpdatesOnly(bool updatesOnly)
 {
     ASSERT(isMainThread());
+    MutexLocker locker(m_mutex);
+
+    // Reset state to default when entering or leaving test mode.
+    if (updatesOnly != m_testUpdatesOnly) {
+        m_isOnLine = true;
+        m_type = WebConnectionTypeOther;
+        m_maxBandwidthMbps = std::numeric_limits<double>::infinity();
+    }
+
     m_testUpdatesOnly = updatesOnly;
 }
 
@@ -126,7 +135,7 @@ void NetworkStateNotifier::setWebConnectionImpl(WebConnectionType type, double m
 
     for (const auto& entry : m_observers) {
         ExecutionContext* context = entry.key;
-        context->postTask(FROM_HERE, createCrossThreadTask(&NetworkStateNotifier::notifyObserversOfConnectionChangeOnContext, this, type, maxBandwidthMbps));
+        context->postTask(BLINK_FROM_HERE, createCrossThreadTask(&NetworkStateNotifier::notifyObserversOfConnectionChangeOnContext, this, type, maxBandwidthMbps));
     }
 }
 
@@ -158,7 +167,7 @@ NetworkStateNotifier::ObserverList* NetworkStateNotifier::lockAndFindObserverLis
 {
     MutexLocker locker(m_mutex);
     ObserverListMap::iterator it = m_observers.find(context);
-    return it == m_observers.end() ? 0 : it->value.get();
+    return it == m_observers.end() ? nullptr : it->value.get();
 }
 
 void NetworkStateNotifier::collectZeroedObservers(ObserverList* list, ExecutionContext* context)

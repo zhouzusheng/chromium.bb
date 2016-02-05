@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/process/kill.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_owner_delegate.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/drag_event_source_info.h"
 #include "content/public/browser/notification_observer.h"
@@ -49,8 +50,8 @@ class AXTree;
 
 namespace content {
 
-class MediaWebContentsObserver;
 class ChildProcessSecurityPolicyImpl;
+class MediaWebContentsObserver;
 class PageState;
 class RenderWidgetHostDelegate;
 class SessionStorageNamespace;
@@ -93,16 +94,18 @@ struct FrameReplicationState;
 //
 // For context, please see https://crbug.com/467770 and
 // http://www.chromium.org/developers/design-documents/site-isolation.
-class CONTENT_EXPORT RenderViewHostImpl
-    : public RenderViewHost,
-      public RenderWidgetHostImpl,
-      public RenderProcessHostObserver {
+class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
+                                          RenderWidgetHostImpl,
+                                          public RenderWidgetHostOwnerDelegate,
+                                          public RenderProcessHostObserver {
  public:
   // Convenience function, just like RenderViewHost::FromID.
   static RenderViewHostImpl* FromID(int render_process_id, int render_view_id);
 
-  // |routing_id| could be a valid route id, or it could be MSG_ROUTING_NONE, in
-  // which case RenderWidgetHost will create a new one.  |swapped_out| indicates
+  // Convenience function, just like RenderViewHost::From.
+  static RenderViewHostImpl* From(RenderWidgetHost* rwh);
+
+  // |routing_id| must be a valid route id.  |swapped_out| indicates
   // whether the view should initially be swapped out (e.g., for an opener
   // frame being rendered by another process). |hidden| indicates whether the
   // view is initially hidden or visible.
@@ -123,6 +126,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   ~RenderViewHostImpl() override;
 
   // RenderViewHost implementation.
+  bool Send(IPC::Message* msg) override;
+  RenderWidgetHostImpl* GetWidget() const override;
+  RenderProcessHost* GetProcess() const override;
+  int GetRoutingID() const override;
   RenderFrameHost* GetMainFrame() override;
   void AllowBindings(int binding_flags) override;
   void ClearFocusedElement() override;
@@ -275,22 +282,18 @@ class CONTENT_EXPORT RenderViewHostImpl
   void Shutdown() override;
   void WasHidden() override;
   void WasShown(const ui::LatencyInfo& latency_info) override;
-  bool IsRenderView() const override;
   bool OnMessageReceived(const IPC::Message& msg) override;
   void GotFocus() override;
-  void LostCapture() override;
-  void LostMouseLock() override;
   void SetIsLoading(bool is_loading) override;
   void ForwardMouseEvent(const blink::WebMouseEvent& mouse_event) override;
   void ForwardKeyboardEvent(const NativeWebKeyboardEvent& key_event) override;
-  gfx::Rect GetRootWindowResizerRect() const override;
 
   // Creates a new RenderView with the given route id.
-  void CreateNewWindow(
-      int route_id,
-      int main_frame_route_id,
-      const ViewHostMsg_CreateWindow_Params& params,
-      SessionStorageNamespace* session_storage_namespace);
+  void CreateNewWindow(int32_t route_id,
+                       int32_t main_frame_route_id,
+                       int32_t main_frame_widget_route_id,
+                       const ViewHostMsg_CreateWindow_Params& params,
+                       SessionStorageNamespace* session_storage_namespace);
 
   // Creates a new RenderWidget with the given route id.  |popup_type| indicates
   // if this widget is a popup and what kind of popup it is (select, autofill).
@@ -320,11 +323,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // currently using it.
   int ref_count() { return frames_ref_count_; }
 
-  // TODO(avi): Move to RenderFrameHost once PageState is broken up into
-  // FrameStates.
-  int nav_entry_id() const { return nav_entry_id_; }
-  void set_nav_entry_id(int nav_entry_id) { nav_entry_id_ = nav_entry_id; }
-
   // NOTE: Do not add functions that just send an IPC message that are called in
   // one or two places. Have the caller send the IPC message directly (unless
   // the caller places are in different platforms, in which case it's better
@@ -332,16 +330,7 @@ class CONTENT_EXPORT RenderViewHostImpl
 
  protected:
   // RenderWidgetHost protected overrides.
-  void OnUserGesture() override;
-  void NotifyRendererUnresponsive() override;
-  void NotifyRendererResponsive() override;
-  void OnRenderAutoResized(const gfx::Size& size) override;
-  void RequestToLockMouse(bool user_gesture,
-                          bool last_unlocked_by_target) override;
-  bool IsFullscreenGranted() const override;
-  blink::WebDisplayMode GetDisplayMode() const override;
   void OnFocus() override;
-  void OnBlur() override;
 
   // IPC message handlers.
   void OnShowView(int route_id,
@@ -370,7 +359,6 @@ class CONTENT_EXPORT RenderViewHostImpl
                             const gfx::Rect& node_bounds_in_viewport);
   void OnClosePageACK();
   void OnDidZoomURL(double zoom_level, const GURL& url);
-  void OnPageScaleFactorIsOneChanged(bool is_one);
   void OnRunFileChooser(const FileChooserParams& params);
   void OnFocusedNodeTouched(bool editable);
 
@@ -433,11 +421,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   // used as context when other session history related IPCs arrive.
   // TODO(creis): Allocate this in WebContents/NavigationController instead.
   int32 page_id_;
-
-  // The unique ID of the latest NavigationEntry that this RenderViewHost is
-  // showing. TODO(avi): Move to RenderFrameHost once PageState is broken up
-  // into FrameStates.
-  int nav_entry_id_;
 
   // Tracks whether this RenderViewHost is in an active state.  False if the
   // main frame is pending swap out, pending deletion, or swapped out, because

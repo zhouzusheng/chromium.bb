@@ -4,6 +4,7 @@
 
 #include "content/gpu/in_process_gpu_thread.h"
 
+#include "base/time/time.h"
 #include "content/common/gpu/gpu_memory_buffer_factory.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/gpu/gpu_process.h"
@@ -18,8 +19,10 @@ InProcessGpuThread::InProcessGpuThread(
       params_(params),
       gpu_process_(NULL),
       sync_point_manager_override_(sync_point_manager_override),
-      gpu_memory_buffer_factory_(GpuMemoryBufferFactory::Create(
-          GpuChildThread::GetGpuMemoryBufferFactoryType())) {
+      gpu_memory_buffer_factory_(
+          GpuMemoryBufferFactory::GetNativeType() != gfx::EMPTY_BUFFER
+              ? GpuMemoryBufferFactory::CreateNativeType()
+              : nullptr) {
   if (!sync_point_manager_override_) {
     sync_point_manager_.reset(new gpu::SyncPointManager(false));
     sync_point_manager_override_ = sync_point_manager_.get();
@@ -32,10 +35,17 @@ InProcessGpuThread::~InProcessGpuThread() {
 
 void InProcessGpuThread::Init() {
   gpu_process_ = new GpuProcess();
+
   // The process object takes ownership of the thread object, so do not
   // save and delete the pointer.
-  gpu_process_->set_main_thread(new GpuChildThread(
-      params_, gpu_memory_buffer_factory_.get(), sync_point_manager_override_));
+  GpuChildThread* child_thread = new GpuChildThread(
+      params_, gpu_memory_buffer_factory_.get(), sync_point_manager_override_);
+
+  // Since we are in the browser process, use the thread start time as the
+  // process start time.
+  child_thread->Init(base::Time::Now());
+
+  gpu_process_->set_main_thread(child_thread);
 }
 
 void InProcessGpuThread::CleanUp() {

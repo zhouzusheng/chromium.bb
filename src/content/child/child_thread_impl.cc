@@ -53,6 +53,7 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/in_process_child_thread_params.h"
 #include "content/public/common/content_switches.h"
+#include "ipc/attachment_broker.h"
 #include "ipc/attachment_broker_unprivileged.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_switches.h"
@@ -70,10 +71,6 @@
 
 #if defined(USE_OZONE)
 #include "ui/ozone/public/client_native_pixmap_factory.h"
-#endif
-
-#if defined(OS_WIN)
-#include "ipc/attachment_broker_unprivileged_win.h"
 #endif
 
 using tracked_objects::ThreadData;
@@ -333,6 +330,19 @@ bool ChildThreadImpl::ChildThreadMessageRouter::Send(IPC::Message* msg) {
   return sender_->Send(msg);
 }
 
+bool ChildThreadImpl::ChildThreadMessageRouter::RouteMessage(
+    const IPC::Message& msg) {
+  bool handled = MessageRouter::RouteMessage(msg);
+#if defined(OS_ANDROID)
+  if (!handled && msg.is_sync()) {
+    IPC::Message* reply = IPC::SyncMessage::GenerateReply(&msg);
+    reply->set_reply_error();
+    Send(reply);
+  }
+#endif
+  return handled;
+}
+
 ChildThreadImpl::ChildThreadImpl()
     : router_(this),
       channel_connected_factory_(this) {
@@ -381,12 +391,12 @@ void ChildThreadImpl::Init(const Options& options) {
   IPC::Logging::GetInstance();
 #endif
 
-#if defined(OS_WIN)
+#if USE_ATTACHMENT_BROKER
   // The only reason a global would already exist is if the thread is being run
   // in the browser process because of a command line switch.
   if (!IPC::AttachmentBroker::GetGlobal()) {
-    attachment_broker_.reset(new IPC::AttachmentBrokerUnprivilegedWin());
-    IPC::AttachmentBroker::SetGlobal(attachment_broker_.get());
+    attachment_broker_.reset(
+        IPC::AttachmentBrokerUnprivileged::CreateBroker().release());
   }
 #endif
 
@@ -549,7 +559,7 @@ void ChildThreadImpl::OnChannelConnected(int32 peer_pid) {
 
 void ChildThreadImpl::OnChannelError() {
   set_on_channel_error_called(true);
-  base::MessageLoop::current()->Quit();
+  base::MessageLoop::current()->QuitWhenIdle();
 }
 
 bool ChildThreadImpl::Send(IPC::Message* msg) {
@@ -669,7 +679,7 @@ void ChildThreadImpl::OnProcessBackgrounded(bool backgrounded) {
 }
 
 void ChildThreadImpl::OnShutdown() {
-  base::MessageLoop::current()->Quit();
+  base::MessageLoop::current()->QuitWhenIdle();
 }
 
 #if defined(IPC_MESSAGE_LOG_ENABLED)
@@ -724,7 +734,7 @@ void ChildThreadImpl::ShutdownThread() {
 
 void ChildThreadImpl::OnProcessFinalRelease() {
   if (on_channel_error_called_) {
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
     return;
   }
 

@@ -28,7 +28,11 @@ struct ifaddrs;
 
 namespace rtc {
 
+extern const char kPublicIPv4Host[];
+extern const char kPublicIPv6Host[];
+
 class Network;
+class NetworkMonitorInterface;
 class Thread;
 
 enum AdapterType {
@@ -50,9 +54,18 @@ const int kDefaultNetworkIgnoreMask = ADAPTER_TYPE_LOOPBACK;
 std::string MakeNetworkKey(const std::string& name, const IPAddress& prefix,
                            int prefix_length);
 
+class DefaultLocalAddressProvider {
+ public:
+  virtual ~DefaultLocalAddressProvider() = default;
+  // The default local address is the local address used in multi-homed endpoint
+  // when the any address (0.0.0.0 or ::) is used as the local address. It's
+  // important to check the return value as a IP family may not be enabled.
+  virtual bool GetDefaultLocalAddress(int family, IPAddress* ipaddr) const = 0;
+};
+
 // Generic network manager interface. It provides list of local
 // networks.
-class NetworkManager {
+class NetworkManager : public DefaultLocalAddressProvider {
  public:
   typedef std::vector<Network*> NetworkList;
 
@@ -66,7 +79,7 @@ class NetworkManager {
   };
 
   NetworkManager();
-  virtual ~NetworkManager();
+  ~NetworkManager() override;
 
   // Called when network list is updated.
   sigslot::signal0<> SignalNetworksChanged;
@@ -98,6 +111,8 @@ class NetworkManager {
   // TODO(guoweis): remove this body when chromium implements this.
   virtual void GetAnyAddressNetworks(NetworkList* networks) {}
 
+  bool GetDefaultLocalAddress(int family, IPAddress* ipaddr) const override;
+
   // Dumps a list of networks available to LS_INFO.
   virtual void DumpNetworks(bool include_ignored) {}
 
@@ -127,6 +142,8 @@ class NetworkManagerBase : public NetworkManager {
 
   EnumerationPermission enumeration_permission() const override;
 
+  bool GetDefaultLocalAddress(int family, IPAddress* ipaddr) const override;
+
  protected:
   typedef std::map<std::string, Network*> NetworkMap;
   // Updates |networks_| with the networks listed in |list|. If
@@ -145,9 +162,11 @@ class NetworkManagerBase : public NetworkManager {
     enumeration_permission_ = state;
   }
 
+  void set_default_local_addresses(const IPAddress& ipv4,
+                                   const IPAddress& ipv6);
+
  private:
   friend class NetworkTest;
-  void DoUpdateNetworks();
 
   EnumerationPermission enumeration_permission_;
 
@@ -159,12 +178,16 @@ class NetworkManagerBase : public NetworkManager {
 
   rtc::scoped_ptr<rtc::Network> ipv4_any_address_network_;
   rtc::scoped_ptr<rtc::Network> ipv6_any_address_network_;
+
+  IPAddress default_local_ipv4_address_;
+  IPAddress default_local_ipv6_address_;
 };
 
 // Basic implementation of the NetworkManager interface that gets list
 // of networks using OS APIs.
 class BasicNetworkManager : public NetworkManagerBase,
-                            public MessageHandler {
+                            public MessageHandler,
+                            public sigslot::has_slots<> {
  public:
   BasicNetworkManager();
   ~BasicNetworkManager() override;
@@ -219,10 +242,25 @@ class BasicNetworkManager : public NetworkManagerBase,
   // based on the network's property instead of any individual IP.
   bool IsIgnoredNetwork(const Network& network) const;
 
+  // This function connects a UDP socket to a public address and returns the
+  // local address associated it. Since it binds to the "any" address
+  // internally, it returns the default local address on a multi-homed endpoint.
+  IPAddress QueryDefaultLocalAddress(int family) const;
+
  private:
   friend class NetworkTest;
 
-  void DoUpdateNetworks();
+  // Creates a network monitor and listens for network updates.
+  void StartNetworkMonitor();
+  // Stops and removes the network monitor.
+  void StopNetworkMonitor();
+  // Called when it receives updates from the network monitor.
+  void OnNetworksChanged();
+
+  // Updates the networks and reschedules the next update.
+  void UpdateNetworksContinually();
+  // Only updates the networks; does not reschedule the next update.
+  void UpdateNetworksOnce();
 
   Thread* thread_;
   bool sent_first_update_;
@@ -230,17 +268,31 @@ class BasicNetworkManager : public NetworkManagerBase,
   std::vector<std::string> network_ignore_list_;
   int network_ignore_mask_;
   bool ignore_non_default_routes_;
+  scoped_ptr<NetworkMonitorInterface> network_monitor_;
 };
 
 // Represents a Unix-type network interface, with a name and single address.
 class Network {
  public:
-  Network(const std::string& name, const std::string& description,
-          const IPAddress& prefix, int prefix_length);
+  Network(const std::string& name,
+          const std::string& description,
+          const IPAddress& prefix,
+          int prefix_length);
 
-  Network(const std::string& name, const std::string& description,
-          const IPAddress& prefix, int prefix_length, AdapterType type);
+  Network(const std::string& name,
+          const std::string& description,
+          const IPAddress& prefix,
+          int prefix_length,
+          AdapterType type);
   ~Network();
+
+  const DefaultLocalAddressProvider* default_local_address_provider() {
+    return default_local_address_provider_;
+  }
+  void set_default_local_address_provider(
+      const DefaultLocalAddressProvider* provider) {
+    default_local_address_provider_ = provider;
+  }
 
   // Returns the name of the interface this network is associated wtih.
   const std::string& name() const { return name_; }
@@ -311,6 +363,7 @@ class Network {
   std::string ToString() const;
 
  private:
+  const DefaultLocalAddressProvider* default_local_address_provider_ = nullptr;
   std::string name_;
   std::string description_;
   IPAddress prefix_;

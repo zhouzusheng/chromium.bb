@@ -183,27 +183,27 @@ FloatRect FilterEffect::determineFilterPrimitiveSubregion(DetermineSubregionFlag
     return subregion;
 }
 
-PassRefPtr<SkImageFilter> FilterEffect::createImageFilter(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FilterEffect::createImageFilter(SkiaImageFilterBuilder& builder)
 {
     return nullptr;
 }
 
-PassRefPtr<SkImageFilter> FilterEffect::createImageFilterWithoutValidation(SkiaImageFilterBuilder* builder)
+PassRefPtr<SkImageFilter> FilterEffect::createImageFilterWithoutValidation(SkiaImageFilterBuilder& builder)
 {
     return createImageFilter(builder);
 }
 
-PassRefPtr<SkImageFilter> FilterEffect::createTransparentBlack(SkiaImageFilterBuilder* builder) const
+PassRefPtr<SkImageFilter> FilterEffect::createTransparentBlack(SkiaImageFilterBuilder& builder) const
 {
     SkAutoTUnref<SkColorFilter> filter(SkColorFilter::CreateModeFilter(0, SkXfermode::kClear_Mode));
-    SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
+    SkImageFilter::CropRect rect = getCropRect(builder.cropOffset());
     return adoptRef(SkColorFilterImageFilter::Create(filter, nullptr, &rect));
 }
 
 bool FilterEffect::hasConnectedInput() const
 {
     for (unsigned i = 0; i < m_inputEffects.size(); i++) {
-        if (m_inputEffects[i]) {
+        if (m_inputEffects[i] && m_inputEffects[i]->filterEffectType() != FilterEffectTypeSourceInput) {
             return true;
         }
     }
@@ -217,6 +217,7 @@ SkImageFilter::CropRect FilterEffect::getCropRect(const FloatSize& cropOffset) c
     if (!hasConnectedInput() && !filter()->filterRegion().isEmpty()) {
         rect = filter()->filterRegion();
         flags = SkImageFilter::CropRect::kHasAll_CropEdge;
+        rect.move(cropOffset);
     }
     FloatRect boundaries = effectBoundaries();
     boundaries.move(cropOffset);

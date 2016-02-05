@@ -20,6 +20,7 @@
 namespace gfx {
 
 class Rect;
+class RectF;
 class FontList;
 class Point;
 class Size;
@@ -165,14 +166,14 @@ class GFX_EXPORT Canvas {
   // Draws a dashed rectangle of the specified color.
   void DrawDashedRect(const Rect& rect, SkColor color);
 
+  // Unscales by the image scale factor (aka device scale factor), and returns
+  // that factor.  This is useful when callers want to draw directly in the
+  // native scale.
+  float UndoDeviceScaleFactor();
+
   // Saves a copy of the drawing state onto a stack, operating on this copy
   // until a balanced call to Restore() is made.
   void Save();
-
-  // Saves the drawing state, unscales by the image scale factor, and returns
-  // that factor.  This is useful when callers want to draw directly in the
-  // native scale.
-  float SaveAndUnscale();
 
   // As with Save(), except draws to a layer that is blended with the canvas
   // at the specified alpha once Restore() is called.
@@ -248,8 +249,13 @@ class GFX_EXPORT Canvas {
                   const SkPaint& paint);
 
   // Draws the given rectangle with rounded corners of |radius| using the
-  // given |paint| parameters.
+  // given |paint| parameters. DEPRECATED in favor of the RectF version below.
+  // TODO(mgiuca): Remove this (http://crbug.com/553726).
   void DrawRoundRect(const Rect& rect, int radius, const SkPaint& paint);
+
+  // Draws the given rectangle with rounded corners of |radius| using the
+  // given |paint| parameters.
+  void DrawRoundRect(const RectF& rect, float radius, const SkPaint& paint);
 
   // Draws the given path using the given |paint| parameters.
   void DrawPath(const SkPath& path, const SkPaint& paint);
@@ -390,14 +396,6 @@ class GFX_EXPORT Canvas {
                     int dest_y,
                     int w,
                     int h);
-
-  // Returns a native drawing context for platform specific drawing routines to
-  // use. Must be balanced by a call to EndPlatformPaint().
-  NativeDrawingContext BeginPlatformPaint();
-
-  // Signifies the end of platform drawing using the native drawing context
-  // returned by BeginPlatformPaint().
-  void EndPlatformPaint();
 
   // Apply transformation on the canvas.
   void Transform(const Transform& transform);

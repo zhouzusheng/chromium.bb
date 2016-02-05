@@ -762,6 +762,11 @@ virtual void DiscardFramebufferEXT(GLenum target,
 virtual void LoseContextCHROMIUM(GLenum current, GLenum other) = 0;
 virtual GLuint InsertSyncPointCHROMIUM() = 0;
 virtual void WaitSyncPointCHROMIUM(GLuint sync_point) = 0;
+virtual GLuint64 InsertFenceSyncCHROMIUM() = 0;
+virtual void GenSyncTokenCHROMIUM(GLuint64 fence_sync, GLbyte* sync_token) = 0;
+virtual void GenUnverifiedSyncTokenCHROMIUM(GLuint64 fence_sync,
+                                            GLbyte* sync_token) = 0;
+virtual void WaitSyncTokenCHROMIUM(const GLbyte* sync_token) = 0;
 virtual void DrawBuffersEXT(GLsizei count, const GLenum* bufs) = 0;
 virtual void DiscardBackbufferCHROMIUM() = 0;
 virtual void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
@@ -775,6 +780,12 @@ virtual void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                           GLfloat uv_y,
                                           GLfloat uv_width,
                                           GLfloat uv_height) = 0;
+virtual void ScheduleCALayerCHROMIUM(GLuint contents_texture_id,
+                                     const GLfloat* contents_rect,
+                                     GLfloat opacity,
+                                     const GLuint background_color,
+                                     const GLfloat* bounds_size,
+                                     const GLfloat* transform) = 0;
 virtual void SwapInterval(GLint interval) = 0;
 virtual void FlushDriverCachesCHROMIUM() = 0;
 virtual void MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) = 0;
@@ -809,6 +820,67 @@ virtual void StencilThenCoverStrokePathCHROMIUM(GLuint path,
                                                 GLint reference,
                                                 GLuint mask,
                                                 GLenum coverMode) = 0;
+virtual void StencilFillPathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLenum fillMode,
+    GLuint mask,
+    GLenum transformType,
+    const GLfloat* transformValues) = 0;
+virtual void StencilStrokePathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLint reference,
+    GLuint mask,
+    GLenum transformType,
+    const GLfloat* transformValues) = 0;
+virtual void CoverFillPathInstancedCHROMIUM(GLsizei numPaths,
+                                            GLenum pathNameType,
+                                            const GLvoid* paths,
+                                            GLuint pathBase,
+                                            GLenum coverMode,
+                                            GLenum transformType,
+                                            const GLfloat* transformValues) = 0;
+virtual void CoverStrokePathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLenum coverMode,
+    GLenum transformType,
+    const GLfloat* transformValues) = 0;
+virtual void StencilThenCoverFillPathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLenum fillMode,
+    GLuint mask,
+    GLenum coverMode,
+    GLenum transformType,
+    const GLfloat* transformValues) = 0;
+virtual void StencilThenCoverStrokePathInstancedCHROMIUM(
+    GLsizei numPaths,
+    GLenum pathNameType,
+    const GLvoid* paths,
+    GLuint pathBase,
+    GLint reference,
+    GLuint mask,
+    GLenum coverMode,
+    GLenum transformType,
+    const GLfloat* transformValues) = 0;
+virtual void BindFragmentInputLocationCHROMIUM(GLuint program,
+                                               GLint location,
+                                               const char* name) = 0;
+virtual void ProgramPathFragmentInputGenCHROMIUM(GLuint program,
+                                                 GLint location,
+                                                 GLenum genMode,
+                                                 GLint components,
+                                                 const GLfloat* coeffs) = 0;
 virtual GLenum GetGraphicsResetStatusKHR() = 0;
 virtual void BlendBarrierKHR() = 0;
 virtual void ApplyScreenSpaceAntialiasingCHROMIUM() = 0;

@@ -46,14 +46,14 @@ public:
     ~CSSImageSetValue();
 
     bool isCachePending(float deviceScaleFactor) const;
-    StyleFetchedImageSet* cachedImageSet(float deviceScaleFactor);
+    StyleFetchedImageSet* cachedImageSet(float deviceScaleFactor) const;
     StyleFetchedImageSet* cacheImageSet(Document*, float deviceScaleFactor, const ResourceLoaderOptions&);
     StyleFetchedImageSet* cacheImageSet(Document*, float deviceScaleFactor);
 
     String customCSSText() const;
 
     struct ImageWithScale {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
         String imageURL;
         Referrer referrer;
         float scaleFactor;

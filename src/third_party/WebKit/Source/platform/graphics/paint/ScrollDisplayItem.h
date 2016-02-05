@@ -7,7 +7,7 @@
 
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/paint/DisplayItem.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
@@ -21,8 +21,8 @@ public:
         ASSERT(isScrollType(type));
     }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
 
     const IntSize& currentOffset() const { return m_currentOffset; }
 
@@ -49,8 +49,8 @@ public:
         ASSERT(isEndScrollType(type));
     }
 
-    void replay(GraphicsContext&) override;
-    void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    void replay(GraphicsContext&) const override;
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const override;
 
 private:
 #if ENABLE(ASSERT)

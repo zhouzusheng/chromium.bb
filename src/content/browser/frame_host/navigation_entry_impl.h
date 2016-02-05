@@ -147,11 +147,12 @@ class CONTENT_EXPORT NavigationEntryImpl
       const GURL& dest_url,
       const Referrer& dest_referrer,
       const FrameNavigationEntry& frame_entry,
-      FrameMsg_Navigate_Type::Value navigation_type) const;
+      FrameMsg_Navigate_Type::Value navigation_type,
+      LoFiState lofi_state,
+      const base::TimeTicks& navigation_start) const;
   StartNavigationParams ConstructStartNavigationParams() const;
   RequestNavigationParams ConstructRequestNavigationParams(
       const FrameNavigationEntry& frame_entry,
-      base::TimeTicks navigation_start,
       bool is_same_document_history_load,
       bool has_committed_real_load,
       bool intended_as_new_entry,
@@ -179,6 +180,7 @@ class CONTENT_EXPORT NavigationEntryImpl
   // Does nothing if there is no entry already and |url| is about:blank, since
   // that does not count as a real commit.
   void AddOrUpdateFrameEntry(FrameTreeNode* frame_tree_node,
+                             const std::string& frame_unique_name,
                              int64 item_sequence_number,
                              int64 document_sequence_number,
                              SiteInstanceImpl* site_instance,

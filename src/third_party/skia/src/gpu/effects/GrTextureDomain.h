@@ -10,10 +10,12 @@
 
 #include "GrSingleTextureEffect.h"
 #include "gl/GrGLFragmentProcessor.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 
 class GrGLProgramBuilder;
-class GrGLShaderBuilder;
+class GrGLSLShaderBuilder;
 class GrInvariantOutput;
+class GrGLSLTextureSampler;
 struct SkRect;
 
 /**
@@ -87,10 +89,10 @@ public:
     }
 
     /**
-     * A GrGLProcessor subclass that corresponds to a GrProcessor subclass that uses GrTextureDomain
-     * should include this helper. It generates the texture domain GLSL, produces the part of the
-     * effect key that reflects the texture domain code, and performs the uniform uploads necessary
-     * for texture domains.
+     * A GrGLFragmentProcessor subclass that corresponds to a GrProcessor subclass that uses
+     * GrTextureDomain should include this helper. It generates the texture domain GLSL, produces
+     * the part of the effect key that reflects the texture domain code, and performs the uniform
+     * uploads necessary for texture domains.
      */
     class GLDomain {
     public:
@@ -102,8 +104,8 @@ public:
         }
 
         /**
-         * Call this from GrGLProcessor::emitCode() to sample the texture W.R.T. the domain and
-         * mode.
+         * Call this from GrGLFragmentProcessor::emitCode() to sample the texture W.R.T. the domain
+         * and mode.
          *
          * @param outcolor  name of vec4 variable to hold the sampled color.
          * @param inCoords  name of vec2 variable containing the coords to be used with the domain.
@@ -111,18 +113,19 @@ public:
          * @param inModulateColor   if non-nullptr the sampled color will be modulated with this
          *                          expression before being written to outColor.
          */
-        void sampleTexture(GrGLShaderBuilder* builder,
+        void sampleTexture(GrGLSLShaderBuilder* builder,
                            const GrTextureDomain& textureDomain,
                            const char* outColor,
                            const SkString& inCoords,
-                           const GrGLProcessor::TextureSampler sampler,
+                           const GrGLSLTextureSampler& sampler,
                            const char* inModulateColor = nullptr);
 
         /**
-         * Call this from GrGLProcessor::setData() to upload uniforms necessary for the texture
-         * domain. The rectangle is automatically adjusted to account for the texture's origin.
+         * Call this from GrGLFragmentProcessor::setData() to upload uniforms necessary for the
+         * texture domain. The rectangle is automatically adjusted to account for the texture's
+         * origin.
          */
-        void setData(const GrGLProgramDataManager& pdman, const GrTextureDomain& textureDomain,
+        void setData(const GrGLSLProgramDataManager& pdman, const GrTextureDomain& textureDomain,
                      GrSurfaceOrigin textureOrigin);
 
         enum {
@@ -130,8 +133,8 @@ public:
         };
 
         /**
-         * GrGLProcessor::GenKey() must call this and include the returned value in it's computed
-         * key. The returned will be limited to the lower kDomainKeyBits bits.
+         * GrGLFragmentProcessor::GenKey() must call this and include the returned value in it's
+         * computed key. The returned will be limited to the lower kDomainKeyBits bits.
          */
         static uint32_t DomainKey(const GrTextureDomain& domain) {
             GR_STATIC_ASSERT(kModeCount <= 4);
@@ -140,10 +143,10 @@ public:
 
     private:
         static const int kPrevDomainCount = 4;
-        SkDEBUGCODE(Mode                      fMode;)
-        GrGLProgramDataManager::UniformHandle fDomainUni;
-        SkString                              fDomainName;
-        GrGLfloat                             fPrevDomain[kPrevDomainCount];
+        SkDEBUGCODE(Mode                        fMode;)
+        GrGLSLProgramDataManager::UniformHandle fDomainUni;
+        SkString                                fDomainName;
+        float                                   fPrevDomain[kPrevDomainCount];
     };
 
 protected:
@@ -160,13 +163,12 @@ protected:
 class GrTextureDomainEffect : public GrSingleTextureEffect {
 
 public:
-    static GrFragmentProcessor* Create(GrProcessorDataManager*,
-                                       GrTexture*,
-                                       const SkMatrix&,
-                                       const SkRect& domain,
-                                       GrTextureDomain::Mode,
-                                       GrTextureParams::FilterMode filterMode,
-                                       GrCoordSet = kLocal_GrCoordSet);
+    static const GrFragmentProcessor* Create(GrTexture*,
+                                             const SkMatrix&,
+                                             const SkRect& domain,
+                                             GrTextureDomain::Mode,
+                                             GrTextureParams::FilterMode filterMode,
+                                             GrCoordSet = kLocal_GrCoordSet);
 
     virtual ~GrTextureDomainEffect();
 
@@ -178,8 +180,7 @@ protected:
     GrTextureDomain fTextureDomain;
 
 private:
-    GrTextureDomainEffect(GrProcessorDataManager*,
-                          GrTexture*,
+    GrTextureDomainEffect(GrTexture*,
                           const SkMatrix&,
                           const SkRect& domain,
                           GrTextureDomain::Mode,

@@ -21,6 +21,7 @@
 #ifndef CSSImageValue_h
 #define CSSImageValue_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSValue.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "platform/weborigin/Referrer.h"
@@ -34,7 +35,7 @@ class StyleFetchedImage;
 class StyleImage;
 class LayoutObject;
 
-class CSSImageValue : public CSSValue {
+class CORE_EXPORT CSSImageValue : public CSSValue {
 public:
     static PassRefPtrWillBeRawPtr<CSSImageValue> create(const KURL& url, StyleFetchedImage* image = 0)
     {
@@ -51,7 +52,7 @@ public:
     ~CSSImageValue();
 
     bool isCachePending() const { return m_isCachePending; }
-    StyleFetchedImage* cachedImage() { ASSERT(!isCachePending()); return m_cachedImage.get(); }
+    StyleFetchedImage* cachedImage() const { ASSERT(!isCachePending()); return m_cachedImage.get(); }
     StyleFetchedImage* cacheImage(Document*, const ResourceLoaderOptions&);
     StyleFetchedImage* cacheImage(Document* document) { return cacheImage(document, ResourceFetcher::defaultResourceOptions()); }
 
@@ -78,7 +79,7 @@ public:
     void setInitiator(const AtomicString& name) { m_initiatorName = name; }
 
     DECLARE_TRACE_AFTER_DISPATCH();
-    void restoreCachedResourceIfNeeded(Document&);
+    void restoreCachedResourceIfNeeded(Document&) const;
 
 private:
     CSSImageValue(const AtomicString& rawValue, const KURL&, StyleFetchedImage*);

@@ -34,7 +34,7 @@ class LazyNow;
 class TaskQueueImpl;
 }  // namespace internal
 
-class NestableSingleThreadTaskRunner;
+class TaskQueueManagerDelegate;
 
 // The task queue manager provides N task queues and a selector interface for
 // choosing which task queue to service next. Each task queue consists of two
@@ -51,13 +51,13 @@ class NestableSingleThreadTaskRunner;
 class SCHEDULER_EXPORT TaskQueueManager
     : public internal::TaskQueueSelector::Observer {
  public:
-  // Create a task queue manager where |main_task_runner| identifies the thread
+  // Create a task queue manager where |delegate| identifies the thread
   // on which where the tasks are  eventually run. Category strings must have
   // application lifetime (statics or literals). They may not include " chars.
-  TaskQueueManager(
-      scoped_refptr<NestableSingleThreadTaskRunner> main_task_runner,
-      const char* disabled_by_default_tracing_category,
-      const char* disabled_by_default_verbose_tracing_category);
+  TaskQueueManager(scoped_refptr<TaskQueueManagerDelegate> delegate,
+                   const char* tracing_category,
+                   const char* disabled_by_default_tracing_category,
+                   const char* disabled_by_default_verbose_tracing_category);
   ~TaskQueueManager() override;
 
   // Returns the time of the next pending delayed task in any queue.  Ignores
@@ -76,8 +76,6 @@ class SCHEDULER_EXPORT TaskQueueManager
   // manager executes its tasks on.
   void AddTaskObserver(base::MessageLoop::TaskObserver* task_observer);
   void RemoveTaskObserver(base::MessageLoop::TaskObserver* task_observer);
-
-  void SetTimeSourceForTesting(scoped_ptr<base::TickClock> time_source);
 
   // Returns true if any task from a monitored task queue was was run since the
   // last call to GetAndClearSystemIsQuiescentBit.
@@ -101,6 +99,9 @@ class SCHEDULER_EXPORT TaskQueueManager
   // thread. If |observer| is null, then no callbacks will occur.
   // Note |observer| is expected to outlive the SchedulerHelper.
   void SetObserver(Observer* observer);
+
+  // Returns the delegate used by the TaskQueueManager.
+  const scoped_refptr<TaskQueueManagerDelegate>& delegate() const;
 
  private:
   friend class internal::LazyNow;
@@ -159,14 +160,9 @@ class SCHEDULER_EXPORT TaskQueueManager
       internal::TaskQueueImpl::Task* out_previous_task);
 
   bool RunsTasksOnCurrentThread() const;
-  bool PostDelayedTask(const tracked_objects::Location& from_here,
-                       const base::Closure& task,
-                       base::TimeDelta delay);
   bool PostNonNestableDelayedTask(const tracked_objects::Location& from_here,
                                   const base::Closure& task,
                                   base::TimeDelta delay);
-
-  base::TimeTicks Now() const;
 
   int GetNextSequenceNumber();
 
@@ -182,7 +178,7 @@ class SCHEDULER_EXPORT TaskQueueManager
   // from the thread the TaskQueueManager was created on.
   void UnregisterAsUpdatableTaskQueue(internal::TaskQueueImpl* queue);
 
-  // Schedule a call to DelayedDoWork at |delayed_run_time| which will call
+  // Schedule a call to DoWork at |delayed_run_time| which indirectly calls
   // TaskQueueImpl::MoveReadyDelayedTasksToIncomingQueue for |queue|.
   // Can be called from any thread.
   void ScheduleDelayedWork(internal::TaskQueueImpl* queue,
@@ -192,10 +188,6 @@ class SCHEDULER_EXPORT TaskQueueManager
   // Function calling ScheduleDelayedWork that's suitable for use in base::Bind.
   void ScheduleDelayedWorkTask(scoped_refptr<internal::TaskQueueImpl> queue,
                                base::TimeTicks delayed_run_time);
-
-  // Calls WakeupReadyDelayedQueues followed by DoWork so that ready delayed
-  // tasks are enqueued and run. Must be called from the main thread.
-  void DelayedDoWork();
 
   // Call TaskQueueImpl::MoveReadyDelayedTasksToIncomingQueue for each
   // registered queue for which the delay has elapsed.
@@ -221,18 +213,17 @@ class SCHEDULER_EXPORT TaskQueueManager
   typedef std::multimap<base::TimeTicks, internal::TaskQueueImpl*>
       DelayedWakeupMultimap;
 
-  DelayedWakeupMultimap delayed_wakeup_map_;
+  DelayedWakeupMultimap delayed_wakeup_multimap_;
 
   base::AtomicSequenceNumber task_sequence_num_;
   base::debug::TaskAnnotator task_annotator_;
 
   base::ThreadChecker main_thread_checker_;
-  scoped_refptr<NestableSingleThreadTaskRunner> main_task_runner_;
+  scoped_refptr<TaskQueueManagerDelegate> delegate_;
   internal::TaskQueueSelector selector_;
 
-  base::Closure do_work_from_main_thread_closure_;
-  base::Closure do_work_from_other_thread_closure_;
-  base::Closure delayed_queue_wakeup_closure_;
+  base::Closure decrement_pending_and_do_work_closure_;
+  base::Closure do_work_closure_;
 
   bool task_was_run_on_quiescence_monitored_queue_;
 
@@ -242,10 +233,9 @@ class SCHEDULER_EXPORT TaskQueueManager
 
   int work_batch_size_;
 
-  scoped_ptr<base::TickClock> time_source_;
-
   base::ObserverList<base::MessageLoop::TaskObserver> task_observers_;
 
+  const char* tracing_category_;
   const char* disabled_by_default_tracing_category_;
   const char* disabled_by_default_verbose_tracing_category_;
 

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string>
 
 #include "base/bind.h"
 #include "base/callback.h"
@@ -80,6 +81,19 @@ namespace {
 const double kMinRate = 0.0625;
 const double kMaxRate = 16.0;
 
+void SetSinkIdOnMediaThread(
+    scoped_refptr<media::WebAudioSourceProviderImpl> sink,
+    const std::string& device_id,
+    const url::Origin& security_origin,
+    const media::SwitchOutputDeviceCB& callback) {
+  if (sink->GetOutputDevice()) {
+    sink->GetOutputDevice()->SwitchOutputDevice(device_id, security_origin,
+                                                callback);
+  } else {
+    callback.Run(media::OUTPUT_DEVICE_STATUS_ERROR_INTERNAL);
+  }
+}
+
 }  // namespace
 
 namespace media {
@@ -133,6 +147,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       delegate_(delegate),
       defer_load_cb_(params.defer_load_cb()),
       context_3d_cb_(params.context_3d_cb()),
+      adjust_allocated_memory_cb_(params.adjust_allocated_memory_cb()),
+      last_reported_memory_usage_(0),
       supports_save_(true),
       chunk_demuxer_(NULL),
       // Threaded compositing isn't enabled universally yet.
@@ -151,6 +167,8 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
                                           AsWeakPtr(),
                                           base::Bind(&IgnoreCdmAttached))),
       renderer_factory_(renderer_factory.Pass()) {
+  DCHECK(!adjust_allocated_memory_cb_.is_null());
+
   media_log_->AddEvent(
       media_log_->CreateEvent(MediaLogEvent::WEBMEDIAPLAYER_CREATED));
 
@@ -194,6 +212,9 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
   pipeline_.Stop(
       base::Bind(&base::WaitableEvent::Signal, base::Unretained(&waiter)));
   waiter.Wait();
+
+  if (last_reported_memory_usage_)
+    adjust_allocated_memory_cb_.Run(-last_reported_memory_usage_);
 
   compositor_task_runner_->DeleteSoon(FROM_HERE, compositor_);
 
@@ -264,7 +285,7 @@ void WebMediaPlayerImpl::play() {
   media_log_->AddEvent(media_log_->CreateEvent(MediaLogEvent::PLAY));
 
   if (delegate_ && playback_rate_ > 0)
-    delegate_->DidPlay(this);
+    NotifyPlaybackStarted();
 }
 
 void WebMediaPlayerImpl::pause() {
@@ -281,7 +302,7 @@ void WebMediaPlayerImpl::pause() {
   media_log_->AddEvent(media_log_->CreateEvent(MediaLogEvent::PAUSE));
 
   if (!was_already_paused && delegate_)
-    delegate_->DidPause(this);
+    NotifyPlaybackPaused();
 }
 
 bool WebMediaPlayerImpl::supportsSave() const {
@@ -377,9 +398,9 @@ void WebMediaPlayerImpl::setRate(double rate) {
     else if (rate > kMaxRate)
       rate = kMaxRate;
     if (playback_rate_ == 0 && !paused_ && delegate_)
-      delegate_->DidPlay(this);
+      NotifyPlaybackStarted();
   } else if (playback_rate_ != 0 && !paused_ && delegate_) {
-    delegate_->DidPause(this);
+    NotifyPlaybackPaused();
   }
 
   playback_rate_ = rate;
@@ -397,21 +418,20 @@ void WebMediaPlayerImpl::setVolume(double volume) {
   pipeline_.SetVolume(volume);
 }
 
-void WebMediaPlayerImpl::setSinkId(const blink::WebString& device_id,
-                                   WebSetSinkIdCB* web_callback) {
+void WebMediaPlayerImpl::setSinkId(
+    const blink::WebString& sink_id,
+    const blink::WebSecurityOrigin& security_origin,
+    blink::WebSetSinkIdCallbacks* web_callback) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__;
+
   media::SwitchOutputDeviceCB callback =
       media::ConvertToSwitchOutputDeviceCB(web_callback);
-  OutputDevice* output_device = audio_source_provider_->GetOutputDevice();
-  if (output_device) {
-    std::string device_id_str(device_id.utf8());
-    url::Origin security_origin(
-        GURL(frame_->securityOrigin().toString().utf8()));
-    output_device->SwitchOutputDevice(device_id_str, security_origin, callback);
-  } else {
-    callback.Run(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL);
-  }
+  media_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&SetSinkIdOnMediaThread, audio_source_provider_,
+                 sink_id.utf8(), static_cast<url::Origin>(security_origin),
+                 callback));
 }
 
 #define STATIC_ASSERT_MATCHING_ENUM(webkit_name, chromium_name) \
@@ -871,6 +891,10 @@ void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
   // Blink expects a timeChanged() in response to a seek().
   if (should_notify_time_changed_)
     client_->timeChanged();
+
+  // Once we have enough, start reporting the total memory usage. We'll also
+  // report once playback starts.
+  ReportMemoryUsage();
 }
 
 void WebMediaPlayerImpl::OnDemuxerOpened() {
@@ -1068,6 +1092,42 @@ void WebMediaPlayerImpl::UpdatePausedTime() {
   // incorrectly discard what it thinks is a seek to the existing time.
   paused_time_ =
       ended_ ? pipeline_.GetMediaDuration() : pipeline_.GetMediaTime();
+}
+
+void WebMediaPlayerImpl::NotifyPlaybackStarted() {
+  if (delegate_)
+    delegate_->DidPlay(this);
+  if (!memory_usage_reporting_timer_.IsRunning()) {
+    memory_usage_reporting_timer_.Start(FROM_HERE,
+                                        base::TimeDelta::FromSeconds(2), this,
+                                        &WebMediaPlayerImpl::ReportMemoryUsage);
+  }
+}
+
+void WebMediaPlayerImpl::NotifyPlaybackPaused() {
+  if (delegate_)
+    delegate_->DidPause(this);
+  memory_usage_reporting_timer_.Stop();
+  ReportMemoryUsage();
+}
+
+void WebMediaPlayerImpl::ReportMemoryUsage() {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+
+  const PipelineStatistics stats = pipeline_.GetStatistics();
+  const int64_t current_memory_usage =
+      stats.audio_memory_usage + stats.video_memory_usage +
+      (data_source_ ? data_source_->GetMemoryUsage() : 0) +
+      (demuxer_ ? demuxer_->GetMemoryUsage() : 0);
+
+  DVLOG(2) << "Memory Usage -- Audio: " << stats.audio_memory_usage
+           << ", Video: " << stats.video_memory_usage << ", DataSource: "
+           << (data_source_ ? data_source_->GetMemoryUsage() : 0)
+           << ", Demuxer: " << (demuxer_ ? demuxer_->GetMemoryUsage() : 0);
+
+  const int64_t delta = current_memory_usage - last_reported_memory_usage_;
+  last_reported_memory_usage_ = current_memory_usage;
+  adjust_allocated_memory_cb_.Run(delta);
 }
 
 }  // namespace media

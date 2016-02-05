@@ -10,7 +10,6 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "crypto/signature_verifier.h"
@@ -59,6 +58,7 @@ class ProofVerifierChromium::Job {
   QuicAsyncStatus VerifyProof(const std::string& hostname,
                               const std::string& server_config,
                               const std::vector<std::string>& certs,
+                              const std::string& cert_sct,
                               const std::string& signature,
                               std::string* error_details,
                               scoped_ptr<ProofVerifyDetails>* verify_details,
@@ -131,6 +131,7 @@ QuicAsyncStatus ProofVerifierChromium::Job::VerifyProof(
     const string& hostname,
     const string& server_config,
     const vector<string>& certs,
+    const std::string& cert_sct,
     const string& signature,
     std::string* error_details,
     scoped_ptr<ProofVerifyDetails>* verify_details,
@@ -294,11 +295,6 @@ int ProofVerifierChromium::Job::DoVerifyCertComplete(int result) {
 bool ProofVerifierChromium::Job::VerifySignature(const string& signed_data,
                                                  const string& signature,
                                                  const string& cert) {
-  // TODO(rtenneti): Remove ScopedTracker below once crbug.com/422516 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "422516 ProofVerifierChromium::Job::VerifySignature"));
-
   StringPiece spki;
   if (!asn1::ExtractSPKIFromDERCert(cert, &spki)) {
     DLOG(WARNING) << "ExtractSPKIFromDERCert failed";
@@ -388,6 +384,7 @@ QuicAsyncStatus ProofVerifierChromium::VerifyProof(
     const std::string& hostname,
     const std::string& server_config,
     const std::vector<std::string>& certs,
+    const std::string& cert_sct,
     const std::string& signature,
     const ProofVerifyContext* verify_context,
     std::string* error_details,
@@ -403,8 +400,8 @@ QuicAsyncStatus ProofVerifierChromium::VerifyProof(
       this, cert_verifier_, cert_policy_enforcer_, transport_security_state_,
       chromium_context->cert_verify_flags, chromium_context->net_log));
   QuicAsyncStatus status =
-      job->VerifyProof(hostname, server_config, certs, signature, error_details,
-                       verify_details, callback);
+      job->VerifyProof(hostname, server_config, certs, cert_sct, signature,
+                       error_details, verify_details, callback);
   if (status == QUIC_PENDING) {
     active_jobs_.insert(job.release());
   }

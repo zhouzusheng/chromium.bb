@@ -11,9 +11,11 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/cancelable_callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/clock.h"
 #include "content/browser/background_sync/background_sync.pb.h"
 #include "content/browser/background_sync/background_sync_registration.h"
 #include "content/browser/background_sync/background_sync_registration_handle.h"
@@ -24,6 +26,7 @@
 #include "content/common/background_sync_service.mojom.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
+#include "content/public/browser/browser_thread.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -36,17 +39,8 @@ class ServiceWorkerContextWrapper;
 // registrations across all registered service workers for a profile.
 // Registrations are stored along with their associated Service Worker
 // registration in ServiceWorkerStorage. If the ServiceWorker is unregistered,
-// the sync registrations are removed. This class expects to be run on the IO
+// the sync registrations are removed. This class must be run on the IO
 // thread. The asynchronous methods are executed sequentially.
-
-// TODO(jkarlin): Check permissions when registering, scheduling, and firing
-// background sync. In the meantime, --enable-service-worker-sync is required to
-// fire a sync event.
-// TODO(jkarlin): Unregister syncs when permission is revoked.
-// TODO(jkarlin): Create a background sync scheduler to actually run the
-// registered events.
-// TODO(jkarlin): Keep the browser alive if "Let Google Chrome Run in the
-// Background" is true and a sync is registered.
 class CONTENT_EXPORT BackgroundSyncManager
     : NON_EXPORTED_BASE(public ServiceWorkerContextObserver) {
  public:
@@ -59,6 +53,13 @@ class CONTENT_EXPORT BackgroundSyncManager
   using StatusAndRegistrationsCallback = base::Callback<void(
       BackgroundSyncStatus,
       scoped_ptr<ScopedVector<BackgroundSyncRegistrationHandle>>)>;
+
+  // The minimum amount of time to wait before waking the browser in case it
+  // closed mid-sync.
+  static const int64_t kMinSyncRecoveryTimeMs;
+
+  // The number of times a sync event can be fired for a registration.
+  static const int kMaxSyncAttempts;
 
   static scoped_ptr<BackgroundSyncManager> Create(
       const scoped_refptr<ServiceWorkerContextWrapper>& service_worker_context);
@@ -103,6 +104,15 @@ class CONTENT_EXPORT BackgroundSyncManager
     return network_observer_.get();
   }
 
+  void set_clock(scoped_ptr<base::Clock> clock) {
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
+    clock_ = clock.Pass();
+  }
+  void set_max_sync_attempts(int max_attempts) {
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
+    max_sync_attempts_ = max_attempts;
+  }
+
  protected:
   // A registration might be referenced by the client longer than
   // the BackgroundSyncManager needs to keep track of it (e.g., the event has
@@ -132,7 +142,10 @@ class CONTENT_EXPORT BackgroundSyncManager
   virtual void FireOneShotSync(
       BackgroundSyncRegistrationHandle::HandleId handle_id,
       const scoped_refptr<ServiceWorkerVersion>& active_version,
+      BackgroundSyncEventLastChance last_chance,
       const ServiceWorkerVersion::StatusCallback& callback);
+  virtual void ScheduleDelayedTask(const base::Closure& callback,
+                                   base::TimeDelta delay);
 
  private:
   friend class BackgroundSyncManagerTest;
@@ -185,10 +198,12 @@ class CONTENT_EXPORT BackgroundSyncManager
       BackgroundSyncRegistrationHandle::HandleId handle_id);
 
   // Disable the manager. Already queued operations will abort once they start
-  // to run (in their impl methods). Future operations will not queue. Any
-  // registrations are cleared from memory and the backend (if it's still
-  // functioning). The manager will reenable itself once it receives the
-  // OnStorageWiped message or on browser restart.
+  // to run (in their impl methods). Future operations will not queue. The one
+  // exception is already firing events -- their responses will be processed in
+  // order to notify their final state.
+  // The list of active registrations is cleared and the backend is also cleared
+  // (if it's still functioning). The manager will reenable itself once it
+  // receives the OnStorageWiped message or on browser restart.
   void DisableAndClearManager(const base::Closure& callback);
   void DisableAndClearDidGetRegistrations(
       const base::Closure& callback,
@@ -251,16 +266,16 @@ class CONTENT_EXPORT BackgroundSyncManager
                           const StatusCallback& callback,
                           ServiceWorkerStatusCode status);
 
-  // NotifyWhenDone and its callbacks. See
-  // BackgroundSyncRegistrationHandle::NotifyWhenDone for detailed
+  // NotifyWhenFinished and its callbacks. See
+  // BackgroundSyncRegistrationHandle::NotifyWhenFinished for detailed
   // documentation.
-  void NotifyWhenDone(BackgroundSyncRegistrationHandle::HandleId handle_id,
-                      const StatusAndStateCallback& callback);
-  void NotifyWhenDoneImpl(
+  void NotifyWhenFinished(BackgroundSyncRegistrationHandle::HandleId handle_id,
+                          const StatusAndStateCallback& callback);
+  void NotifyWhenFinishedImpl(
       scoped_ptr<BackgroundSyncRegistrationHandle> registration_handle,
       const StatusAndStateCallback& callback);
-  void NotifyWhenDoneDidFinish(const StatusAndStateCallback& callback,
-                               BackgroundSyncState status);
+  void NotifyWhenFinishedInvokeCallback(const StatusAndStateCallback& callback,
+                                        BackgroundSyncState status);
 
   // GetRegistration callbacks
   void GetRegistrationImpl(int64 sw_registration_id,
@@ -276,13 +291,17 @@ class CONTENT_EXPORT BackgroundSyncManager
   bool IsRegistrationReadyToFire(
       const BackgroundSyncRegistration& registration);
 
-  // Schedules pending registrations to run in the future. For one-shots this
-  // means keeping the browser alive so that network connectivity events can be
-  // seen (on Android the browser is instead woken up the next time it goes
-  // online). For periodic syncs this means creating an alarm.
-  void SchedulePendingRegistrations();
+  // Determines if the browser needs to be able to run in the background (e.g.,
+  // to run a pending registration or verify that a firing registration
+  // completed). If background processing is required it calls out to the
+  // BackgroundSyncController to enable it.
+  // Assumes that all registrations in the pending state are not currently ready
+  // to fire. Therefore this should not be called directly and should only be
+  // called by FireReadyEvents.
+  void RunInBackgroundIfNecessary();
 
-  // FireReadyEvents and callbacks
+  // FireReadyEvents scans the list of available events and fires those that are
+  // ready to fire. For those that can't yet be fired, wakeup alarms are set.
   void FireReadyEvents();
   void FireReadyEventsImpl(const base::Closure& callback);
   void FireReadyEventsDidFindRegistration(
@@ -293,6 +312,7 @@ class CONTENT_EXPORT BackgroundSyncManager
       ServiceWorkerStatusCode service_worker_status,
       const scoped_refptr<ServiceWorkerRegistration>&
           service_worker_registration);
+  void FireReadyEventsAllEventsFiring(const base::Closure& callback);
 
   // Called when a sync event has completed.
   void EventComplete(
@@ -350,6 +370,9 @@ class CONTENT_EXPORT BackgroundSyncManager
   CacheStorageScheduler op_scheduler_;
   scoped_refptr<ServiceWorkerContextWrapper> service_worker_context_;
   bool disabled_;
+  int num_firing_registrations_;
+  int max_sync_attempts_;
+  base::CancelableCallback<void()> delayed_sync_task_;
 
   scoped_ptr<BackgroundSyncNetworkObserver> network_observer_;
   scoped_ptr<BackgroundSyncPowerObserver> power_observer_;
@@ -358,6 +381,8 @@ class CONTENT_EXPORT BackgroundSyncManager
   IDMap<scoped_refptr<RefCountedRegistration>,
         IDMapOwnPointer,
         BackgroundSyncRegistrationHandle::HandleId> registration_handle_ids_;
+
+  scoped_ptr<base::Clock> clock_;
 
   base::WeakPtrFactory<BackgroundSyncManager> weak_ptr_factory_;
 

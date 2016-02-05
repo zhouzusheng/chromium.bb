@@ -26,6 +26,7 @@
 #ifndef CSSCrossfadeValue_h
 #define CSSCrossfadeValue_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSImageGeneratorValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/fetch/ImageResource.h"
@@ -39,7 +40,7 @@ class ImageResource;
 class CrossfadeSubimageObserverProxy;
 class LayoutObject;
 
-class CSSCrossfadeValue final : public CSSImageGeneratorValue {
+class CORE_EXPORT CSSCrossfadeValue final : public CSSImageGeneratorValue {
     friend class CrossfadeSubimageObserverProxy;
 public:
     static PassRefPtrWillBeRawPtr<CSSCrossfadeValue> create(PassRefPtrWillBeRawPtr<CSSValue> fromValue, PassRefPtrWillBeRawPtr<CSSValue> toValue, PassRefPtrWillBeRawPtr<CSSPrimitiveValue> percentageValue)
@@ -84,7 +85,7 @@ private:
         , m_crossfadeSubimageObserver(this) { }
 
     class CrossfadeSubimageObserverProxy final : public ImageResourceClient {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         explicit CrossfadeSubimageObserverProxy(CSSCrossfadeValue* ownerValue)
             : m_ownerValue(ownerValue)
@@ -97,6 +98,7 @@ private:
         }
 
         void imageChanged(ImageResource*, const IntRect* = nullptr) override;
+        String debugName() const override { return "CrossfadeSubimageObserverProxy"; }
         void setReady(bool ready) { m_ready = ready; }
     private:
         RawPtrWillBeMember<CSSCrossfadeValue> m_ownerValue;

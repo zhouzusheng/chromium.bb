@@ -42,8 +42,8 @@ class CC_EXPORT SchedulerStateMachine {
   explicit SchedulerStateMachine(const SchedulerSettings& settings);
 
   enum OutputSurfaceState {
+    OUTPUT_SURFACE_NONE,
     OUTPUT_SURFACE_ACTIVE,
-    OUTPUT_SURFACE_LOST,
     OUTPUT_SURFACE_CREATING,
     OUTPUT_SURFACE_WAITING_FOR_FIRST_COMMIT,
     OUTPUT_SURFACE_WAITING_FOR_FIRST_ACTIVATION,
@@ -207,6 +207,10 @@ class CC_EXPORT SchedulerStateMachine {
   void SetNeedsBeginMainFrame();
   bool needs_begin_main_frame() const { return needs_begin_main_frame_; }
 
+  // Requests a single impl frame (after the current frame if there is one
+  // active).
+  void SetNeedsOneBeginImplFrame();
+
   // Call this only in response to receiving an ACTION_SEND_BEGIN_MAIN_FRAME
   // from NextAction.
   // Indicates that all painting is complete.
@@ -216,13 +220,11 @@ class CC_EXPORT SchedulerStateMachine {
   // from NextAction if the client rejects the BeginMainFrame message.
   void BeginMainFrameAborted(CommitEarlyOutReason reason);
 
-  // Set that we can create the first OutputSurface and start the scheduler.
-  void SetCanStart() { can_start_ = true; }
-  // Allow access of the can_start_ state in tests.
-  bool CanStartForTesting() const { return can_start_; }
-
   // Indicates production should be skipped to recover latency.
   void SetSkipNextBeginMainFrameToReduceLatency();
+
+  // Resourceless software draws are allowed even when invisible.
+  void SetResourcelessSoftareDraw(bool resourceless_draw);
 
   // Indicates whether drawing would, at this time, make sense.
   // CanDraw can be used to suppress flashes or checkerboarding
@@ -323,8 +325,9 @@ class CC_EXPORT SchedulerStateMachine {
   bool needs_animate_;
   bool needs_prepare_tiles_;
   bool needs_begin_main_frame_;
+  bool needs_one_begin_impl_frame_;
   bool visible_;
-  bool can_start_;
+  bool resourceless_draw_;
   bool can_draw_;
   bool has_pending_tree_;
   bool pending_tree_is_ready_for_activation_;

@@ -266,29 +266,35 @@ void ServiceWorkerDispatcher::WillStopCurrentWorkerThread() {
   delete this;
 }
 
-WebServiceWorkerImpl* ServiceWorkerDispatcher::GetServiceWorker(
-    const ServiceWorkerObjectInfo& info,
-    bool adopt_handle) {
+scoped_refptr<WebServiceWorkerImpl>
+ServiceWorkerDispatcher::GetOrCreateServiceWorker(
+    const ServiceWorkerObjectInfo& info) {
   if (info.handle_id == kInvalidServiceWorkerHandleId)
-    return NULL;
+    return nullptr;
 
-  WorkerObjectMap::iterator existing_worker =
-      service_workers_.find(info.handle_id);
+  WorkerObjectMap::iterator found = service_workers_.find(info.handle_id);
+  if (found != service_workers_.end())
+    return found->second;
 
-  if (existing_worker != service_workers_.end()) {
-    if (adopt_handle) {
-      // We are instructed to adopt a handle but we already have one, so
-      // adopt and destroy a handle ref.
-      ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_.get());
-    }
-    return existing_worker->second;
-  }
+  // WebServiceWorkerImpl constructor calls AddServiceWorker.
+  return new WebServiceWorkerImpl(
+      ServiceWorkerHandleReference::Create(info, thread_safe_sender_.get()),
+      thread_safe_sender_.get());
+}
+
+scoped_refptr<WebServiceWorkerImpl>
+ServiceWorkerDispatcher::GetOrAdoptServiceWorker(
+    const ServiceWorkerObjectInfo& info) {
+  if (info.handle_id == kInvalidServiceWorkerHandleId)
+    return nullptr;
 
   scoped_ptr<ServiceWorkerHandleReference> handle_ref =
-      adopt_handle
-          ? ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_.get())
-          : ServiceWorkerHandleReference::Create(info,
-                                                 thread_safe_sender_.get());
+      ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_.get());
+
+  WorkerObjectMap::iterator found = service_workers_.find(info.handle_id);
+  if (found != service_workers_.end())
+    return found->second;
+
   // WebServiceWorkerImpl constructor calls AddServiceWorker.
   return new WebServiceWorkerImpl(handle_ref.Pass(), thread_safe_sender_.get());
 }
@@ -308,10 +314,9 @@ ServiceWorkerDispatcher::GetOrCreateRegistration(
           ServiceWorkerRegistrationHandleReference::Create(
               info, thread_safe_sender_.get())));
 
-  bool adopt_handle = false;
-  registration->SetInstalling(GetServiceWorker(attrs.installing, adopt_handle));
-  registration->SetWaiting(GetServiceWorker(attrs.waiting, adopt_handle));
-  registration->SetActive(GetServiceWorker(attrs.active, adopt_handle));
+  registration->SetInstalling(GetOrCreateServiceWorker(attrs.installing));
+  registration->SetWaiting(GetOrCreateServiceWorker(attrs.waiting));
+  registration->SetActive(GetOrCreateServiceWorker(attrs.active));
   return registration.Pass();
 }
 
@@ -339,18 +344,14 @@ ServiceWorkerDispatcher::GetOrAdoptRegistration(
           ServiceWorkerRegistrationHandleReference::Adopt(
               info, thread_safe_sender_.get())));
 
-  bool adopt_handle = true;
-  registration->SetInstalling(GetServiceWorker(attrs.installing, adopt_handle));
-  registration->SetWaiting(GetServiceWorker(attrs.waiting, adopt_handle));
-  registration->SetActive(GetServiceWorker(attrs.active, adopt_handle));
+  registration->SetInstalling(GetOrAdoptServiceWorker(attrs.installing));
+  registration->SetWaiting(GetOrAdoptServiceWorker(attrs.waiting));
+  registration->SetActive(GetOrAdoptServiceWorker(attrs.active));
   return registration.Pass();
 }
 
 // We can assume that this message handler is called before the worker context
 // starts because script loading happens after this association.
-// TODO(nhiroki): This association information could be pushed into
-// EmbeddedWorkerMsg_StartWorker message and handed over to the worker thread
-// without a lock in ServiceWorkerProviderContext.
 void ServiceWorkerDispatcher::OnAssociateRegistrationWithServiceWorker(
     int thread_id,
     int provider_id,
@@ -362,9 +363,6 @@ void ServiceWorkerDispatcher::OnAssociateRegistrationWithServiceWorker(
   if (context == provider_contexts_.end())
     return;
   context->second->OnAssociateRegistration(info, attrs);
-
-  // We don't have to add entries into |worker_to_provider_| because state
-  // change events for the workers will be notified on the worker thread.
 }
 
 void ServiceWorkerDispatcher::OnAssociateRegistration(
@@ -405,7 +403,8 @@ void ServiceWorkerDispatcher::OnRegistered(
   if (!callbacks)
     return;
 
-  callbacks->onSuccess(GetOrAdoptRegistration(info, attrs)->CreateHandle());
+  callbacks->onSuccess(WebServiceWorkerRegistrationImpl::CreateHandle(
+      GetOrAdoptRegistration(info, attrs)));
   pending_registration_callbacks_.Remove(request_id);
 }
 
@@ -466,10 +465,11 @@ void ServiceWorkerDispatcher::OnDidGetRegistration(
     return;
 
   scoped_refptr<WebServiceWorkerRegistrationImpl> registration;
-  if (info.handle_id != kInvalidServiceWorkerHandleId)
+  if (info.handle_id != kInvalidServiceWorkerRegistrationHandleId)
     registration = GetOrAdoptRegistration(info, attrs);
 
-  callbacks->onSuccess(registration ? registration->CreateHandle() : nullptr);
+  callbacks->onSuccess(
+      WebServiceWorkerRegistrationImpl::CreateHandle(registration));
   pending_get_registration_callbacks_.Remove(request_id);
 }
 
@@ -505,8 +505,8 @@ void ServiceWorkerDispatcher::OnDidGetRegistrations(
       // WebServiceWorkerGetRegistrationsCallbacks cannot receive an array of
       // WebPassOwnPtr<WebServiceWorkerRegistration::Handle>, so create leaky
       // handles instead.
-      (*registrations)[i] =
-          GetOrAdoptRegistration(info, attr)->CreateLeakyHandle();
+      (*registrations)[i] = WebServiceWorkerRegistrationImpl::CreateLeakyHandle(
+          GetOrAdoptRegistration(info, attr));
     }
   }
 
@@ -533,7 +533,8 @@ void ServiceWorkerDispatcher::OnDidGetRegistrationForReady(
   if (!callbacks)
     return;
 
-  callbacks->onSuccess(GetOrAdoptRegistration(info, attrs)->CreateHandle());
+  callbacks->onSuccess(WebServiceWorkerRegistrationImpl::CreateHandle(
+      GetOrAdoptRegistration(info, attrs)));
   get_for_ready_callbacks_.Remove(request_id);
 }
 
@@ -664,7 +665,6 @@ void ServiceWorkerDispatcher::OnServiceWorkerStateChanged(
 
 void ServiceWorkerDispatcher::OnSetVersionAttributes(
     int thread_id,
-    int provider_id,
     int registration_handle_id,
     int changed_mask,
     const ServiceWorkerVersionAttributes& attrs) {
@@ -678,11 +678,11 @@ void ServiceWorkerDispatcher::OnSetVersionAttributes(
     // Populate the version fields (eg. .installing) with new worker objects.
     ChangedVersionAttributesMask mask(changed_mask);
     if (mask.installing_changed())
-      found->second->SetInstalling(GetServiceWorker(attrs.installing, false));
+      found->second->SetInstalling(GetOrAdoptServiceWorker(attrs.installing));
     if (mask.waiting_changed())
-      found->second->SetWaiting(GetServiceWorker(attrs.waiting, false));
+      found->second->SetWaiting(GetOrAdoptServiceWorker(attrs.waiting));
     if (mask.active_changed())
-      found->second->SetActive(GetServiceWorker(attrs.active, false));
+      found->second->SetActive(GetOrAdoptServiceWorker(attrs.active));
   }
 }
 
@@ -707,14 +707,20 @@ void ServiceWorkerDispatcher::OnSetControllerServiceWorker(
                "Thread ID", thread_id,
                "Provider ID", provider_id);
 
+  // Adopt the reference sent from the browser process and pass it to the
+  // provider context if it exists.
+  scoped_ptr<ServiceWorkerHandleReference> handle_ref =
+      ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_.get());
   ProviderContextMap::iterator provider = provider_contexts_.find(provider_id);
   if (provider != provider_contexts_.end())
-    provider->second->OnSetControllerServiceWorker(info);
+    provider->second->OnSetControllerServiceWorker(handle_ref.Pass());
 
   ProviderClientMap::iterator found = provider_clients_.find(provider_id);
   if (found != provider_clients_.end()) {
-    // Populate the .controller field with the new worker object.
-    found->second->setController(GetServiceWorker(info, false),
+    // Get the existing worker object or create a new one with a new reference
+    // to populate the .controller field.
+    scoped_refptr<WebServiceWorkerImpl> worker = GetOrCreateServiceWorker(info);
+    found->second->setController(WebServiceWorkerImpl::CreateHandle(worker),
                                  should_notify_controllerchange);
   }
 }
@@ -740,9 +746,10 @@ void ServiceWorkerDispatcher::OnPostMessage(
           params.message_ports, params.new_routing_ids,
           base::ThreadTaskRunnerHandle::Get());
 
+  scoped_refptr<WebServiceWorkerImpl> worker =
+      GetOrAdoptServiceWorker(params.service_worker_info);
   found->second->dispatchMessageEvent(
-      GetServiceWorker(params.service_worker_info, false /* adopt_handle */),
-      params.message, ports);
+      WebServiceWorkerImpl::CreateHandle(worker), params.message, ports);
 }
 
 void ServiceWorkerDispatcher::AddServiceWorker(

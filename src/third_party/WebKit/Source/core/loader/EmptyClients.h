@@ -45,6 +45,7 @@
 #include "platform/network/ResourceError.h"
 #include "platform/text/TextCheckerClient.h"
 #include "public/platform/WebFocusType.h"
+#include "public/platform/WebFrameScheduler.h"
 #include "public/platform/WebScreenInfo.h"
 #include "wtf/Forward.h"
 #include <v8.h>
@@ -84,7 +85,7 @@ public:
 
     void focusedNodeChanged(Node*, Node*) override {}
     void focusedFrameChanged(LocalFrame*) override {}
-    Page* createWindow(LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) override { return nullptr; }
+    Page* createWindow(LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSetOpener) override { return nullptr; }
     void show(NavigationPolicy) override {}
 
     void didOverscroll(const FloatSize&, const FloatSize&, const FloatPoint&, const FloatSize&) override {}
@@ -109,7 +110,7 @@ public:
     void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String&, unsigned, const String&, const String&) override {}
 
     bool canOpenBeforeUnloadConfirmPanel() override { return false; }
-    bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, const String&) override { return true; }
+    bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, const String&, bool) override { return true; }
 
     void closeWindowSoon() override {}
 
@@ -143,12 +144,12 @@ public:
     void enumerateChosenDirectory(FileChooser*) override {}
 
     PassOwnPtrWillBeRawPtr<ColorChooser> openColorChooser(LocalFrame*, ColorChooserClient*, const Color&) override;
-    PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) override;
+    PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) override;
     void openTextDataListChooser(HTMLInputElement&) override;
 
     void openFileChooser(LocalFrame*, PassRefPtr<FileChooser>) override;
 
-    void setCursor(const Cursor&) override {}
+    void setCursor(const Cursor&, LocalFrame* localRoot) override {}
     Cursor lastSetCursorForTesting() const override { return pointerCursor(); }
 
     void attachRootGraphicsLayer(GraphicsLayer*, LocalFrame* localRoot) override {}
@@ -163,11 +164,13 @@ public:
 
     void registerPopupOpeningObserver(PopupOpeningObserver*) override {}
     void unregisterPopupOpeningObserver(PopupOpeningObserver*) override {}
+
+    PassOwnPtr<WebFrameScheduler> createFrameScheduler() override;
 };
 
 class CORE_EXPORT EmptyFrameLoaderClient : public FrameLoaderClient {
     WTF_MAKE_NONCOPYABLE(EmptyFrameLoaderClient);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(EmptyFrameLoaderClient);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(EmptyFrameLoaderClient);
 public:
     static PassOwnPtrWillBeRawPtr<EmptyFrameLoaderClient> create() { return adoptPtrWillBeNoop(new EmptyFrameLoaderClient); }
     ~EmptyFrameLoaderClient() override {}
@@ -206,7 +209,7 @@ public:
     void dispatchDidFinishLoad() override {}
     void dispatchDidChangeThemeColor() override {}
 
-    NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) override;
+    NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationType, NavigationPolicy, bool) override;
     bool hasPendingNavigation() override;
 
     void dispatchWillSendSubmitEvent(HTMLFormElement*) override;
@@ -216,11 +219,11 @@ public:
     void progressEstimateChanged(double) override {}
     void didStopLoading() override {}
 
-    void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& = String()) override {}
+    void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String&, bool) override {}
 
     PassRefPtrWillBeRawPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) override;
 
-    String userAgent(const KURL&) override { return ""; }
+    String userAgent() override { return ""; }
 
     String doNotTrackValue() override { return String(); }
 
@@ -236,6 +239,7 @@ public:
     PassRefPtrWillBeRawPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy) override;
     bool canCreatePluginWithoutRenderer(const String& mimeType) const override { return false; }
     PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) override;
+    PassOwnPtr<WebMediaSession> createWebMediaSession() override;
 
     ObjectContentType objectContentType(const KURL&, const String&, bool) override { return ObjectContentType(); }
 
@@ -263,7 +267,7 @@ protected:
 };
 
 class CORE_EXPORT EmptyTextCheckerClient : public TextCheckerClient {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     ~EmptyTextCheckerClient() { }
 
@@ -275,7 +279,7 @@ public:
 };
 
 class EmptySpellCheckerClient : public SpellCheckerClient {
-    WTF_MAKE_NONCOPYABLE(EmptySpellCheckerClient); WTF_MAKE_FAST_ALLOCATED(EmptySpellCheckerClient);
+    WTF_MAKE_NONCOPYABLE(EmptySpellCheckerClient); USING_FAST_MALLOC(EmptySpellCheckerClient);
 public:
     EmptySpellCheckerClient() {}
     ~EmptySpellCheckerClient() override {}
@@ -295,7 +299,7 @@ private:
 };
 
 class EmptyEditorClient final : public EditorClient {
-    WTF_MAKE_NONCOPYABLE(EmptyEditorClient); WTF_MAKE_FAST_ALLOCATED(EmptyEditorClient);
+    WTF_MAKE_NONCOPYABLE(EmptyEditorClient); USING_FAST_MALLOC(EmptyEditorClient);
 public:
     EmptyEditorClient() {}
     ~EmptyEditorClient() override {}
@@ -310,7 +314,7 @@ public:
 };
 
 class EmptyContextMenuClient final : public ContextMenuClient {
-    WTF_MAKE_NONCOPYABLE(EmptyContextMenuClient); WTF_MAKE_FAST_ALLOCATED(EmptyContextMenuClient);
+    WTF_MAKE_NONCOPYABLE(EmptyContextMenuClient); USING_FAST_MALLOC(EmptyContextMenuClient);
 public:
     EmptyContextMenuClient() {}
     ~EmptyContextMenuClient() override {}
@@ -319,7 +323,7 @@ public:
 };
 
 class EmptyDragClient final : public DragClient {
-    WTF_MAKE_NONCOPYABLE(EmptyDragClient); WTF_MAKE_FAST_ALLOCATED(EmptyDragClient);
+    WTF_MAKE_NONCOPYABLE(EmptyDragClient); USING_FAST_MALLOC(EmptyDragClient);
 public:
     EmptyDragClient() {}
     ~EmptyDragClient() override {}

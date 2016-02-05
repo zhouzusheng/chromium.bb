@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/memory/ref_counted_memory.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/content_switches.h"
 
 namespace content {
@@ -28,7 +29,9 @@ CommonNavigationParams::CommonNavigationParams()
       navigation_type(FrameMsg_Navigate_Type::NORMAL),
       allow_download(true),
       should_replace_current_entry(false),
-      report_type(FrameMsg_UILoadMetricsReportType::NO_REPORT) {
+      report_type(FrameMsg_UILoadMetricsReportType::NO_REPORT),
+      lofi_state(LOFI_UNSPECIFIED),
+      navigation_start(base::TimeTicks::Now()) {
 }
 
 CommonNavigationParams::CommonNavigationParams(
@@ -41,7 +44,9 @@ CommonNavigationParams::CommonNavigationParams(
     base::TimeTicks ui_timestamp,
     FrameMsg_UILoadMetricsReportType::Value report_type,
     const GURL& base_url_for_data_url,
-    const GURL& history_url_for_data_url)
+    const GURL& history_url_for_data_url,
+    LoFiState lofi_state,
+    const base::TimeTicks& navigation_start)
     : url(url),
       referrer(referrer),
       transition(transition),
@@ -51,25 +56,33 @@ CommonNavigationParams::CommonNavigationParams(
       ui_timestamp(ui_timestamp),
       report_type(report_type),
       base_url_for_data_url(base_url_for_data_url),
-      history_url_for_data_url(history_url_for_data_url) {
+      history_url_for_data_url(history_url_for_data_url),
+      lofi_state(lofi_state),
+      navigation_start(navigation_start) {
 }
 
 CommonNavigationParams::~CommonNavigationParams() {
 }
 
 BeginNavigationParams::BeginNavigationParams()
-    : load_flags(0), has_user_gesture(false) {
-}
+    : load_flags(0),
+      has_user_gesture(false),
+      skip_service_worker(false),
+      request_context_type(REQUEST_CONTEXT_TYPE_LOCATION) {}
 
-BeginNavigationParams::BeginNavigationParams(std::string method,
-                                             std::string headers,
-                                             int load_flags,
-                                             bool has_user_gesture)
+BeginNavigationParams::BeginNavigationParams(
+    std::string method,
+    std::string headers,
+    int load_flags,
+    bool has_user_gesture,
+    bool skip_service_worker,
+    RequestContextType request_context_type)
     : method(method),
       headers(headers),
       load_flags(load_flags),
-      has_user_gesture(has_user_gesture) {
-}
+      has_user_gesture(has_user_gesture),
+      skip_service_worker(skip_service_worker),
+      request_context_type(request_context_type) {}
 
 StartNavigationParams::StartNavigationParams()
     : is_post(false),
@@ -104,7 +117,6 @@ StartNavigationParams::~StartNavigationParams() {
 
 RequestNavigationParams::RequestNavigationParams()
     : is_overriding_user_agent(false),
-      browser_navigation_start(base::TimeTicks::Now()),
       can_load_local_resources(false),
       request_time(base::Time::Now()),
       page_id(-1),
@@ -115,12 +127,12 @@ RequestNavigationParams::RequestNavigationParams()
       pending_history_list_offset(-1),
       current_history_list_offset(-1),
       current_history_list_length(0),
-      should_clear_history_list(false) {
-}
+      should_clear_history_list(false),
+      should_create_service_worker(false),
+      service_worker_provider_id(kInvalidServiceWorkerProviderId) {}
 
 RequestNavigationParams::RequestNavigationParams(
     bool is_overriding_user_agent,
-    base::TimeTicks navigation_start,
     const std::vector<GURL>& redirects,
     bool can_load_local_resources,
     base::Time request_time,
@@ -135,7 +147,6 @@ RequestNavigationParams::RequestNavigationParams(
     int current_history_list_length,
     bool should_clear_history_list)
     : is_overriding_user_agent(is_overriding_user_agent),
-      browser_navigation_start(navigation_start),
       redirects(redirects),
       can_load_local_resources(can_load_local_resources),
       request_time(request_time),
@@ -148,8 +159,9 @@ RequestNavigationParams::RequestNavigationParams(
       pending_history_list_offset(pending_history_list_offset),
       current_history_list_offset(current_history_list_offset),
       current_history_list_length(current_history_list_length),
-      should_clear_history_list(should_clear_history_list) {
-}
+      should_clear_history_list(should_clear_history_list),
+      should_create_service_worker(false),
+      service_worker_provider_id(kInvalidServiceWorkerProviderId) {}
 
 RequestNavigationParams::~RequestNavigationParams() {
 }

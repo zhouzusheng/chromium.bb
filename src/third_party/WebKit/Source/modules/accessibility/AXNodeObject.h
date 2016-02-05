@@ -70,11 +70,10 @@ protected:
     AccessibilityRole determineAriaRoleAttribute() const;
     void tokenVectorFromAttribute(Vector<String>&, const QualifiedName&) const;
     void elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, const QualifiedName&) const;
-    void accessibilityChildrenFromAttribute(QualifiedName attr, AccessibilityChildrenVector&) const;
+    void accessibilityChildrenFromAttribute(QualifiedName attr, AXObject::AXObjectVector&) const;
 
     bool hasContentEditableAttributeSet() const;
     bool isTextControl() const override;
-    bool allowsTextRanges() const { return isTextControl(); }
     // This returns true if it's focusable but it's not content editable and it's not a control or ARIA control.
     bool isGenericFocusableElement() const;
     HTMLLabelElement* labelForElement(const Element*) const;
@@ -109,7 +108,7 @@ protected:
     bool isImage() const final;
     bool isImageButton() const;
     bool isInputImage() const final;
-    bool isLink() const final;
+    bool isLink() const override;
     bool isMenu() const final;
     bool isMenuButton() const final;
     bool isMeter() const final;
@@ -128,7 +127,6 @@ protected:
     bool isClickable() const final;
     bool isEnabled() const override;
     AccessibilityExpanded isExpanded() const override;
-    bool isIndeterminate() const final;
     bool isPressed() const final;
     bool isReadOnly() const override;
     bool isRequired() const final;
@@ -171,7 +169,9 @@ protected:
     String computedName() const override;
 
     // New AX name calculation.
-    String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom&, AXObjectVector* nameObjects, NameSources*) const override;
+    String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom&, AXRelatedObjectVector*, NameSources*) const override;
+    String description(AXNameFrom, AXDescriptionFrom&, AXObjectVector* descriptionObjects) const override;
+    String description(AXNameFrom, AXDescriptionFrom&, DescriptionSources*, AXRelatedObjectVector*) const override;
 
     // Location and click point in frame-relative coordinates.
     LayoutRect elementRect() const override;
@@ -189,7 +189,7 @@ protected:
     void insertChild(AXObject*, unsigned index);
 
     // DOM and Render tree access.
-    Element* actionElement() const final;
+    Element* actionElement() const override;
     Element* anchorElement() const override;
     Document* document() const override;
     Node* node() const override { return m_node; }
@@ -219,13 +219,16 @@ private:
     void deprecatedAlternativeText(HeapVector<Member<AccessibilityText>>&) const;
     void deprecatedAriaLabelledbyText(HeapVector<Member<AccessibilityText>>&) const;
 
+    bool isNativeCheckboxInMixedState() const;
     String textFromDescendants(AXObjectSet& visited) const;
-    String textFromElements(bool inAriaLabelledByTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXObjectVector* nameObjects) const;
-    String textFromAriaLabelledby(AXObjectSet& visited, AXObjectVector* nameObjects) const;
-    String nativeTextAlternative(AXObjectSet& visited, AXNameFrom&, AXObjectVector* nameObjects, NameSources*, bool* foundTextAlternative) const;
+    String textFromElements(bool inAriaLabelledByTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXRelatedObjectVector* relatedObjects) const;
+    String textFromAriaLabelledby(AXObjectSet& visited, AXRelatedObjectVector* relatedObjects) const;
+    String textFromAriaDescribedby(AXRelatedObjectVector* relatedObjects) const;
+    String nativeTextAlternative(AXObjectSet& visited, AXNameFrom&, AXRelatedObjectVector*, NameSources*, bool* foundTextAlternative) const;
     float stepValueForRange() const;
     AXObject* findChildWithTagName(const HTMLQualifiedName&) const;
     bool isDescendantOfElementType(const HTMLQualifiedName& tagName) const;
+    String stringValueOfControl() const;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXNodeObject, isAXNodeObject());

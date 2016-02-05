@@ -25,14 +25,17 @@
 #include "config.h"
 #include "platform/fonts/Font.h"
 
+#include "platform/LayoutTestSupport.h"
 #include "platform/LayoutUnit.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/Character.h"
 #include "platform/fonts/FontCache.h"
+#include "platform/fonts/FontFallbackIterator.h"
 #include "platform/fonts/FontFallbackList.h"
 #include "platform/fonts/GlyphBuffer.h"
 #include "platform/fonts/GlyphPageTreeNode.h"
 #include "platform/fonts/SimpleFontData.h"
+#include "platform/fonts/shaping/CachingWordShaper.h"
 #include "platform/fonts/shaping/HarfBuzzFace.h"
 #include "platform/fonts/shaping/HarfBuzzShaper.h"
 #include "platform/fonts/shaping/SimpleShaper.h"
@@ -110,7 +113,7 @@ float Font::buildGlyphBuffer(const TextRunPaintInfo& runInfo, GlyphBuffer& glyph
 {
     if (codePath(runInfo) == ComplexPath) {
         float width;
-        CachingWordShaper& shaper = m_fontFallbackList->cachingWordShaper();
+        CachingWordShaper shaper(m_fontFallbackList->shapeCache(m_fontDescription));
         if (emphasisData) {
             width = shaper.fillGlyphBufferForTextEmphasis(this, runInfo.run,
                 emphasisData, &glyphBuffer, runInfo.from, runInfo.to);
@@ -310,15 +313,17 @@ int Font::offsetForPosition(const TextRun& run, float x, bool includePartialGlyp
 
 CodePath Font::codePath(const TextRunPaintInfo& runInfo) const
 {
-    if (RuntimeEnabledFeatures::alwaysUseComplexTextEnabled())
+    if (RuntimeEnabledFeatures::alwaysUseComplexTextEnabled()
+        || LayoutTestSupport::alwaysUseComplexTextForTest()) {
         return ComplexPath;
+    }
 
     const TextRun& run = runInfo.run;
 
     if (fontDescription().typesettingFeatures() && (runInfo.from || runInfo.to != run.length()))
         return ComplexPath;
 
-    if (m_fontDescription.featureSettings() && m_fontDescription.featureSettings()->size() > 0 && m_fontDescription.letterSpacing() == 0)
+    if (m_fontDescription.featureSettings() && m_fontDescription.featureSettings()->size() > 0)
         return ComplexPath;
 
     if (m_fontDescription.isVerticalBaseline())
@@ -407,6 +412,11 @@ static inline GlyphData glyphDataForNonCJKCharacterWithGlyphOrientation(UChar32 
         }
     }
     return data;
+}
+
+PassRefPtr<FontFallbackIterator> Font::createFontFallbackIterator() const
+{
+    return FontFallbackIterator::create(m_fontDescription, m_fontFallbackList);
 }
 
 GlyphData Font::glyphDataForCharacter(UChar32& c, bool mirror, bool normalizeSpace, FontDataVariant variant) const
@@ -693,7 +703,7 @@ void Font::drawTextBlob(SkCanvas* canvas, const SkPaint& paint, const SkTextBlob
 
 float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts, FloatRect* glyphBounds) const
 {
-    CachingWordShaper& shaper = m_fontFallbackList->cachingWordShaper();
+    CachingWordShaper shaper(m_fontFallbackList->shapeCache(m_fontDescription));
     float width = shaper.width(this, run, fallbackFonts, glyphBounds);
     return width;
 }
@@ -702,7 +712,7 @@ float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFon
 int Font::offsetForPositionForComplexText(const TextRun& run, float xFloat,
     bool includePartialGlyphs) const
 {
-    CachingWordShaper& shaper = m_fontFallbackList->cachingWordShaper();
+    CachingWordShaper shaper(m_fontFallbackList->shapeCache(m_fontDescription));
     return shaper.offsetForPosition(this, run, xFloat);
 }
 
@@ -710,7 +720,7 @@ int Font::offsetForPositionForComplexText(const TextRun& run, float xFloat,
 FloatRect Font::selectionRectForComplexText(const TextRun& run,
     const FloatPoint& point, int height, int from, int to) const
 {
-    CachingWordShaper& shaper = m_fontFallbackList->cachingWordShaper();
+    CachingWordShaper shaper(m_fontFallbackList->shapeCache(m_fontDescription));
     return shaper.selectionRect(this, run, point, height, from, to);
 }
 

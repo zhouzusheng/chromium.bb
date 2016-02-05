@@ -82,7 +82,7 @@ public:
 
     // Widget methods
     void setFrameRect(const IntRect&) override;
-    void paint(GraphicsContext*, const IntRect&) const override;
+    void paint(GraphicsContext*, const CullRect&) const override;
     void invalidateRect(const IntRect&) override;
     void setFocus(bool, WebFocusType) override;
     void show() override;
@@ -114,7 +114,8 @@ public:
     WebPoint rootFrameToLocalPoint(const WebPoint&) override;
     WebPoint localToRootFramePoint(const WebPoint&) override;
 
-    // This cannot be null.
+    // Non-Oilpan, this cannot be null. With Oilpan, it will be
+    // null when in a disposed state, pending finalization during the next GC.
     WebPlugin* plugin() override { return m_webPlugin; }
     void setPlugin(WebPlugin*) override;
 
@@ -154,7 +155,9 @@ public:
     void didFinishLoading() override;
     void didFailLoading(const ResourceError&) override;
 
+#if !ENABLE(OILPAN)
     void willDestroyPluginLoadObserver(WebPluginLoadObserver*);
+#endif
 
     DECLARE_VIRTUAL_TRACE();
     void dispose() override;
@@ -165,6 +168,12 @@ public:
 #endif
 
 private:
+    // Sets |windowRect| to the content rect of the plugin in screen space.
+    // Sets |clippedAbsoluteRect| to the visible rect for the plugin, clipped to the visible screen of the root frame, in local space of the plugin.
+    // Sets |unclippedAbsoluteRect| to the visible rect for the plugin (but without also clipping to the screen), in local space of the plugin.
+    void computeClipRectsForPlugin(
+        const HTMLFrameOwnerElement* pluginOwnerElement, IntRect& windowRect, IntRect& clippedLocalRect, IntRect& unclippedIntLocalRect) const;
+
     WebPluginContainerImpl(HTMLPlugInElement*, WebPlugin*);
     ~WebPluginContainerImpl() override;
 
@@ -190,9 +199,13 @@ private:
         const IntRect& frameRect,
         Vector<IntRect>& cutOutRects);
 
+    friend class WebPluginContainerTest;
+
     RawPtrWillBeMember<HTMLPlugInElement> m_element;
     WebPlugin* m_webPlugin;
+#if !ENABLE(OILPAN)
     Vector<WebPluginLoadObserver*> m_pluginLoadObservers;
+#endif
 
     WebLayer* m_webLayer;
 

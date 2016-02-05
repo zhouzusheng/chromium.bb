@@ -17,15 +17,15 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/safe_conversions.h"
 #include "webrtc/engine_configurations.h"
-#include "webrtc/modules/audio_coding/main/interface/audio_coding_module_typedefs.h"
+#include "webrtc/modules/audio_coding/main/include/audio_coding_module_typedefs.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_common_defs.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_resampler.h"
 #include "webrtc/modules/audio_coding/main/acm2/call_statistics.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/metrics.h"
-#include "webrtc/system_wrappers/interface/rw_lock_wrapper.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/logging.h"
+#include "webrtc/system_wrappers/include/metrics.h"
+#include "webrtc/system_wrappers/include/rw_lock_wrapper.h"
+#include "webrtc/system_wrappers/include/trace.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -36,20 +36,12 @@ namespace {
 
 // TODO(turajs): the same functionality is used in NetEq. If both classes
 // need them, make it a static function in ACMCodecDB.
-bool IsCodecRED(const CodecInst* codec) {
-  return (STR_CASE_CMP(codec->plname, "RED") == 0);
+bool IsCodecRED(const CodecInst& codec) {
+  return (STR_CASE_CMP(codec.plname, "RED") == 0);
 }
 
-bool IsCodecRED(int index) {
-  return (IsCodecRED(&ACMCodecDB::database_[index]));
-}
-
-bool IsCodecCN(const CodecInst* codec) {
-  return (STR_CASE_CMP(codec->plname, "CN") == 0);
-}
-
-bool IsCodecCN(int index) {
-  return (IsCodecCN(&ACMCodecDB::database_[index]));
+bool IsCodecCN(const CodecInst& codec) {
+  return (STR_CASE_CMP(codec.plname, "CN") == 0);
 }
 
 // Stereo-to-mono can be used as in-place.
@@ -157,7 +149,9 @@ int32_t AudioCodingModuleImpl::Encode(const InputData& input_data) {
 
   encode_buffer_.SetSize(audio_encoder->MaxEncodedBytes());
   encoded_info = audio_encoder->Encode(
-      rtp_timestamp, input_data.audio, input_data.length_per_channel,
+      rtp_timestamp, rtc::ArrayView<const int16_t>(
+                         input_data.audio, input_data.audio_channel *
+                                               input_data.length_per_channel),
       encode_buffer_.size(), encode_buffer_.data());
   encode_buffer_.SetSize(encoded_info.encoded_bytes);
   bitrate_logger_.MaybeLog(audio_encoder->GetTargetBitrate() / 1000);
@@ -171,7 +165,7 @@ int32_t AudioCodingModuleImpl::Encode(const InputData& input_data) {
   ConvertEncodedInfoToFragmentationHeader(encoded_info, &my_fragmentation);
   FrameType frame_type;
   if (encode_buffer_.size() == 0 && encoded_info.send_even_if_empty) {
-    frame_type = kFrameEmpty;
+    frame_type = kEmptyFrame;
     encoded_info.payload_type = previous_pltype;
   } else {
     RTC_DCHECK_GT(encode_buffer_.size(), 0u);
@@ -214,9 +208,9 @@ void AudioCodingModuleImpl::RegisterExternalSendCodec(
 }
 
 // Get current send codec.
-int AudioCodingModuleImpl::SendCodec(CodecInst* current_codec) const {
+rtc::Optional<CodecInst> AudioCodingModuleImpl::SendCodec() const {
   CriticalSectionScoped lock(acm_crit_sect_.get());
-  return codec_manager_.GetCodecInst(current_codec);
+  return codec_manager_.GetCodecInst();
 }
 
 // Get current send frequency.
@@ -513,11 +507,12 @@ int AudioCodingModuleImpl::InitializeReceiverSafe() {
   receiver_.FlushBuffers();
 
   // Register RED and CN.
-  for (int i = 0; i < ACMCodecDB::kNumCodecs; i++) {
-    if (IsCodecRED(i) || IsCodecCN(i)) {
-      uint8_t pl_type = static_cast<uint8_t>(ACMCodecDB::database_[i].pltype);
-      int fs = ACMCodecDB::database_[i].plfreq;
-      if (receiver_.AddCodec(i, pl_type, 1, fs, NULL) < 0) {
+  auto db = RentACodec::Database();
+  for (size_t i = 0; i < db.size(); i++) {
+    if (IsCodecRED(db[i]) || IsCodecCN(db[i])) {
+      if (receiver_.AddCodec(static_cast<int>(i),
+                             static_cast<uint8_t>(db[i].pltype), 1,
+                             db[i].plfreq, nullptr) < 0) {
         WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
                      "Cannot register master codec.");
         return -1;
@@ -535,10 +530,9 @@ int AudioCodingModuleImpl::ReceiveFrequency() const {
 
   CriticalSectionScoped lock(acm_crit_sect_.get());
 
-  int codec_id = receiver_.last_audio_codec_id();
-
-  return codec_id < 0 ? receiver_.current_sample_rate_hz() :
-                        ACMCodecDB::database_[codec_id].plfreq;
+  auto codec_id = RentACodec::CodecIdFromIndex(receiver_.last_audio_codec_id());
+  return codec_id ? RentACodec::CodecInstById(*codec_id)->plfreq
+                  : receiver_.current_sample_rate_hz();
 }
 
 // Get current playout frequency.
@@ -561,14 +555,17 @@ int AudioCodingModuleImpl::RegisterReceiveCodec(const CodecInst& codec) {
     return -1;
   }
 
-  int codec_id = ACMCodecDB::ReceiverCodecNumber(codec);
-  if (codec_id < 0 || codec_id >= ACMCodecDB::kNumCodecs) {
+  auto codec_id =
+      RentACodec::CodecIdByParams(codec.plname, codec.plfreq, codec.channels);
+  if (!codec_id) {
     LOG_F(LS_ERROR) << "Wrong codec params to be registered as receive codec";
     return -1;
   }
+  auto codec_index = RentACodec::CodecIndexFromId(*codec_id);
+  RTC_CHECK(codec_index) << "Invalid codec ID: " << static_cast<int>(*codec_id);
 
   // Check if the payload-type is valid.
-  if (!ACMCodecDB::ValidPayloadType(codec.pltype)) {
+  if (!RentACodec::IsPayloadTypeValid(codec.pltype)) {
     LOG_F(LS_ERROR) << "Invalid payload type " << codec.pltype << " for "
                     << codec.plname;
     return -1;
@@ -576,7 +573,7 @@ int AudioCodingModuleImpl::RegisterReceiveCodec(const CodecInst& codec) {
 
   // Get |decoder| associated with |codec|. |decoder| is NULL if |codec| does
   // not own its decoder.
-  return receiver_.AddCodec(codec_id, codec.pltype, codec.channels,
+  return receiver_.AddCodec(*codec_index, codec.pltype, codec.channels,
                             codec.plfreq,
                             codec_manager_.GetAudioDecoder(codec));
 }
@@ -594,7 +591,7 @@ int AudioCodingModuleImpl::RegisterExternalReceiveCodec(
   }
 
   // Check if the payload-type is valid.
-  if (!ACMCodecDB::ValidPayloadType(rtp_payload_type)) {
+  if (!RentACodec::IsPayloadTypeValid(rtp_payload_type)) {
     LOG_F(LS_ERROR) << "Invalid payload-type " << rtp_payload_type
                     << " for external decoder.";
     return -1;
@@ -614,7 +611,9 @@ int AudioCodingModuleImpl::ReceiveCodec(CodecInst* current_codec) const {
 int AudioCodingModuleImpl::IncomingPacket(const uint8_t* incoming_payload,
                                           const size_t payload_length,
                                           const WebRtcRTPHeader& rtp_header) {
-  return receiver_.InsertPacket(rtp_header, incoming_payload, payload_length);
+  return receiver_.InsertPacket(
+      rtp_header,
+      rtc::ArrayView<const uint8_t>(incoming_payload, payload_length));
 }
 
 // Minimum playout delay (Used for lip-sync).
@@ -769,17 +768,6 @@ int AudioCodingModuleImpl::UnregisterReceiveCodec(uint8_t payload_type) {
   return receiver_.RemoveCodec(payload_type);
 }
 
-int AudioCodingModuleImpl::SetInitialPlayoutDelay(int delay_ms) {
-  {
-    CriticalSectionScoped lock(acm_crit_sect_.get());
-    // Initialize receiver, if it is not initialized. Otherwise, initial delay
-    // is reset upon initialization of the receiver.
-    if (!receiver_initialized_)
-      InitializeReceiverSafe();
-  }
-  return receiver_.SetInitialDelay(delay_ms);
-}
-
 int AudioCodingModuleImpl::EnableNack(size_t max_nack_list_size) {
   return receiver_.EnableNack(max_nack_list_size);
 }
@@ -803,292 +791,4 @@ void AudioCodingModuleImpl::GetDecodingCallStatistics(
 }
 
 }  // namespace acm2
-
-AudioCodingImpl::AudioCodingImpl(const Config& config) {
-  AudioCodingModule::Config config_old = config.ToOldConfig();
-  acm_old_.reset(new acm2::AudioCodingModuleImpl(config_old));
-  acm_old_->RegisterTransportCallback(config.transport);
-  acm_old_->RegisterVADCallback(config.vad_callback);
-  if (config.initial_playout_delay_ms > 0) {
-    acm_old_->SetInitialPlayoutDelay(config.initial_playout_delay_ms);
-  }
-  playout_frequency_hz_ = config.playout_frequency_hz;
-}
-
-AudioCodingImpl::~AudioCodingImpl() = default;
-
-bool AudioCodingImpl::RegisterSendCodec(AudioEncoder* send_codec) {
-  FATAL() << "Not implemented yet.";
-  return false;
-}
-
-bool AudioCodingImpl::RegisterSendCodec(int encoder_type,
-                                        uint8_t payload_type,
-                                        int frame_size_samples) {
-  std::string codec_name;
-  int sample_rate_hz;
-  int channels;
-  if (!MapCodecTypeToParameters(
-          encoder_type, &codec_name, &sample_rate_hz, &channels)) {
-    return false;
-  }
-  webrtc::CodecInst codec;
-  AudioCodingModule::Codec(
-      codec_name.c_str(), &codec, sample_rate_hz, channels);
-  codec.pltype = payload_type;
-  if (frame_size_samples > 0) {
-    codec.pacsize = frame_size_samples;
-  }
-  return acm_old_->RegisterSendCodec(codec) == 0;
-}
-
-const AudioEncoder* AudioCodingImpl::GetSenderInfo() const {
-  FATAL() << "Not implemented yet.";
-  return reinterpret_cast<const AudioEncoder*>(NULL);
-}
-
-const CodecInst* AudioCodingImpl::GetSenderCodecInst() {
-  if (acm_old_->SendCodec(&current_send_codec_) != 0) {
-    return NULL;
-  }
-  return &current_send_codec_;
-}
-
-int AudioCodingImpl::Add10MsAudio(const AudioFrame& audio_frame) {
-  acm2::AudioCodingModuleImpl::InputData input_data;
-  CriticalSectionScoped lock(acm_old_->acm_crit_sect_.get());
-  if (acm_old_->Add10MsDataInternal(audio_frame, &input_data) != 0)
-    return -1;
-  return acm_old_->Encode(input_data);
-}
-
-const ReceiverInfo* AudioCodingImpl::GetReceiverInfo() const {
-  FATAL() << "Not implemented yet.";
-  return reinterpret_cast<const ReceiverInfo*>(NULL);
-}
-
-bool AudioCodingImpl::RegisterReceiveCodec(AudioDecoder* receive_codec) {
-  FATAL() << "Not implemented yet.";
-  return false;
-}
-
-bool AudioCodingImpl::RegisterReceiveCodec(int decoder_type,
-                                           uint8_t payload_type) {
-  std::string codec_name;
-  int sample_rate_hz;
-  int channels;
-  if (!MapCodecTypeToParameters(
-          decoder_type, &codec_name, &sample_rate_hz, &channels)) {
-    return false;
-  }
-  webrtc::CodecInst codec;
-  AudioCodingModule::Codec(
-      codec_name.c_str(), &codec, sample_rate_hz, channels);
-  codec.pltype = payload_type;
-  return acm_old_->RegisterReceiveCodec(codec) == 0;
-}
-
-bool AudioCodingImpl::InsertPacket(const uint8_t* incoming_payload,
-                                   size_t payload_len_bytes,
-                                   const WebRtcRTPHeader& rtp_info) {
-  return acm_old_->IncomingPacket(
-             incoming_payload, payload_len_bytes, rtp_info) == 0;
-}
-
-bool AudioCodingImpl::InsertPayload(const uint8_t* incoming_payload,
-                                    size_t payload_len_byte,
-                                    uint8_t payload_type,
-                                    uint32_t timestamp) {
-  FATAL() << "Not implemented yet.";
-  return false;
-}
-
-bool AudioCodingImpl::SetMinimumPlayoutDelay(int time_ms) {
-  FATAL() << "Not implemented yet.";
-  return false;
-}
-
-bool AudioCodingImpl::SetMaximumPlayoutDelay(int time_ms) {
-  FATAL() << "Not implemented yet.";
-  return false;
-}
-
-int AudioCodingImpl::LeastRequiredDelayMs() const {
-  FATAL() << "Not implemented yet.";
-  return -1;
-}
-
-bool AudioCodingImpl::PlayoutTimestamp(uint32_t* timestamp) {
-  FATAL() << "Not implemented yet.";
-  return false;
-}
-
-bool AudioCodingImpl::Get10MsAudio(AudioFrame* audio_frame) {
-  return acm_old_->PlayoutData10Ms(playout_frequency_hz_, audio_frame) == 0;
-}
-
-bool AudioCodingImpl::GetNetworkStatistics(
-    NetworkStatistics* network_statistics) {
-  FATAL() << "Not implemented yet.";
-  return false;
-}
-
-bool AudioCodingImpl::EnableNack(size_t max_nack_list_size) {
-  FATAL() << "Not implemented yet.";
-  return false;
-}
-
-void AudioCodingImpl::DisableNack() {
-  // A bug in the linker of Visual Studio 2013 Update 3 prevent us from using
-  // FATAL() here, if we do so then the linker hang when the WPO is turned on.
-  // TODO(sebmarchand): Re-evaluate this when we upgrade the toolchain.
-}
-
-bool AudioCodingImpl::SetVad(bool enable_dtx,
-                             bool enable_vad,
-                             ACMVADMode vad_mode) {
-  return acm_old_->SetVAD(enable_dtx, enable_vad, vad_mode) == 0;
-}
-
-std::vector<uint16_t> AudioCodingImpl::GetNackList(
-    int round_trip_time_ms) const {
-  return acm_old_->GetNackList(round_trip_time_ms);
-}
-
-void AudioCodingImpl::GetDecodingCallStatistics(
-    AudioDecodingCallStats* call_stats) const {
-  acm_old_->GetDecodingCallStatistics(call_stats);
-}
-
-bool AudioCodingImpl::MapCodecTypeToParameters(int codec_type,
-                                               std::string* codec_name,
-                                               int* sample_rate_hz,
-                                               int* channels) {
-  switch (codec_type) {
-    case acm2::ACMCodecDB::kPCM16B:
-      *codec_name = "L16";
-      *sample_rate_hz = 8000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kPCM16Bwb:
-      *codec_name = "L16";
-      *sample_rate_hz = 16000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kPCM16Bswb32kHz:
-      *codec_name = "L16";
-      *sample_rate_hz = 32000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kPCM16B_2ch:
-      *codec_name = "L16";
-      *sample_rate_hz = 8000;
-      *channels = 2;
-      break;
-    case acm2::ACMCodecDB::kPCM16Bwb_2ch:
-      *codec_name = "L16";
-      *sample_rate_hz = 16000;
-      *channels = 2;
-      break;
-    case acm2::ACMCodecDB::kPCM16Bswb32kHz_2ch:
-      *codec_name = "L16";
-      *sample_rate_hz = 32000;
-      *channels = 2;
-      break;
-#if (defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX))
-    case acm2::ACMCodecDB::kISAC:
-      *codec_name = "ISAC";
-      *sample_rate_hz = 16000;
-      *channels = 1;
-      break;
-#endif
-#ifdef WEBRTC_CODEC_ISAC
-    case acm2::ACMCodecDB::kISACSWB:
-      *codec_name = "ISAC";
-      *sample_rate_hz = 32000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kISACFB:
-      *codec_name = "ISAC";
-      *sample_rate_hz = 48000;
-      *channels = 1;
-      break;
-#endif
-#ifdef WEBRTC_CODEC_ILBC
-    case acm2::ACMCodecDB::kILBC:
-      *codec_name = "ILBC";
-      *sample_rate_hz = 8000;
-      *channels = 1;
-      break;
-#endif
-    case acm2::ACMCodecDB::kPCMA:
-      *codec_name = "PCMA";
-      *sample_rate_hz = 8000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kPCMA_2ch:
-      *codec_name = "PCMA";
-      *sample_rate_hz = 8000;
-      *channels = 2;
-      break;
-    case acm2::ACMCodecDB::kPCMU:
-      *codec_name = "PCMU";
-      *sample_rate_hz = 8000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kPCMU_2ch:
-      *codec_name = "PCMU";
-      *sample_rate_hz = 8000;
-      *channels = 2;
-      break;
-#ifdef WEBRTC_CODEC_G722
-    case acm2::ACMCodecDB::kG722:
-      *codec_name = "G722";
-      *sample_rate_hz = 16000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kG722_2ch:
-      *codec_name = "G722";
-      *sample_rate_hz = 16000;
-      *channels = 2;
-      break;
-#endif
-#ifdef WEBRTC_CODEC_OPUS
-    case acm2::ACMCodecDB::kOpus:
-      *codec_name = "opus";
-      *sample_rate_hz = 48000;
-      *channels = 2;
-      break;
-#endif
-    case acm2::ACMCodecDB::kCNNB:
-      *codec_name = "CN";
-      *sample_rate_hz = 8000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kCNWB:
-      *codec_name = "CN";
-      *sample_rate_hz = 16000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kCNSWB:
-      *codec_name = "CN";
-      *sample_rate_hz = 32000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kRED:
-      *codec_name = "red";
-      *sample_rate_hz = 8000;
-      *channels = 1;
-      break;
-    case acm2::ACMCodecDB::kAVT:
-      *codec_name = "telephone-event";
-      *sample_rate_hz = 8000;
-      *channels = 1;
-      break;
-    default:
-      FATAL() << "Codec type " << codec_type << " not supported.";
-  }
-  return true;
-}
-
 }  // namespace webrtc

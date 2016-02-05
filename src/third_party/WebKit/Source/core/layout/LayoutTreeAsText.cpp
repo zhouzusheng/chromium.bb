@@ -663,6 +663,9 @@ void LayoutTreeAsText::writeLayers(TextStream& ts, const PaintLayer* rootLayer, 
     layer->convertToLayerCoords(rootLayer, offsetFromRoot);
     bool shouldPaint = (behavior & LayoutAsTextShowAllLayers) ? true : layer->intersectsDamageRect(layerBounds, damageRect.rect(), offsetFromRoot);
 
+    if (layer->layoutObject()->isLayoutPart() && toLayoutPart(layer->layoutObject())->isThrottledFrameView())
+        shouldPaint = false;
+
     Vector<PaintLayerStackingNode*>* negList = layer->stackingNode()->negZOrderList();
     bool paintsBackgroundSeparately = negList && negList->size() > 0;
     if (shouldPaint && paintsBackgroundSeparately)
@@ -786,8 +789,10 @@ String externalRepresentation(LocalFrame* frame, LayoutAsTextBehavior behavior)
         return String();
 
     PrintContext printContext(frame);
-    if (behavior & LayoutAsTextPrintingMode)
-        printContext.begin(toLayoutBox(layoutObject)->size().width().toFloat());
+    if (behavior & LayoutAsTextPrintingMode) {
+        FloatSize size(toLayoutBox(layoutObject)->size());
+        printContext.begin(size.width(), size.height());
+    }
 
     return externalRepresentation(toLayoutBox(layoutObject), behavior);
 }

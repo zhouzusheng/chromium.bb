@@ -12,22 +12,22 @@
 
 #include <vector>
 
+#include "webrtc/base/logging.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
-#include "webrtc/modules/rtp_rtcp/interface/fec_receiver.h"
-#include "webrtc/modules/rtp_rtcp/interface/receive_statistics.h"
-#include "webrtc/modules/rtp_rtcp/interface/remote_ntp_time_estimator.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_cvo.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_header_parser.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_payload_registry.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_receiver.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
+#include "webrtc/modules/rtp_rtcp/include/fec_receiver.h"
+#include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
+#include "webrtc/modules/rtp_rtcp/include/remote_ntp_time_estimator.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_cvo.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_payload_registry.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_receiver.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "webrtc/modules/video_coding/main/interface/video_coding.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/metrics.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
-#include "webrtc/system_wrappers/interface/timestamp_extrapolator.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/metrics.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
+#include "webrtc/system_wrappers/include/timestamp_extrapolator.h"
+#include "webrtc/system_wrappers/include/trace.h"
 
 namespace webrtc {
 
@@ -116,6 +116,10 @@ void ViEReceiver::SetRtxPayloadType(int payload_type,
                                     int associated_payload_type) {
   rtp_payload_registry_->SetRtxPayloadType(payload_type,
                                            associated_payload_type);
+}
+
+void ViEReceiver::SetUseRtxPayloadMappingOnRestore(bool val) {
+  rtp_payload_registry_->set_use_rtx_payload_mapping_on_restore(val);
 }
 
 void ViEReceiver::SetRtxSsrc(uint32_t ssrc) {
@@ -361,15 +365,14 @@ bool ViEReceiver::ParseAndHandleEncapsulatingHeader(const uint8_t* packet,
       LOG(LS_WARNING) << "Multiple RTX headers detected, dropping packet.";
       return false;
     }
-    uint8_t* restored_packet_ptr = restored_packet_;
     if (!rtp_payload_registry_->RestoreOriginalPacket(
-        &restored_packet_ptr, packet, &packet_length, rtp_receiver_->SSRC(),
-        header)) {
+            restored_packet_, packet, &packet_length, rtp_receiver_->SSRC(),
+            header)) {
       LOG(LS_WARNING) << "Incoming RTX packet: Invalid RTP header";
       return false;
     }
     restored_packet_in_use_ = true;
-    bool ret = OnRecoveredPacket(restored_packet_ptr, packet_length);
+    bool ret = OnRecoveredPacket(restored_packet_, packet_length);
     restored_packet_in_use_ = false;
     return ret;
   }

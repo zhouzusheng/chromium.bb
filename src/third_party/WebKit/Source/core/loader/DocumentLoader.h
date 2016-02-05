@@ -61,7 +61,7 @@ class ResourceLoader;
 class ThreadedDataReceiver;
 
 class CORE_EXPORT DocumentLoader : public RefCountedWillBeGarbageCollectedFinalized<DocumentLoader>, private RawResourceClient {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DocumentLoader);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(DocumentLoader);
 public:
     static PassRefPtrWillBeRawPtr<DocumentLoader> create(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
     {
@@ -106,7 +106,9 @@ public:
 
     bool isCommittedButEmpty() const { return m_state == Committed; }
 
-    bool shouldContinueForNavigationPolicy(const ResourceRequest&, ContentSecurityPolicyDisposition shouldCheckMainWorldContentSecurityPolicy, NavigationPolicy = NavigationPolicyCurrentTab);
+    void setSentDidFinishLoad() { m_state = SentDidFinishLoad; }
+    bool sentDidFinishLoad() const { return m_state == SentDidFinishLoad; }
+
     NavigationType navigationType() const { return m_navigationType; }
     void setNavigationType(NavigationType navigationType) { m_navigationType = navigationType; }
 
@@ -131,7 +133,7 @@ public:
     ClientHintsPreferences& clientHintsPreferences() { return m_clientHintsPreferences; }
 
     struct InitialScrollState {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
         InitialScrollState()
             : wasScrolledByUser(false)
             , didRestoreFromHistory(false)
@@ -182,6 +184,7 @@ private:
     void dataReceived(Resource*, const char* data, unsigned length) final;
     void processData(const char* data, unsigned length);
     void notifyFinished(Resource*) final;
+    String debugName() const override { return "DocumentLoader"; }
 
     bool maybeLoadEmpty();
 
@@ -234,7 +237,8 @@ private:
         Provisional,
         Committed,
         DataReceived,
-        MainResourceDone
+        MainResourceDone,
+        SentDidFinishLoad
     };
     State m_state;
 

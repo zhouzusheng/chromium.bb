@@ -203,8 +203,9 @@ void ServiceWorkerURLRequestJob::SetExtraRequestHeaders(
     byte_range_ = ranges[0];
 }
 
-bool ServiceWorkerURLRequestJob::ReadRawData(
-    net::IOBuffer* buf, int buf_size, int *bytes_read) {
+bool ServiceWorkerURLRequestJob::ReadRawData(net::IOBuffer* buf,
+                                             int buf_size,
+                                             int* bytes_read) {
   DCHECK(buf);
   DCHECK_GE(buf_size, 0);
   DCHECK(bytes_read);
@@ -323,8 +324,8 @@ void ServiceWorkerURLRequestJob::OnDataAvailable(Stream* stream) {
   // ReadRawData() by URLRequestJob.
 
   int bytes_read = 0;
-  switch (stream_->ReadRawData(
-      stream_pending_buffer_.get(), stream_pending_buffer_size_, &bytes_read)) {
+  switch (stream_->ReadRawData(stream_pending_buffer_.get(),
+                               stream_pending_buffer_size_, &bytes_read)) {
     case Stream::STREAM_HAS_DATA:
       DCHECK_GT(bytes_read, 0);
       break;

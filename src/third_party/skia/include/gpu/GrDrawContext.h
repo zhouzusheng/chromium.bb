@@ -15,9 +15,11 @@
 class GrClip;
 class GrContext;
 class GrDrawBatch;
+class GrDrawingManager;
 class GrDrawTarget;
 class GrPaint;
 class GrPathProcessor;
+class GrPathRange;
 class GrPathRangeDraw;
 class GrPipelineBuilder;
 class GrRenderTarget;
@@ -43,20 +45,19 @@ class SK_API GrDrawContext : public SkRefCnt {
 public:
     ~GrDrawContext() override;
 
-    void copySurface(GrRenderTarget* dst, GrSurface* src,
-                     const SkIRect& srcRect, const SkIPoint& dstPoint);
+    void copySurface(GrSurface* src, const SkIRect& srcRect, const SkIPoint& dstPoint);
 
     // TODO: it is odd that we need both the SkPaint in the following 3 methods.
     // We should extract the text parameters from SkPaint and pass them separately
     // akin to GrStrokeInfo (GrTextInfo?)
-    void drawText(GrRenderTarget*, const GrClip&,  const GrPaint&, const SkPaint&,
+    void drawText(const GrClip&,  const GrPaint&, const SkPaint&,
                   const SkMatrix& viewMatrix, const char text[], size_t byteLength,
                   SkScalar x, SkScalar y, const SkIRect& clipBounds);
-    void drawPosText(GrRenderTarget*, const GrClip&, const GrPaint&, const SkPaint&,
+    void drawPosText(const GrClip&, const GrPaint&, const SkPaint&,
                      const SkMatrix& viewMatrix, const char text[], size_t byteLength,
                      const SkScalar pos[], int scalarsPerPosition,
                      const SkPoint& offset, const SkIRect& clipBounds);
-    void drawTextBlob(GrRenderTarget*, const GrClip&, const SkPaint&,
+    void drawTextBlob(const GrClip&, const SkPaint&,
                       const SkMatrix& viewMatrix, const SkTextBlob*,
                       SkScalar x, SkScalar y,
                       SkDrawFilter*, const SkIRect& clipBounds);
@@ -67,6 +68,7 @@ public:
                             const SkMatrix& viewMatrix,
                             const SkMatrix& localMatrix,
                             GrColor color,
+                            GrPathRange* range,
                             GrPathRangeDraw* draw,
                             int /*GrPathRendering::FillType*/ fill);
 
@@ -74,22 +76,21 @@ public:
      * Provides a perfomance hint that the render target's contents are allowed
      * to become undefined.
      */
-    void discard(GrRenderTarget*);
+    void discard();
 
     /**
      * Clear the entire or rect of the render target, ignoring any clips.
-     * @param target The render target to clear.
      * @param rect  the rect to clear or the whole thing if rect is NULL.
      * @param color the color to clear to.
      * @param canIgnoreRect allows partial clears to be converted to whole
      *                      clears on platforms for which that is cheap
      */
-    void clear(GrRenderTarget*, const SkIRect* rect, GrColor color, bool canIgnoreRect);
+    void clear(const SkIRect* rect, GrColor color, bool canIgnoreRect);
 
     /**
      *  Draw everywhere (respecting the clip) with the paint.
      */
-    void drawPaint(GrRenderTarget*, const GrClip&, const GrPaint&, const SkMatrix& viewMatrix);
+    void drawPaint(const GrClip&, const GrPaint&, const SkMatrix& viewMatrix);
 
     /**
      *  Draw the rect using a paint.
@@ -103,37 +104,34 @@ public:
      *                      mitered/beveled stroked based on stroke width.
      *  The rects coords are used to access the paint (through texture matrix)
      */
-    void drawRect(GrRenderTarget*,
-                  const GrClip&,
+    void drawRect(const GrClip&,
                   const GrPaint& paint,
                   const SkMatrix& viewMatrix,
                   const SkRect&,
                   const GrStrokeInfo* strokeInfo = NULL);
 
     /**
-     * Maps a rectangle of shader coordinates to a rectangle and draws that rectangle
+     * Maps a rectangle of shader coordinates to a rectangle and fills that rectangle.
      *
      * @param paint         describes how to color pixels.
      * @param viewMatrix    transformation matrix which applies to rectToDraw
      * @param rectToDraw    the rectangle to draw
      * @param localRect     the rectangle of shader coordinates applied to rectToDraw
      */
-    void drawNonAARectToRect(GrRenderTarget*,
-                             const GrClip&,
-                             const GrPaint& paint,
-                             const SkMatrix& viewMatrix,
-                             const SkRect& rectToDraw,
-                             const SkRect& localRect);
+    void fillRectToRect(const GrClip&,
+                        const GrPaint& paint,
+                        const SkMatrix& viewMatrix,
+                        const SkRect& rectToDraw,
+                        const SkRect& localRect);
 
     /**
-     * Draws a non-AA rect with paint and a localMatrix
+     * Fills a rect with a paint and a localMatrix.
      */
-    void drawNonAARectWithLocalMatrix(GrRenderTarget* rt,
-                                      const GrClip& clip,
-                                      const GrPaint& paint,
-                                      const SkMatrix& viewMatrix,
-                                      const SkRect& rect,
-                                      const SkMatrix& localMatrix);
+    void fillRectWithLocalMatrix(const GrClip& clip,
+                                 const GrPaint& paint,
+                                 const SkMatrix& viewMatrix,
+                                 const SkRect& rect,
+                                 const SkMatrix& localMatrix);
 
     /**
      *  Draw a roundrect using a paint.
@@ -144,8 +142,7 @@ public:
      *  @param strokeInfo   the stroke information (width, join, cap) and
      *                      the dash information (intervals, count, phase).
      */
-    void drawRRect(GrRenderTarget*,
-                   const GrClip&,
+    void drawRRect(const GrClip&,
                    const GrPaint&,
                    const SkMatrix& viewMatrix,
                    const SkRRect& rrect,
@@ -161,8 +158,7 @@ public:
      *  @param outer        the outer roundrect
      *  @param inner        the inner roundrect
      */
-    void drawDRRect(GrRenderTarget*,
-                    const GrClip&,
+    void drawDRRect(const GrClip&,
                     const GrPaint&,
                     const SkMatrix& viewMatrix,
                     const SkRRect& outer,
@@ -178,8 +174,7 @@ public:
      * @param strokeInfo    the stroke information (width, join, cap) and
      *                      the dash information (intervals, count, phase).
      */
-    void drawPath(GrRenderTarget*,
-                  const GrClip&,
+    void drawPath(const GrClip&,
                   const GrPaint&,
                   const SkMatrix& viewMatrix,
                   const SkPath&,
@@ -202,8 +197,7 @@ public:
      * @param   indexCount      if indices is non-null then this is the
      *                          number of indices.
      */
-    void drawVertices(GrRenderTarget*,
-                      const GrClip&,
+    void drawVertices(const GrClip&,
                       const GrPaint& paint,
                       const SkMatrix& viewMatrix,
                       GrPrimitiveType primitiveType,
@@ -225,8 +219,7 @@ public:
      * @param   colors          optional array of per-sprite colors, supercedes
      *                          the paint's color field.
      */
-    void drawAtlas(GrRenderTarget*,
-                   const GrClip&,
+    void drawAtlas(const GrClip&,
                    const GrPaint& paint,
                    const SkMatrix& viewMatrix,
                    int spriteCount,
@@ -243,8 +236,7 @@ public:
      * @param strokeInfo    the stroke information (width, join, cap) and
      *                      the dash information (intervals, count, phase).
      */
-    void drawOval(GrRenderTarget*,
-                  const GrClip&,
+    void drawOval(const GrClip&,
                   const GrPaint& paint,
                   const SkMatrix& viewMatrix,
                   const SkRect& oval,
@@ -257,21 +249,17 @@ public:
      * @param paint    describes how to color pixels.
      * @param batch    the batch to draw
      */
-    void drawBatch(GrRenderTarget*, const GrClip&, const GrPaint&, GrDrawBatch*);
+    void drawBatch(const GrClip&, const GrPaint&, GrDrawBatch*);
 
 private:
     friend class GrAtlasTextContext; // for access to drawBatch
-    friend class GrContext; // for ctor
+    friend class GrDrawingManager; // for ctor
 
-    GrDrawContext(GrContext*, GrDrawTarget*, const SkSurfaceProps&);
+    SkDEBUGCODE(void validate() const;)
 
-    GrTextContext* createTextContext(GrRenderTarget*, const SkSurfaceProps&);
+    GrDrawContext(GrDrawingManager*, GrRenderTarget*, const SkSurfaceProps* surfaceProps);
 
-    // Checks if the context has been abandoned and if the rendertarget is owned by this context
-    bool prepareToDraw(GrRenderTarget* rt);
-
-    void internalDrawPath(GrDrawTarget*,
-                          GrPipelineBuilder*,
+    void internalDrawPath(GrPipelineBuilder*,
                           const SkMatrix& viewMatrix,
                           GrColor,
                           bool useAA,
@@ -282,11 +270,17 @@ private:
     // the drawTarget.
     void drawBatch(GrPipelineBuilder* pipelineBuilder, GrDrawBatch* batch);
 
-    GrContext*          fContext;     // owning context -> no ref
-    GrDrawTarget*       fDrawTarget;
-    GrTextContext*      fTextContext; // lazily created
+    GrDrawTarget* getDrawTarget();
 
-    SkSurfaceProps      fSurfaceProps;
+    GrDrawingManager* fDrawingManager;
+    GrRenderTarget*   fRenderTarget;
+
+    // In MDB-mode the drawTarget can be closed by some other drawContext that has picked
+    // it up. For this reason, the drawTarget should only ever be accessed via 'getDrawTarget'.
+    GrDrawTarget*     fDrawTarget;
+    GrTextContext*    fTextContext; // lazily gotten from GrContext::DrawingManager
+
+    SkSurfaceProps    fSurfaceProps;
 };
 
 #endif

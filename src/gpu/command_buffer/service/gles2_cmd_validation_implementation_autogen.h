@@ -367,7 +367,7 @@ static const GLenum valid_image_internal_format_table[] = {
 };
 
 static const GLenum valid_image_usage_table[] = {
-    GL_MAP_CHROMIUM, GL_SCANOUT_CHROMIUM,
+    GL_READ_WRITE_CHROMIUM,
 };
 
 static const GLenum valid_index_type_table[] = {
@@ -424,6 +424,21 @@ static const GLenum valid_path_fill_mode_table[] = {
     GL_INVERT, GL_COUNT_UP_CHROMIUM, GL_COUNT_DOWN_CHROMIUM,
 };
 
+static const GLenum valid_path_fragment_input_gen_mode_table[] = {
+    GL_NONE, GL_EYE_LINEAR_CHROMIUM, GL_OBJECT_LINEAR_CHROMIUM,
+    GL_CONSTANT_CHROMIUM,
+};
+
+static const GLenum valid_path_instanced_cover_mode_table[] = {
+    GL_CONVEX_HULL_CHROMIUM, GL_BOUNDING_BOX_CHROMIUM,
+    GL_BOUNDING_BOX_OF_BOUNDING_BOXES_CHROMIUM,
+};
+
+static const GLenum valid_path_name_type_table[] = {
+    GL_UNSIGNED_BYTE, GL_BYTE,         GL_UNSIGNED_SHORT,
+    GL_SHORT,         GL_UNSIGNED_INT, GL_INT,
+};
+
 static const GLenum valid_path_parameter_table[] = {
     GL_PATH_STROKE_WIDTH_CHROMIUM, GL_PATH_END_CAPS_CHROMIUM,
     GL_PATH_JOIN_STYLE_CHROMIUM,   GL_PATH_MITER_LIMIT_CHROMIUM,
@@ -436,6 +451,18 @@ static const GLint valid_path_parameter_cap_values_table[] = {
 
 static const GLint valid_path_parameter_join_values_table[] = {
     GL_MITER_REVERT_CHROMIUM, GL_BEVEL_CHROMIUM, GL_ROUND_CHROMIUM,
+};
+
+static const GLenum valid_path_transform_type_table[] = {
+    GL_NONE,
+    GL_TRANSLATE_X_CHROMIUM,
+    GL_TRANSLATE_Y_CHROMIUM,
+    GL_TRANSLATE_2D_CHROMIUM,
+    GL_TRANSLATE_3D_CHROMIUM,
+    GL_AFFINE_2D_CHROMIUM,
+    GL_AFFINE_3D_CHROMIUM,
+    GL_TRANSPOSE_AFFINE_2D_CHROMIUM,
+    GL_TRANSPOSE_AFFINE_3D_CHROMIUM,
 };
 
 static const GLenum valid_pixel_store_table[] = {
@@ -854,8 +881,8 @@ static const GLenum valid_texture_min_filter_mode_table[] = {
 };
 
 static const GLenum valid_texture_parameter_table[] = {
-    GL_TEXTURE_MAG_FILTER, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_POOL_CHROMIUM,
-    GL_TEXTURE_WRAP_S,     GL_TEXTURE_WRAP_T,
+    GL_TEXTURE_MAG_FILTER, GL_TEXTURE_MIN_FILTER, GL_TEXTURE_WRAP_S,
+    GL_TEXTURE_WRAP_T,
 };
 
 static const GLenum valid_texture_parameter_table_es3[] = {
@@ -864,10 +891,6 @@ static const GLenum valid_texture_parameter_table_es3[] = {
     GL_TEXTURE_IMMUTABLE_LEVELS, GL_TEXTURE_MAX_LEVEL,
     GL_TEXTURE_MAX_LOD,          GL_TEXTURE_MIN_LOD,
     GL_TEXTURE_WRAP_R,
-};
-
-static const GLenum valid_texture_pool_table[] = {
-    GL_TEXTURE_POOL_MANAGED_CHROMIUM, GL_TEXTURE_POOL_UNMANAGED_CHROMIUM,
 };
 
 static const GLenum valid_texture_target_table[] = {
@@ -1014,6 +1037,14 @@ Validators::Validators()
                       arraysize(valid_path_cover_mode_table)),
       path_fill_mode(valid_path_fill_mode_table,
                      arraysize(valid_path_fill_mode_table)),
+      path_fragment_input_gen_mode(
+          valid_path_fragment_input_gen_mode_table,
+          arraysize(valid_path_fragment_input_gen_mode_table)),
+      path_instanced_cover_mode(
+          valid_path_instanced_cover_mode_table,
+          arraysize(valid_path_instanced_cover_mode_table)),
+      path_name_type(valid_path_name_type_table,
+                     arraysize(valid_path_name_type_table)),
       path_parameter(valid_path_parameter_table,
                      arraysize(valid_path_parameter_table)),
       path_parameter_cap_values(
@@ -1022,6 +1053,8 @@ Validators::Validators()
       path_parameter_join_values(
           valid_path_parameter_join_values_table,
           arraysize(valid_path_parameter_join_values_table)),
+      path_transform_type(valid_path_transform_type_table,
+                          arraysize(valid_path_transform_type_table)),
       pixel_store(valid_pixel_store_table, arraysize(valid_pixel_store_table)),
       pixel_store_alignment(valid_pixel_store_alignment_table,
                             arraysize(valid_pixel_store_alignment_table)),
@@ -1086,8 +1119,6 @@ Validators::Validators()
                               arraysize(valid_texture_min_filter_mode_table)),
       texture_parameter(valid_texture_parameter_table,
                         arraysize(valid_texture_parameter_table)),
-      texture_pool(valid_texture_pool_table,
-                   arraysize(valid_texture_pool_table)),
       texture_target(valid_texture_target_table,
                      arraysize(valid_texture_target_table)),
       texture_usage(valid_texture_usage_table,

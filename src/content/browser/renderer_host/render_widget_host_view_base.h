@@ -282,7 +282,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback) = 0;
+      const base::Callback<void(const gfx::Rect&, bool)>& callback) = 0;
 
   // Returns true if CopyFromCompositingSurfaceToVideoFrame() is likely to
   // succeed.
@@ -326,11 +326,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // main frame.
   virtual void OnDidNavigateMainFrameToNewPage();
 
-#if defined(OS_ANDROID)
   // Instructs the view to not drop the surface even when the view is hidden.
   virtual void LockCompositingSurface() = 0;
   virtual void UnlockCompositingSurface() = 0;
-#endif
 
 #if defined(OS_MACOSX)
   // Does any event handling necessary for plugin IME; should be called after

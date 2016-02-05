@@ -35,10 +35,8 @@
 #include "core/page/EventWithHitTestResults.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/geometry/IntRect.h"
-#include "platform/graphics/CompositedDisplayList.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/heap/Handle.h"
-#include "public/platform/WebCompositedDisplayList.h"
 #include "public/platform/WebCompositorAnimationTimeline.h"
 #include "public/platform/WebDisplayMode.h"
 #include "public/platform/WebFloatSize.h"
@@ -89,6 +87,7 @@ class WebPagePopupImpl;
 class WebPlugin;
 class WebSelection;
 class WebSettingsImpl;
+class WebViewScheduler;
 
 class WebViewImpl final : public WebView
     , public RefCounted<WebViewImpl>
@@ -104,14 +103,13 @@ public:
     void willStartLiveResize() override;
     void resize(const WebSize&) override;
     void resizeVisualViewport(const WebSize&) override;
-    void resizePinchViewport(const WebSize&) override;
     void willEndLiveResize() override;
     void didEnterFullScreen() override;
     void didExitFullScreen() override;
 
-    void beginFrame(const WebBeginFrameArgs&) override;
+    void beginFrame(double lastFrameTimeMonotonic) override;
 
-    void layout() override;
+    void updateAllLifecyclePhases() override;
     void paint(WebCanvas*, const WebRect&) override;
 #if OS(ANDROID)
     void paintCompositedDeprecated(WebCanvas*, const WebRect&) override;
@@ -183,6 +181,7 @@ public:
         const WebString& name, WebFrame* relativeToFrame) override;
     WebFrame* focusedFrame() override;
     void setFocusedFrame(WebFrame*) override;
+    void focusDocumentView(WebFrame*) override;
     void setInitialFocus(bool reverse) override;
     void clearFocusedElement() override;
     bool scrollFocusedNodeIntoRect(const WebRect&) override;
@@ -201,9 +200,8 @@ public:
     void setMaximumLegibleScale(float) override;
     void setPageScaleFactor(float) override;
     void setVisualViewportOffset(const WebFloatPoint&) override;
-    void setPinchViewportOffset(const WebFloatPoint&) override;
     WebFloatPoint visualViewportOffset() const override;
-    WebFloatPoint pinchViewportOffset() const override;
+    WebFloatSize visualViewportSize() const override;
     void resetScrollAndScaleState() override;
     void setIgnoreViewportTagScaleLimits(bool) override;
     WebSize contentsPreferredMinimumSize() override;
@@ -211,6 +209,8 @@ public:
 
     float deviceScaleFactor() const override;
     void setDeviceScaleFactor(float) override;
+    void setZoomFactorForDeviceScaleFactor(float) override;
+
     void setDeviceColorProfile(const WebVector<char>&) override;
     void resetDeviceColorProfile() override;
 
@@ -272,9 +272,6 @@ public:
     void setShowFPSCounter(bool) override;
     void setShowScrollBottleneckRects(bool) override;
     void acceptLanguagesChanged() override;
-
-    void setCompositedDisplayList(PassOwnPtr<CompositedDisplayList>);
-    WebCompositedDisplayList* compositedDisplayList() override;
 
     // WebViewImpl
     void enableViewport();
@@ -339,7 +336,7 @@ public:
 
     // Returns the main frame associated with this view. This may be null when
     // the page is shutting down, but will be valid at all other times.
-    WebLocalFrameImpl* mainFrameImpl();
+    WebLocalFrameImpl* mainFrameImpl() const;
 
     // FIXME: Temporary method to accommodate out-of-process frame ancestors;
     // will be removed when there can be multiple WebWidgets for a single page.
@@ -379,8 +376,8 @@ public:
 
     // Indicates two things:
     //   1) This view may have a new layout now.
-    //   2) Calling layout() is a no-op.
-    // After calling WebWidget::layout(), expect to get this notification
+    //   2) Calling updateAllLifecyclePhases() is a no-op.
+    // After calling WebWidget::updateAllLifecyclePhases(), expect to get this notification
     // unless the view did not need a layout.
     void layoutUpdated(WebLocalFrameImpl*);
 
@@ -521,6 +518,8 @@ public:
 
     FloatSize elasticOverscroll() const { return m_elasticOverscroll; }
 
+    WebViewScheduler* scheduler() const { return m_scheduler.get(); }
+
 private:
     InspectorOverlay* inspectorOverlay();
 
@@ -656,6 +655,9 @@ private:
 
     double m_maximumZoomLevel;
 
+    // Additional zoom factor used to scale the content by device scale factor.
+    double m_zoomFactorForDeviceScaleFactor;
+
     // This value, when multiplied by the font scale factor, gives the maximum
     // page scale that can result from automatic zooms.
     float m_maximumLegibleScale;
@@ -726,14 +728,12 @@ private:
     bool m_recreatingGraphicsContext;
     static const WebInputEvent* m_currentInputEvent;
 
-    WebCompositedDisplayList m_compositedDisplayList;
-
     MediaKeysClientImpl m_mediaKeysClientImpl;
     OwnPtr<WebActiveGestureAnimation> m_gestureAnimation;
     WebPoint m_positionOnFlingStart;
     WebPoint m_globalPositionOnFlingStart;
     int m_flingModifier;
-    bool m_flingSourceDevice;
+    WebGestureDevice m_flingSourceDevice;
     Vector<OwnPtr<LinkHighlightImpl>> m_linkHighlights;
     OwnPtr<WebCompositorAnimationTimeline> m_linkHighlightsTimeline;
     OwnPtrWillBePersistent<FullscreenController> m_fullscreenController;
@@ -746,6 +746,7 @@ private:
     bool m_userGestureObserved;
     bool m_shouldDispatchFirstVisuallyNonEmptyLayout;
     bool m_shouldDispatchFirstLayoutAfterFinishedParsing;
+    bool m_shouldDispatchFirstLayoutAfterFinishedLoading;
     WebDisplayMode m_displayMode;
 
     FloatSize m_elasticOverscroll;
@@ -753,6 +754,8 @@ private:
     RefPtrWillBePersistent<EventListener> m_popupMouseWheelEventListener;
 
     WebPageImportanceSignals m_pageImportanceSignals;
+
+    const OwnPtr<WebViewScheduler> m_scheduler;
 };
 
 DEFINE_TYPE_CASTS(WebViewImpl, WebWidget, widget, widget->isWebView(), widget.isWebView());

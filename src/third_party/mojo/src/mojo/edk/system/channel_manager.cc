@@ -21,10 +21,12 @@ ChannelManager::ChannelManager(
     ConnectionManager* connection_manager)
     : platform_support_(platform_support),
       io_thread_task_runner_(io_thread_task_runner),
-      connection_manager_(connection_manager) {
+      connection_manager_(connection_manager),
+      weak_factory_(this) {
   DCHECK(platform_support_);
   DCHECK(io_thread_task_runner_);
   // (|connection_manager_| may be null.)
+  weak_ptr_ = weak_factory_.GetWeakPtr();
 }
 
 ChannelManager::~ChannelManager() {
@@ -33,6 +35,7 @@ ChannelManager::~ChannelManager() {
   // (e.g., we may never have had any channels, or we may have manually shut all
   // the channels down).
   DCHECK(channels_.empty());
+  DCHECK(!weak_factory_.HasWeakPtrs());
 }
 
 void ChannelManager::ShutdownOnIOThread() {
@@ -46,6 +49,8 @@ void ChannelManager::ShutdownOnIOThread() {
 
   for (auto& channel : channels)
     channel.second->Shutdown();
+
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 void ChannelManager::Shutdown(
@@ -91,7 +96,7 @@ scoped_refptr<MessagePipeDispatcher> ChannelManager::CreateChannel(
           &bootstrap_channel_endpoint);
   bool ok = io_thread_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&ChannelManager::CreateChannelHelper, base::Unretained(this),
+      base::Bind(&ChannelManager::CreateChannelHelper, weak_ptr_,
                  channel_id, base::Passed(&platform_handle),
                  bootstrap_channel_endpoint, callback,
                  callback_thread_task_runner));
@@ -129,7 +134,7 @@ void ChannelManager::ShutdownChannel(
   WillShutdownChannel(channel_id);
   bool ok = io_thread_task_runner_->PostTask(
       FROM_HERE, base::Bind(
-          &ChannelManager::ShutdownChannelHelper, base::Unretained(this),
+          &ChannelManager::ShutdownChannelHelper, weak_ptr_,
           channel_id, callback, callback_thread_task_runner));
   DCHECK(ok);
 }
@@ -182,14 +187,21 @@ scoped_refptr<Channel> ChannelManager::CreateChannelOnIOThreadHelper(
   return channel;
 }
 
+// static
 void ChannelManager::CreateChannelHelper(
+    base::WeakPtr<ChannelManager> channel_manager,
     ChannelId channel_id,
     embedder::ScopedPlatformHandle platform_handle,
     scoped_refptr<system::ChannelEndpoint> bootstrap_channel_endpoint,
     const base::Closure& callback,
     scoped_refptr<base::TaskRunner> callback_thread_task_runner) {
-  CreateChannelOnIOThreadHelper(channel_id, platform_handle.Pass(),
-                                bootstrap_channel_endpoint);
+  // TODO(amistry): Handle this gracefully after determining exactly what cases
+  // can cause this. There appear to be crashes caused by ChannelManager being
+  // destroyed before this point, which shouldn't be possible in the current
+  // uses of ChannelManager.
+  CHECK(channel_manager);
+  channel_manager->CreateChannelOnIOThreadHelper(
+      channel_id, platform_handle.Pass(), bootstrap_channel_endpoint);
   if (callback_thread_task_runner) {
     bool ok = callback_thread_task_runner->PostTask(FROM_HERE, callback);
     DCHECK(ok);

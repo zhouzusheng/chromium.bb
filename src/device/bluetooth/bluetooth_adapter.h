@@ -6,12 +6,12 @@
 #define DEVICE_BLUETOOTH_BLUETOOTH_ADAPTER_H_
 
 #include <list>
-#include <map>
 #include <set>
 #include <string>
 #include <utility>
 
 #include "base/callback.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "device/bluetooth/bluetooth_advertisement.h"
@@ -108,6 +108,11 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
     virtual void GattServiceRemoved(BluetoothAdapter* adapter,
                                     BluetoothDevice* device,
                                     BluetoothGattService* service) {}
+
+    // Called when all the GATT Services in |device| have been discovered
+    // and GattServiceAdded has been called for each service.
+    virtual void GattServicesDiscovered(BluetoothAdapter* adapter,
+                                        BluetoothDevice* device) {}
 
     // Called when all characteristic and descriptor discovery procedures are
     // known to be completed for the GATT service |service|. This method will be
@@ -216,7 +221,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
   // Returns a weak pointer to an existing adapter for testing purposes only.
   base::WeakPtr<BluetoothAdapter> GetWeakPtrForTesting();
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
   // Shutdown the adapter: tear down and clean up all objects owned by
   // BluetoothAdapter. After this call, the BluetoothAdapter will behave as if
   // no Bluetooth controller exists in the local system. |IsPresent| will return
@@ -394,7 +399,8 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
   friend class BluetoothDiscoverySession;
   friend class BluetoothTestBase;
 
-  typedef std::map<const std::string, BluetoothDevice*> DevicesMap;
+  typedef base::ScopedPtrHashMap<std::string, scoped_ptr<BluetoothDevice>>
+      DevicesMap;
   typedef std::pair<BluetoothDevice::PairingDelegate*, PairingDelegatePriority>
       PairingDelegatePair;
   typedef base::Callback<void(UMABluetoothDiscoverySessionOutcome)>

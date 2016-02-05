@@ -38,6 +38,7 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/CSSSelectorWatch.h"
 #include "core/dom/Document.h"
+#include "core/dom/DocumentStatisticsCollector.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/Fullscreen.h"
@@ -56,6 +57,7 @@
 #include "modules/accessibility/AXObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebDistillability.h"
 #include "public/platform/WebURL.h"
 #include "public/web/WebAXObject.h"
 #include "public/web/WebDOMEvent.h"
@@ -63,7 +65,6 @@
 #include "public/web/WebElement.h"
 #include "public/web/WebElementCollection.h"
 #include "public/web/WebFormElement.h"
-#include "public/web/WebNodeList.h"
 #include "web/WebLocalFrameImpl.h"
 #include "wtf/PassRefPtr.h"
 #include <v8.h>
@@ -320,6 +321,11 @@ bool WebDocument::manifestUseCredentials() const
     if (!linkElement)
         return false;
     return equalIgnoringCase(linkElement->fastGetAttribute(HTMLNames::crossoriginAttr), "use-credentials");
+}
+
+WebDistillabilityFeatures WebDocument::distillabilityFeatures()
+{
+    return DocumentStatisticsCollector::collectStatistics(*unwrap<Document>());
 }
 
 WebDocument::WebDocument(const PassRefPtrWillBeRawPtr<Document>& elem)

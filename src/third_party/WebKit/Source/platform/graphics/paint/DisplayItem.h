@@ -20,6 +20,7 @@
 namespace blink {
 
 class GraphicsContext;
+class IntRect;
 class WebDisplayItemList;
 
 class PLATFORM_EXPORT DisplayItem {
@@ -69,6 +70,7 @@ public:
         PopupListBoxBackground,
         PopupListBoxRow,
         PrintedContentBackground,
+        PrintedContentDestinationLocations,
         PrintedContentLineBoundary,
         PrintedContentPDFURLRect,
         Resizer,
@@ -90,8 +92,10 @@ public:
         ScrollbarVertical, // For ScrollbarThemeMacNonOverlayAPI only.
         SelectionGap,
         SelectionTint,
-        TableCellBackgroundFromContainers,
-        TableCellBackgroundFromSelfPaintingRow,
+        TableCellBackgroundFromColumnGroup,
+        TableCellBackgroundFromColumn,
+        TableCellBackgroundFromSection,
+        TableCellBackgroundFromRow,
         // Table collapsed borders can be painted together (e.g., left & top) but there are at most 4 phases of collapsed
         // border painting for a single cell. To disambiguate these phases of collapsed border painting, a mask is used.
         // TableCollapsedBorderBase can be larger than TableCollapsedBorderUnalignedBase to ensure the base lower bits are 0's.
@@ -165,14 +169,11 @@ public:
         BeginFixedPositionContainer,
         EndFixedPositionContainer,
 
-        SubsequenceFirst,
-        SubsequenceNegativeZOrder = SubsequenceFirst,
-        SubsequenceNormalFlowAndPositiveZOrder,
-        SubsequenceLast = SubsequenceNormalFlowAndPositiveZOrder,
-        EndSubsequenceFirst,
-        EndSubsequenceLast = EndSubsequenceFirst + SubsequenceLast - SubsequenceFirst,
-        CachedSubsequenceFirst,
-        CachedSubsequenceLast = CachedSubsequenceFirst + SubsequenceLast - SubsequenceFirst,
+        Subsequence,
+        EndSubsequence,
+        CachedSubsequence,
+
+        CachedDisplayItemList,
 
         UninitializedType,
         TypeLast = UninitializedType
@@ -181,7 +182,7 @@ public:
     static_assert(TableCollapsedBorderBase >= TableCollapsedBorderUnalignedBase, "TableCollapsedBorder types overlap with other types");
     static_assert((TableCollapsedBorderBase & 0xf) == 0, "The lowest 4 bits of TableCollapsedBorderBase should be zero");
     // Bits or'ed onto TableCollapsedBorderBase to generate a real table collapsed border type.
-    enum TableCollspaedBorderSides {
+    enum TableCollapsedBorderSides {
         TableCollapsedBorderTop = 1 << 0,
         TableCollapsedBorderRight = 1 << 1,
         TableCollapsedBorderBottom = 1 << 2,
@@ -233,8 +234,8 @@ public:
     {
         if (isCachedDrawingType(type))
             return cachedDrawingTypeToDrawingType(type);
-        if (isCachedSubsequenceType(type))
-            return cachedSubsequenceTypeToSubsequenceType(type);
+        if (type == CachedSubsequence)
+            return Subsequence;
         return type;
     }
 
@@ -244,7 +245,7 @@ public:
         return Id(m_client, nonCachedType(m_type), m_scope);
     }
 
-    virtual void replay(GraphicsContext&) { }
+    virtual void replay(GraphicsContext&) const { }
 
     DisplayItemClient client() const { return m_client; }
     Type type() const { return m_type; }
@@ -258,11 +259,11 @@ public:
     // supply this to the DisplayItem constructor.
     size_t derivedSize() const { return m_derivedSize; }
 
-    // For DisplayItemList only. Painters should use DisplayItemCacheSkipper instead.
+    // For PaintController only. Painters should use DisplayItemCacheSkipper instead.
     void setSkippedCache() { m_skippedCache = true; }
     bool skippedCache() const { return m_skippedCache; }
 
-    virtual void appendToWebDisplayItemList(WebDisplayItemList*) const { }
+    virtual void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const { }
 
     // See comments of enum Type for usage of the following macros.
 #define DEFINE_CATEGORY_METHODS(Category) \
@@ -314,13 +315,9 @@ public:
 
     DEFINE_PAIRED_CATEGORY_METHODS(Transform3D, transform3D)
 
-    DEFINE_PAIRED_CATEGORY_METHODS(Subsequence, subsequence)
-    DEFINE_CATEGORY_METHODS(CachedSubsequence)
-    DEFINE_CONVERSION_METHODS(Subsequence, subsequence, CachedSubsequence, cachedSubsequence)
-
-    static bool isCachedType(Type type) { return isCachedDrawingType(type) || isCachedSubsequenceType(type); }
+    static bool isCachedType(Type type) { return isCachedDrawingType(type) || type == CachedSubsequence || type == CachedDisplayItemList; }
     bool isCached() const { return isCachedType(m_type); }
-    static bool isCacheableType(Type type) { return isDrawingType(type) || isSubsequenceType(type); }
+    static bool isCacheableType(Type type) { return isDrawingType(type) || type == Subsequence; }
     bool isCacheable() const { return !skippedCache() && isCacheableType(m_type); }
 
     virtual bool isBegin() const { return false; }

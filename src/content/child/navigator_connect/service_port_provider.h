@@ -10,8 +10,8 @@
 #include "base/memory/ref_counted.h"
 #include "content/child/worker_task_runner.h"
 #include "content/common/service_port_service.mojom.h"
+#include "mojo/public/cpp/bindings/binding.h"
 #include "third_party/WebKit/public/platform/modules/navigator_services/WebServicePortProvider.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
 
 class GURL;
 
@@ -62,10 +62,10 @@ class ServicePortProvider
   void closePort(blink::WebServicePortID port_id) override;
 
   // ServicePortServiceClient implementation.
-  void PostMessage(int32_t port_id,
-                   const mojo::String& message,
-                   mojo::Array<MojoTransferredMessagePortPtr> ports,
-                   mojo::Array<int32_t> new_routing_ids) override;
+  void PostMessageToPort(int32_t port_id,
+                         const mojo::String& message,
+                         mojo::Array<MojoTransferredMessagePortPtr> ports,
+                         mojo::Array<int32_t> new_routing_ids) override;
 
  private:
   ~ServicePortProvider() override;

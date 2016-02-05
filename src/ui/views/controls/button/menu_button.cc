@@ -90,7 +90,6 @@ MenuButton::~MenuButton() {
 ////////////////////////////////////////////////////////////////////////////////
 
 bool MenuButton::Activate() {
-  PressedLock pressed_lock(this);
   if (listener_) {
     gfx::Rect lb = GetLocalBounds();
 
@@ -211,9 +210,12 @@ void MenuButton::OnMouseMoved(const ui::MouseEvent& event) {
 void MenuButton::OnGestureEvent(ui::GestureEvent* event) {
   if (state() != STATE_DISABLED) {
     if (ShouldEnterPushedState(*event) && !Activate()) {
-      // When |Activate()| returns |false|, it means that a menu is shown and
-      // has handled the gesture event. So, there is no need to further process
-      // the gesture event here.
+      // When |Activate()| returns |false|, it means the click was handled by
+      // a button listener and has handled the gesture event. So, there is no
+      // need to further process the gesture event here. However, if the
+      // listener didn't run menu code, we should make sure to reset our state.
+      if (state() == Button::STATE_HOVERED)
+        SetState(Button::STATE_NORMAL);
       return;
     }
     if (switches::IsTouchFeedbackEnabled()) {
@@ -323,6 +325,8 @@ void MenuButton::StateChanged() {
       should_disable_after_press_ = false;
     else if (state() == STATE_DISABLED)
       should_disable_after_press_ = true;
+  } else {
+    LabelButton::StateChanged();
   }
 }
 
@@ -342,7 +346,7 @@ void MenuButton::DecrementPressedLocked() {
     if (should_disable_after_press_) {
       desired_state = STATE_DISABLED;
       should_disable_after_press_ = false;
-    } else if (IsMouseHovered()) {
+    } else if (ShouldEnterHoveredState()) {
       desired_state = STATE_HOVERED;
     }
     SetState(desired_state);

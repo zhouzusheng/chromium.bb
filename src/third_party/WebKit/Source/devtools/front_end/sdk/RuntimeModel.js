@@ -197,7 +197,7 @@ WebInspector.RuntimeDispatcher.prototype = {
  * @constructor
  * @extends {WebInspector.SDKObject}
  * @param {!WebInspector.Target} target
- * @param {number|undefined} id
+ * @param {number} id
  * @param {string} name
  * @param {string} origin
  * @param {boolean} isPageContext
@@ -322,11 +322,13 @@ WebInspector.ExecutionContext.prototype = {
 
     /**
      * @param {string} expressionString
+     * @param {string} text
+     * @param {number} cursorOffset
      * @param {string} prefix
      * @param {boolean} force
      * @param {function(!Array.<string>, number=)} completionsReadyCallback
      */
-    completionsForExpression: function(expressionString, prefix, force, completionsReadyCallback)
+    completionsForExpression: function(expressionString, text, cursorOffset, prefix, force, completionsReadyCallback)
     {
         var lastIndex = expressionString.length - 1;
 

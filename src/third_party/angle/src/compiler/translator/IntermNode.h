@@ -516,6 +516,7 @@ class TIntermAggregate : public TIntermOperator
     void setUseEmulatedFunction() { mUseEmulatedFunction = true; }
     bool getUseEmulatedFunction() { return mUseEmulatedFunction; }
 
+    bool areChildrenConstQualified();
     void setPrecisionFromChildren();
     void setBuiltInFunctionPrecision();
 
@@ -781,16 +782,21 @@ class TIntermTraverser : angle::NonCopyable
     // To insert multiple nodes on the parent aggregate node
     struct NodeInsertMultipleEntry
     {
-        NodeInsertMultipleEntry(TIntermAggregate *_parent, TIntermSequence::size_type _position, TIntermSequence _insertions)
+        NodeInsertMultipleEntry(TIntermAggregate *_parent,
+                                TIntermSequence::size_type _position,
+                                TIntermSequence _insertionsBefore,
+                                TIntermSequence _insertionsAfter)
             : parent(_parent),
-            position(_position),
-            insertions(_insertions)
+              position(_position),
+              insertionsBefore(_insertionsBefore),
+              insertionsAfter(_insertionsAfter)
         {
         }
 
         TIntermAggregate *parent;
         TIntermSequence::size_type position;
-        TIntermSequence insertions;
+        TIntermSequence insertionsBefore;
+        TIntermSequence insertionsAfter;
     };
 
     // During traversing, save all the changes that need to happen into
@@ -806,6 +812,11 @@ class TIntermTraverser : angle::NonCopyable
     // Note that inserting more than one set of nodes to the same parent node on a single updateTree call is not
     // supported.
     void insertStatementsInParentBlock(const TIntermSequence &insertions);
+
+    // Same as above, but supports simultaneous insertion of statements before and after the node
+    // currently being traversed.
+    void insertStatementsInParentBlock(const TIntermSequence &insertionsBefore,
+                                       const TIntermSequence &insertionsAfter);
 
     // Helper to create a temporary symbol node with the given qualifier.
     TIntermSymbol *createTempSymbol(const TType &type, TQualifier qualifier);
@@ -884,7 +895,7 @@ class TLValueTrackingTraverser : public TIntermTraverser
     bool operatorRequiresLValue() const { return mOperatorRequiresLValue; }
 
     // Add a function encountered during traversal to the function map.
-    void addToFunctionMap(const TString &name, TIntermSequence *paramSequence);
+    void addToFunctionMap(const TName &name, TIntermSequence *paramSequence);
 
     // Return the parameters sequence from the function definition or prototype.
     TIntermSequence *getFunctionParameters(const TIntermAggregate *callNode);
@@ -896,13 +907,20 @@ class TLValueTrackingTraverser : public TIntermTraverser
     bool mOperatorRequiresLValue;
     bool mInFunctionCallOutParameter;
 
-    struct TStringComparator
+    struct TNameComparator
     {
-        bool operator()(const TString &a, const TString &b) const { return a.compare(b) < 0; }
+        bool operator()(const TName &a, const TName &b) const
+        {
+            int compareResult = a.getString().compare(b.getString());
+            if (compareResult != 0)
+                return compareResult < 0;
+            // Internal functions may have same names as non-internal functions.
+            return !a.isInternal() && b.isInternal();
+        }
     };
 
     // Map from mangled function names to their parameter sequences
-    TMap<TString, TIntermSequence *, TStringComparator> mFunctionMap;
+    TMap<TName, TIntermSequence *, TNameComparator> mFunctionMap;
 
     const TSymbolTable &mSymbolTable;
     const int mShaderVersion;

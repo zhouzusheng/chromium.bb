@@ -132,6 +132,8 @@ public:
 
     LayoutUnit minLineHeightForReplacedObject(bool isFirstLine, LayoutUnit replacedHeight) const;
 
+    bool createsNewFormattingContext() const;
+
     const LineBoxList& lineBoxes() const { return m_lineBoxes; }
     LineBoxList* lineBoxes() { return &m_lineBoxes; }
 
@@ -213,7 +215,7 @@ public:
     // Helper methods for computing line counts and heights for line counts.
     RootInlineBox* lineAtIndex(int) const;
     int lineCount(const RootInlineBox* = nullptr, bool* = nullptr) const;
-    int heightForLineCount(int);
+    int heightForLineCount(int lineCount);
     void clearTruncation();
 
     LayoutBoxModelObject* virtualContinuation() const final { return continuation(); }
@@ -231,7 +233,8 @@ public:
     int columnGap() const;
 
     // Accessors for logical width/height and margins in the containing block's block-flow direction.
-    LayoutUnit logicalWidthForChild(const LayoutBox& child) const { return isHorizontalWritingMode() ? child.size().width() : child.size().height(); }
+    LayoutUnit logicalWidthForChild(const LayoutBox& child) const { return logicalWidthForChildSize(child.size()); }
+    LayoutUnit logicalWidthForChildSize(LayoutSize childSize) const { return isHorizontalWritingMode() ? childSize.width() : childSize.height(); }
     LayoutUnit logicalHeightForChild(const LayoutBox& child) const { return isHorizontalWritingMode() ? child.size().height() : child.size().width(); }
     LayoutSize logicalSizeForChild(const LayoutBox& child) const { return isHorizontalWritingMode() ? child.size() : child.size().transposedSize(); }
     LayoutUnit logicalTopForChild(const LayoutBox& child) const { return isHorizontalWritingMode() ? child.location().y() : child.location().x(); }
@@ -279,7 +282,6 @@ protected:
     void dirtyForLayoutFromPercentageHeightDescendants(SubtreeLayoutScope&);
 
     void layout() override;
-    bool updateImageLoadingPriorities() final;
 
     enum PositionedLayoutBehavior {
         DefaultLayout,
@@ -312,7 +314,12 @@ protected:
 
     int firstLineBoxBaseline() const override;
     int inlineBlockBaseline(LineDirectionMode) const override;
-    int lastLineBoxBaseline(LineDirectionMode) const;
+
+    // This function disables the 'overflow' check in inlineBlockBaseline.
+    // For 'inline-block', CSS says that the baseline is the bottom margin edge
+    // if 'overflow' is not visible. But some descendant classes want to ignore
+    // this condition.
+    virtual bool shouldIgnoreOverflowPropertyForInlineBlockBaseline() const { return false; }
 
     void updateHitTestResult(HitTestResult&, const LayoutPoint&) override;
 
@@ -335,7 +342,7 @@ protected:
     virtual void simplifiedNormalFlowLayout();
 
 public:
-    virtual void computeOverflow(LayoutUnit oldClientAfterEdge);
+    virtual void computeOverflow(LayoutUnit oldClientAfterEdge, bool = false);
 protected:
     virtual void addOverflowFromChildren();
     void addOverflowFromPositionedObjects();
@@ -351,7 +358,7 @@ protected:
     bool isInlineBlockOrInlineTable() const final { return isInline() && isReplaced(); }
 
     void invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& childPaintInvalidationState) override;
-    void invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const override;
+    void invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer, PaintInvalidationReason, const LayoutRect* paintInvalidationRect) const override;
 
 private:
     LayoutObjectChildList* virtualChildren() final { return children(); }
@@ -364,14 +371,13 @@ private:
     virtual void removeLeftoverAnonymousBlock(LayoutBlock* child);
 
     static void collapseAnonymousBlockChild(LayoutBlock* parent, LayoutBlock* child);
+    void makeChildrenInlineIfPossible();
 
     void dirtyLinesFromChangedChild(LayoutObject* child) final { m_lineBoxes.dirtyLinesFromChangedChild(LineLayoutItem(this), LineLayoutItem(child)); }
 
     void addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild) override;
 
     bool isSelfCollapsingBlock() const override;
-
-    void removeAnonymousWrappersIfRequired();
 
     void insertIntoTrackedLayoutBoxMaps(LayoutBox* descendant, TrackedDescendantsMap*&, TrackedContainerMap*&);
     static void removeFromTrackedLayoutBoxMaps(LayoutBox* descendant, TrackedDescendantsMap*&, TrackedContainerMap*&);
@@ -444,15 +450,10 @@ protected:
     // is 800. AssociateWithFormerPage will simply return 800.
     LayoutUnit nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundaryRule) const;
 
-    bool createsNewFormattingContext() const;
-
-    // A page break is required at some offset due to space shortage in the current fragmentainer.
-    void setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage);
-
-    // Update minimum page height required to avoid fragmentation where it shouldn't occur (inside
-    // unbreakable content, between orphans and widows, etc.). This will be used as a hint to the
-    // column balancer to help set a good minimum column height.
-    void updateMinimumPageHeight(LayoutUnit offset, LayoutUnit minHeight);
+    // Paginated content inside this block was laid out.
+    // |logicalTopOffsetAfterPagination| is the logical top offset of the child content after
+    // applying any forced or unforced break, if needed.
+    void paginatedContentWasLaidOut(LayoutUnit logicalTopOffsetAfterPagination);
 
     // Adjust from painting offsets to the local coords of this layoutObject
     void offsetForContents(LayoutPoint&) const;

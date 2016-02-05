@@ -67,7 +67,7 @@ class InspectorOverlay final
     , public InspectorPageAgent::Client
     , public InspectorProfilerAgent::Client
     , public InspectorOverlayHost::Listener {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorOverlay);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(InspectorOverlay);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InspectorOverlay);
 public:
     static PassOwnPtrWillBeRawPtr<InspectorOverlay> create(WebViewImpl* webViewImpl)
@@ -84,6 +84,7 @@ public:
     bool handleInputEvent(const WebInputEvent&);
     void layout();
     PageOverlay* pageOverlay() { return m_pageOverlay.get(); };
+    String evaluateInOverlayForTest(const String&);
 
 private:
     explicit InspectorOverlay(WebViewImpl*);

@@ -97,15 +97,6 @@ scoped_refptr<Dispatcher> Core::GetDispatcher(MojoHandle handle) {
   return handle_table_.GetDispatcher(handle);
 }
 
-MojoResult Core::GetAndRemoveDispatcher(MojoHandle handle,
-                                        scoped_refptr<Dispatcher>* dispatcher) {
-  if (handle == MOJO_HANDLE_INVALID)
-    return MOJO_RESULT_INVALID_ARGUMENT;
-
-  base::AutoLock locker(handle_table_lock_);
-  return handle_table_.GetAndRemoveDispatcher(handle, dispatcher);
-}
-
 MojoResult Core::AsyncWait(MojoHandle handle,
                            MojoHandleSignals signals,
                            const base::Callback<void(MojoResult)>& callback) {
@@ -214,8 +205,10 @@ MojoResult Core::CreateMessagePipe(
   }
 
   PlatformChannelPair channel_pair;
-  dispatcher0->Init(channel_pair.PassServerHandle());
-  dispatcher1->Init(channel_pair.PassClientHandle());
+  dispatcher0->Init(channel_pair.PassServerHandle(), nullptr, 0u, nullptr, 0u,
+                    nullptr, nullptr);
+  dispatcher1->Init(channel_pair.PassClientHandle(), nullptr, 0u, nullptr, 0u,
+                    nullptr, nullptr);
 
   *message_pipe_handle0 = handle_pair.first;
   *message_pipe_handle1 = handle_pair.second;
@@ -372,8 +365,8 @@ MojoResult Core::CreateDataPipe(
   DCHECK_NE(handle_pair.second, MOJO_HANDLE_INVALID);
 
   PlatformChannelPair channel_pair;
-  producer_dispatcher->Init(channel_pair.PassServerHandle());
-  consumer_dispatcher->Init(channel_pair.PassClientHandle());
+  producer_dispatcher->Init(channel_pair.PassServerHandle(), nullptr, 0u);
+  consumer_dispatcher->Init(channel_pair.PassClientHandle(), nullptr, 0u);
 
   *data_pipe_producer_handle = handle_pair.first;
   *data_pipe_consumer_handle = handle_pair.second;
@@ -555,7 +548,7 @@ MojoResult Core::WaitManyInternal(const MojoHandle* handles,
   for (uint32_t i = 0; i < num_handles; i++) {
     scoped_refptr<Dispatcher> dispatcher = GetDispatcher(handles[i]);
     if (!dispatcher) {
-      if (result_index && result_index)
+      if (result_index)
         *result_index = i;
       return MOJO_RESULT_INVALID_ARGUMENT;
     }
@@ -579,10 +572,13 @@ MojoResult Core::WaitManyInternal(const MojoHandle* handles,
   }
   uint32_t num_added = i;
 
-  if (rv == MOJO_RESULT_ALREADY_EXISTS)
+  if (rv == MOJO_RESULT_ALREADY_EXISTS) {
     rv = MOJO_RESULT_OK;  // The i-th one is already "triggered".
-  else if (rv == MOJO_RESULT_OK)
-    rv = waiter.Wait(deadline, result_index);
+  } else if (rv == MOJO_RESULT_OK) {
+    uintptr_t uintptr_result = *result_index;
+    rv = waiter.Wait(deadline, &uintptr_result);
+    *result_index = static_cast<uint32_t>(uintptr_result);
+  }
 
   // Make sure no other dispatchers try to wake |waiter| for the current
   // |Wait()|/|WaitMany()| call. (Only after doing this can |waiter| be

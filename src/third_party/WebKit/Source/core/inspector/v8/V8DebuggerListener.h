@@ -44,7 +44,7 @@ enum CompileResult { CompileSuccess, CompileError };
 class CORE_EXPORT V8DebuggerListener {
 public:
     class Script {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         Script();
 
@@ -59,6 +59,7 @@ public:
         int endColumn() const { return m_endColumn; }
         bool isContentScript() const { return m_isContentScript; }
         bool isInternalScript() const { return m_isInternalScript; }
+        bool isLiveEdit() const { return m_isLiveEdit; }
 
         bool getBlackboxedState(unsigned blackboxGeneration, bool* isBlackboxed) const;
         void setBlackboxedState(unsigned blackboxGeneration, bool isBlackboxed);
@@ -73,6 +74,7 @@ public:
         Script& setEndColumn(int);
         Script& setIsContentScript(bool);
         Script& setIsInternalScript(bool);
+        Script& setIsLiveEdit(bool);
 
     private:
         String m_url;
@@ -85,6 +87,7 @@ public:
         int m_endColumn;
         bool m_isContentScript;
         bool m_isInternalScript;
+        bool m_isLiveEdit;
         // Used from outside for caching.
         bool m_isBlackboxedURL;
         unsigned m_blackboxGeneration;
@@ -99,7 +102,7 @@ public:
     };
 
     struct ParsedScript {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
         String scriptId;
         Script script;
         CompileResult compileResult;

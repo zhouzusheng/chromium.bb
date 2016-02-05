@@ -46,6 +46,8 @@ bool GpuVideoDecodeAcceleratorHost::OnMessageReceived(const IPC::Message& msg) {
   DCHECK(CalledOnValidThread());
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(GpuVideoDecodeAcceleratorHost, msg)
+    IPC_MESSAGE_HANDLER(AcceleratedVideoDecoderHostMsg_CdmAttached,
+                        OnCdmAttached)
     IPC_MESSAGE_HANDLER(AcceleratedVideoDecoderHostMsg_BitstreamBufferProcessed,
                         OnBitstreamBufferProcessed)
     IPC_MESSAGE_HANDLER(AcceleratedVideoDecoderHostMsg_ProvidePictureBuffers,
@@ -104,6 +106,13 @@ bool GpuVideoDecodeAcceleratorHost::Initialize(media::VideoCodecProfile profile,
   return true;
 }
 
+void GpuVideoDecodeAcceleratorHost::SetCdm(int cdm_id) {
+  DCHECK(CalledOnValidThread());
+  if (!channel_)
+    return;
+  Send(new AcceleratedVideoDecoderMsg_SetCdm(decoder_route_id_, cdm_id));
+}
+
 void GpuVideoDecodeAcceleratorHost::Decode(
     const media::BitstreamBuffer& bitstream_buffer) {
   DCHECK(CalledOnValidThread());
@@ -117,9 +126,16 @@ void GpuVideoDecodeAcceleratorHost::Decode(
     return;
   }
 
-  Send(new AcceleratedVideoDecoderMsg_Decode(
-      decoder_route_id_, handle, bitstream_buffer.id(), bitstream_buffer.size(),
-      bitstream_buffer.presentation_timestamp()));
+  AcceleratedVideoDecoderMsg_Decode_Params params;
+  params.bitstream_buffer_id = bitstream_buffer.id();
+  params.buffer_handle = handle;
+  params.size = bitstream_buffer.size();
+  params.presentation_timestamp = bitstream_buffer.presentation_timestamp();
+  params.key_id = bitstream_buffer.key_id();
+  params.iv = bitstream_buffer.iv();
+  params.subsamples = bitstream_buffer.subsamples();
+
+  Send(new AcceleratedVideoDecoderMsg_Decode(decoder_route_id_, params));
 }
 
 void GpuVideoDecodeAcceleratorHost::AssignPictureBuffers(
@@ -200,6 +216,12 @@ void GpuVideoDecodeAcceleratorHost::Send(IPC::Message* message) {
     DLOG(ERROR) << "Send(" << message_type << ") failed";
     PostNotifyError(PLATFORM_FAILURE);
   }
+}
+
+void GpuVideoDecodeAcceleratorHost::OnCdmAttached(bool success) {
+  DCHECK(CalledOnValidThread());
+  if (client_)
+    client_->NotifyCdmAttached(success);
 }
 
 void GpuVideoDecodeAcceleratorHost::OnBitstreamBufferProcessed(

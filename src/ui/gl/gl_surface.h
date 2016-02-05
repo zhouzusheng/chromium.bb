@@ -19,10 +19,14 @@
 #include "ui/gl/gl_export.h"
 #include "ui/gl/gl_implementation.h"
 
+namespace gl {
+class GLImage;
+}
+
 namespace gfx {
 
 class GLContext;
-class GLImage;
+class Transform;
 class VSyncProvider;
 
 // Encapsulates a surface that can be rendered to with GL, hiding platform
@@ -40,7 +44,7 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // Destroys the surface.
   virtual void Destroy() = 0;
 
-  virtual bool Resize(const gfx::Size& size);
+  virtual bool Resize(const gfx::Size& size, float scale_factor);
 
   // Recreate the surface without changing the size.
   virtual bool Recreate();
@@ -137,9 +141,18 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // |bounds_rect|.
   virtual bool ScheduleOverlayPlane(int z_order,
                                     OverlayTransform transform,
-                                    GLImage* image,
+                                    gl::GLImage* image,
                                     const Rect& bounds_rect,
                                     const RectF& crop_rect);
+
+  // Schedule a CALayer to be shown at swap time.
+  // All arguments correspond to their CALayer properties.
+  virtual bool ScheduleCALayer(gl::GLImage* contents_image,
+                               const RectF& contents_rect,
+                               float opacity,
+                               unsigned background_color,
+                               const SizeF& size,
+                               const Transform& transform);
 
   virtual bool IsSurfaceless() const;
 
@@ -192,7 +205,7 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
 
   bool Initialize() override;
   void Destroy() override;
-  bool Resize(const gfx::Size& size) override;
+  bool Resize(const gfx::Size& size, float scale_factor) override;
   bool Recreate() override;
   bool DeferDraws() override;
   bool IsOffscreen() override;
@@ -218,7 +231,7 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
   VSyncProvider* GetVSyncProvider() override;
   bool ScheduleOverlayPlane(int z_order,
                             OverlayTransform transform,
-                            GLImage* image,
+                            gl::GLImage* image,
                             const Rect& bounds_rect,
                             const RectF& crop_rect) override;
   bool IsSurfaceless() const override;

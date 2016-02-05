@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -16,6 +17,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/renderer_preferences.h"
+#include "content/public/common/webrtc_ip_handling_policy.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_audio_processor.h"
@@ -62,6 +64,28 @@
 #endif
 
 namespace content {
+
+namespace {
+
+enum WebRTCIPHandlingPolicy {
+  DEFAULT,
+  DEFAULT_PUBLIC_AND_PRIVATE_INTERFACES,
+  DEFAULT_PUBLIC_INTERFACE_ONLY,
+  DISABLE_NON_PROXIED_UDP,
+};
+
+WebRTCIPHandlingPolicy GetWebRTCIPHandlingPolicy(
+    const std::string& preference) {
+  if (preference == kWebRTCIPHandlingDefaultPublicAndPrivateInterfaces)
+    return DEFAULT_PUBLIC_AND_PRIVATE_INTERFACES;
+  if (preference == kWebRTCIPHandlingDefaultPublicInterfaceOnly)
+    return DEFAULT_PUBLIC_INTERFACE_ONLY;
+  if (preference == kWebRTCIPHandlingDisableNonProxiedUdp)
+    return DISABLE_NON_PROXIED_UDP;
+  return DEFAULT;
+}
+
+}  // namespace
 
 // Map of corresponding media constraints and platform effects.
 struct {
@@ -164,7 +188,7 @@ class P2PPortAllocatorFactory
       }
       network_manager.reset(filtering_network_manager);
     } else {
-      network_manager.reset(new EmptyNetworkManager());
+      network_manager.reset(new EmptyNetworkManager(network_manager_));
     }
 
     return new P2PPortAllocator(socket_dispatcher_, network_manager.Pass(),
@@ -294,7 +318,6 @@ PeerConnectionDependencyFactory::GetPcFactory() {
   return pc_factory_;
 }
 
-
 void PeerConnectionDependencyFactory::WillDestroyCurrentMessageLoop() {
   CleanupPeerConnectionFactory();
 }
@@ -356,7 +379,7 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
 }
 
 void PeerConnectionDependencyFactory::InitializeSignalingThread(
-    const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories,
+    media::GpuVideoAcceleratorFactories* gpu_factories,
     base::WaitableEvent* event) {
   DCHECK(chrome_signaling_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK(worker_thread_);
@@ -426,30 +449,13 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
 
   rtc::scoped_ptr<PeerConnectionIdentityStore> identity_store(
       new PeerConnectionIdentityStore(
+          base::ThreadTaskRunnerHandle::Get(),
+          GetWebRtcSignalingThread(),
           GURL(web_frame->document().url()),
           GURL(web_frame->document().firstPartyForCookies())));
 
   // Copy the flag from Preference associated with this WebFrame.
   P2PPortAllocator::Config port_config;
-  if (web_frame && web_frame->view()) {
-    RenderViewImpl* renderer_view_impl =
-        RenderViewImpl::FromWebView(web_frame->view());
-    if (renderer_view_impl) {
-      // TODO(guoweis): |enable_multiple_routes| should be renamed to
-      // |request_multiple_routes|. Whether local IP addresses could be
-      // collected depends on if mic/camera permission is granted for this
-      // origin.
-      port_config.enable_multiple_routes =
-          renderer_view_impl->renderer_preferences()
-              .enable_webrtc_multiple_routes;
-      port_config.enable_nonproxied_udp =
-          renderer_view_impl->renderer_preferences()
-              .enable_webrtc_nonproxied_udp;
-    }
-  }
-
-  bool enforce_preferences =
-      GetContentClient()->renderer()->ShouldEnforceWebRTCRoutingPreferences();
 
   // |media_permission| will be called to check mic/camera permission. If at
   // least one of them is granted, P2PPortAllocator is allowed to gather local
@@ -458,27 +464,69 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
   // case when either the experiment is not enabled or the preference is not
   // enforced.
   scoped_ptr<media::MediaPermission> media_permission;
-  const std::string group_name =
-      base::FieldTrialList::FindFullName("WebRTC-LocalIPPermissionCheck");
-  if (enforce_preferences &&
-      StartsWith(group_name, "Enabled", base::CompareCase::SENSITIVE) &&
-      port_config.enable_multiple_routes) {
-    RenderFrameImpl* render_frame = RenderFrameImpl::FromWebFrame(web_frame);
-    if (render_frame) {
-      media_permission = render_frame->CreateMediaPermissionProxy(
-          chrome_worker_thread_.task_runner());
-      DCHECK(media_permission);
-    }
-  }
-
-  if (!enforce_preferences) {
-    VLOG(3) << "WebRTC routing preferences will not be enforced";
+  if (!GetContentClient()
+           ->renderer()
+           ->ShouldEnforceWebRTCRoutingPreferences()) {
     port_config.enable_multiple_routes = true;
     port_config.enable_nonproxied_udp = true;
+    VLOG(3) << "WebRTC routing preferences will not be enforced";
   } else {
-    VLOG(3) << "WebRTC routing preferences: multiple_routes: "
-            << port_config.enable_multiple_routes
-            << ", nonproxied_udp: " << port_config.enable_nonproxied_udp;
+    if (web_frame && web_frame->view()) {
+      RenderViewImpl* renderer_view_impl =
+          RenderViewImpl::FromWebView(web_frame->view());
+      if (renderer_view_impl) {
+        // TODO(guoweis): |enable_multiple_routes| should be renamed to
+        // |request_multiple_routes|. Whether local IP addresses could be
+        // collected depends on if mic/camera permission is granted for this
+        // origin.
+        WebRTCIPHandlingPolicy policy =
+            GetWebRTCIPHandlingPolicy(renderer_view_impl->renderer_preferences()
+                                          .webrtc_ip_handling_policy);
+        switch (policy) {
+          // TODO(guoweis): specify the flag of disabling local candidate
+          // collection when webrtc is updated.
+          case DEFAULT_PUBLIC_INTERFACE_ONLY:
+          case DEFAULT_PUBLIC_AND_PRIVATE_INTERFACES:
+            port_config.enable_multiple_routes = false;
+            port_config.enable_nonproxied_udp = true;
+            port_config.enable_default_local_candidate =
+                (policy == DEFAULT_PUBLIC_AND_PRIVATE_INTERFACES);
+            break;
+          case DISABLE_NON_PROXIED_UDP:
+            port_config.enable_multiple_routes = false;
+            port_config.enable_nonproxied_udp = false;
+            break;
+          case DEFAULT:
+            port_config.enable_multiple_routes = true;
+            port_config.enable_nonproxied_udp = true;
+            break;
+        }
+
+        VLOG(3) << "WebRTC routing preferences: "
+                << "policy: " << policy
+                << ", multiple_routes: " << port_config.enable_multiple_routes
+                << ", nonproxied_udp: " << port_config.enable_nonproxied_udp;
+      }
+    }
+    if (port_config.enable_multiple_routes) {
+      bool create_media_permission =
+          base::CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kEnforceWebRtcIPPermissionCheck);
+      create_media_permission =
+          create_media_permission ||
+          StartsWith(base::FieldTrialList::FindFullName(
+                         "WebRTC-LocalIPPermissionCheck"),
+                     "Enabled", base::CompareCase::SENSITIVE);
+      if (create_media_permission) {
+        content::RenderFrameImpl* render_frame =
+            content::RenderFrameImpl::FromWebFrame(web_frame);
+        if (render_frame) {
+          media_permission = render_frame->CreateMediaPermissionProxy(
+              chrome_worker_thread_.task_runner());
+        }
+        DCHECK(media_permission);
+      }
+    }
   }
 
   const GURL& requesting_origin =
@@ -650,8 +698,6 @@ void PeerConnectionDependencyFactory::TryScheduleStunProbeTrial() {
   if (!cmd_line->HasSwitch(switches::kWebRtcStunProbeTrialParameter))
     return;
 
-  GetPcFactory();
-
   // The underneath IPC channel has to be connected before sending any IPC
   // message.
   if (!p2p_socket_dispatcher_->connected()) {
@@ -662,6 +708,12 @@ void PeerConnectionDependencyFactory::TryScheduleStunProbeTrial() {
         base::TimeDelta::FromSeconds(1));
     return;
   }
+
+  // GetPcFactory could trigger an IPC message. If done before
+  // |p2p_socket_dispatcher_| is connected, that'll put the
+  // |p2p_socket_dispatcher_| in a bad state such that no other IPC message can
+  // be processed.
+  GetPcFactory();
 
   const std::string params =
       cmd_line->GetSwitchValueASCII(switches::kWebRtcStunProbeTrialParameter);
@@ -676,10 +728,10 @@ void PeerConnectionDependencyFactory::TryScheduleStunProbeTrial() {
 
 void PeerConnectionDependencyFactory::StartStunProbeTrialOnWorkerThread(
     const std::string& params) {
+  DCHECK(network_manager_);
   DCHECK(chrome_worker_thread_.task_runner()->BelongsToCurrentThread());
-  rtc::NetworkManager::NetworkList networks;
-  network_manager_->GetNetworks(&networks);
-  stun_prober_ = StartStunProbeTrial(networks, params, socket_factory_.get());
+  stun_trial_.reset(
+      new StunProberTrial(network_manager_, params, socket_factory_.get()));
 }
 
 void PeerConnectionDependencyFactory::CreateIpcNetworkManagerOnWorkerThread(
@@ -731,6 +783,11 @@ PeerConnectionDependencyFactory::CreateAudioCapturer(
   return WebRtcAudioCapturer::CreateCapturer(
       render_frame_id, device_info, constraints, GetWebRtcAudioDevice(),
       audio_source);
+}
+
+void PeerConnectionDependencyFactory::EnsureInitialized() {
+  DCHECK(CalledOnValidThread());
+  GetPcFactory();
 }
 
 scoped_refptr<base::SingleThreadTaskRunner>

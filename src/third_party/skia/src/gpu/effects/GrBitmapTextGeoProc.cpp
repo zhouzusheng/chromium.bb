@@ -11,7 +11,10 @@
 #include "gl/GrGLFragmentProcessor.h"
 #include "gl/GrGLTexture.h"
 #include "gl/GrGLGeometryProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLVertexShaderBuilder.h"
 
 class GrGLBitmapTextGeoProc : public GrGLGeometryProcessor {
 public:
@@ -20,8 +23,8 @@ public:
     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
         const GrBitmapTextGeoProc& cte = args.fGP.cast<GrBitmapTextGeoProc>();
 
-        GrGLGPBuilder* pb = args.fPB;
-        GrGLVertexBuilder* vsBuilder = pb->getVertexShaderBuilder();
+        GrGLSLGPBuilder* pb = args.fPB;
+        GrGLSLVertexBuilder* vsBuilder = pb->getVertexShaderBuilder();
 
         // emit attributes
         vsBuilder->emitAttributes(cte);
@@ -33,7 +36,7 @@ public:
         SkScalar recipWidth = 1.0f / atlas->width();
         SkScalar recipHeight = 1.0f / atlas->height();
 
-        GrGLVertToFrag v(kVec2f_GrSLType);
+        GrGLSLVertToFrag v(kVec2f_GrSLType);
         pb->addVarying("TextureCoords", &v);
         vsBuilder->codeAppendf("%s = vec2(%.*f, %.*f) * %s;", v.vsOut(),
                                GR_SIGNIFICANT_POW2_DECIMAL_DIG, recipWidth,
@@ -56,7 +59,7 @@ public:
         this->emitTransforms(args.fPB, gpArgs->fPositionVar, cte.inPosition()->fName,
                              cte.localMatrix(), args.fTransformsIn, args.fTransformsOut);
 
-        GrGLFragmentBuilder* fsBuilder = pb->getFragmentShaderBuilder();
+        GrGLSLFragmentBuilder* fsBuilder = pb->getFragmentShaderBuilder();
         if (cte.maskFormat() == kARGB_GrMaskFormat) {
             fsBuilder->codeAppendf("%s = ", args.fOutputColor);
             fsBuilder->appendTextureLookupAndModulate(args.fOutputColor,
@@ -78,10 +81,10 @@ public:
         }
     }
 
-    void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
+    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
         const GrBitmapTextGeoProc& btgp = gp.cast<GrBitmapTextGeoProc>();
         if (btgp.color() != fColor && !btgp.hasVertexColor()) {
-            GrGLfloat c[4];
+            float c[4];
             GrColorToRGBAFloat(btgp.color(), c);
             pdman.set4fv(fColorUniform, 1, c);
             fColor = btgp.color();
@@ -89,7 +92,7 @@ public:
     }
 
     void setTransformData(const GrPrimitiveProcessor& primProc,
-                          const GrGLProgramDataManager& pdman,
+                          const GrGLSLProgramDataManager& pdman,
                           int index,
                           const SkTArray<const GrCoordTransform*, true>& transforms) override {
         this->setTransformDataHelper<GrBitmapTextGeoProc>(primProc, pdman, index, transforms);

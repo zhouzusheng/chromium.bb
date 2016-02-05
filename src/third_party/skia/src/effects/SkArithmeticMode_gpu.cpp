@@ -15,12 +15,14 @@
 #include "GrTexture.h"
 #include "gl/GrGLCaps.h"
 #include "gl/GrGLFragmentProcessor.h"
-#include "gl/GrGLProgramDataManager.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "gl/GrGLXferProcessor.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 
 static const bool gUseUnpremul = false;
 
-static void add_arithmetic_code(GrGLFragmentBuilder* fsBuilder,
+static void add_arithmetic_code(GrGLSLFragmentBuilder* fsBuilder,
                                 const char* srcColor,
                                 const char* dstColor,
                                 const char* outputColor,
@@ -54,16 +56,17 @@ static void add_arithmetic_code(GrGLFragmentBuilder* fsBuilder,
 
 class GLArithmeticFP : public GrGLFragmentProcessor {
 public:
-    GLArithmeticFP(const GrProcessor&) : fEnforcePMColor(true) {}
+    GLArithmeticFP(const GrArithmeticFP& arithmeticFP)
+        : fEnforcePMColor(arithmeticFP.enforcePMColor()) {}
 
     ~GLArithmeticFP() override {}
 
     void emitCode(EmitArgs& args) override {
-        GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+        GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
         SkString dstColor("dstColor");
         this->emitChild(0, nullptr, &dstColor, args);
 
-        fKUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+        fKUni = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                           kVec4f_GrSLType, kDefault_GrSLPrecision,
                                           "k");
         const char* kUni = args.fBuilder->getUniformCStr(fKUni);
@@ -79,14 +82,14 @@ public:
     }
 
 protected:
-    void onSetData(const GrGLProgramDataManager& pdman, const GrProcessor& proc) override {
+    void onSetData(const GrGLSLProgramDataManager& pdman, const GrProcessor& proc) override {
         const GrArithmeticFP& arith = proc.cast<GrArithmeticFP>();
         pdman.set4f(fKUni, arith.k1(), arith.k2(), arith.k3(), arith.k4());
         fEnforcePMColor = arith.enforcePMColor();
     }
 
 private:
-    GrGLProgramDataManager::UniformHandle fKUni;
+    GrGLSLProgramDataManager::UniformHandle fKUni;
     bool fEnforcePMColor;
 
     typedef GrGLFragmentProcessor INHERITED;
@@ -94,8 +97,8 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrArithmeticFP::GrArithmeticFP(GrProcessorDataManager*, float k1, float k2, float k3, float k4,
-                               bool enforcePMColor, const GrFragmentProcessor* dst)
+GrArithmeticFP::GrArithmeticFP(float k1, float k2, float k3, float k4, bool enforcePMColor,
+                               const GrFragmentProcessor* dst)
   : fK1(k1), fK2(k2), fK3(k3), fK4(k4), fEnforcePMColor(enforcePMColor) {
     this->initClassID<GrArithmeticFP>();
 
@@ -136,7 +139,7 @@ const GrFragmentProcessor* GrArithmeticFP::TestCreate(GrProcessorTestData* d) {
     bool enforcePMColor = d->fRandom->nextBool();
 
     SkAutoTUnref<const GrFragmentProcessor> dst(GrProcessorUnitTest::CreateChildFP(d));
-    return new GrArithmeticFP(d->fProcDataManager, k1, k2, k3, k4, enforcePMColor, dst);
+    return new GrArithmeticFP(k1, k2, k3, k4, enforcePMColor, dst);
 }
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrArithmeticFP);
@@ -191,8 +194,8 @@ private:
 
 class GLArithmeticXP : public GrGLXferProcessor {
 public:
-    GLArithmeticXP(const GrProcessor&)
-        : fEnforcePMColor(true) {
+    GLArithmeticXP(const ArithmeticXP& arithmeticXP)
+        : fEnforcePMColor(arithmeticXP.enforcePMColor()) {
     }
 
     ~GLArithmeticXP() override {}
@@ -205,11 +208,11 @@ public:
     }
 
 private:
-    void emitBlendCodeForDstRead(GrGLXPBuilder* pb, const char* srcColor, const char* dstColor,
+    void emitBlendCodeForDstRead(GrGLSLXPBuilder* pb, const char* srcColor, const char* dstColor,
                                  const char* outColor, const GrXferProcessor& proc) override {
-        GrGLXPFragmentBuilder* fsBuilder = pb->getFragmentShaderBuilder();
+        GrGLSLXPFragmentBuilder* fsBuilder = pb->getFragmentShaderBuilder();
 
-        fKUni = pb->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+        fKUni = pb->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                kVec4f_GrSLType, kDefault_GrSLPrecision,
                                "k");
         const char* kUni = pb->getUniformCStr(fKUni);
@@ -217,14 +220,14 @@ private:
         add_arithmetic_code(fsBuilder, srcColor, dstColor, outColor, kUni, fEnforcePMColor);
     }
 
-    void onSetData(const GrGLProgramDataManager& pdman,
+    void onSetData(const GrGLSLProgramDataManager& pdman,
                    const GrXferProcessor& processor) override {
         const ArithmeticXP& arith = processor.cast<ArithmeticXP>();
         pdman.set4f(fKUni, arith.k1(), arith.k2(), arith.k3(), arith.k4());
         fEnforcePMColor = arith.enforcePMColor();
     };
 
-    GrGLProgramDataManager::UniformHandle fKUni;
+    GrGLSLProgramDataManager::UniformHandle fKUni;
     bool fEnforcePMColor;
 
     typedef GrGLXferProcessor INHERITED;
@@ -260,7 +263,7 @@ GrXferProcessor::OptFlags ArithmeticXP::onGetOptimizations(const GrProcOptInfo& 
 ///////////////////////////////////////////////////////////////////////////////
 
 GrArithmeticXPFactory::GrArithmeticXPFactory(float k1, float k2, float k3, float k4,
-                                             bool enforcePMColor) 
+                                             bool enforcePMColor)
     : fK1(k1), fK2(k2), fK3(k3), fK4(k4), fEnforcePMColor(enforcePMColor) {
     this->initClassID<GrArithmeticXPFactory>();
 }

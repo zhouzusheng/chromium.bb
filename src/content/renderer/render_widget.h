@@ -75,10 +75,15 @@ namespace gfx {
 class Range;
 }
 
+namespace scheduler {
+class RenderWidgetSchedulingState;
+}
+
 namespace content {
 class CompositorDependencies;
 class ExternalPopupMenu;
 class FrameSwapMessageQueue;
+class ImeEventGuard;
 class PepperPluginInstanceImpl;
 class RenderFrameImpl;
 class RenderFrameProxy;
@@ -118,13 +123,14 @@ class CONTENT_EXPORT RenderWidget
                                       blink::WebLocalFrame* frame);
 
   // Closes a RenderWidget that was created by |CreateForFrame|.
-  void CloseForFrame();
+  // TODO(avi): De-virtualize this once RenderViewImpl has-a RenderWidget.
+  // https://crbug.com/545684
+  virtual void CloseForFrame();
 
   int32 routing_id() const { return routing_id_; }
   CompositorDependencies* compositor_deps() const { return compositor_deps_; }
   blink::WebWidget* webwidget() const { return webwidget_; }
   gfx::Size size() const { return size_; }
-  bool has_focus() const { return has_focus_; }
   bool is_fullscreen_granted() const { return is_fullscreen_granted_; }
   blink::WebDisplayMode display_mode() const { return display_mode_; }
   bool is_hidden() const { return is_hidden_; }
@@ -170,10 +176,8 @@ class CONTENT_EXPORT RenderWidget
   void didAutoResize(const blink::WebSize& new_size) override;
   void initializeLayerTreeView() override;
   blink::WebLayerTreeView* layerTreeView() override;
-  void didFirstVisuallyNonEmptyLayout() override;
-  void didFirstLayoutAfterFinishedParsing() override;
+  void didMeaningfulLayout(blink::WebMeaningfulLayout layout_type) override;
   void didFocus() override;
-  void didBlur() override;
   void didChangeCursor(const blink::WebCursorInfo&) override;
   void closeWidgetSoon() override;
   void show(blink::WebNavigationPolicy) override;
@@ -184,7 +188,6 @@ class CONTENT_EXPORT RenderWidget
   blink::WebRect windowResizerRect() override;
   blink::WebRect rootWindowRect() override;
   blink::WebScreenInfo screenInfo() override;
-  float deviceScaleFactor() override;
   void resetInputMethod() override;
   void didHandleGestureEvent(const blink::WebGestureEvent& event,
                              bool event_cancelled) override;
@@ -243,9 +246,9 @@ class CONTENT_EXPORT RenderWidget
   // |policy| see the comment on MessageDeliveryPolicy.
   void QueueMessage(IPC::Message* msg, MessageDeliveryPolicy policy);
 
-  // Handle common setup/teardown for handling IME events.
-  void StartHandlingImeEvent();
-  void FinishHandlingImeEvent();
+  // Handle start and finish of IME event guard.
+  void OnImeEventGuardStart(ImeEventGuard* guard);
+  void OnImeEventGuardFinish(ImeEventGuard* guard);
 
   // Returns whether we currently should handle an IME event.
   bool ShouldHandleImeEvent();
@@ -411,8 +414,7 @@ class CONTENT_EXPORT RenderWidget
 
   // RenderWidget IPC message handlers
   void OnHandleInputEvent(const blink::WebInputEvent* event,
-                          const ui::LatencyInfo& latency_info,
-                          bool keyboard_shortcut);
+                          const ui::LatencyInfo& latency_info);
   void OnCursorVisibilityChange(bool is_visible);
   void OnMouseCaptureLost();
   virtual void OnSetFocus(bool enable);
@@ -573,7 +575,7 @@ class CONTENT_EXPORT RenderWidget
 
   // Creates a 3D context associated with this view.
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> CreateGraphicsContext3D(
-      bool compositor);
+      GpuChannelHost* gpu_channel_host);
 
   // Routing ID that allows us to communicate to the parent browser process
   // RenderWidgetHost. When MSG_ROUTING_NONE, no messages may be sent.
@@ -644,16 +646,13 @@ class CONTENT_EXPORT RenderWidget
   bool is_hidden_;
 
   // Indicates that we are never visible, so never produce graphical output.
-  bool never_visible_;
+  const bool compositor_never_visible_;
 
   // Indicates whether tab-initiated fullscreen was granted.
   bool is_fullscreen_granted_;
 
   // Indicates the display mode.
   blink::WebDisplayMode display_mode_;
-
-  // Indicates whether we have been focused/unfocused by the browser.
-  bool has_focus_;
 
   // Are we currently handling an input event?
   bool handling_input_event_;
@@ -664,8 +663,9 @@ class CONTENT_EXPORT RenderWidget
   // supporting overscroll IPC notifications due to fling animation updates.
   scoped_ptr<DidOverscrollParams>* handling_event_overscroll_;
 
-  // Are we currently handling an ime event?
-  bool handling_ime_event_;
+  // It is possible that one ImeEventGuard is nested inside another
+  // ImeEventGuard. We keep track of the outermost one, and update it as needed.
+  ImeEventGuard* ime_event_guard_;
 
   // Type of the input event we are currently handling.
   blink::WebInputEvent::Type handling_event_type_;
@@ -773,8 +773,8 @@ class CONTENT_EXPORT RenderWidget
 
   // Popups may be displaced when screen metrics emulation is enabled.
   // These values are used to properly adjust popup position.
-  gfx::PointF popup_view_origin_for_emulation_;
-  gfx::PointF popup_screen_origin_for_emulation_;
+  gfx::Point popup_view_origin_for_emulation_;
+  gfx::Point popup_screen_origin_for_emulation_;
   float popup_origin_scale_for_emulation_;
 
   scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue_;
@@ -795,6 +795,9 @@ class CONTENT_EXPORT RenderWidget
   ui::MenuSourceType context_menu_source_type_;
   bool has_host_context_menu_location_;
   gfx::Point host_context_menu_location_;
+
+  scoped_ptr<scheduler::RenderWidgetSchedulingState>
+      render_widget_scheduling_state_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidget);
 };

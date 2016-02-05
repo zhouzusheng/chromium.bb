@@ -990,6 +990,14 @@ def _FormatAsEnvironmentBlock(envvar_dict):
   block += nul
   return block
 
+def _FindCLInPath(path):
+  """Gets the path to the first cl.exe found in the path in the environment."""
+  for p in path.split(';'):
+    candidate = os.path.join(p, 'cl.exe')
+    if os.path.isfile(candidate):
+      return candidate
+  return ''
+
 def _ExtractCLPath(output_of_where):
   """Gets the path to cl.exe based on the output of calling the environment
   setup batch file, followed by the equivalent of `where`."""
@@ -1043,12 +1051,7 @@ def GenerateEnvironmentFiles(toplevel_build_dir, generator_flags,
     f.close()
 
     # Find cl.exe location for this architecture.
-    args = vs.SetupScript(arch)
-    args.extend(('&&',
-      'for', '%i', 'in', '(cl.exe)', 'do', '@echo', 'LOC:%~$PATH:i'))
-    popen = subprocess.Popen(args, shell=True, stdout=subprocess.PIPE)
-    output, _ = popen.communicate()
-    cl_paths[arch] = _ExtractCLPath(output)
+    cl_paths[arch] = _FindCLInPath(env['PATH'])
   return cl_paths
 
 def VerifyMissingSources(sources, build_dir, generator_flags, gyp_to_ninja):

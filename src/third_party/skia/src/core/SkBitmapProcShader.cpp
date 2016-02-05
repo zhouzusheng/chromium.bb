@@ -15,6 +15,7 @@
 #include "SkWriteBuffer.h"
 
 #if SK_SUPPORT_GPU
+#include "SkGrPriv.h"
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrSimpleTextureEffect.h"
 #endif
@@ -360,8 +361,7 @@ void SkBitmapProcShader::toString(SkString* str) const {
 
 const GrFragmentProcessor* SkBitmapProcShader::asFragmentProcessor(GrContext* context,
                                              const SkMatrix& viewM, const SkMatrix* localMatrix,
-                                             SkFilterQuality filterQuality,
-                                             GrProcessorDataManager* procDataManager) const {
+                                             SkFilterQuality filterQuality) const {
     SkMatrix matrix;
     matrix.setIDiv(fRawBitmap.width(), fRawBitmap.height());
 
@@ -392,7 +392,7 @@ const GrFragmentProcessor* SkBitmapProcShader::asFragmentProcessor(GrContext* co
             GrSkFilterQualityToGrFilterMode(filterQuality, viewM, this->getLocalMatrix(),
                                             &doBicubic);
     GrTextureParams params(tm, textureFilterMode);
-    SkAutoTUnref<GrTexture> texture(GrRefCachedBitmapTexture(context, fRawBitmap, &params));
+    SkAutoTUnref<GrTexture> texture(GrRefCachedBitmapTexture(context, fRawBitmap, params));
 
     if (!texture) {
         SkErrorInternals::SetError( kInternalError_SkError,
@@ -400,11 +400,11 @@ const GrFragmentProcessor* SkBitmapProcShader::asFragmentProcessor(GrContext* co
         return nullptr;
     }
 
-    SkAutoTUnref<GrFragmentProcessor> inner;
+    SkAutoTUnref<const GrFragmentProcessor> inner;
     if (doBicubic) {
-        inner.reset(GrBicubicEffect::Create(procDataManager, texture, matrix, tm));
+        inner.reset(GrBicubicEffect::Create(texture, matrix, tm));
     } else {
-        inner.reset(GrSimpleTextureEffect::Create(procDataManager, texture, matrix, params));
+        inner.reset(GrSimpleTextureEffect::Create(texture, matrix, params));
     }
 
     if (kAlpha_8_SkColorType == fRawBitmap.colorType()) {

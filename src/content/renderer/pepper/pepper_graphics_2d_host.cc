@@ -371,15 +371,10 @@ void PepperGraphics2DHost::Paint(blink::WebCanvas* canvas,
     paint.setXfermodeMode(SkXfermode::kSrc_Mode);
   }
 
-  SkPoint origin;
-  origin.set(SkIntToScalar(plugin_rect.x()), SkIntToScalar(plugin_rect.y()));
-
-  SkPoint pixel_origin = origin;
-
+  SkPoint pixel_origin(PointToSkPoint(plugin_rect.origin()));
   if (scale_ != 1.0f && scale_ > 0.0f) {
     canvas->scale(scale_, scale_);
-    pixel_origin.set(pixel_origin.x() * (1.0f / scale_),
-                     pixel_origin.y() * (1.0f / scale_));
+    pixel_origin.scale(1.0f / scale_);
   }
   canvas->drawBitmap(image, pixel_origin.x(), pixel_origin.y(), &paint);
 }
@@ -549,7 +544,7 @@ int32_t PepperGraphics2DHost::OnHostMsgReadImageData(
 
 void PepperGraphics2DHost::ReleaseCallback(scoped_ptr<cc::SharedBitmap> bitmap,
                                            const gfx::Size& bitmap_size,
-                                           uint32 sync_point,
+                                           const gpu::SyncToken& sync_token,
                                            bool lost_resource) {
   cached_bitmap_.reset();
   // Only keep around a cached bitmap if the plugin is currently drawing (has
@@ -805,14 +800,14 @@ bool PepperGraphics2DHost::ConvertToLogicalPixels(float scale,
   if (delta) {
     gfx::Point original_delta = *delta;
     float inverse_scale = 1.0f / scale;
-    *delta = gfx::ToFlooredPoint(gfx::ScalePoint(*delta, scale));
+    *delta = gfx::ScaleToFlooredPoint(*delta, scale);
 
     gfx::Rect inverse_scaled_rect =
         gfx::ScaleToEnclosingRect(*op_rect, inverse_scale);
     if (original_rect != inverse_scaled_rect)
       return false;
     gfx::Point inverse_scaled_point =
-        gfx::ToFlooredPoint(gfx::ScalePoint(*delta, inverse_scale));
+        gfx::ScaleToFlooredPoint(*delta, inverse_scale);
     if (original_delta != inverse_scaled_point)
       return false;
   }

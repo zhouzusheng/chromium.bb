@@ -45,7 +45,6 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorResourceAgent.h"
-#include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
@@ -64,6 +63,7 @@
 #include "platform/network/ResourceTimingInfo.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityPolicy.h"
+#include "public/platform/WebFrameScheduler.h"
 
 #include <algorithm>
 
@@ -223,7 +223,6 @@ void FrameFetchContext::dispatchWillSendRequest(unsigned long identifier, Resour
 {
     frame()->loader().applyUserAgent(request);
     frame()->loader().client()->dispatchWillSendRequest(m_documentLoader, identifier, request, redirectResponse);
-    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceSendRequest", TRACE_EVENT_SCOPE_THREAD, "data", InspectorSendRequestEvent::data(identifier, frame(), request));
     InspectorInstrumentation::willSendRequest(frame(), identifier, ensureLoaderForNotifications(), request, redirectResponse, initiatorInfo);
 }
 
@@ -240,7 +239,6 @@ void FrameFetchContext::dispatchDidReceiveResponse(unsigned long identifier, con
 
     frame()->loader().progress().incrementProgress(identifier, response);
     frame()->loader().client()->dispatchDidReceiveResponse(m_documentLoader, identifier, response);
-    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceReceiveResponse", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveResponseEvent::data(identifier, frame(), response));
     DocumentLoader* documentLoader = ensureLoaderForNotifications();
     InspectorInstrumentation::didReceiveResourceResponse(frame(), identifier, documentLoader, response, resourceLoader);
     // It is essential that inspector gets resource response BEFORE console.
@@ -250,14 +248,12 @@ void FrameFetchContext::dispatchDidReceiveResponse(unsigned long identifier, con
 void FrameFetchContext::dispatchDidReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
 {
     frame()->loader().progress().incrementProgress(identifier, dataLength);
-    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceReceivedData", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveDataEvent::data(identifier, frame(), encodedDataLength));
     InspectorInstrumentation::didReceiveData(frame(), identifier, data, dataLength, encodedDataLength);
 }
 
 void FrameFetchContext::dispatchDidDownloadData(unsigned long identifier, int dataLength, int encodedDataLength)
 {
     frame()->loader().progress().incrementProgress(identifier, dataLength);
-    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceReceivedData", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveDataEvent::data(identifier, frame(), encodedDataLength));
     InspectorInstrumentation::didReceiveData(frame(), identifier, 0, dataLength, encodedDataLength);
 }
 
@@ -265,8 +261,6 @@ void FrameFetchContext::dispatchDidFinishLoading(unsigned long identifier, doubl
 {
     frame()->loader().progress().completeProgress(identifier);
     frame()->loader().client()->dispatchDidFinishLoading(m_documentLoader, identifier);
-
-    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceFinish", TRACE_EVENT_SCOPE_THREAD, "data", InspectorResourceFinishEvent::data(identifier, finishTime, false));
     InspectorInstrumentation::didFinishLoading(frame(), identifier, finishTime, encodedDataLength);
 }
 
@@ -274,7 +268,6 @@ void FrameFetchContext::dispatchDidFail(unsigned long identifier, const Resource
 {
     frame()->loader().progress().completeProgress(identifier);
     frame()->loader().client()->dispatchDidFinishLoading(m_documentLoader, identifier);
-    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceFinish", TRACE_EVENT_SCOPE_THREAD, "data", InspectorResourceFinishEvent::data(identifier, 0, true));
     InspectorInstrumentation::didFailLoading(frame(), identifier, error);
     // Notification to FrameConsole should come AFTER InspectorInstrumentation call, DevTools front-end relies on this.
     if (!isInternalRequest)
@@ -677,12 +670,7 @@ void FrameFetchContext::countClientHintsViewportWidth()
     UseCounter::count(frame(), UseCounter::ClientHintsViewportWidth);
 }
 
-bool FrameFetchContext::fetchIncreasePriorities() const
-{
-    return frame()->settings() && frame()->settings()->fetchIncreasePriorities();
-}
-
-ResourceLoadPriority FrameFetchContext::modifyPriorityForExperiments(ResourceLoadPriority priority, Resource::Type type, const FetchRequest& request)
+ResourceLoadPriority FrameFetchContext::modifyPriorityForExperiments(ResourceLoadPriority priority, Resource::Type type, const FetchRequest& request, ResourcePriority::VisibilityStatus visibility)
 {
     // An image fetch is used to distinguish between "early" and "late" scripts in a document
     if (type == Resource::Image)
@@ -711,8 +699,15 @@ ResourceLoadPriority FrameFetchContext::modifyPriorityForExperiments(ResourceLoa
     // of "layout-blocking" resources and provide a boost to resources that are needed
     // as soon as possible for something currently on the screen.
     int modifiedPriority = static_cast<int>(priority);
-    if (fetchIncreasePriorities()) {
+    if (frame()->settings()->fetchIncreasePriorities()) {
         if (type == Resource::CSSStyleSheet || type == Resource::Script || type == Resource::Font || type == Resource::Image)
+            modifiedPriority++;
+    }
+
+    // Always give visible resources a bump, and an additional bump if generally increasing priorities.
+    if (visibility == ResourcePriority::Visible) {
+        modifiedPriority++;
+        if (frame()->settings()->fetchIncreasePriorities())
             modifiedPriority++;
     }
 
@@ -724,13 +719,18 @@ ResourceLoadPriority FrameFetchContext::modifyPriorityForExperiments(ResourceLoa
         if (frame()->settings()->fetchDeferLateScripts() && request.forPreload() && m_imageFetched)
             modifiedPriority--;
         // Parser-blocking scripts.
-        if (fetchIncreasePriorities() && !request.forPreload())
+        if (frame()->settings()->fetchIncreasePriorities() && !request.forPreload())
             modifiedPriority++;
     }
 
     // Clamp priority
     modifiedPriority = std::min(static_cast<int>(ResourceLoadPriorityHighest), std::max(static_cast<int>(ResourceLoadPriorityLowest), modifiedPriority));
     return static_cast<ResourceLoadPriority>(modifiedPriority);
+}
+
+WebTaskRunner* FrameFetchContext::loadingTaskRunner() const
+{
+    return frame()->frameScheduler()->loadingTaskRunner();
 }
 
 DEFINE_TRACE(FrameFetchContext)

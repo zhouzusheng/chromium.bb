@@ -282,12 +282,11 @@ void VpxVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                  const OutputCB& output_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(config.IsValidConfig());
-  DCHECK(!config.is_encrypted());
   DCHECK(decode_cb_.is_null());
 
   InitCB bound_init_cb = BindToCurrentLoop(init_cb);
 
-  if (!ConfigureDecoder(config)) {
+  if (config.is_encrypted() || !ConfigureDecoder(config)) {
     bound_init_cb.Run(false);
     return;
   }
@@ -343,7 +342,7 @@ bool VpxVideoDecoder::ConfigureDecoder(const VideoDecoderConfig& config) {
   if (config.codec() == kCodecVP9) {
     memory_pool_ = new MemoryPool();
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        memory_pool_.get(), task_runner_);
+        memory_pool_.get(), "VpxVideoDecoder", task_runner_);
     if (vpx_codec_set_frame_buffer_functions(vpx_codec_,
                                              &MemoryPool::GetVP9FrameBuffer,
                                              &MemoryPool::ReleaseVP9FrameBuffer,

@@ -242,8 +242,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(use_custom_colors)
   IPC_STRUCT_TRAITS_MEMBER(enable_referrers)
   IPC_STRUCT_TRAITS_MEMBER(enable_do_not_track)
-  IPC_STRUCT_TRAITS_MEMBER(enable_webrtc_multiple_routes)
-  IPC_STRUCT_TRAITS_MEMBER(enable_webrtc_nonproxied_udp)
+  IPC_STRUCT_TRAITS_MEMBER(webrtc_ip_handling_policy)
   IPC_STRUCT_TRAITS_MEMBER(default_zoom_level)
   IPC_STRUCT_TRAITS_MEMBER(user_agent_override)
   IPC_STRUCT_TRAITS_MEMBER(accept_languages)
@@ -340,6 +339,21 @@ IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   // separately from |features| above because we cannot serialize WebStrings
   // over IPC.
   IPC_STRUCT_MEMBER(std::vector<base::string16>, additional_features)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Reply)
+  // The ID of the view to be created. If the ID is MSG_ROUTING_NONE, then the
+  // view couldn't be created.
+  IPC_STRUCT_MEMBER(int32_t, route_id, MSG_ROUTING_NONE)
+
+  // The ID of the main frame hosted in the view.
+  IPC_STRUCT_MEMBER(int32_t, main_frame_route_id, MSG_ROUTING_NONE)
+
+  // The ID of the widget for the main frame.
+  IPC_STRUCT_MEMBER(int32_t, main_frame_widget_route_id, MSG_ROUTING_NONE)
+
+  // TODO(dcheng): No clue. This is kind of duplicated from ViewMsg_New_Params.
+  IPC_STRUCT_MEMBER(int64, cloned_session_storage_namespace_id)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWorker_Params)
@@ -481,17 +495,20 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
   IPC_STRUCT_MEMBER(content::WebPreferences, web_preferences)
 
   // The ID of the view to be created.
-  IPC_STRUCT_MEMBER(int32, view_id)
+  IPC_STRUCT_MEMBER(int32_t, view_id, MSG_ROUTING_NONE)
 
   // The ID of the main frame hosted in the view.
-  IPC_STRUCT_MEMBER(int32, main_frame_routing_id)
+  IPC_STRUCT_MEMBER(int32_t, main_frame_routing_id, MSG_ROUTING_NONE)
+
+  // The ID of the widget for the main frame.
+  IPC_STRUCT_MEMBER(int32_t, main_frame_widget_routing_id, MSG_ROUTING_NONE)
 
   // The session storage namespace ID this view should use.
   IPC_STRUCT_MEMBER(int64, session_storage_namespace_id)
 
   // The route ID of the opener RenderFrame or RenderFrameProxy, if we need to
   // set one (MSG_ROUTING_NONE otherwise).
-  IPC_STRUCT_MEMBER(int, opener_frame_route_id)
+  IPC_STRUCT_MEMBER(int, opener_frame_route_id, MSG_ROUTING_NONE)
 
   // Whether the RenderView should initially be swapped out.
   IPC_STRUCT_MEMBER(bool, swapped_out)
@@ -504,7 +521,7 @@ IPC_STRUCT_BEGIN(ViewMsg_New_Params)
 
   // The ID of the proxy object for the main frame in this view. It is only
   // used if |swapped_out| is true.
-  IPC_STRUCT_MEMBER(int32, proxy_routing_id)
+  IPC_STRUCT_MEMBER(int32_t, proxy_routing_id, MSG_ROUTING_NONE)
 
   // Whether the RenderView should initially be hidden.
   IPC_STRUCT_MEMBER(bool, hidden)
@@ -682,8 +699,8 @@ IPC_MESSAGE_ROUTED2(ViewMsg_PluginActionAt,
                     gfx::Point, /* location */
                     blink::WebPluginAction)
 
-// Resets the page scale for the current main frame to the default page scale.
-IPC_MESSAGE_ROUTED0(ViewMsg_ResetPageScale)
+// Sets the page scale for the current main frame to the given page scale.
+IPC_MESSAGE_ROUTED1(ViewMsg_SetPageScale, float /* page_scale_factor */)
 
 // Change the zoom level for the current main frame.  If the level actually
 // changes, a ViewHostMsg_DidZoomURL message will be sent back to the browser
@@ -874,7 +891,7 @@ IPC_MESSAGE_CONTROL1(ViewMsg_UpdateScrollbarTheme,
 IPC_MESSAGE_CONTROL3(ViewMsg_SystemColorsChanged,
                      int /* AppleAquaColorVariant */,
                      std::string /* AppleHighlightedTextColor */,
-                     std::string /* AppleHighlightColor */);
+                     std::string /* AppleHighlightColor */)
 #endif
 
 #if defined(OS_ANDROID)
@@ -968,12 +985,11 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_SetNeedsBeginFrames,
                     bool /* enabled */)
 
 // Sent by the renderer when it is creating a new window.  The browser creates a
-// tab for it.  If route_id is MSG_ROUTING_NONE, the view couldn't be created.
-IPC_SYNC_MESSAGE_CONTROL1_3(ViewHostMsg_CreateWindow,
+// tab for it.  If |reply.route_id| is MSG_ROUTING_NONE, the view couldn't be
+// created.
+IPC_SYNC_MESSAGE_CONTROL1_1(ViewHostMsg_CreateWindow,
                             ViewHostMsg_CreateWindow_Params,
-                            int /* route_id */,
-                            int /* main_frame_route_id */,
-                            int64 /* cloned_session_storage_namespace_id */)
+                            ViewHostMsg_CreateWindow_Reply)
 
 // Similar to ViewHostMsg_CreateWindow, except used for sub-widgets, like
 // <select> dropdowns.  This message is sent to the WebContentsImpl that
@@ -1081,7 +1097,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateRect,
                     ViewHostMsg_UpdateRect_Params)
 
 IPC_MESSAGE_ROUTED0(ViewHostMsg_Focus)
-IPC_MESSAGE_ROUTED0(ViewHostMsg_Blur)
 
 // Message sent from renderer to the browser when focus changes inside the
 // webpage. The first parameter says whether the newly focused element needs
@@ -1236,9 +1251,9 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_DidZoomURL,
                     double /* zoom_level */,
                     GURL /* url */)
 
-// Sent when the renderer changes its page scale factor and whether or not the
-// page scale factor is one changes.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_PageScaleFactorIsOneChanged, bool /* is_one */)
+// Sent when the renderer changes its page scale factor.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_PageScaleFactorChanged,
+                    float /* page_scale_factor */)
 
 // Updates the minimum/maximum allowed zoom percent for this tab from the
 // default values.  If |remember| is true, then the zoom setting is applied to
@@ -1352,8 +1367,9 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_FindMatchRects_Reply,
                     gfx::RectF /* active_rect */)
 
 // Start an android intent with the given URI.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_StartContentIntent,
-                    GURL /* content_url */)
+IPC_MESSAGE_ROUTED2(ViewHostMsg_StartContentIntent,
+                    GURL /* content_url */,
+                    bool /* is_main_frame */)
 
 // This message runs the MediaCodec for decoding audio for webaudio.
 IPC_MESSAGE_CONTROL3(ViewHostMsg_RunWebAudioMediaCodec,
@@ -1383,7 +1399,7 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_PluginFocusChanged,
 IPC_MESSAGE_ROUTED0(ViewHostMsg_StartPluginIme)
 
 // Receives content of a web page as plain text.
-IPC_MESSAGE_ROUTED1(ViewMsg_GetRenderedTextCompleted, std::string);
+IPC_MESSAGE_ROUTED1(ViewMsg_GetRenderedTextCompleted, std::string)
 #endif
 
 // Adding a new message? Stick to the sort order above: first platform

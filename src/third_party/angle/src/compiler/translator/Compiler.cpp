@@ -153,6 +153,15 @@ TCompiler::~TCompiler()
 {
 }
 
+bool TCompiler::shouldRunLoopAndIndexingValidation(int compileOptions) const
+{
+    // If compiling an ESSL 1.00 shader for WebGL, or if its been requested through the API,
+    // validate loop and indexing as well (to verify that the shader only uses minimal functionality
+    // of ESSL 1.00 as in Appendix A of the spec).
+    return (IsWebGLBasedSpec(shaderSpec) && shaderVersion == 100) ||
+           (compileOptions & SH_VALIDATE_LOOP_INDEXING);
+}
+
 bool TCompiler::Init(const ShBuiltInResources& resources)
 {
     shaderVersion = 100;
@@ -210,7 +219,7 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
                                shaderType, shaderSpec, compileOptions, true,
                                infoSink, debugShaderPrecision);
 
-    parseContext.setFragmentPrecisionHigh(fragmentPrecisionHigh);
+    parseContext.setFragmentPrecisionHighOnESSL1(fragmentPrecisionHigh);
     SetGlobalParseContext(&parseContext);
 
     // We preserve symbols at the built-in level from compile-to-compile.
@@ -230,12 +239,6 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         success = false;
     }
 
-    // If compiling an ESSL 1.00 shader for WebGL, or if its been requested through the API,
-    // validate loop and indexing as well (to verify that the shader only uses minimal functionality
-    // of ESSL 1.00 as in Appendix A of the spec).
-    bool validateLoopAndIndexing = (IsWebGLBasedSpec(shaderSpec) && shaderVersion == 100) ||
-                                   (compileOptions & SH_VALIDATE_LOOP_INDEXING);
-
     TIntermNode *root = nullptr;
 
     if (success)
@@ -248,6 +251,9 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
 
         root = parseContext.getTreeRoot();
         root = intermediate.postProcess(root);
+
+        // Highp might have been auto-enabled based on shader version
+        fragmentPrecisionHigh = parseContext.getFragmentPrecisionHigh();
 
         // Disallow expressions deemed too complex.
         if (success && (compileOptions & SH_LIMIT_EXPRESSION_COMPLEXITY))
@@ -278,7 +284,7 @@ TIntermNode *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         if (success && shaderVersion == 300 && shaderType == GL_FRAGMENT_SHADER)
             success = validateOutputs(root);
 
-        if (success && validateLoopAndIndexing)
+        if (success && shouldRunLoopAndIndexingValidation(compileOptions))
             success = validateLimitations(root);
 
         if (success && (compileOptions & SH_TIMING_RESTRICTIONS))

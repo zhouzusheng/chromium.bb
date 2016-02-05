@@ -25,6 +25,8 @@
       'defines': ['CONTENT_SHELL_VERSION="<(content_shell_version)"'],
       'variables': {
         'chromium_code': 1,
+        # TODO(thakis): Remove this once http://crbug.com/383820 is figured out
+        'clang_warning_flags': [ '-Wno-nonnull' ],
       },
       'dependencies': [
         'app/resources/content_resources.gyp:content_resources',
@@ -37,8 +39,8 @@
         'content.gyp:content_ppapi_plugin',
         'content.gyp:content_renderer',
         'content.gyp:content_resources',
-        'content.gyp:content_startup_helper_win',
         'content.gyp:content_utility',
+        'content.gyp:sandbox_helper_win',
         'content_shell_resources',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
         '../base/base.gyp:base',
@@ -82,15 +84,11 @@
       ],
       'sources': [
         # Note: sources list duplicated in GN build.
+        'shell/android/shell_descriptors.h',
         'shell/android/shell_jni_registrar.cc',
         'shell/android/shell_jni_registrar.h',
         'shell/android/shell_manager.cc',
         'shell/android/shell_manager.h',
-        'shell/app/blink_test_platform_support.h',
-        'shell/app/blink_test_platform_support_android.cc',
-        'shell/app/blink_test_platform_support_linux.cc',
-        'shell/app/blink_test_platform_support_mac.mm',
-        'shell/app/blink_test_platform_support_win.cc',
         'shell/app/paths_mac.h',
         'shell/app/paths_mac.mm',
         'shell/app/shell_crash_reporter_client.cc',
@@ -103,11 +101,6 @@
         # SHEZ: Remove test-only code.
         # 'shell/browser/blink_test_controller.cc',
         # 'shell/browser/blink_test_controller.h',
-
-        'shell/browser/ipc_echo_message_filter.cc',
-        'shell/browser/ipc_echo_message_filter.h',
-
-        # SHEZ: Remove test-only code.
         # 'shell/browser/layout_test/layout_test_android.cc',
         # 'shell/browser/layout_test/layout_test_android.h',
         # 'shell/browser/layout_test/layout_test_bluetooth_adapter_provider.cc',
@@ -222,16 +215,12 @@
 
         'shell/common/v8_breakpad_support_win.cc',
         'shell/common/v8_breakpad_support_win.h',
-        'shell/renderer/ipc_echo.cc',
-        'shell/renderer/ipc_echo.h',
 
         # SHEZ: Remove test-only code
         # 'shell/renderer/layout_test/blink_test_helpers.cc',
         # 'shell/renderer/layout_test/blink_test_helpers.h',
         # 'shell/renderer/layout_test/blink_test_runner.cc',
         # 'shell/renderer/layout_test/blink_test_runner.h',
-        # 'shell/renderer/layout_test/gc_controller.cc',
-        # 'shell/renderer/layout_test/gc_controller.h',
         # 'shell/renderer/layout_test/layout_test_content_renderer_client.cc',
         # 'shell/renderer/layout_test/layout_test_content_renderer_client.h',
         # 'shell/renderer/layout_test/layout_test_render_frame_observer.cc',
@@ -420,16 +409,6 @@
             'browser/devtools/devtools_resources.gyp:devtools_resources',
           ],
         }],
-        ['OS=="android"', {
-          'copies': [
-            {
-              'destination': '<(PRODUCT_DIR)',
-              'files': [
-                '<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'
-              ],
-            },
-          ],
-        }],
         ['toolkit_views==1', {
           'dependencies': [
             '<(DEPTH)/ui/views/resources/views_resources.gyp:views_resources'
@@ -454,6 +433,7 @@
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/app_locale_settings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
             ],
+            'pak_output': '<(PRODUCT_DIR)/content_shell.pak',
             'conditions': [
               ['toolkit_views==1', {
                 'pak_inputs': [
@@ -462,9 +442,6 @@
               }],
               ['OS!="android"', {
                 'pak_inputs': ['<(SHARED_INTERMEDIATE_DIR)/blink/devtools_resources.pak',],
-                'pak_output': '<(PRODUCT_DIR)/content_shell.pak',
-              }, {
-                'pak_output': '<(PRODUCT_DIR)/content_shell/assets/content_shell.pak',
               }],
             ],
           },
@@ -709,6 +686,7 @@
     ['OS=="mac"', {
       'targets': [
         {
+          # GN version: //content/shell:framework
           'target_name': 'content_shell_framework',
           'type': 'shared_library',
           'product_name': '<(content_shell_product_name) Framework',

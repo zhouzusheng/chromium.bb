@@ -327,10 +327,16 @@
 #define glLoseContextCHROMIUM GLES2_GET_FUN(LoseContextCHROMIUM)
 #define glInsertSyncPointCHROMIUM GLES2_GET_FUN(InsertSyncPointCHROMIUM)
 #define glWaitSyncPointCHROMIUM GLES2_GET_FUN(WaitSyncPointCHROMIUM)
+#define glInsertFenceSyncCHROMIUM GLES2_GET_FUN(InsertFenceSyncCHROMIUM)
+#define glGenSyncTokenCHROMIUM GLES2_GET_FUN(GenSyncTokenCHROMIUM)
+#define glGenUnverifiedSyncTokenCHROMIUM \
+  GLES2_GET_FUN(GenUnverifiedSyncTokenCHROMIUM)
+#define glWaitSyncTokenCHROMIUM GLES2_GET_FUN(WaitSyncTokenCHROMIUM)
 #define glDrawBuffersEXT GLES2_GET_FUN(DrawBuffersEXT)
 #define glDiscardBackbufferCHROMIUM GLES2_GET_FUN(DiscardBackbufferCHROMIUM)
 #define glScheduleOverlayPlaneCHROMIUM \
   GLES2_GET_FUN(ScheduleOverlayPlaneCHROMIUM)
+#define glScheduleCALayerCHROMIUM GLES2_GET_FUN(ScheduleCALayerCHROMIUM)
 #define glSwapInterval GLES2_GET_FUN(SwapInterval)
 #define glFlushDriverCachesCHROMIUM GLES2_GET_FUN(FlushDriverCachesCHROMIUM)
 #define glMatrixLoadfCHROMIUM GLES2_GET_FUN(MatrixLoadfCHROMIUM)
@@ -350,6 +356,22 @@
   GLES2_GET_FUN(StencilThenCoverFillPathCHROMIUM)
 #define glStencilThenCoverStrokePathCHROMIUM \
   GLES2_GET_FUN(StencilThenCoverStrokePathCHROMIUM)
+#define glStencilFillPathInstancedCHROMIUM \
+  GLES2_GET_FUN(StencilFillPathInstancedCHROMIUM)
+#define glStencilStrokePathInstancedCHROMIUM \
+  GLES2_GET_FUN(StencilStrokePathInstancedCHROMIUM)
+#define glCoverFillPathInstancedCHROMIUM \
+  GLES2_GET_FUN(CoverFillPathInstancedCHROMIUM)
+#define glCoverStrokePathInstancedCHROMIUM \
+  GLES2_GET_FUN(CoverStrokePathInstancedCHROMIUM)
+#define glStencilThenCoverFillPathInstancedCHROMIUM \
+  GLES2_GET_FUN(StencilThenCoverFillPathInstancedCHROMIUM)
+#define glStencilThenCoverStrokePathInstancedCHROMIUM \
+  GLES2_GET_FUN(StencilThenCoverStrokePathInstancedCHROMIUM)
+#define glBindFragmentInputLocationCHROMIUM \
+  GLES2_GET_FUN(BindFragmentInputLocationCHROMIUM)
+#define glProgramPathFragmentInputGenCHROMIUM \
+  GLES2_GET_FUN(ProgramPathFragmentInputGenCHROMIUM)
 #define glGetGraphicsResetStatusKHR GLES2_GET_FUN(GetGraphicsResetStatusKHR)
 #define glBlendBarrierKHR GLES2_GET_FUN(BlendBarrierKHR)
 #define glApplyScreenSpaceAntialiasingCHROMIUM \

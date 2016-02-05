@@ -26,13 +26,15 @@
 #ifndef PaintInfo_h
 #define PaintInfo_h
 
+#include "core/CoreExport.h"
 // TODO(jchaffraix): Once we unify PaintBehavior and PaintLayerFlags, we should move
-// PaintLayerFlags to PaintPhase and rename it. Thus removing the need for this #include.
+// PaintLayerFlags to PaintPhase and rename it. Thus removing the need for this #include.#include "core/paint/PaintLayerPaintingInfo.h"
 #include "core/paint/PaintLayerPaintingInfo.h"
 #include "core/paint/PaintPhase.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/CullRect.h"
 #include "platform/graphics/paint/DisplayItem.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/Allocator.h"
@@ -46,37 +48,26 @@ namespace blink {
 class LayoutInline;
 class LayoutBoxModelObject;
 class LayoutObject;
+class PaintInvalidationState;
 
-struct PaintInfo {
-    ALLOW_ONLY_INLINE_ALLOCATION();
-    PaintInfo(GraphicsContext* newContext, const IntRect& newRect, PaintPhase newPhase, GlobalPaintFlags globalPaintFlags, PaintLayerFlags paintFlags,
-        LayoutObject* newPaintingRoot = 0, const LayoutBoxModelObject* newPaintContainer = 0)
+struct CORE_EXPORT PaintInfo {
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
+    PaintInfo(GraphicsContext* newContext, const IntRect& cullRect, PaintPhase newPhase, GlobalPaintFlags globalPaintFlags, PaintLayerFlags paintFlags,
+        LayoutObject* newPaintingRoot = nullptr, const LayoutBoxModelObject* newPaintContainer = nullptr)
         : context(newContext)
-        , rect(newRect)
         , phase(newPhase)
         , paintingRoot(newPaintingRoot)
+        , paintInvalidationState(nullptr)
+        , m_cullRect(cullRect)
         , m_paintContainer(newPaintContainer)
         , m_paintFlags(paintFlags)
         , m_globalPaintFlags(globalPaintFlags)
     {
     }
 
-    void updatePaintingRootForChildren(const LayoutObject* layoutObject)
-    {
-        if (!paintingRoot)
-            return;
+    void updatePaintingRootForChildren(const LayoutObject*);
 
-        // If we're the painting root, kids draw normally, and see root of 0.
-        if (paintingRoot == layoutObject) {
-            paintingRoot = 0;
-            return;
-        }
-    }
-
-    bool shouldPaintWithinRoot(const LayoutObject* layoutObject) const
-    {
-        return !paintingRoot || paintingRoot == layoutObject;
-    }
+    bool shouldPaintWithinRoot(const LayoutObject*) const;
 
     bool isRenderingClipPathAsMaskImage() const { return m_paintFlags & PaintLayerPaintingRenderingClipPathAsMask; }
 
@@ -93,28 +84,27 @@ struct PaintInfo {
 
     PaintLayerFlags paintFlags() const { return m_paintFlags; }
 
-    bool intersectsCullRect(const AffineTransform& transform, const FloatRect& boundingBox) const
-    {
-        return transform.mapRect(boundingBox).intersects(rect);
-    }
+    const CullRect& cullRect() const { return m_cullRect; }
 
-    void updateCullRectForSVGTransform(const AffineTransform& localToParentTransform)
-    {
-        if (rect != LayoutRect::infiniteIntRect())
-            rect = localToParentTransform.inverse().mapRect(rect);
-    }
+    void updateCullRect(const AffineTransform& localToParentTransform);
 
     // FIXME: Introduce setters/getters at some point. Requires a lot of changes throughout layout/.
     GraphicsContext* context;
-    IntRect rect; // dirty rect used for culling non-intersecting layoutObjects
     PaintPhase phase;
     LayoutObject* paintingRoot; // used to draw just one element and its visual kids
+    // TODO(wangxianzhu): Populate it.
+    PaintInvalidationState* paintInvalidationState;
 
 private:
+    CullRect m_cullRect;
     const LayoutBoxModelObject* m_paintContainer; // the box model object that originates the current painting
 
     const PaintLayerFlags m_paintFlags;
     const GlobalPaintFlags m_globalPaintFlags;
+
+    // TODO(chrishtr): temporary while we implement CullRect everywhere.
+    friend class SVGPaintContext;
+    friend class SVGShapePainter;
 };
 
 } // namespace blink

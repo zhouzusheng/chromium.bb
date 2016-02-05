@@ -27,10 +27,9 @@ class PropertyTrees;
 
 // Computes combined clips for every node in |clip_tree|. This function requires
 // that |transform_tree| has been updated via |ComputeTransforms|.
-// TODO(vollick): ComputeClips and ComputeTransforms will eventually need to be
-// done on both threads.
-void CC_EXPORT
-ComputeClips(ClipTree* clip_tree, const TransformTree& transform_tree);
+void CC_EXPORT ComputeClips(ClipTree* clip_tree,
+                            const TransformTree& transform_tree,
+                            bool non_root_surfaces_enabled);
 
 // Computes combined (screen space) transforms for every node in the transform
 // tree. This must be done prior to calling |ComputeClips|.
@@ -51,6 +50,7 @@ void CC_EXPORT BuildPropertyTreesAndComputeVisibleRects(
     float device_scale_factor,
     const gfx::Rect& viewport,
     const gfx::Transform& device_transform,
+    bool can_render_to_separate_surface,
     PropertyTrees* property_trees,
     LayerList* update_layer_list);
 
@@ -63,18 +63,21 @@ void CC_EXPORT BuildPropertyTreesAndComputeVisibleRects(
     float device_scale_factor,
     const gfx::Rect& viewport,
     const gfx::Transform& device_transform,
+    bool can_render_to_separate_surface,
     PropertyTrees* property_trees,
-    LayerImplList* update_layer_list);
+    LayerImplList* visible_layer_list);
 
 void CC_EXPORT
 ComputeVisibleRectsUsingPropertyTrees(Layer* root_layer,
                                       PropertyTrees* property_trees,
+                                      bool can_render_to_separate_surface,
                                       LayerList* update_layer_list);
 
 void CC_EXPORT
 ComputeVisibleRectsUsingPropertyTrees(LayerImpl* root_layer,
                                       PropertyTrees* property_trees,
-                                      LayerImplList* update_layer_list);
+                                      bool can_render_to_separate_surface,
+                                      LayerImplList* visible_layer_list);
 
 void CC_EXPORT ComputeLayerDrawPropertiesUsingPropertyTrees(
     const LayerImpl* layer,
@@ -103,6 +106,23 @@ gfx::Transform CC_EXPORT
 ScreenSpaceTransformFromPropertyTrees(const LayerImpl* layer,
                                       const TransformTree& tree);
 
+gfx::Transform CC_EXPORT SurfaceScreenSpaceTransformFromPropertyTrees(
+    const RenderSurfaceImpl* render_surface,
+    const TransformTree& tree);
+
+void CC_EXPORT
+UpdatePageScaleFactorInPropertyTrees(PropertyTrees* property_trees,
+                                     const LayerImpl* page_scale_layer,
+                                     float page_scale_factor,
+                                     float device_scale_factor,
+                                     const gfx::Transform device_transform);
+
+void CC_EXPORT
+UpdatePageScaleFactorInPropertyTrees(PropertyTrees* property_trees,
+                                     const Layer* page_scale_layer,
+                                     float page_scale_factor,
+                                     float device_scale_factor,
+                                     const gfx::Transform device_transform);
 }  // namespace cc
 
 #endif  // CC_TREES_DRAW_PROPERTY_UTILS_H_

@@ -47,6 +47,7 @@ namespace blink {
 
 class DebuggerTask;
 class GraphicsLayer;
+class InspectedFrames;
 class InspectorInspectorAgent;
 class InspectorOverlay;
 class InspectorPageAgent;
@@ -104,6 +105,7 @@ public:
     void dispatchOnInspectorBackend(const WebString& message) override;
     void inspectElementAt(const WebPoint&) override;
     void evaluateInWebInspector(long callId, const WebString& script) override;
+    WebString evaluateInWebInspectorOverlay(const WebString& script) override;
 
 private:
     WebDevToolsAgentImpl(WebLocalFrameImpl*, WebDevToolsAgentClient*, PassOwnPtrWillBeRawPtr<InspectorOverlay>);
@@ -141,11 +143,11 @@ private:
     OwnPtrWillBeMember<InspectorResourceContentLoader> m_resourceContentLoader;
     OwnPtrWillBeMember<InspectorCompositeState> m_state;
     OwnPtrWillBeMember<InspectorOverlay> m_overlay;
+    OwnPtr<InspectedFrames> m_inspectedFrames;
 
     RawPtrWillBeMember<InspectorInspectorAgent> m_inspectorAgent;
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
-    RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
     RawPtrWillBeMember<InspectorResourceAgent> m_resourceAgent;
     RawPtrWillBeMember<InspectorLayerTreeAgent> m_layerTreeAgent;
     RawPtrWillBeMember<InspectorTracingAgent> m_tracingAgent;

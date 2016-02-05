@@ -8,7 +8,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "mojo/application/public/interfaces/application.mojom.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
+#include "mojo/public/cpp/bindings/interface_request.h"
 
 #if defined(OS_WIN)
 #undef DELETE
@@ -38,12 +38,17 @@ class NativeRunner {
                      bool start_sandboxed,
                      InterfaceRequest<Application> application_request,
                      const base::Closure& app_completed_callback) = 0;
+
+  // Like Start(), but used to initialize the host for a child process started
+  // by someone else. Provides |application_request| via |channel|.
+  virtual void InitHost(ScopedHandle channel,
+                        InterfaceRequest<Application> application_request) = 0;
 };
 
 class NativeRunnerFactory {
  public:
   virtual ~NativeRunnerFactory() {}
-  virtual scoped_ptr<NativeRunner> Create() = 0;
+  virtual scoped_ptr<NativeRunner> Create(const base::FilePath& app_path) = 0;
 };
 
 }  // namespace shell

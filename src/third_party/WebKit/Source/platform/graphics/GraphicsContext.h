@@ -40,7 +40,7 @@
 #include "third_party/skia/include/core/SkMetaData.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
@@ -57,26 +57,26 @@ struct SkRect;
 
 namespace blink {
 
-class DisplayItemList;
 class ImageBuffer;
 class KURL;
+class PaintController;
 
 class PLATFORM_EXPORT GraphicsContext {
-    WTF_MAKE_NONCOPYABLE(GraphicsContext); WTF_MAKE_FAST_ALLOCATED(GraphicsContext);
+    WTF_MAKE_NONCOPYABLE(GraphicsContext); USING_FAST_MALLOC(GraphicsContext);
 public:
     enum DisabledMode {
         NothingDisabled = 0, // Run as normal.
         FullyDisabled = 1 // Do absolutely minimal work to remove the cost of the context from performance tests.
     };
 
-    explicit GraphicsContext(DisplayItemList*, DisabledMode = NothingDisabled, SkMetaData* = 0);
+    explicit GraphicsContext(PaintController&, DisabledMode = NothingDisabled, SkMetaData* = 0);
 
     ~GraphicsContext();
 
     SkCanvas* canvas() { return m_canvas; }
     const SkCanvas* canvas() const { return m_canvas; }
 
-    DisplayItemList* displayItemList() { return m_displayItemList; }
+    PaintController& paintController() { return m_paintController; }
 
     bool contextDisabled() const { return m_disabledState; }
 
@@ -154,9 +154,6 @@ public:
     void fillRoundedRect(const FloatRoundedRect&, const Color&);
     void fillDRRect(const FloatRoundedRect&, const FloatRoundedRect&, const Color&);
 
-    void clearRect(const FloatRect&);
-
-    void strokeRect(const FloatRect&);
     void strokeRect(const FloatRect&, float lineWidth);
 
     void drawPicture(const SkPicture*);
@@ -248,9 +245,16 @@ public:
 
     SkFilterQuality computeFilterQuality(Image*, const FloatRect& dest, const FloatRect& src) const;
 
-    // URL drawing
+    // Sets target URL of a clickable area.
     void setURLForRect(const KURL&, const IntRect&);
+
+    // Sets destination of a URL fragment (in a URL pointing to the same web page) of a clickable area.
+    // When the area is clicked, the page should be scrolled to the location set by setURLDestinationLocation()
+    // for the destination whose name equals the fragment.
     void setURLFragmentForRect(const String& name, const IntRect&);
+
+    // Sets location of a URL destination (a.k.a. anchor) in the page.
+    void setURLDestinationLocation(const String& name, const IntPoint&);
 
     static void adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2, float strokeWidth, StrokeStyle);
 
@@ -332,8 +336,6 @@ private:
 
     void fillRectWithRoundedHole(const FloatRect&, const FloatRoundedRect& roundedHoleRect, const Color&);
 
-    bool isRecording() const;
-
     const SkMetaData& metaData() const { return m_metaData; }
 
     // null indicates painting is contextDisabled. Never delete this object.
@@ -343,8 +345,7 @@ private:
     // used when Slimming Paint is active.
     SkCanvas* m_originalCanvas;
 
-    // This being null indicates not to paint into a DisplayItemList, and instead directly into the canvas.
-    DisplayItemList* m_displayItemList;
+    PaintController& m_paintController;
 
     // Paint states stack. Enables local drawing state change with save()/restore() calls.
     // This state controls the appearance of drawn content.

@@ -125,6 +125,20 @@ class NET_EXPORT_PRIVATE SpdyFramerVisitorInterface {
   // |len| The number of padding octets.
   virtual void OnStreamPadding(SpdyStreamId stream_id, size_t len) = 0;
 
+  // Called just before processing the payload of a frame containing header
+  // data. Should return an implementation of SpdyHeadersHandlerInterface that
+  // will receive headers for stream |stream_id|. The caller will not take
+  // ownership of the headers handler. The same instance should be returned
+  // for all header frames comprising a logical header block (i.e. until
+  // OnHeaderFrameEnd() is called with end_headers == true).
+  virtual SpdyHeadersHandlerInterface* OnHeaderFrameStart(
+      SpdyStreamId stream_id) = 0;
+
+  // Called after processing the payload of a frame containing header data.
+  // |end_headers| is true if there will not be any subsequent CONTINUATION
+  // frames.
+  virtual void OnHeaderFrameEnd(SpdyStreamId stream_id, bool end_headers) = 0;
+
   // Called when a chunk of header data is available. This is called
   // after OnSynStream, OnSynReply, OnHeaders(), or OnPushPromise.
   // |stream_id| The stream receiving the header data.
@@ -390,8 +404,8 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   // Given a buffer containing a decompressed header block in SPDY
   // serialized format, parse out a SpdyHeaderBlock, putting the results
   // in the given header block.
-  // Returns number of bytes consumed if successfully parsed, 0 otherwise.
-  size_t ParseHeaderBlockInBuffer(const char* header_data,
+  // Returns true if successfully parsed, false otherwise.
+  bool ParseHeaderBlockInBuffer(const char* header_data,
                                 size_t header_length,
                                 SpdyHeaderBlock* block) const;
 
@@ -552,11 +566,11 @@ class NET_EXPORT_PRIVATE SpdyFramer {
       const char* data,
       size_t len);
 
-  // Updates the maximum size of header compression table.
-  void UpdateHeaderTableSizeSetting(uint32 value);
+  // Updates the maximum size of the header encoder compression table.
+  void UpdateHeaderEncoderTableSize(uint32 value);
 
-  // Returns bound of header compression table size.
-  size_t header_table_size_bound() const;
+  // Returns the maximum size of the header encoder compression table.
+  size_t header_encoder_table_size() const;
 
  protected:
   friend class HttpNetworkLayer;  // This is temporary for the server.
@@ -783,9 +797,6 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   // If true, then ProcessInput returns after processing a full frame,
   // rather than reading all available input.
   bool process_single_input_frame_ = false;
-
-  // Last acknowledged value for SETTINGS_HEADER_TABLE_SIZE.
-  size_t header_table_size_bound_;
 };
 
 }  // namespace net

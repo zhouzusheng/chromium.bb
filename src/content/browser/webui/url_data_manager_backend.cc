@@ -350,8 +350,8 @@ void URLRequestChromeJob::DataAvailable(base::RefCountedMemory* bytes) {
     }
   } else {
     // The request failed.
-    NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED,
-                                     net::ERR_FAILED));
+    NotifyDone(
+        net::URLRequestStatus(net::URLRequestStatus::FAILED, net::ERR_FAILED));
   }
 }
 
@@ -359,7 +359,8 @@ base::WeakPtr<URLRequestChromeJob> URLRequestChromeJob::AsWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
 
-bool URLRequestChromeJob::ReadRawData(net::IOBuffer* buf, int buf_size,
+bool URLRequestChromeJob::ReadRawData(net::IOBuffer* buf,
+                                      int buf_size,
                                       int* bytes_read) {
   if (!data_.get()) {
     SetStatus(net::URLRequestStatus(net::URLRequestStatus::IO_PENDING, 0));
@@ -375,7 +376,8 @@ bool URLRequestChromeJob::ReadRawData(net::IOBuffer* buf, int buf_size,
   return true;
 }
 
-void URLRequestChromeJob::CompleteRead(net::IOBuffer* buf, int buf_size,
+void URLRequestChromeJob::CompleteRead(net::IOBuffer* buf,
+                                       int buf_size,
                                        int* bytes_read) {
   int remaining = static_cast<int>(data_->size()) - data_offset_;
   if (buf_size > remaining)

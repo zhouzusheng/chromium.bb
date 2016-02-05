@@ -22,9 +22,12 @@
 #ifndef TypeTraits_h
 #define TypeTraits_h
 
+#include <cstddef>
 #include <utility>
 
 namespace WTF {
+
+template<typename T> class RawPtr;
 
 // The following are provided in this file:
 //
@@ -337,7 +340,7 @@ public:
 // Convenience template wrapping the NeedsTracingLazily template in
 // Collection Traits. It helps make the code more readable.
 template <typename Traits>
-class ShouldBeTraced {
+class NeedsTracingTrait {
 public:
     static const bool value = Traits::template NeedsTracingLazily<>::value;
 };
@@ -347,20 +350,49 @@ struct NeedsTracing<std::pair<T, U>> {
     static const bool value = NeedsTracing<T>::value || NeedsTracing<U>::value || IsWeak<T>::value || IsWeak<U>::value;
 };
 
-// This is used to check that ALLOW_ONLY_INLINE_ALLOCATION objects are not
+// This is used to check that DISALLOW_NEW_EXCEPT_PLACEMENT_NEW objects are not
 // stored in off-heap Vectors, HashTables etc.
 template <typename T>
-struct IsAllowOnlyInlineAllocation {
+struct AllowsOnlyPlacementNew {
 private:
     using YesType = char;
     struct NoType {
         char padding[8];
     };
 
-    template <typename U> static YesType checkMarker(typename U::IsAllowOnlyInlineAllocation*);
+    template <typename U> static YesType checkMarker(typename U::IsAllowOnlyPlacementNew*);
     template <typename U> static NoType checkMarker(...);
 public:
     static const bool value = sizeof(checkMarker<T>(nullptr)) == sizeof(YesType);
+};
+
+template<typename T>
+class IsGarbageCollectedType {
+    typedef char YesType;
+    typedef struct NoType {
+        char padding[8];
+    } NoType;
+
+    template <typename U> static YesType checkGarbageCollectedType(typename U::IsGarbageCollectedTypeMarker*);
+    template <typename U> static NoType checkGarbageCollectedType(...);
+public:
+    static const bool value = (sizeof(YesType) == sizeof(checkGarbageCollectedType<T>(nullptr)));
+};
+
+template<typename T>
+class IsPointerToGarbageCollectedType {
+public:
+    static const bool value = false;
+};
+template<typename T>
+class IsPointerToGarbageCollectedType<T*> {
+public:
+    static const bool value = IsGarbageCollectedType<T>::value;
+};
+template<typename T>
+class IsPointerToGarbageCollectedType<RawPtr<T>> {
+public:
+    static const bool value = IsGarbageCollectedType<T>::value;
 };
 
 } // namespace WTF

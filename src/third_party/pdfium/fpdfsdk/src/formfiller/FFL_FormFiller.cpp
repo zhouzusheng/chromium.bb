@@ -5,7 +5,6 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "../../include/formfiller/FFL_FormFiller.h"
-#include "../../include/formfiller/FFL_Notify.h"
 #include "../../include/formfiller/FFL_CBA_Fontmap.h"
 
 #define GetRed(rgb) ((uint8_t)(rgb))
@@ -23,9 +22,10 @@ CFFL_FormFiller::CFFL_FormFiller(CPDFDoc_Environment* pApp,
 }
 
 CFFL_FormFiller::~CFFL_FormFiller() {
-  for (auto& it : m_Maps) {
+  for (const auto& it : m_Maps) {
     CPWL_Wnd* pWnd = it.second;
     CFFL_PrivateData* pData = (CFFL_PrivateData*)pWnd->GetAttachedData();
+    pWnd->InvalidateProvider(this);
     pWnd->Destroy();
     delete pWnd;
     delete pData;

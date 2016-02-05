@@ -19,16 +19,16 @@
 #include "webrtc/config.h"
 #include "webrtc/modules/audio_device/include/audio_device.h"
 #include "webrtc/modules/audio_processing/include/audio_processing.h"
-#include "webrtc/modules/interface/module_common_types.h"
-#include "webrtc/modules/rtp_rtcp/interface/receive_statistics.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_payload_registry.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_receiver.h"
+#include "webrtc/modules/include/module_common_types.h"
+#include "webrtc/modules/rtp_rtcp/include/receive_statistics.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_payload_registry.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_receiver.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_receiver_strategy.h"
-#include "webrtc/modules/utility/interface/audio_frame_operations.h"
-#include "webrtc/modules/utility/interface/process_thread.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/modules/utility/include/audio_frame_operations.h"
+#include "webrtc/modules/utility/include/process_thread.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/logging.h"
+#include "webrtc/system_wrappers/include/trace.h"
 #include "webrtc/voice_engine/include/voe_base.h"
 #include "webrtc/voice_engine/include/voe_external_media.h"
 #include "webrtc/voice_engine/include/voe_rtp_rtcp.h"
@@ -1242,7 +1242,12 @@ Channel::DeRegisterVoiceEngineObserver()
 int32_t
 Channel::GetSendCodec(CodecInst& codec)
 {
-    return (audio_coding_->SendCodec(&codec));
+  auto send_codec = audio_coding_->SendCodec();
+  if (send_codec) {
+    codec = *send_codec;
+    return 0;
+  }
+  return -1;
 }
 
 int32_t
@@ -1627,16 +1632,15 @@ bool Channel::HandleRtxPacket(const uint8_t* packet,
                  "Multiple RTX headers detected, dropping packet");
     return false;
   }
-  uint8_t* restored_packet_ptr = restored_packet_;
   if (!rtp_payload_registry_->RestoreOriginalPacket(
-      &restored_packet_ptr, packet, &packet_length, rtp_receiver_->SSRC(),
-      header)) {
+          restored_packet_, packet, &packet_length, rtp_receiver_->SSRC(),
+          header)) {
     WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVoice, _channelId,
                  "Incoming RTX packet: invalid RTP header");
     return false;
   }
   restored_packet_in_use_ = true;
-  bool ret = OnRecoveredPacket(restored_packet_ptr, packet_length);
+  bool ret = OnRecoveredPacket(restored_packet_, packet_length);
   restored_packet_in_use_ = false;
   return ret;
 }
@@ -3414,29 +3418,6 @@ bool Channel::GetDelayEstimate(int* jitter_buffer_delay_ms,
 int Channel::LeastRequiredDelayMs() const {
   return audio_coding_->LeastRequiredDelayMs();
 }
-
-int Channel::SetInitialPlayoutDelay(int delay_ms)
-{
-  WEBRTC_TRACE(kTraceInfo, kTraceVoice, VoEId(_instanceId,_channelId),
-               "Channel::SetInitialPlayoutDelay()");
-  if ((delay_ms < kVoiceEngineMinMinPlayoutDelayMs) ||
-      (delay_ms > kVoiceEngineMaxMinPlayoutDelayMs))
-  {
-    _engineStatisticsPtr->SetLastError(
-        VE_INVALID_ARGUMENT, kTraceError,
-        "SetInitialPlayoutDelay() invalid min delay");
-    return -1;
-  }
-  if (audio_coding_->SetInitialPlayoutDelay(delay_ms) != 0)
-  {
-    _engineStatisticsPtr->SetLastError(
-        VE_AUDIO_CODING_MODULE_ERROR, kTraceError,
-        "SetInitialPlayoutDelay() failed to set min playout delay");
-    return -1;
-  }
-  return 0;
-}
-
 
 int
 Channel::SetMinimumPlayoutDelay(int delayMs)

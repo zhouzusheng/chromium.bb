@@ -4,23 +4,33 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-// PDFium wrapper around V8 APIs. PDFium code should include this file rather
-// than including V8 headers directly.
+// FXJS_V8 is a layer that makes it easier to define native objects in V8, but
+// has no knowledge of PDF-specific native objects. It could in theory be used
+// to implement other sets of native objects.
+
+// PDFium code should include this file rather than including V8 headers
+// directly.
 
 #ifndef FPDFSDK_INCLUDE_JSAPI_FXJS_V8_H_
 #define FPDFSDK_INCLUDE_JSAPI_FXJS_V8_H_
 
 #include <v8.h>
-#include "../../../core/include/fxcrt/fx_basic.h"
 
-// FXJS_V8 places no interpretation on these two classes; it merely
-// passes them on to the caller-provided FXJS_CONSTRUCTORs.
-class IFXJS_Context;
-class IFXJS_Runtime;
+#include <vector>
+
+#include "core/include/fxcrt/fx_string.h"
+
+class CFXJS_ObjDefinition;
+
+// FXJS_V8 places no restrictions on these two classes; it merely passes them
+// on to caller-provided methods.
+class IJS_Context;  // A description of the event that caused JS execution.
+class IJS_Runtime;  // A native runtime, typically owns the v8::Context.
 
 enum FXJSOBJTYPE {
-  FXJS_DYNAMIC = 0,
-  FXJS_STATIC = 1,
+  FXJSOBJTYPE_DYNAMIC = 0,  // Created by native method and returned to JS.
+  FXJSOBJTYPE_STATIC,       // Created by init and hung off of global object.
+  FXJSOBJTYPE_GLOBAL,       // The global object itself (may only appear once).
 };
 
 struct FXJSErr {
@@ -34,7 +44,7 @@ class FXJS_PerIsolateData {
   static void SetUp(v8::Isolate* pIsolate);
   static FXJS_PerIsolateData* Get(v8::Isolate* pIsolate);
 
-  CFX_PtrArray m_ObjectDefnArray;
+  std::vector<CFXJS_ObjDefinition*> m_ObjectDefnArray;
 
  protected:
   FXJS_PerIsolateData() {}
@@ -49,16 +59,13 @@ extern const wchar_t kFXJSValueNameFxobj[];
 extern const wchar_t kFXJSValueNameNull[];
 extern const wchar_t kFXJSValueNameUndefined[];
 
-
 class FXJS_ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
   void* Allocate(size_t length) override;
   void* AllocateUninitialized(size_t length) override;
   void Free(void* data, size_t length) override;
 };
 
-using FXJS_CONSTRUCTOR = void (*)(IFXJS_Context* cc,
-                                  v8::Local<v8::Object> obj,
-                                  v8::Local<v8::Object> global);
+using FXJS_CONSTRUCTOR = void (*)(IJS_Runtime* cc, v8::Local<v8::Object> obj);
 using FXJS_DESTRUCTOR = void (*)(v8::Local<v8::Object> obj);
 
 // Call before making FXJS_PrepareIsolate call.
@@ -115,28 +122,27 @@ void FXJS_DefineGlobalConst(v8::Isolate* pIsolate,
                             v8::Local<v8::Value> pDefault);
 
 // Called after FXJS_Define* calls made.
-void FXJS_InitializeRuntime(v8::Isolate* pIsolate,
-                            IFXJS_Runtime* pFXRuntime,
-                            IFXJS_Context* context,
-                            v8::Global<v8::Context>& v8PersistentContext);
+void FXJS_InitializeRuntime(
+    v8::Isolate* pIsolate,
+    IJS_Runtime* pIRuntime,
+    v8::Global<v8::Context>* pV8PersistentContext,
+    std::vector<v8::Global<v8::Object>*>* pStaticObjects);
 void FXJS_ReleaseRuntime(v8::Isolate* pIsolate,
-                         v8::Global<v8::Context>& v8PersistentContext);
-IFXJS_Runtime* FXJS_GetRuntimeFromIsolate(v8::Isolate* pIsolate);
+                         v8::Global<v8::Context>* pV8PersistentContext,
+                         std::vector<v8::Global<v8::Object>*>* pStaticObjects);
+IJS_Runtime* FXJS_GetRuntimeFromIsolate(v8::Isolate* pIsolate);
 
 // Called after FXJS_InitializeRuntime call made.
 int FXJS_Execute(v8::Isolate* pIsolate,
-                 IFXJS_Context* pJSContext,
+                 IJS_Context* pJSContext,
                  const wchar_t* script,
-                 long length,
                  FXJSErr* perror);
 
 v8::Local<v8::Object> FXJS_NewFxDynamicObj(v8::Isolate* pIsolate,
-                                           IFXJS_Context* pJSContext,
+                                           IJS_Runtime* pJSContext,
                                            int nObjDefnID);
 v8::Local<v8::Object> FXJS_GetThisObj(v8::Isolate* pIsolate);
 int FXJS_GetObjDefnID(v8::Local<v8::Object> pObj);
-int FXJS_GetObjDefnID(v8::Isolate* pIsolate, const wchar_t* pObjName);
-v8::Isolate* FXJS_GetRuntime(v8::Local<v8::Object> pObj);
 const wchar_t* FXJS_GetTypeof(v8::Local<v8::Value> pObj);
 
 void FXJS_SetPrivate(v8::Isolate* pIsolate,

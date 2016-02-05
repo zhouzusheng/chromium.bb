@@ -11,20 +11,23 @@ namespace cc {
 
 OverlayStrategyAllOrNothing::OverlayStrategyAllOrNothing(
     OverlayCandidateValidator* capability_checker)
-    : capability_checker_(capability_checker) {}
+    : capability_checker_(capability_checker) {
+  DCHECK(capability_checker);
+}
 
 OverlayStrategyAllOrNothing::~OverlayStrategyAllOrNothing() {}
 
-bool OverlayStrategyAllOrNothing::Attempt(RenderPassList* render_passes,
+bool OverlayStrategyAllOrNothing::Attempt(ResourceProvider* resource_provider,
+                                          RenderPassList* render_passes,
                                           OverlayCandidateList* candidates,
-                                          float device_scale_factor) {
+                                          gfx::Rect* damage_rect) {
   QuadList& quad_list = render_passes->back()->quad_list;
   OverlayCandidateList new_candidates;
   int next_z_order = -1;
 
   for (const DrawQuad* quad : quad_list) {
     OverlayCandidate candidate;
-    if (!OverlayCandidate::FromDrawQuad(quad, &candidate))
+    if (!OverlayCandidate::FromDrawQuad(resource_provider, quad, &candidate))
       return false;
     candidate.plane_z_order = next_z_order--;
     new_candidates.push_back(candidate);

@@ -79,6 +79,11 @@ Notification* Notification::create(ExecutionContext* context, const String& titl
         return nullptr;
     }
 
+    if (!options.actions().isEmpty()) {
+        exceptionState.throwTypeError("Actions are only supported for persistent notifications shown using ServiceWorkerRegistration.showNotification().");
+        return nullptr;
+    }
+
     String insecureOriginMessage;
     UseCounter::Feature feature = context->isSecureContext(insecureOriginMessage)
         ? UseCounter::NotificationSecureOrigin
@@ -152,7 +157,7 @@ void Notification::close()
 
     if (m_persistentId == kInvalidPersistentId) {
         // Fire the close event asynchronously.
-        executionContext()->postTask(FROM_HERE, createSameThreadTask(&Notification::dispatchCloseEvent, this));
+        executionContext()->postTask(BLINK_FROM_HERE, createSameThreadTask(&Notification::dispatchCloseEvent, this));
 
         m_state = NotificationStateClosing;
         notificationManager()->close(this);

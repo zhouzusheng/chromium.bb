@@ -11,7 +11,7 @@
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/skia_bindings/gl_bindings_skia_cmd_buffer.h"
+#include "gpu/command_buffer/common/sync_token.h"
 
 #include "third_party/khronos/GLES2/gl2.h"
 #ifndef GL_GLEXT_PROTOTYPES
@@ -213,7 +213,15 @@ uint32_t WebGraphicsContext3DImpl::lastFlushID() {
   return flush_id_;
 }
 
-DELEGATE_TO_GL_R(insertSyncPoint, InsertSyncPointCHROMIUM, unsigned int)
+bool WebGraphicsContext3DImpl::insertSyncPoint(WGC3Dbyte* sync_token) {
+  const uint32_t sync_point = gl_->InsertSyncPointCHROMIUM();
+  if (!sync_point)
+    return false;
+
+  gpu::SyncToken sync_token_data(sync_point);
+  memcpy(sync_token, &sync_token_data, sizeof(sync_token_data));
+  return true;
+}
 
 DELEGATE_TO_GL_3(reshapeWithScaleFactor, ResizeCHROMIUM, int, int, float)
 
@@ -466,6 +474,11 @@ DELEGATE_TO_GL_4(getFramebufferAttachmentParameteriv,
 DELEGATE_TO_GL_2(getIntegerv, GetIntegerv, WGC3Denum, WGC3Dint*)
 
 DELEGATE_TO_GL_2(getInteger64v, GetInteger64v, WGC3Denum, WGC3Dint64*)
+
+DELEGATE_TO_GL_3(getIntegeri_v, GetIntegeri_v, WGC3Denum, WGC3Duint, WGC3Dint*)
+
+DELEGATE_TO_GL_3(getInteger64i_v, GetInteger64i_v,
+                 WGC3Denum, WGC3Duint, WGC3Dint64*)
 
 DELEGATE_TO_GL_3(getProgramiv, GetProgramiv, WebGLId, WGC3Denum, WGC3Dint*)
 
@@ -875,7 +888,7 @@ void WebGraphicsContext3DImpl::shallowFinishCHROMIUM() {
   gl_->ShallowFinishCHROMIUM();
 }
 
-DELEGATE_TO_GL_1(waitSyncPoint, WaitSyncPointCHROMIUM, GLuint)
+DELEGATE_TO_GL_1(waitSyncToken, WaitSyncTokenCHROMIUM, const WGC3Dbyte*)
 
 void WebGraphicsContext3DImpl::loseContextCHROMIUM(
     WGC3Denum current, WGC3Denum other) {
@@ -1196,10 +1209,6 @@ bool WebGraphicsContext3DImpl::isContextLost() {
 
 blink::WGC3Denum WebGraphicsContext3DImpl::getGraphicsResetStatusARB() {
   return gl_->GetGraphicsResetStatusKHR();
-}
-
-GrGLInterface* WebGraphicsContext3DImpl::createGrGLInterface() {
-  return skia_bindings::CreateCommandBufferSkiaGLBinding();
 }
 
 ::gpu::gles2::GLES2ImplementationErrorMessageCallback*

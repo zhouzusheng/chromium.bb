@@ -42,6 +42,7 @@
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/iterators/CharacterIterator.h"
 #include "core/editing/iterators/TextIterator.h"
+#include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLImageElement.h"
@@ -400,6 +401,8 @@ bool AXLayoutObject::isEditable() const
     return AXNodeObject::isEditable();
 }
 
+// Requires layoutObject to be present because it relies on style
+// user-modify. Don't move this logic to AXNodeObject.
 bool AXLayoutObject::isRichlyEditable() const
 {
     if (node() && node()->isContentRichlyEditable())
@@ -1175,27 +1178,27 @@ AXObject* AXLayoutObject::activeDescendant() const
     return 0;
 }
 
-void AXLayoutObject::ariaFlowToElements(AccessibilityChildrenVector& flowTo) const
+void AXLayoutObject::ariaFlowToElements(AXObjectVector& flowTo) const
 {
     accessibilityChildrenFromAttribute(aria_flowtoAttr, flowTo);
 }
 
-void AXLayoutObject::ariaControlsElements(AccessibilityChildrenVector& controls) const
+void AXLayoutObject::ariaControlsElements(AXObjectVector& controls) const
 {
     accessibilityChildrenFromAttribute(aria_controlsAttr, controls);
 }
 
-void AXLayoutObject::deprecatedAriaDescribedbyElements(AccessibilityChildrenVector& describedby) const
+void AXLayoutObject::deprecatedAriaDescribedbyElements(AXObjectVector& describedby) const
 {
     accessibilityChildrenFromAttribute(aria_describedbyAttr, describedby);
 }
 
-void AXLayoutObject::deprecatedAriaLabelledbyElements(AccessibilityChildrenVector& labelledby) const
+void AXLayoutObject::deprecatedAriaLabelledbyElements(AXObjectVector& labelledby) const
 {
     accessibilityChildrenFromAttribute(aria_labelledbyAttr, labelledby);
 }
 
-void AXLayoutObject::ariaOwnsElements(AccessibilityChildrenVector& owns) const
+void AXLayoutObject::ariaOwnsElements(AXObjectVector& owns) const
 {
     accessibilityChildrenFromAttribute(aria_ownsAttr, owns);
 }
@@ -1826,19 +1829,16 @@ AXObject::AXRange AXLayoutObject::selection() const
         return AXRange();
 
     VisibleSelection selection = layoutObject()->frame()->selection().selection();
-    RefPtrWillBeRawPtr<Range> selectionRange = firstRangeOf(selection);
-    if (!selectionRange)
+    if (selection.isNone())
         return AXRange();
 
-    int anchorOffset = selectionRange->startOffset();
-    ASSERT(anchorOffset >= 0);
-    int focusOffset = selectionRange->endOffset();
-    ASSERT(focusOffset >= 0);
+    Position visibleStart = selection.visibleStart().toParentAnchoredPosition();
+    Position visibleEnd = selection.visibleEnd().toParentAnchoredPosition();
 
-    Node* anchorNode = selectionRange->startContainer();
+    Node* anchorNode = visibleStart.anchorNode();
     ASSERT(anchorNode);
 
-    AXObject* anchorObject = nullptr;
+    AXLayoutObject* anchorObject = nullptr;
     // Find the closest node that has a corresponding AXObject.
     // This is because some nodes may be aria hidden or might not even have
     // a layout object if they are part of the shadow DOM.
@@ -1852,13 +1852,11 @@ AXObject::AXRange AXLayoutObject::selection() const
         else
             anchorNode = anchorNode->parentNode();
     }
-    if (anchorNode != selectionRange->startContainer())
-        anchorOffset = 0;
 
-    Node* focusNode = selectionRange->endContainer();
+    Node* focusNode = visibleEnd.anchorNode();
     ASSERT(focusNode);
 
-    AXObject* focusObject = nullptr;
+    AXLayoutObject* focusObject = nullptr;
     while (focusNode) {
         focusObject = getUnignoredObjectFromNode(*focusNode);
         if (focusObject)
@@ -1869,12 +1867,16 @@ AXObject::AXRange AXLayoutObject::selection() const
         else
             focusNode = focusNode->parentNode();
     }
-    if (focusNode != selectionRange->endContainer())
-        focusOffset = 0;
 
     if (!anchorObject || !focusObject)
         return AXRange();
 
+    int anchorOffset = anchorObject->indexForVisiblePosition(
+        selection.visibleStart());
+    ASSERT(anchorOffset >= 0);
+    int focusOffset = focusObject->indexForVisiblePosition(
+        selection.visibleEnd());
+    ASSERT(focusOffset >= 0);
     return AXRange(
         anchorObject, anchorOffset,
         focusObject, focusOffset);
@@ -1889,7 +1891,7 @@ AXObject::AXRange AXLayoutObject::selectionUnderObject() const
     if (textSelection.isValid())
         return textSelection;
 
-    if (!layoutObject() || !layoutObject()->frame())
+    if (!node() || !layoutObject()->frame())
         return AXRange();
 
     VisibleSelection selection = layoutObject()->frame()->selection().selection();
@@ -2158,9 +2160,6 @@ VisiblePosition AXLayoutObject::visiblePositionForIndex(int index) const
 
     if (m_layoutObject->isTextControl())
         return toLayoutTextControl(m_layoutObject)->textFormControlElement()->visiblePositionForIndex(index);
-
-    if (!allowsTextRanges() && !m_layoutObject->isText())
-        return VisiblePosition();
 
     Node* node = m_layoutObject->node();
     if (!node)
@@ -2475,10 +2474,9 @@ void AXLayoutObject::addImageMapChildren()
 
     for (HTMLAreaElement& area : Traversal<HTMLAreaElement>::descendantsOf(*map)) {
         // add an <area> element for this child if it has a link
-        if (area.isLink()) {
-            AXImageMapLink* areaObject = toAXImageMapLink(axObjectCache().getOrCreate(ImageMapLinkRole));
-            areaObject->setHTMLAreaElement(&area);
-            areaObject->setHTMLMapElement(map);
+        AXObject* obj = axObjectCache().getOrCreate(&area);
+        if (obj) {
+            AXImageMapLink* areaObject = toAXImageMapLink(obj);
             areaObject->setParent(this);
             ASSERT(areaObject->axObjectID() != 0);
             if (!areaObject->accessibilityIsIgnored())

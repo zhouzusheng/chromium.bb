@@ -1,6 +1,4 @@
-
-
-  Polymer({
+Polymer({
 
     is: 'paper-tabs',
 
@@ -12,11 +10,14 @@
     properties: {
 
       /**
-       * If true, ink ripple effect is disabled.
+       * If true, ink ripple effect is disabled. When this property is changed,
+       * all descendant `<paper-tab>` elements have their `noink` property
+       * changed to the new value as well.
        */
       noink: {
         type: Boolean,
-        value: false
+        value: false,
+        observer: '_noinkChanged'
       },
 
       /**
@@ -115,8 +116,25 @@
       'iron-deselect': '_onIronDeselect'
     },
 
+    created: function() {
+      this._holdJob = null;
+    },
+
     ready: function() {
       this.setScrollDirection('y', this.$.tabsContainer);
+    },
+
+    _noinkChanged: function(noink) {
+      var childTabs = Polymer.dom(this).querySelectorAll('paper-tab');
+      childTabs.forEach(noink ? this._setNoinkAttribute : this._removeNoinkAttribute);
+    },
+
+    _setNoinkAttribute: function(element) {
+      element.setAttribute('noink', '');
+    },
+
+    _removeNoinkAttribute: function(element) {
+      element.removeAttribute('noink');
     },
 
     _computeScrollButtonClass: function(hideThisButton, scrollable, hideScrollButtons) {
@@ -310,4 +328,3 @@
     }
 
   });
-

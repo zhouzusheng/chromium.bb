@@ -14,6 +14,7 @@
 #include <string>
 
 #include "webrtc/p2p/base/transport.h"
+#include "webrtc/base/asyncpacketsocket.h"
 #include "webrtc/base/socketaddress.h"
 
 namespace rtc {
@@ -47,8 +48,8 @@ class PortInterface {
   virtual void SetIceRole(IceRole role) = 0;
   virtual IceRole GetIceRole() const = 0;
 
-  virtual void SetIceTiebreaker(uint64 tiebreaker) = 0;
-  virtual uint64 IceTiebreaker() const = 0;
+  virtual void SetIceTiebreaker(uint64_t tiebreaker) = 0;
+  virtual uint64_t IceTiebreaker() const = 0;
 
   virtual bool SharedSocket() const = 0;
 
@@ -111,6 +112,9 @@ class PortInterface {
   virtual void EnablePortPackets() = 0;
   sigslot::signal4<PortInterface*, const char*, size_t,
                    const rtc::SocketAddress&> SignalReadPacket;
+
+  // Emitted each time a packet is sent on this port.
+  sigslot::signal2<PortInterface*, const rtc::SentPacket&> SignalSentPacket;
 
   virtual std::string ToString() const = 0;
 

@@ -29,6 +29,7 @@
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/dom/FirstLetterPseudoElement.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
 #include "core/editing/EditingUtilities.h"
@@ -51,6 +52,7 @@
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutTextFragment.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/line/InlineIterator.h"
 #include "core/layout/line/InlineTextBox.h"
@@ -80,7 +82,7 @@ static PositionType canonicalPosition(const PositionType& passedPosition)
     // Sometimes updating selection positions can be extremely expensive and
     // occur frequently.  Often calling preventDefault on mousedown events can
     // avoid doing unnecessary text selection work.  http://crbug.com/472258.
-    TRACE_EVENT0("blink", "VisiblePosition::canonicalPosition");
+    TRACE_EVENT0("input", "VisibleUnits::canonicalPosition");
 
     // The updateLayout call below can do so much that even the position passed
     // in to us might get changed as a side effect. Specifically, there are code
@@ -120,7 +122,7 @@ static PositionType canonicalPosition(const PositionType& passedPosition)
     // The new position must be in the same editable element. Enforce that
     // first. Unless the descent is from a non-editable html element to an
     // editable body.
-    if (isHTMLHtmlElement(node) && !node->hasEditableStyle() && node->document().body() && node->document().body()->hasEditableStyle())
+    if (node && node->document().documentElement() == node && !node->hasEditableStyle() && node->document().body() && node->document().body()->hasEditableStyle())
         return next.isNotNull() ? next : prev;
 
     Element* editingRoot = editableRootForPosition(position);
@@ -128,7 +130,7 @@ static PositionType canonicalPosition(const PositionType& passedPosition)
     // If the html element is editable, descending into its body will look like
     // a descent from non-editable to editable content since
     // |rootEditableElementOf()| always stops at the body.
-    if (isHTMLHtmlElement(editingRoot) || position.anchorNode()->isDocumentNode())
+    if ((editingRoot && editingRoot->document().documentElement() == editingRoot) || position.anchorNode()->isDocumentNode())
         return next.isNotNull() ? next : prev;
 
     bool prevIsInSameEditableElement = prevNode && editableRootForPosition(prev) == editingRoot;
@@ -191,7 +193,7 @@ static PositionWithAffinityTemplate<Strategy> honorEditingBoundaryAtOrBefore(con
 
     // Return the last position before |pos| that is in the same editable region
     // as this position
-    return lastEditablePositionBeforePositionInRoot(pos.position(), highestRoot);
+    return lastEditablePositionBeforePositionInRoot(pos.position(), *highestRoot);
 }
 
 template <typename Strategy>
@@ -229,7 +231,7 @@ static VisiblePositionTemplate<Strategy> honorEditingBoundaryAtOrAfter(const Vis
 
     // Return the next position after |pos| that is in the same editable region
     // as this position
-    return firstEditableVisiblePositionAfterPositionInRoot(pos.deepEquivalent(), highestRoot);
+    return firstEditableVisiblePositionAfterPositionInRoot(pos.deepEquivalent(), *highestRoot);
 }
 
 static Node* previousLeafWithSameEditability(Node* node, EditableType editableType)
@@ -2149,6 +2151,32 @@ VisiblePosition visiblePositionForContentsPoint(const IntPoint& contentsPoint, L
     return VisiblePosition();
 }
 
+// TODO(yosin): We should use |associatedLayoutObjectOf()| in "VisibleUnits.cpp"
+// where it takes |LayoutObject| from |Position|.
+static LayoutObject* associatedLayoutObjectOf(const Node& node, int offsetInNode)
+{
+    ASSERT(offsetInNode >= 0);
+    LayoutObject* layoutObject = node.layoutObject();
+    if (!node.isTextNode() || !layoutObject || !toLayoutText(layoutObject)->isTextFragment())
+        return layoutObject;
+    LayoutTextFragment* layoutTextFragment = toLayoutTextFragment(layoutObject);
+    if (layoutTextFragment->isRemainingTextLayoutObject()) {
+        if (static_cast<unsigned>(offsetInNode) >= layoutTextFragment->start())
+            return layoutObject;
+        LayoutObject* firstLetterLayoutObject = layoutTextFragment->firstLetterPseudoElement()->layoutObject();
+        if (!firstLetterLayoutObject)
+            return nullptr;
+        // TODO(yosin): We're not sure when |firstLetterLayoutObject| has
+        // multiple child layout object.
+        ASSERT(firstLetterLayoutObject->slowFirstChild() == firstLetterLayoutObject->slowLastChild());
+        return firstLetterLayoutObject->slowFirstChild();
+    }
+    // TODO(yosin): We should rename |LayoutTextFramge::length()| instead of
+    // |end()|, once |LayoutTextFramge| has it. See http://crbug.com/545789
+    ASSERT(static_cast<unsigned>(offsetInNode) <= layoutTextFragment->start() + layoutTextFragment->fragmentLength());
+    return layoutTextFragment;
+}
+
 template <typename Strategy>
 static bool inRenderedText(const PositionTemplate<Strategy>& position)
 {
@@ -2156,22 +2184,23 @@ static bool inRenderedText(const PositionTemplate<Strategy>& position)
     if (!anchorNode || !anchorNode->isTextNode())
         return false;
 
-    LayoutObject* layoutObject = anchorNode->layoutObject();
+    const int offsetInNode = position.computeEditingOffset();
+    LayoutObject* layoutObject = associatedLayoutObjectOf(*anchorNode, offsetInNode);
     if (!layoutObject)
         return false;
 
-    const int offsetInNode = position.computeEditingOffset();
     LayoutText* textLayoutObject = toLayoutText(layoutObject);
+    const int textOffset = offsetInNode - textLayoutObject->textStartOffset();
     for (InlineTextBox *box = textLayoutObject->firstTextBox(); box; box = box->nextTextBox()) {
-        if (offsetInNode < static_cast<int>(box->start()) && !textLayoutObject->containsReversedText()) {
+        if (textOffset < static_cast<int>(box->start()) && !textLayoutObject->containsReversedText()) {
             // The offset we're looking for is before this node
             // this means the offset must be in content that is
             // not laid out. Return false.
             return false;
         }
-        if (box->containsCaretOffset(offsetInNode)) {
+        if (box->containsCaretOffset(textOffset)) {
             // Return false for offsets inside composed characters.
-            return offsetInNode == 0 || offsetInNode == textLayoutObject->nextOffset(textLayoutObject->previousOffset(offsetInNode));
+            return textOffset == 0 || textOffset == textLayoutObject->nextOffset(textLayoutObject->previousOffset(textOffset));
         }
     }
 
@@ -2371,7 +2400,7 @@ static bool isStreamer(const PositionIteratorAlgorithm<Strategy>& pos)
 template <typename Strategy>
 static PositionTemplate<Strategy> mostBackwardCaretPosition(const PositionTemplate<Strategy>& position, EditingBoundaryCrossingRule rule)
 {
-    TRACE_EVENT0("blink", "Position::upstream");
+    TRACE_EVENT0("input", "VisibleUnits::mostBackwardCaretPosition");
 
     Node* startNode = position.anchorNode();
     if (!startNode)
@@ -2406,7 +2435,7 @@ static PositionTemplate<Strategy> mostBackwardCaretPosition(const PositionTempla
             return lastVisible.deprecatedComputePosition();
 
         // skip position in non-laid out or invisible node
-        LayoutObject* layoutObject = currentNode->layoutObject();
+        LayoutObject* layoutObject = associatedLayoutObjectOf(*currentNode, currentPos.offsetInLeafNode());
         if (!layoutObject || layoutObject->style()->visibility() != VISIBLE)
             continue;
 
@@ -2433,19 +2462,33 @@ static PositionTemplate<Strategy> mostBackwardCaretPosition(const PositionTempla
 
         // return current position if it is in laid out text
         if (layoutObject->isText() && toLayoutText(layoutObject)->firstTextBox()) {
+            LayoutText* const textLayoutObject = toLayoutText(layoutObject);
+            const unsigned textStartOffset = textLayoutObject->textStartOffset();
             if (currentNode != startNode) {
                 // This assertion fires in layout tests in the case-transform.html test because
                 // of a mix-up between offsets in the text in the DOM tree with text in the
                 // layout tree which can have a different length due to case transformation.
                 // Until we resolve that, disable this so we can run the layout tests!
                 // ASSERT(currentOffset >= layoutObject->caretMaxOffset());
-                return PositionTemplate<Strategy>(currentNode, layoutObject->caretMaxOffset());
+                return PositionTemplate<Strategy>(currentNode, layoutObject->caretMaxOffset() + textStartOffset);
             }
 
-            unsigned textOffset = currentPos.offsetInLeafNode();
-            LayoutText* textLayoutObject = toLayoutText(layoutObject);
+            // Map offset in DOM node to offset in InlineBox.
+            ASSERT(currentPos.offsetInLeafNode() >= static_cast<int>(textStartOffset));
+            const unsigned textOffset = currentPos.offsetInLeafNode() - textStartOffset;
             InlineTextBox* lastTextBox = textLayoutObject->lastTextBox();
             for (InlineTextBox* box = textLayoutObject->firstTextBox(); box; box = box->nextTextBox()) {
+                if (textOffset == box->start()) {
+                    if (textLayoutObject->isTextFragment() && toLayoutTextFragment(layoutObject)->isRemainingTextLayoutObject()) {
+                        // |currentPos| is at start of remaining text of
+                        // |Text| node with :first-letter.
+                        ASSERT(currentPos.offsetInLeafNode() >= 1);
+                        LayoutObject* firstLetterLayoutObject = toLayoutTextFragment(layoutObject)->firstLetterPseudoElement()->layoutObject();
+                        if (firstLetterLayoutObject && firstLetterLayoutObject->style()->visibility() == VISIBLE)
+                            return currentPos.computePosition();
+                    }
+                    continue;
+                }
                 if (textOffset <= box->start() + box->len()) {
                     if (textOffset > box->start())
                         return currentPos.computePosition();
@@ -2498,7 +2541,7 @@ PositionInComposedTree mostBackwardCaretPosition(const PositionInComposedTree& p
 template <typename Strategy>
 PositionTemplate<Strategy> mostForwardCaretPosition(const PositionTemplate<Strategy>& position, EditingBoundaryCrossingRule rule)
 {
-    TRACE_EVENT0("blink", "Position::downstream");
+    TRACE_EVENT0("input", "VisibleUnits::mostForwardCaretPosition");
 
     Node* startNode = position.anchorNode();
     if (!startNode)
@@ -2543,7 +2586,7 @@ PositionTemplate<Strategy> mostForwardCaretPosition(const PositionTemplate<Strat
             return lastVisible.deprecatedComputePosition();
 
         // skip position in non-laid out or invisible node
-        LayoutObject* layoutObject = currentNode->layoutObject();
+        LayoutObject* layoutObject = associatedLayoutObjectOf(*currentNode, currentPos.offsetInLeafNode());
         if (!layoutObject || layoutObject->style()->visibility() != VISIBLE)
             continue;
 
@@ -2565,13 +2608,16 @@ PositionTemplate<Strategy> mostForwardCaretPosition(const PositionTemplate<Strat
 
         // return current position if it is in laid out text
         if (layoutObject->isText() && toLayoutText(layoutObject)->firstTextBox()) {
+            LayoutText* const textLayoutObject = toLayoutText(layoutObject);
+            const unsigned textStartOffset = textLayoutObject->textStartOffset();
             if (currentNode != startNode) {
                 ASSERT(currentPos.atStartOfNode());
-                return PositionTemplate<Strategy>(currentNode, layoutObject->caretMinOffset());
+                return PositionTemplate<Strategy>(currentNode, layoutObject->caretMinOffset() + textStartOffset);
             }
 
-            unsigned textOffset = currentPos.offsetInLeafNode();
-            LayoutText* textLayoutObject = toLayoutText(layoutObject);
+            // Map offset in DOM node to offset in InlineBox.
+            ASSERT(currentPos.offsetInLeafNode() >= static_cast<int>(textStartOffset));
+            const unsigned textOffset = currentPos.offsetInLeafNode() - textStartOffset;
             InlineTextBox* lastTextBox = textLayoutObject->lastTextBox();
             for (InlineTextBox* box = textLayoutObject->firstTextBox(); box; box = box->nextTextBox()) {
                 if (textOffset <= box->end()) {
@@ -2668,11 +2714,14 @@ static bool isVisuallyEquivalentCandidateAlgorithm(const PositionTemplate<Strate
         // still need to support legacy positions.
         if (position.isAfterAnchor())
             return false;
-        return !position.computeEditingOffset() && !nodeIsUserSelectNone(Strategy::parent(*anchorNode));
+        if (position.computeEditingOffset())
+            return false;
+        const Node* parent = Strategy::parent(*anchorNode);
+        return parent->layoutObject() && parent->layoutObject()->isSelectable();
     }
 
     if (layoutObject->isText())
-        return !nodeIsUserSelectNone(anchorNode) && inRenderedText(position);
+        return layoutObject->isSelectable() && inRenderedText(position);
 
     if (layoutObject->isSVG()) {
         // We don't consider SVG elements are contenteditable except for
@@ -2681,22 +2730,29 @@ static bool isVisuallyEquivalentCandidateAlgorithm(const PositionTemplate<Strate
         return false;
     }
 
-    if (isRenderedHTMLTableElement(anchorNode) || Strategy::editingIgnoresContent(anchorNode))
-        return (position.atFirstEditingPositionForNode() || position.atLastEditingPositionForNode()) && !nodeIsUserSelectNone(Strategy::parent(*anchorNode));
+    if (isRenderedHTMLTableElement(anchorNode) || Strategy::editingIgnoresContent(anchorNode)) {
+        if (!position.atFirstEditingPositionForNode() && !position.atLastEditingPositionForNode())
+            return false;
+        const Node* parent = Strategy::parent(*anchorNode);
+        return parent->layoutObject() && parent->layoutObject()->isSelectable();
+    }
 
-    if (isHTMLHtmlElement(*anchorNode))
+    if (anchorNode->document().documentElement() == anchorNode)
+        return false;
+
+    if (!layoutObject->isSelectable())
         return false;
 
     if (layoutObject->isLayoutBlockFlow() || layoutObject->isFlexibleBox() || layoutObject->isLayoutGrid()) {
         if (toLayoutBlock(layoutObject)->logicalHeight() || isHTMLBodyElement(*anchorNode)) {
             if (!hasRenderedNonAnonymousDescendantsWithHeight(layoutObject))
-                return position.atFirstEditingPositionForNode() && !nodeIsUserSelectNone(anchorNode);
-            return anchorNode->hasEditableStyle() && !nodeIsUserSelectNone(anchorNode) && atEditingBoundary(position);
+                return position.atFirstEditingPositionForNode();
+            return anchorNode->hasEditableStyle() && atEditingBoundary(position);
         }
     } else {
         LocalFrame* frame = anchorNode->document().frame();
         bool caretBrowsing = frame->settings() && frame->settings()->caretBrowsingEnabled();
-        return (caretBrowsing || anchorNode->hasEditableStyle()) && !nodeIsUserSelectNone(anchorNode) && atEditingBoundary(position);
+        return (caretBrowsing || anchorNode->hasEditableStyle()) && atEditingBoundary(position);
     }
 
     return false;
@@ -2753,7 +2809,8 @@ static VisiblePositionTemplate<Strategy> skipToEndOfEditingBoundary(const Visibl
 
     // That must mean that |pos| is not editable. Return the next position after
     // |pos| that is in the same editable region as this position
-    return firstEditableVisiblePositionAfterPositionInRoot(pos.deepEquivalent(), highestRoot);
+    ASSERT(highestRoot);
+    return firstEditableVisiblePositionAfterPositionInRoot(pos.deepEquivalent(), *highestRoot);
 }
 
 template <typename Strategy>
@@ -3204,7 +3261,8 @@ static VisiblePositionTemplate<Strategy> skipToStartOfEditingBoundary(const Visi
 
     // That must mean that |pos| is not editable. Return the last position
     // before |pos| that is in the same editable region as this position
-    return lastEditableVisiblePositionBeforePositionInRoot(pos.deepEquivalent(), highestRoot);
+    ASSERT(highestRoot);
+    return lastEditableVisiblePositionBeforePositionInRoot(pos.deepEquivalent(), *highestRoot);
 }
 
 template <typename Strategy>
@@ -3216,18 +3274,12 @@ static VisiblePositionTemplate<Strategy> previousPositionOfAlgorithm(const Visib
     if (pos.atStartOfTree())
         return VisiblePositionTemplate<Strategy>();
 
-    const VisiblePositionTemplate<Strategy> prev = createVisiblePosition(pos);
-    ASSERT(prev.deepEquivalent() != visiblePosition.deepEquivalent());
-
-#if ENABLE(ASSERT)
     // we should always be able to make the affinity |TextAffinity::Downstream|,
     // because going previous from an |TextAffinity::Upstream| position can
     // never yield another |TextAffinity::Upstream position| (unless line wrap
     // length is 0!).
-    if (prev.isNotNull() && visiblePosition.affinity() == TextAffinity::Upstream) {
-        ASSERT(inSameLine(PositionWithAffinityTemplate<Strategy>(prev.deepEquivalent()), PositionWithAffinityTemplate<Strategy>(prev.deepEquivalent(), TextAffinity::Upstream)));
-    }
-#endif
+    const VisiblePositionTemplate<Strategy> prev = createVisiblePosition(pos);
+    ASSERT(prev.deepEquivalent() != visiblePosition.deepEquivalent());
 
     switch (rule) {
     case CanCrossEditingBoundary:

@@ -67,15 +67,17 @@ FrameTreeNode* FrameTreeNode::GloballyFindByID(int frame_tree_node_id) {
   return it == nodes->end() ? nullptr : it->second;
 }
 
-FrameTreeNode::FrameTreeNode(FrameTree* frame_tree,
-                             Navigator* navigator,
-                             RenderFrameHostDelegate* render_frame_delegate,
-                             RenderViewHostDelegate* render_view_delegate,
-                             RenderWidgetHostDelegate* render_widget_delegate,
-                             RenderFrameHostManager::Delegate* manager_delegate,
-                             blink::WebTreeScopeType scope,
-                             const std::string& name,
-                             blink::WebSandboxFlags sandbox_flags)
+FrameTreeNode::FrameTreeNode(
+    FrameTree* frame_tree,
+    Navigator* navigator,
+    RenderFrameHostDelegate* render_frame_delegate,
+    RenderViewHostDelegate* render_view_delegate,
+    RenderWidgetHostDelegate* render_widget_delegate,
+    RenderFrameHostManager::Delegate* manager_delegate,
+    blink::WebTreeScopeType scope,
+    const std::string& name,
+    blink::WebSandboxFlags sandbox_flags,
+    const blink::WebFrameOwnerProperties& frame_owner_properties)
     : frame_tree_(frame_tree),
       navigator_(navigator),
       render_manager_(this,
@@ -92,6 +94,7 @@ FrameTreeNode::FrameTreeNode(FrameTree* frame_tree,
       // Effective sandbox flags also need to be set, since initial sandbox
       // flags should apply to the initial empty document in the frame.
       effective_sandbox_flags_(sandbox_flags),
+      frame_owner_properties_(frame_owner_properties),
       loading_progress_(kLoadingProgressNotStarted) {
   std::pair<FrameTreeNodeIDMap::iterator, bool> result =
       g_frame_tree_node_id_map.Get().insert(
@@ -126,16 +129,15 @@ void FrameTreeNode::AddChild(scoped_ptr<FrameTreeNode> child,
                              int frame_routing_id) {
   // Child frame must always be created in the same process as the parent.
   CHECK_EQ(process_id, render_manager_.current_host()->GetProcess()->GetID());
+  child->set_parent(this);
 
   // Initialize the RenderFrameHost for the new node.  We always create child
   // frames in the same SiteInstance as the current frame, and they can swap to
   // a different one if they navigate away.
   child->render_manager()->Init(
-      render_manager_.current_host()->GetSiteInstance()->GetBrowserContext(),
       render_manager_.current_host()->GetSiteInstance(),
       render_manager_.current_host()->GetRoutingID(), frame_routing_id,
       MSG_ROUTING_NONE);
-  child->set_parent(this);
 
   // Other renderer processes in this BrowsingInstance may need to find out
   // about the new frame.  Create a proxy for the child frame in all
@@ -145,33 +147,28 @@ void FrameTreeNode::AddChild(scoped_ptr<FrameTreeNode> child,
   if (SiteIsolationPolicy::AreCrossProcessFramesPossible())
     render_manager_.CreateProxiesForChildFrame(child.get());
 
-  children_.push_back(child.release());
+  children_.push_back(child.Pass());
 }
 
 void FrameTreeNode::RemoveChild(FrameTreeNode* child) {
-  std::vector<FrameTreeNode*>::iterator iter;
-  for (iter = children_.begin(); iter != children_.end(); ++iter) {
-    if ((*iter) == child)
-      break;
-  }
-
-  if (iter != children_.end()) {
-    // Subtle: we need to make sure the node is gone from the tree before
-    // observers are notified of its deletion.
-    scoped_ptr<FrameTreeNode> node_to_delete(*iter);
-    children_.weak_erase(iter);
-    node_to_delete.reset();
+  for (auto iter = children_.begin(); iter != children_.end(); ++iter) {
+    if (iter->get() == child) {
+      // Subtle: we need to make sure the node is gone from the tree before
+      // observers are notified of its deletion.
+      scoped_ptr<FrameTreeNode> node_to_delete(iter->Pass());
+      children_.erase(iter);
+      node_to_delete.reset();
+      return;
+    }
   }
 }
 
 void FrameTreeNode::ResetForNewProcess() {
   current_url_ = GURL();
 
-  // The children may not have been cleared if a cross-process navigation
-  // commits before the old process cleans everything up.  Make sure the child
-  // nodes get deleted before swapping to a new process.
-  ScopedVector<FrameTreeNode> old_children = children_.Pass();
-  old_children.clear();  // May notify observers.
+  // Remove child nodes from the tree, then delete them. This destruction
+  // operation will notify observers.
+  std::vector<scoped_ptr<FrameTreeNode>>().swap(children_);
 }
 
 void FrameTreeNode::SetOpener(FrameTreeNode* opener) {
@@ -382,6 +379,11 @@ bool FrameTreeNode::StopLoading() {
 
   render_manager_.Stop();
   return true;
+}
+
+void FrameTreeNode::DidFocus() {
+  last_focus_time_ = base::TimeTicks::Now();
+  FOR_EACH_OBSERVER(Observer, observers_, OnFrameTreeNodeFocused(this));
 }
 
 }  // namespace content

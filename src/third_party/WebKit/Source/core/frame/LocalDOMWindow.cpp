@@ -149,6 +149,11 @@ public:
         SuspendableTimer::trace(visitor);
     }
 
+    WebTaskRunner* timerTaskRunner() override
+    {
+        return m_window->document()->timerTaskRunner();
+    }
+
 private:
     void fired() override
     {
@@ -178,7 +183,7 @@ static void updateSuddenTerminationStatus(LocalDOMWindow* domWindow, bool addedL
         domWindow->frame()->loader().client()->suddenTerminationDisablerChanged(addedListener, disablerType);
 }
 
-typedef HashCountedSet<LocalDOMWindow*> DOMWindowSet;
+using DOMWindowSet = WillBePersistentHeapHashCountedSet<RawPtrWillBeWeakMember<LocalDOMWindow>>;
 
 static DOMWindowSet& windowsWithUnloadEventListeners()
 {
@@ -669,7 +674,7 @@ void LocalDOMWindow::schedulePostMessage(PassRefPtrWillBeRawPtr<MessageEvent> ev
 {
     // Schedule the message.
     OwnPtrWillBeRawPtr<PostMessageTimer> timer = adoptPtrWillBeNoop(new PostMessageTimer(*this, event, source, target, stackTrace, UserGestureIndicator::currentToken()));
-    timer->startOneShot(0, FROM_HERE);
+    timer->startOneShot(0, BLINK_FROM_HERE);
     timer->suspendIfNeeded();
     m_postMessageTimers.add(timer.release());
 }
@@ -1130,10 +1135,11 @@ void LocalDOMWindow::scrollBy(double x, double y, ScrollBehavior scrollBehavior)
     x = ScrollableArea::normalizeNonFiniteScroll(x);
     y = ScrollableArea::normalizeNonFiniteScroll(y);
 
-    DoublePoint currentOffset = view->scrollableArea()->scrollPositionDouble();
+    ScrollableArea* viewport = host->settings().inertVisualViewport() ? view->layoutViewportScrollableArea() : view->scrollableArea();
+
+    DoublePoint currentOffset = viewport->scrollPositionDouble();
     DoubleSize scaledDelta(x * frame()->pageZoomFactor(), y * frame()->pageZoomFactor());
 
-    ScrollableArea* viewport = host->settings().inertVisualViewport() ? view->layoutViewportScrollableArea() : view->scrollableArea();
     viewport->setScrollPosition(currentOffset + scaledDelta, ProgrammaticScroll, scrollBehavior);
 }
 
@@ -1201,7 +1207,9 @@ void LocalDOMWindow::scrollTo(const ScrollToOptions& scrollToOptions) const
     double scaledX = 0.0;
     double scaledY = 0.0;
 
-    DoublePoint currentOffset = view->scrollableArea()->scrollPositionDouble();
+    ScrollableArea* viewport = host->settings().inertVisualViewport() ? view->layoutViewportScrollableArea() : view->scrollableArea();
+
+    DoublePoint currentOffset = viewport->scrollPositionDouble();
     scaledX = currentOffset.x();
     scaledY = currentOffset.y();
 
@@ -1213,7 +1221,7 @@ void LocalDOMWindow::scrollTo(const ScrollToOptions& scrollToOptions) const
 
     ScrollBehavior scrollBehavior = ScrollBehaviorAuto;
     ScrollableArea::scrollBehaviorFromString(scrollToOptions.behavior(), scrollBehavior);
-    ScrollableArea* viewport = host->settings().inertVisualViewport() ? view->layoutViewportScrollableArea() : view->scrollableArea();
+
     viewport->setScrollPosition(DoublePoint(scaledX, scaledY), ProgrammaticScroll, scrollBehavior);
 }
 
@@ -1312,10 +1320,10 @@ void LocalDOMWindow::cancelIdleCallback(int id)
         document->cancelIdleCallback(id);
 }
 
-bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> prpListener, bool useCapture)
+bool LocalDOMWindow::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> prpListener, const EventListenerOptions& options)
 {
     RefPtrWillBeRawPtr<EventListener> listener = prpListener;
-    if (!EventTarget::addEventListener(eventType, listener, useCapture))
+    if (!EventTarget::addEventListenerInternal(eventType, listener, options))
         return false;
 
     if (frame() && frame()->host())
@@ -1346,9 +1354,9 @@ bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtrW
     return true;
 }
 
-bool LocalDOMWindow::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool LocalDOMWindow::removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
-    if (!EventTarget::removeEventListener(eventType, listener, useCapture))
+    if (!EventTarget::removeEventListenerInternal(eventType, listener, options))
         return false;
 
     if (frame() && frame()->host())

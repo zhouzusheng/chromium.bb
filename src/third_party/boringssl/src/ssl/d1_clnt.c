@@ -135,7 +135,7 @@ static int dtls1_get_hello_verify(SSL *s);
 
 int dtls1_connect(SSL *s) {
   BUF_MEM *buf = NULL;
-  void (*cb)(const SSL *ssl, int type, int val) = NULL;
+  void (*cb)(const SSL *ssl, int type, int value) = NULL;
   int ret = -1;
   int new_state, state, skip = 0;
 
@@ -190,13 +190,6 @@ int dtls1_connect(SSL *s) {
       case SSL3_ST_CW_CLNT_HELLO_A:
       case SSL3_ST_CW_CLNT_HELLO_B:
         s->shutdown = 0;
-
-        if (!ssl3_init_handshake_buffer(s)) {
-          OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
-          ret = -1;
-          goto end;
-        }
-
         dtls1_start_timer(s);
         ret = ssl3_send_client_hello(s);
         if (ret <= 0) {
@@ -352,6 +345,7 @@ int dtls1_connect(SSL *s) {
 
       case SSL3_ST_CW_CERT_VRFY_A:
       case SSL3_ST_CW_CERT_VRFY_B:
+      case SSL3_ST_CW_CERT_VRFY_C:
         dtls1_start_timer(s);
         ret = ssl3_send_cert_verify(s);
         if (ret <= 0) {

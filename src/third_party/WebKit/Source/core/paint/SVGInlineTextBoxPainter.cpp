@@ -62,7 +62,8 @@ void SVGInlineTextBoxPainter::paint(const PaintInfo& paintInfo, const LayoutPoin
         LayoutObject& parentLayoutObject = *LineLayoutPaintShim::layoutObjectFrom(m_svgInlineTextBox.parent()->lineLayoutItem());
         const ComputedStyle& style = parentLayoutObject.styleRef();
 
-        DrawingRecorder recorder(*paintInfo.context, m_svgInlineTextBox, displayItemType, paintInfo.rect);
+        // TODO(chrishtr): passing the cull rect is incorrect.
+        DrawingRecorder recorder(*paintInfo.context, m_svgInlineTextBox, displayItemType, FloatRect(paintInfo.cullRect().m_rect));
         InlineTextBoxPainter(m_svgInlineTextBox).paintDocumentMarkers(
             paintInfo.context, paintOffset, style,
             textLayoutObject.scaledFont(), true);
@@ -247,7 +248,7 @@ void SVGInlineTextBoxPainter::paintDecoration(const PaintInfo& paintInfo, TextDe
 
     float scalingFactor = 1;
     Font scaledFont;
-    LayoutSVGInlineText::computeNewScaledFontForStyle(decorationLayoutObject, &decorationStyle, scalingFactor, scaledFont);
+    LayoutSVGInlineText::computeNewScaledFontForStyle(decorationLayoutObject, scalingFactor, scaledFont);
     ASSERT(scalingFactor);
 
     float thickness = thicknessForDecoration(decoration, scaledFont);

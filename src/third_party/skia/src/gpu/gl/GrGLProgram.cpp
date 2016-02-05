@@ -13,11 +13,11 @@
 #include "GrGLGeometryProcessor.h"
 #include "GrGLGpu.h"
 #include "GrGLPathRendering.h"
-#include "GrGLShaderVar.h"
 #include "GrGLXferProcessor.h"
 #include "GrPathProcessor.h"
 #include "GrPipeline.h"
 #include "GrXferProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "SkXfermode.h"
 
 #define GL_CALL(X) GR_GL_CALL(fGpu->glInterface(), X)
@@ -35,10 +35,7 @@ GrGLProgram::GrGLProgram(GrGLGpu* gpu,
                          GrGLInstalledXferProc* xferProcessor,
                          GrGLInstalledFragProcs* fragmentProcessors,
                          SkTArray<UniformHandle>* passSamplerUniforms)
-    : fColor(GrColor_ILLEGAL)
-    , fCoverage(0)
-    , fDstTextureUnit(-1)
-    , fBuiltinUniformHandles(builtinUniforms)
+    : fBuiltinUniformHandles(builtinUniforms)
     , fProgramID(programID)
     , fGeometryProcessor(geometryProcessor)
     , fXferProcessor(xferProcessor)
@@ -139,7 +136,7 @@ void GrGLProgram::setRenderTargetState(const GrPrimitiveProcessor& primProc,
             fRenderTargetState.fRenderTargetSize = size;
             fRenderTargetState.fRenderTargetOrigin = rt->origin();
 
-            GrGLfloat rtAdjustmentVec[4];
+            float rtAdjustmentVec[4];
             fRenderTargetState.getRTAdjustmentVec(rtAdjustmentVec);
             fProgramDataManager.set4fv(fBuiltinUniformHandles.fRTAdjustmentUni, 1, rtAdjustmentVec);
         }

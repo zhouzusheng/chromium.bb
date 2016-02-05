@@ -325,6 +325,8 @@ WARN_UNUSED_RESULT static bool IsSchemaKnown(LevelDBDatabase* db, bool* known) {
     *known = true;
     return true;
   }
+  if (db_schema_version < 0)
+    return false;  // Only corruption should cause this.
   if (db_schema_version > kLatestKnownSchemaVersion) {
     *known = false;
     return true;
@@ -340,7 +342,8 @@ WARN_UNUSED_RESULT static bool IsSchemaKnown(LevelDBDatabase* db, bool* known) {
     *known = true;
     return true;
   }
-
+  if (db_data_version < 0)
+    return false;  // Only corruption should cause this.
   if (db_data_version > latest_known_data_version) {
     *known = false;
     return true;
@@ -1087,8 +1090,10 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     }
 
     LOG(ERROR) << "IndexedDB backing store cleanup succeeded, reopening";
-    leveldb_factory->OpenLevelDB(file_path, comparator.get(), &db, NULL);
-    if (!db) {
+    *status =
+        leveldb_factory->OpenLevelDB(file_path, comparator.get(), &db, NULL);
+    if (!status->ok()) {
+      DCHECK(!db);
       LOG(ERROR) << "IndexedDB backing store reopen after recovery failed";
       HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_FAILED,
                           origin_url);
@@ -1108,11 +1113,14 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
              task_runner,
              status);
 
-  if (clean_journal && backing_store.get() &&
-      !backing_store->CleanUpBlobJournal(LiveBlobJournalKey::Encode()).ok()) {
-    HistogramOpenStatus(
-        INDEXED_DB_BACKING_STORE_OPEN_FAILED_CLEANUP_JOURNAL_ERROR, origin_url);
-    return scoped_refptr<IndexedDBBackingStore>();
+  if (clean_journal && backing_store.get()) {
+    *status = backing_store->CleanUpBlobJournal(LiveBlobJournalKey::Encode());
+    if (!status->ok()) {
+      HistogramOpenStatus(
+          INDEXED_DB_BACKING_STORE_OPEN_FAILED_CLEANUP_JOURNAL_ERROR,
+          origin_url);
+      return scoped_refptr<IndexedDBBackingStore>();
+    }
   }
   return backing_store;
 }
@@ -2247,7 +2255,8 @@ class IndexedDBBackingStore::Transaction::ChainedBlobWriterImpl
       : waiting_for_callback_(false),
         database_id_(database_id),
         backing_store_(backing_store),
-        callback_(callback) {
+        callback_(callback),
+        aborted_(false) {
     blobs_.swap(*blobs);
     iter_ = blobs_.begin();
     backing_store->task_runner()->PostTask(
@@ -2265,8 +2274,8 @@ class IndexedDBBackingStore::Transaction::ChainedBlobWriterImpl
     if (delegate_.get())  // Only present for Blob, not File.
       content::BrowserThread::DeleteSoon(
           content::BrowserThread::IO, FROM_HERE, delegate_.release());
-    if (aborted_self_ref_.get()) {
-      aborted_self_ref_ = NULL;
+    if (aborted_) {
+      self_ref_ = NULL;
       return;
     }
     if (iter_->size() != -1 && iter_->size() != bytes_written)
@@ -2280,38 +2289,40 @@ class IndexedDBBackingStore::Transaction::ChainedBlobWriterImpl
   }
 
   void Abort() override {
+    aborted_ = true;
     if (!waiting_for_callback_)
       return;
-    aborted_self_ref_ = this;
+    self_ref_ = this;
   }
 
  private:
-  ~ChainedBlobWriterImpl() override { DCHECK(!waiting_for_callback_); }
+  ~ChainedBlobWriterImpl() override {}
 
   void WriteNextFile() {
     DCHECK(!waiting_for_callback_);
-    DCHECK(!aborted_self_ref_.get());
+    DCHECK(!aborted_);
     if (iter_ == blobs_.end()) {
+      DCHECK(!self_ref_.get());
       callback_->Run(true);
       return;
     } else {
-      waiting_for_callback_ = true;
       if (!backing_store_->WriteBlobFile(database_id_, *iter_, this)) {
-        waiting_for_callback_ = false;
         callback_->Run(false);
         return;
       }
+      waiting_for_callback_ = true;
     }
   }
 
   bool waiting_for_callback_;
-  scoped_refptr<ChainedBlobWriterImpl> aborted_self_ref_;
+  scoped_refptr<ChainedBlobWriterImpl> self_ref_;
   WriteDescriptorVec blobs_;
   WriteDescriptorVec::const_iterator iter_;
   int64 database_id_;
   IndexedDBBackingStore* backing_store_;
   scoped_refptr<IndexedDBBackingStore::BlobWriteCallback> callback_;
   scoped_ptr<FileWriterDelegate> delegate_;
+  bool aborted_;
 
   DISALLOW_COPY_AND_ASSIGN(ChainedBlobWriterImpl);
 };

@@ -11,10 +11,10 @@
 #include <list>
 #include <map>
 
-#include "../../../../third_party/base/nonstd_unique_ptr.h"
-#include "../../../../third_party/libopenjpeg20/openjpeg.h"  // For OPJ_SIZE_T.
-#include "../../../include/fxcodec/fx_codec.h"
 #include "../jbig2/JBig2_Context.h"
+#include "core/include/fxcodec/fx_codec.h"
+#include "third_party/base/nonstd_unique_ptr.h"
+#include "third_party/libopenjpeg20/openjpeg.h"  // For OPJ_SIZE_T.
 
 class CFX_IccProfileCache;
 class CFX_IccTransformCache;
@@ -158,14 +158,13 @@ class CCodec_FlateModule : public ICodec_FlateModule {
 
 class CCodec_JpegModule : public ICodec_JpegModule {
  public:
-  CCodec_JpegModule() : m_pExtProvider(NULL) {}
-  void SetPovider(IFX_JpegProvider* pJP) { m_pExtProvider = pJP; }
+  CCodec_JpegModule() {}
   ICodec_ScanlineDecoder* CreateDecoder(const uint8_t* src_buf,
                                         FX_DWORD src_size,
                                         int width,
                                         int height,
                                         int nComps,
-                                        FX_BOOL ColorTransform);
+                                        FX_BOOL ColorTransform) override;
   FX_BOOL LoadInfo(const uint8_t* src_buf,
                    FX_DWORD src_size,
                    int& width,
@@ -174,23 +173,22 @@ class CCodec_JpegModule : public ICodec_JpegModule {
                    int& bits_per_components,
                    FX_BOOL& color_transform,
                    uint8_t** icc_buf_ptr,
-                   FX_DWORD* icc_length);
+                   FX_DWORD* icc_length) override;
   FX_BOOL Encode(const CFX_DIBSource* pSource,
                  uint8_t*& dest_buf,
                  FX_STRSIZE& dest_size,
                  int quality,
                  const uint8_t* icc_buf,
-                 FX_DWORD icc_length);
-  virtual void* Start();
-  virtual void Finish(void* pContext);
-  virtual void Input(void* pContext, const uint8_t* src_buf, FX_DWORD src_size);
-  virtual int ReadHeader(void* pContext, int* width, int* height, int* nComps);
-  virtual int StartScanline(void* pContext, int down_scale);
-  virtual FX_BOOL ReadScanline(void* pContext, uint8_t* dest_buf);
-  virtual FX_DWORD GetAvailInput(void* pContext, uint8_t** avail_buf_ptr);
-
- protected:
-  IFX_JpegProvider* m_pExtProvider;
+                 FX_DWORD icc_length) override;
+  void* Start() override;
+  void Finish(void* pContext) override;
+  void Input(void* pContext,
+             const uint8_t* src_buf,
+             FX_DWORD src_size) override;
+  int ReadHeader(void* pContext, int* width, int* height, int* nComps) override;
+  int StartScanline(void* pContext, int down_scale) override;
+  FX_BOOL ReadScanline(void* pContext, uint8_t* dest_buf) override;
+  FX_DWORD GetAvailInput(void* pContext, uint8_t** avail_buf_ptr) override;
 };
 class CCodec_IccModule : public ICodec_IccModule {
  public:
@@ -274,13 +272,10 @@ class CCodec_Jbig2Context {
 
   FX_DWORD m_width;
   FX_DWORD m_height;
-  uint8_t* m_src_buf;
-  FX_DWORD m_src_size;
-  const uint8_t* m_global_data;
-  FX_DWORD m_global_size;
+  CPDF_StreamAcc* m_pGlobalStream;
+  CPDF_StreamAcc* m_pSrcStream;
   uint8_t* m_dest_buf;
   FX_DWORD m_dest_pitch;
-  FX_BOOL m_bFileReader;
   IFX_Pause* m_pPause;
   CJBig2_Context* m_pContext;
   CJBig2_Image* m_dest_image;
@@ -293,21 +288,17 @@ class CCodec_Jbig2Module : public ICodec_Jbig2Module {
   // ICodec_Jbig2Module
   void* CreateJbig2Context() override;
   FXCODEC_STATUS StartDecode(void* pJbig2Context,
+                             CFX_PrivateData* pPrivateData,
                              FX_DWORD width,
                              FX_DWORD height,
-                             const uint8_t* src_buf,
-                             FX_DWORD src_size,
-                             const uint8_t* global_data,
-                             FX_DWORD global_size,
+                             CPDF_StreamAcc* src_stream,
+                             CPDF_StreamAcc* global_stream,
                              uint8_t* dest_buf,
                              FX_DWORD dest_pitch,
                              IFX_Pause* pPause) override;
   FXCODEC_STATUS ContinueDecode(void* pJbig2Context,
                                 IFX_Pause* pPause) override;
   void DestroyJbig2Context(void* pJbig2Context) override;
-
- private:
-  std::list<CJBig2_CachePair> m_SymbolDictCache;
 };
 
 struct DecodeData {

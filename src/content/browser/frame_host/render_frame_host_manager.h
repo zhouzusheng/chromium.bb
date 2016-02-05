@@ -201,8 +201,7 @@ class CONTENT_EXPORT RenderFrameHostManager {
   ~RenderFrameHostManager();
 
   // For arguments, see WebContentsImpl constructor.
-  void Init(BrowserContext* browser_context,
-            SiteInstance* site_instance,
+  void Init(SiteInstance* site_instance,
             int32 view_routing_id,
             int32 frame_routing_id,
             int32 widget_routing_id);
@@ -232,6 +231,10 @@ class CONTENT_EXPORT RenderFrameHostManager {
   // TODO(lazyboy): This can be removed once input events are sent directly to
   // remote frames.
   RenderWidgetHostImpl* GetOuterRenderWidgetHostForKeyboardInput();
+
+  // Return the FrameTreeNode for the frame in the outer WebContents (if any)
+  // that contains the inner WebContents.
+  FrameTreeNode* GetOuterDelegateNode();
 
   RenderFrameProxyHost* GetProxyToParent();
 
@@ -322,6 +325,20 @@ class CONTENT_EXPORT RenderFrameHostManager {
       const Referrer& referrer,
       ui::PageTransition page_transition,
       bool should_replace_current_entry);
+
+  // Determines whether a navigation to |dest_url| may be completed using an
+  // existing RenderFrameHost, or whether transferring to a new RenderFrameHost
+  // backed by a different render process is required. This is a security policy
+  // check determined by the current site isolation mode, and must be done
+  // before the resource at |dest_url| is delivered to |existing_rfh|.
+  //
+  // |existing_rfh| must belong to this RFHM, but it can be a pending or current
+  // host.
+  //
+  // When this function returns true for a subframe, an out-of-process iframe
+  // must be created.
+  bool IsRendererTransferNeededForNavigation(RenderFrameHostImpl* existing_rfh,
+                                             const GURL& dest_url);
 
   // Called when a renderer's frame navigates.
   void DidNavigateFrame(RenderFrameHostImpl* render_frame_host,
@@ -655,13 +672,12 @@ class CONTENT_EXPORT RenderFrameHostManager {
                                         SiteInstance* new_instance,
                                         int bindings);
 
-  // Sets up the necessary state for a new RenderViewHost.  Creates a
-  // RenderFrameProxy in the target renderer process with the given
-  // |proxy_routing_id|, which is used to route IPC messages when in swapped
-  // out state.  Returns early if the RenderViewHost has already been
-  // initialized for another RenderFrameHost.
+  // Sets up the necessary state for a new RenderViewHost.  If |proxy| is not
+  // null, it creates a RenderFrameProxy in the target renderer process which is
+  // used to route IPC messages when in swapped out state.  Returns early if the
+  // RenderViewHost has already been initialized for another RenderFrameHost.
   bool InitRenderView(RenderViewHostImpl* render_view_host,
-                      int proxy_routing_id);
+                      RenderFrameProxyHost* proxy);
 
   // Initialization for RenderFrameHost uses the same sequence as InitRenderView
   // above.

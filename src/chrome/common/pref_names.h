@@ -11,14 +11,6 @@
 
 #include "build/build_config.h"
 
-#include "components/autofill/core/common/autofill_pref_names.h"
-#include "components/bookmarks/common/bookmark_pref_names.h"
-#include "components/content_settings/core/common/pref_names.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
-#include "components/metrics/metrics_pref_names.h"
-#include "components/password_manager/core/common/password_manager_pref_names.h"
-#include "components/signin/core/common/signin_pref_names.h"
-
 namespace prefs {
 
 // Profile prefs. Please add Local State prefs below instead.
@@ -171,6 +163,7 @@ extern const char kHttpServerProperties[];
 extern const char kLastPolicyCheckTime[];
 #endif
 extern const char kInstantUIZeroSuggestUrlPrefix[];
+extern const char kNetworkPredictionEnabled[];
 extern const char kNetworkPredictionOptions[];
 extern const char kDefaultAppsInstallState[];
 extern const char kHideWebStoreIcon[];
@@ -270,7 +263,9 @@ extern const char kTimeOnOobe[];
 extern const char kCurrentWallpaperAppName[];
 extern const char kFileSystemProviderMounted[];
 extern const char kTouchVirtualKeyboardEnabled[];
-extern const char kWakeOnWifiSsid[];
+extern const char kTouchScreenEnabled[];
+extern const char kTouchPadEnabled[];
+extern const char kWakeOnWifiDarkConnect[];
 extern const char kCaptivePortalAuthenticationIgnoresProxy[];
 extern const char kForceMaximizeOnFirstRun[];
 extern const char kPlatformKeys[];
@@ -379,6 +374,7 @@ extern const char kInvertNotificationShown[];
 
 extern const char kPrintingEnabled[];
 extern const char kPrintPreviewDisabled[];
+extern const char kPrintPreviewDefaultDestinationSelectionRules[];
 
 extern const char kDefaultSupervisedUserFilteringBehavior[];
 
@@ -398,7 +394,6 @@ extern const char kFullscreenAllowed[];
 
 extern const char kLocalDiscoveryNotificationsEnabled[];
 
-extern const char kPushMessagingRegistrationCount[];
 extern const char kPushMessagingAppIdentifierMap[];
 
 extern const char kEasyUnlockAllowed[];
@@ -416,15 +411,8 @@ extern const char kToolbarIconSurfacingBubbleLastShowTime[];
 #if defined(ENABLE_WEBRTC)
 extern const char kWebRTCMultipleRoutesEnabled[];
 extern const char kWebRTCNonProxiedUdpEnabled[];
+extern const char kWebRTCIPHandlingPolicy[];
 #endif
-
-// Local state prefs. Please add Profile prefs above instead.
-extern const char kCertRevocationCheckingEnabled[];
-extern const char kCertRevocationCheckingRequiredLocalAnchors[];
-extern const char kSSLVersionMin[];
-extern const char kSSLVersionMax[];
-extern const char kSSLVersionFallbackMin[];
-extern const char kCipherSuiteBlacklist[];
 
 extern const char kGLVendorString[];
 extern const char kGLRendererString[];
@@ -462,9 +450,6 @@ extern const char kStabilityPluginLaunches[];
 extern const char kStabilityPluginInstances[];
 extern const char kStabilityPluginCrashes[];
 extern const char kStabilityPluginLoadingErrors[];
-
-extern const char kUninstallLastLaunchTimeSec[];
-extern const char kUninstallLastObservedRunTimeSec[];
 
 extern const char kBrowserSuppressDefaultBrowserPrompt[];
 
@@ -510,7 +495,10 @@ extern const char kShutdownNumProcesses[];
 extern const char kShutdownNumProcessesSlow[];
 
 extern const char kRestartLastSessionOnShutdown[];
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 extern const char kWasRestarted[];
+#endif
+
 #if defined(OS_WIN)
 extern const char kRelaunchMode[];
 #endif
@@ -548,8 +536,6 @@ extern const char kDevToolsRemoteEnabled[];
 #endif
 
 extern const char kGoogleServicesPasswordHash[];
-
-extern const char kInvalidationServiceUseGCMChannel[];
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
 extern const char kSignInPromoStartupCount[];
@@ -669,7 +655,6 @@ extern const char kRegisteredBackgroundContents[];
 
 #if defined(OS_WIN)
 extern const char kLastWelcomedOSVersion[];
-extern const char kShownAutoLaunchInfobar[];
 extern const char kWelcomePageOnOSUpgradeEnabled[];
 #endif
 
@@ -710,11 +695,13 @@ extern const char kDebuggingFeaturesRequested[];
 extern const char kResolveDeviceTimezoneByGeolocation[];
 #endif  // defined(OS_CHROMEOS)
 
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 extern const char kAttemptedToEnableAutoupdate[];
 
 extern const char kMediaGalleriesUniqueId[];
 extern const char kMediaGalleriesRememberedGalleries[];
 extern const char kMediaGalleriesLastScanTime[];
+#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
 #if defined(USE_ASH)
 extern const char kShelfAlignment[];
@@ -807,6 +794,8 @@ extern const char kAnimationPolicy[];
 #endif
 
 extern const char kBackgroundTracingLastUpload[];
+
+extern const char kAllowDinosaurEasterEgg[];
 
 }  // namespace prefs
 

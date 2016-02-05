@@ -32,8 +32,9 @@ public:
     void getBufferSubData(GLenum target, long long offset, DOMArrayBuffer* returnedData);
 
     /* Framebuffer objects */
+    bool validateTexFuncLayer(const char*, GLenum texTarget, GLint layer);
     void blitFramebuffer(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
-    void framebufferTextureLayer(GLenum, GLenum, const WebGLTexture*, GLint, GLint);
+    void framebufferTextureLayer(ScriptState*, GLenum, GLenum, WebGLTexture*, GLint, GLint);
     ScriptValue getInternalformatParameter(ScriptState*, GLenum, GLenum, GLenum);
     void invalidateFramebuffer(GLenum, Vector<GLenum>&);
     void invalidateSubFramebuffer(GLenum, Vector<GLenum>&, GLint, GLint, GLsizei, GLsizei);
@@ -160,16 +161,16 @@ public:
 
     /* Vertex Array Objects */
     WebGLVertexArrayObject* createVertexArray();
-    void deleteVertexArray(WebGLVertexArrayObject*);
+    void deleteVertexArray(ScriptState*, WebGLVertexArrayObject*);
     GLboolean isVertexArray(WebGLVertexArrayObject*);
-    void bindVertexArray(WebGLVertexArrayObject*);
+    void bindVertexArray(ScriptState*, WebGLVertexArrayObject*);
 
     /* Reading */
     void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, long long offset);
 
     /* WebGLRenderingContextBase overrides */
     void initializeNewContext() override;
-    void bindFramebuffer(GLenum target, WebGLFramebuffer*) override;
+    void bindFramebuffer(ScriptState*, GLenum target, WebGLFramebuffer*) override;
     void deleteFramebuffer(WebGLFramebuffer*) override;
     ScriptValue getParameter(ScriptState*, GLenum pname) override;
     ScriptValue getTexParameter(ScriptState*, GLenum target, GLenum pname) override;
@@ -194,7 +195,7 @@ protected:
         TexStorageType3D,
     };
     bool validateTexStorage(const char*, GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei, TexStorageType);
-    bool validateTexImage3D(const char* functionName, GLenum target, GLint level, GLenum internalformat, GLenum format, GLenum type);
+    bool validateTexImage3D(const char* functionName, GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type);
     bool validateTexSubImage3D(const char*, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth);
 
     ScriptValue getInt64Parameter(ScriptState*, GLenum);
@@ -233,8 +234,7 @@ protected:
 
     PersistentWillBeMember<WebGLFramebuffer> m_readFramebufferBinding;
     PersistentWillBeMember<WebGLTransformFeedback> m_transformFeedbackBinding;
-    GLint m_max3DTextureSize;
-    GLint m_max3DTextureLevel;
+    GLint m_maxArrayTextureLayers;
 
     std::set<GLenum> m_supportedInternalFormatsStorage;
 

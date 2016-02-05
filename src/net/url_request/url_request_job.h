@@ -315,7 +315,7 @@ class NET_EXPORT URLRequestJob
   // URLRequestStatus::IO_PENDING, and buf must remain available until the
   // operation is completed.  See comments on URLRequest::Read for more
   // info.
-  virtual bool ReadRawData(IOBuffer* buf, int buf_size, int *bytes_read);
+  virtual bool ReadRawData(IOBuffer* buf, int buf_size, int* bytes_read);
 
   // Called to tell the job that a filter has successfully reached the end of
   // the stream.
@@ -333,7 +333,7 @@ class NET_EXPORT URLRequestJob
   // false otherwise.  Note, if there is not enough data received to
   // return data, this call can issue a new async IO request under
   // the hood.
-  bool ReadFilteredData(int *bytes_read);
+  bool ReadFilteredData(int* bytes_read);
 
   // Whether the response is being filtered in this job.
   // Only valid after NotifyHeadersComplete() has been called.
@@ -373,7 +373,7 @@ class NET_EXPORT URLRequestJob
   // When data filtering is enabled, this function is used to read data
   // for the filter.  Returns true if raw data was read.  Returns false if
   // an error occurred (or we are waiting for IO to complete).
-  bool ReadRawDataForFilter(int *bytes_read);
+  bool ReadRawDataForFilter(int* bytes_read);
 
   // Invokes ReadRawData and records bytes read if the read completes
   // synchronously.

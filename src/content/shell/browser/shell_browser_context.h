@@ -24,6 +24,7 @@ class NetLog;
 
 namespace content {
 
+class BackgroundSyncController;
 class DownloadManagerDelegate;
 class PermissionManager;
 class ShellDownloadManagerDelegate;
@@ -60,6 +61,7 @@ class ShellBrowserContext : public BrowserContext {
   PushMessagingService* GetPushMessagingService() override;
   SSLHostStateDelegate* GetSSLHostStateDelegate() override;
   PermissionManager* GetPermissionManager() override;
+  BackgroundSyncController* GetBackgroundSyncController() override;
 
   net::URLRequestContextGetter* CreateRequestContext(
       ProtocolHandlerMap* protocol_handlers,

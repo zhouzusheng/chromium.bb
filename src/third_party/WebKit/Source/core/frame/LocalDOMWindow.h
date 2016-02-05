@@ -173,8 +173,6 @@ public:
 
     // Events
     // EventTarget API
-    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
-    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
     void removeAllEventListeners() override;
 
     using EventTarget::dispatchEvent;
@@ -207,6 +205,11 @@ public:
 
     void acceptLanguagesChanged();
 
+protected:
+    // EventTarget overrides.
+    bool addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) override;
+    bool removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) override;
+
 private:
     // Rather than simply inheriting LocalFrameLifecycleObserver like most other
     // classes, LocalDOMWindow hides its LocalFrameLifecycleObserver with
@@ -215,7 +218,7 @@ private:
     // LocalFrameLifecycleObserver, which has a frame() accessor that returns a
     // LocalFrame*.
     class WindowFrameObserver final : public NoBaseWillBeGarbageCollected<WindowFrameObserver>, public LocalFrameLifecycleObserver {
-        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WindowFrameObserver);
+        USING_FAST_MALLOC_WILL_BE_REMOVED(WindowFrameObserver);
         WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WindowFrameObserver);
         DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(WindowFrameObserver);
     public:

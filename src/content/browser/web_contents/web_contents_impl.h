@@ -67,6 +67,7 @@ class SavePackage;
 class ScreenOrientationDispatcherHost;
 class SiteInstance;
 class TestWebContents;
+class WakeLockServiceContext;
 class WebContentsAudioMuter;
 class WebContentsDelegate;
 class WebContentsImpl;
@@ -80,7 +81,7 @@ struct LoadNotificationDetails;
 struct ResourceRedirectDetails;
 struct ResourceRequestDetails;
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) && !defined(USE_AURA)
 class WebContentsAndroid;
 #endif
 
@@ -126,7 +127,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Returns the SavePackage which manages the page saving job. May be NULL.
   SavePackage* save_package() const { return save_package_.get(); }
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) && !defined(USE_AURA)
   // In Android WebView, the RenderView needs created even there is no
   // navigation entry, this allows Android WebViews to use
   // javascript: URLs that load into the DOMWindow before the first page
@@ -219,7 +220,8 @@ class CONTENT_EXPORT WebContentsImpl
   // Request a one-time snapshot of the accessibility tree without changing
   // the accessibility mode.
   using AXTreeSnapshotCallback =
-      base::Callback<void(const ui::AXTreeUpdate<ui::AXNodeData>&)>;
+      base::Callback<void(
+          const ui::AXTreeUpdate&)>;
   void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback);
 
   // WebContents ------------------------------------------------------
@@ -269,7 +271,6 @@ class CONTENT_EXPORT WebContentsImpl
   const base::string16& GetLoadStateHost() const override;
   uint64 GetUploadSize() const override;
   uint64 GetUploadPosition() const override;
-  std::set<GURL> GetSitesInTab() const override;
   const std::string& GetEncoding() const override;
   bool DisplayedInsecureContent() const override;
   void IncrementCapturerCount(const gfx::Size& capture_size) override;
@@ -349,7 +350,7 @@ class CONTENT_EXPORT WebContentsImpl
   void ViewFrameSource(const GURL& url, const PageState& page_state) override;
   int GetMinimumZoomPercent() const override;
   int GetMaximumZoomPercent() const override;
-  void ResetPageScale() override;
+  void SetPageScale(float page_scale_factor) override;
   gfx::Size GetPreferredSize() const override;
   bool GotResponseToLockMouseRequest(bool allowed) override;
   bool HasOpener() const override;
@@ -368,7 +369,8 @@ class CONTENT_EXPORT WebContentsImpl
   void StopFinding(StopFindAction action) override;
   void InsertCSS(const std::string& css) override;
   bool WasRecentlyAudible() override;
-  void GetManifest(const GetManifestCallback&) override;
+  void GetManifest(const GetManifestCallback& callback) override;
+  void HasManifest(const HasManifestCallback& callback) override;
   void ExitFullscreen() override;
   void ResumeLoadingCreatedWebContents() override;
 #if defined(OS_ANDROID)
@@ -376,9 +378,10 @@ class CONTENT_EXPORT WebContentsImpl
   void ResumeMediaSession() override;
   void SuspendMediaSession() override;
   void StopMediaSession() override;
-
+#if !defined(USE_AURA)
   base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() override;
   virtual WebContentsAndroid* GetWebContentsAndroid();
+#endif  // !USE_AURA
 #elif defined(OS_MACOSX)
   void SetAllowOtherViews(bool allow) override;
   bool GetAllowOtherViews() override;
@@ -413,6 +416,8 @@ class CONTENT_EXPORT WebContentsImpl
   void DidChangeName(RenderFrameHost* render_frame_host,
                      const std::string& name) override;
   void DocumentOnLoadCompleted(RenderFrameHost* render_frame_host) override;
+  void UpdateStateForFrame(RenderFrameHost* render_frame_host,
+                           const PageState& page_state) override;
   void UpdateTitle(RenderFrameHost* render_frame_host,
                    int32 page_id,
                    const base::string16& title,
@@ -428,6 +433,7 @@ class CONTENT_EXPORT WebContentsImpl
       RenderFrameHost* render_frame_host,
       int browser_plugin_instance_id) override;
   GeolocationServiceContext* GetGeolocationServiceContext() override;
+  WakeLockServiceContext* GetWakeLockServiceContext() override;
   void EnterFullscreenMode(const GURL& origin) override;
   void ExitFullscreenMode() override;
   bool ShouldRouteMessageEvent(
@@ -445,7 +451,6 @@ class CONTENT_EXPORT WebContentsImpl
   // RenderFrameHostDelegate has the same method, so list it there because this
   // interface is going away.
   // WebContents* GetAsWebContents() override;
-  gfx::Rect GetRootWindowResizerRect() const override;
   void RenderViewCreated(RenderViewHost* render_view_host) override;
   void RenderViewReady(RenderViewHost* render_view_host) override;
   void RenderViewTerminated(RenderViewHost* render_view_host,
@@ -468,30 +473,21 @@ class CONTENT_EXPORT WebContentsImpl
                            const base::string16& source_id) override;
   RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const override;
-  void OnUserGesture() override;
+  void OnUserInteraction(const blink::WebInputEvent::Type type) override;
   void OnIgnoredUIEvent() override;
-  void RendererUnresponsive(RenderViewHost* render_view_host) override;
-  void RendererResponsive(RenderViewHost* render_view_host) override;
   void LoadStateChanged(const GURL& url,
                         const net::LoadStateWithParam& load_state,
                         uint64 upload_position,
                         uint64 upload_size) override;
   void Activate() override;
-  void Deactivate() override;
-  void LostCapture() override;
   void RunFileChooser(RenderViewHost* render_view_host,
                       const FileChooserParams& params) override;
-  bool IsFullscreenForCurrentTab() const override;
-  blink::WebDisplayMode GetDisplayMode() const override;
   void UpdatePreferredSize(const gfx::Size& pref_size) override;
-  void ResizeDueToAutoResize(const gfx::Size& new_size) override;
-  void RequestToLockMouse(bool user_gesture,
-                          bool last_unlocked_by_target) override;
-  void LostMouseLock() override;
   void CreateNewWindow(
       SiteInstance* source_site_instance,
-      int route_id,
-      int main_frame_route_id,
+      int32_t route_id,
+      int32_t main_frame_route_id,
+      int32_t main_frame_widget_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
       SessionStorageNamespace* session_storage_namespace) override;
   void CreateNewWidget(int32 render_process_id,
@@ -551,9 +547,6 @@ class CONTENT_EXPORT WebContentsImpl
   void SetMainFrameMimeType(const std::string& mime_type) override;
   bool CanOverscrollContent() const override;
   void NotifyChangedNavigationState(InvalidateTypes changed_flags) override;
-  void AboutToNavigateRenderFrame(
-      RenderFrameHostImpl* old_host,
-      RenderFrameHostImpl* new_host) override;
   void DidStartNavigationToPendingEntry(
       const GURL& url,
       NavigationController::ReloadType reload_type) override;
@@ -571,11 +564,14 @@ class CONTENT_EXPORT WebContentsImpl
   void RenderWidgetGotFocus(RenderWidgetHostImpl* render_widget_host) override;
   void RenderWidgetWasResized(RenderWidgetHostImpl* render_widget_host,
                               bool width_changed) override;
+  void ResizeDueToAutoResize(RenderWidgetHostImpl* render_widget_host,
+                             const gfx::Size& new_size) override;
   void ScreenInfoChanged() override;
   bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
                               bool* is_keyboard_shortcut) override;
   void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) override;
   bool HandleWheelEvent(const blink::WebMouseWheelEvent& event) override;
+  void OnUserGesture(RenderWidgetHostImpl* render_widget_host) override;
   bool PreHandleGestureEvent(const blink::WebGestureEvent& event) override;
   void DidSendScreenRects(RenderWidgetHostImpl* rwh) override;
   BrowserAccessibilityManager* GetRootBrowserAccessibilityManager() override;
@@ -591,6 +587,22 @@ class CONTENT_EXPORT WebContentsImpl
   void AdjustSelectionByCharacterOffset(int start_adjust, int end_adjust)
       override;
   RenderWidgetHostInputEventRouter* GetInputEventRouter() override;
+  void ReplicatePageFocus(bool is_focused) override;
+  RenderWidgetHostImpl* GetFocusedRenderWidgetHost(
+      RenderWidgetHostImpl* receiving_widget) override;
+  void RendererUnresponsive(RenderWidgetHostImpl* render_widget_host) override;
+  void RendererResponsive(RenderWidgetHostImpl* render_widget_host) override;
+  void RequestToLockMouse(RenderWidgetHostImpl* render_widget_host,
+                          bool user_gesture,
+                          bool last_unlocked_by_target) override;
+  gfx::Rect GetRootWindowResizerRect(
+      RenderWidgetHostImpl* render_widget_host) const override;
+  bool IsFullscreenForCurrentTab(
+      RenderWidgetHostImpl* render_widget_host) const override;
+  blink::WebDisplayMode GetDisplayMode(
+      RenderWidgetHostImpl* render_widget_host) const override;
+  void LostCapture(RenderWidgetHostImpl* render_widget_host) override;
+  void LostMouseLock(RenderWidgetHostImpl* render_widget_host) override;
 
   // RenderFrameHostManager::Delegate ------------------------------------------
 
@@ -833,6 +845,7 @@ class CONTENT_EXPORT WebContentsImpl
   void OnGoToEntryAtOffset(int offset);
   void OnUpdateZoomLimits(int minimum_percent,
                           int maximum_percent);
+  void OnPageScaleFactorChanged(float page_scale_factor);
   void OnEnumerateDirectory(int request_id, const base::FilePath& path);
 
   void OnRegisterProtocolHandler(const std::string& protocol,
@@ -847,7 +860,7 @@ class CONTENT_EXPORT WebContentsImpl
                    const gfx::Rect& selection_rect,
                    int active_match_ordinal,
                    bool final_update);
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) && !defined(USE_AURA)
   void OnFindMatchRectsReply(int version,
                              const std::vector<gfx::RectF>& rects,
                              const gfx::RectF& active_rect);
@@ -1204,7 +1217,7 @@ class CONTENT_EXPORT WebContentsImpl
   // this overrides |preferred_size_|.
   gfx::Size preferred_size_for_capture_;
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) && !defined(USE_AURA)
   // Date time chooser opened by this tab.
   // Only used in Android since all other platforms use a multi field UI.
   scoped_ptr<DateTimeChooserAndroid> date_time_chooser_;
@@ -1287,6 +1300,8 @@ class CONTENT_EXPORT WebContentsImpl
 
   scoped_ptr<GeolocationServiceContext> geolocation_service_context_;
 
+  scoped_ptr<WakeLockServiceContext> wake_lock_service_context_;
+
   scoped_ptr<ScreenOrientationDispatcherHost>
       screen_orientation_dispatcher_host_;
 
@@ -1312,6 +1327,8 @@ class CONTENT_EXPORT WebContentsImpl
   scoped_ptr<RenderWidgetHostInputEventRouter> rwh_input_event_router_;
 
   PageImportanceSignals page_importance_signals_;
+
+  bool page_scale_factor_is_one_;
 
   base::WeakPtrFactory<WebContentsImpl> loading_weak_factory_;
 

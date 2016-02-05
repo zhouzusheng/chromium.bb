@@ -134,12 +134,6 @@ gl::Error RendererD3D::genericDrawElements(const gl::Data &data,
                                            GLsizei instances,
                                            const gl::IndexRange &indexRange)
 {
-    if (data.state->isPrimitiveRestartEnabled())
-    {
-        UNIMPLEMENTED();
-        return gl::Error(GL_INVALID_OPERATION, "Primitive restart not implemented");
-    }
-
     gl::Program *program = data.state->getProgram();
     ASSERT(program != nullptr);
     ProgramD3D *programD3D = GetImplAs<ProgramD3D>(program);
@@ -170,13 +164,12 @@ gl::Error RendererD3D::genericDrawElements(const gl::Data &data,
         return error;
     }
 
-    gl::VertexArray *vao = data.state->getVertexArray();
     TranslatedIndexData indexInfo;
     indexInfo.indexRange = indexRange;
 
     SourceIndexData sourceIndexInfo;
 
-    error = applyIndexBuffer(indices, vao->getElementArrayBuffer().get(), count, mode, type, &indexInfo, &sourceIndexInfo);
+    error = applyIndexBuffer(data, indices, count, mode, type, &indexInfo, &sourceIndexInfo);
     if (error.isError())
     {
         return error;
@@ -195,7 +188,7 @@ gl::Error RendererD3D::genericDrawElements(const gl::Data &data,
         return error;
     }
 
-    error = applyShaders(data);
+    error = applyShaders(data, mode);
     if (error.isError())
     {
         return error;
@@ -215,8 +208,7 @@ gl::Error RendererD3D::genericDrawElements(const gl::Data &data,
 
     if (!skipDraw(data, mode))
     {
-        error = drawElementsImpl(mode, count, type, indices, vao->getElementArrayBuffer().get(),
-                                 indexInfo, instances, usesPointSize);
+        error = drawElementsImpl(data, indexInfo, mode, count, type, indices, instances);
         if (error.isError())
         {
             return error;
@@ -270,7 +262,7 @@ gl::Error RendererD3D::genericDrawArrays(const gl::Data &data,
         return error;
     }
 
-    error = applyShaders(data);
+    error = applyShaders(data, mode);
     if (error.isError())
     {
         return error;
@@ -290,7 +282,7 @@ gl::Error RendererD3D::genericDrawArrays(const gl::Data &data,
 
     if (!skipDraw(data, mode))
     {
-        error = drawArraysImpl(data, mode, count, instances, usesPointSize);
+        error = drawArraysImpl(data, mode, count, instances);
         if (error.isError())
         {
             return error;
@@ -436,21 +428,19 @@ gl::Error RendererD3D::applyState(const gl::Data &data, GLenum drawMode)
 }
 
 // Applies the shaders and shader constants to the Direct3D device
-gl::Error RendererD3D::applyShaders(const gl::Data &data)
+gl::Error RendererD3D::applyShaders(const gl::Data &data, GLenum drawMode)
 {
     gl::Program *program = data.state->getProgram();
     ProgramD3D *programD3D = GetImplAs<ProgramD3D>(program);
     programD3D->updateCachedInputLayout(*data.state);
 
-    const gl::Framebuffer *fbo = data.state->getDrawFramebuffer();
-
-    gl::Error error = applyShaders(program, fbo, data.state->getRasterizerState().rasterizerDiscard, data.state->isTransformFeedbackActiveUnpaused());
+    gl::Error error = applyShadersImpl(data, drawMode);
     if (error.isError())
     {
         return error;
     }
 
-    return programD3D->applyUniforms();
+    return programD3D->applyUniforms(drawMode);
 }
 
 // For each Direct3D sampler of either the pixel or vertex stage,

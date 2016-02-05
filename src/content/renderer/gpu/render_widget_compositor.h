@@ -10,6 +10,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "cc/input/top_controls_state.h"
+#include "cc/output/managed_memory_policy.h"
 #include "cc/output/swap_promise.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
@@ -48,6 +49,7 @@ class CONTENT_EXPORT RenderWidgetCompositor
 
   ~RenderWidgetCompositor() override;
 
+  void SetNeverVisible();
   const base::WeakPtr<cc::InputHandler>& GetInputHandler();
   bool BeginMainFrameRequested() const;
   void SetNeedsDisplayOnAllLayers();
@@ -76,8 +78,10 @@ class CONTENT_EXPORT RenderWidgetCompositor
       scoped_ptr<base::Value> value,
       const base::Callback<void(scoped_ptr<base::Value>)>& callback);
   bool SendMessageToMicroBenchmark(int id, scoped_ptr<base::Value> value);
-  void StartCompositor();
   void SetSurfaceIdNamespace(uint32_t surface_id_namespace);
+  cc::ManagedMemoryPolicy GetGpuMemoryPolicy(
+      const cc::ManagedMemoryPolicy& policy);
+  void SetPaintedDeviceScaleFactor(float device_scale);
 
   // WebLayerTreeView implementation.
   void setRootLayer(const blink::WebLayer& layer) override;
@@ -86,14 +90,10 @@ class CONTENT_EXPORT RenderWidgetCompositor
       blink::WebCompositorAnimationTimeline* compositor_timeline) override;
   void detachCompositorAnimationTimeline(
       blink::WebCompositorAnimationTimeline* compositor_timeline) override;
-  virtual void setViewportSize(
-      const blink::WebSize& unused_deprecated,
-      const blink::WebSize& device_viewport_size);
   void setViewportSize(const blink::WebSize& device_viewport_size) override;
   virtual blink::WebFloatPoint adjustEventPointForPinchZoom(
       const blink::WebFloatPoint& point) const;
   void setDeviceScaleFactor(float device_scale) override;
-  float deviceScaleFactor() const override;
   void setBackgroundColor(blink::WebColor color) override;
   void setHasTransparentBackground(bool transparent) override;
   void setVisible(bool visible) override;
@@ -134,14 +134,13 @@ class CONTENT_EXPORT RenderWidgetCompositor
                               bool animate) override;
   void setTopControlsHeight(float height, bool shrink) override;
   void setTopControlsShownRatio(float) override;
-  void setHidePinchScrollbarsNearMinScale(bool) override;
 
   // cc::LayerTreeHostClient implementation.
   void WillBeginMainFrame() override;
   void DidBeginMainFrame() override;
   void BeginMainFrame(const cc::BeginFrameArgs& args) override;
   void BeginMainFrameNotExpectedSoon() override;
-  void Layout() override;
+  void UpdateLayerTreeHost() override;
   void ApplyViewportDeltas(const gfx::Vector2dF& inner_delta,
                            const gfx::Vector2dF& outer_delta,
                            const gfx::Vector2dF& elastic_overscroll_delta,
@@ -187,6 +186,7 @@ class CONTENT_EXPORT RenderWidgetCompositor
   RenderWidget* widget_;
   CompositorDependencies* compositor_deps_;
   scoped_ptr<cc::LayerTreeHost> layer_tree_host_;
+  bool never_visible_;
 
   blink::WebLayoutAndPaintAsyncCallback* layout_and_paint_async_callback_;
   scoped_ptr<cc::CopyOutputRequest> temporary_copy_output_request_;

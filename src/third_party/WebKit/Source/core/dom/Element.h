@@ -87,6 +87,26 @@ enum ElementFlags {
 
 enum class ShadowRootType;
 
+enum class SelectionBehaviorOnFocus {
+    Reset,
+    Restore,
+    None,
+};
+
+struct FocusParams {
+    STACK_ALLOCATED();
+
+    FocusParams() {}
+    FocusParams(SelectionBehaviorOnFocus selection, WebFocusType focusType, InputDeviceCapabilities* capabilities)
+        : selectionBehavior(selection)
+        , type(focusType)
+        , sourceCapabilities(capabilities) {}
+
+    SelectionBehaviorOnFocus selectionBehavior = SelectionBehaviorOnFocus::Restore;
+    WebFocusType type = WebFocusTypeNone;
+    Member<InputDeviceCapabilities> sourceCapabilities = nullptr;
+};
+
 typedef WillBeHeapVector<RefPtrWillBeMember<Attr>> AttrNodeList;
 
 class CORE_EXPORT Element : public ContainerNode {
@@ -103,10 +123,6 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(paste);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(search);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(selectstart);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchcancel);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchend);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchmove);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(touchstart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(wheel);
 
     bool hasAttribute(const QualifiedName&) const;
@@ -329,7 +345,7 @@ public:
     // shadow roots is prohibited in any combination and throws an exception. Multiple shadow roots
     // are allowed only when createShadowRoot() is used without any parameters from JavaScript.
     PassRefPtrWillBeRawPtr<ShadowRoot> createShadowRoot(const ScriptState*, ExceptionState&);
-    PassRefPtrWillBeRawPtr<ShadowRoot> createShadowRoot(const ScriptState*, const ShadowRootInit&, ExceptionState&);
+    PassRefPtrWillBeRawPtr<ShadowRoot> attachShadow(const ScriptState*, const ShadowRootInit&, ExceptionState&);
     PassRefPtrWillBeRawPtr<ShadowRoot> createShadowRootInternal(ShadowRootType, ExceptionState&);
 
     ShadowRoot* openShadowRoot() const;
@@ -375,8 +391,8 @@ public:
     virtual const AtomicString imageSourceURL() const;
     virtual Image* imageContents() { return nullptr; }
 
-    virtual void focus(bool restorePreviousSelection = true, WebFocusType = WebFocusTypeNone, InputDeviceCapabilities* sourceCapabilities = nullptr);
-    virtual void updateFocusAppearance(bool restorePreviousSelection);
+    virtual void focus(const FocusParams& = FocusParams());
+    virtual void updateFocusAppearance(SelectionBehaviorOnFocus);
     virtual void blur();
 
     void setDistributeScroll(ScrollStateCallback*, String nativeScrollBehavior);

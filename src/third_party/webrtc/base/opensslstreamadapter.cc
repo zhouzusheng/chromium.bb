@@ -148,26 +148,26 @@ static const SslCipherMapEntry kSslCipherMap[] = {
 // Default cipher used between OpenSSL/BoringSSL stream adapters.
 // This needs to be updated when the default of the SSL library changes.
 // static_cast<uint16_t> causes build warnings on windows platform.
-static uint16_t kDefaultSslCipher10 =
+static int kDefaultSslCipher10 =
     static_cast<uint16_t>(TLS1_CK_ECDHE_RSA_WITH_AES_256_CBC_SHA);
-static uint16_t kDefaultSslEcCipher10 =
+static int kDefaultSslEcCipher10 =
     static_cast<uint16_t>(TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CBC_SHA);
 #ifdef OPENSSL_IS_BORINGSSL
-static uint16_t kDefaultSslCipher12 =
+static int kDefaultSslCipher12 =
     static_cast<uint16_t>(TLS1_CK_ECDHE_RSA_WITH_AES_128_GCM_SHA256);
-static uint16_t kDefaultSslEcCipher12 =
+static int kDefaultSslEcCipher12 =
     static_cast<uint16_t>(TLS1_CK_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256);
 // Fallback cipher for DTLS 1.2 if hardware-accelerated AES-GCM is unavailable.
-static uint16_t kDefaultSslCipher12NoAesGcm =
+static int kDefaultSslCipher12NoAesGcm =
     static_cast<uint16_t>(TLS1_CK_ECDHE_RSA_CHACHA20_POLY1305);
-static uint16_t kDefaultSslEcCipher12NoAesGcm =
+static int kDefaultSslEcCipher12NoAesGcm =
     static_cast<uint16_t>(TLS1_CK_ECDHE_ECDSA_CHACHA20_POLY1305);
 #else  // !OPENSSL_IS_BORINGSSL
 // OpenSSL sorts differently than BoringSSL, so the default cipher doesn't
 // change between TLS 1.0 and TLS 1.2 with the current setup.
-static uint16_t kDefaultSslCipher12 =
+static int kDefaultSslCipher12 =
     static_cast<uint16_t>(TLS1_CK_ECDHE_RSA_WITH_AES_256_CBC_SHA);
-static uint16_t kDefaultSslEcCipher12 =
+static int kDefaultSslEcCipher12 =
     static_cast<uint16_t>(TLS1_CK_ECDHE_ECDSA_WITH_AES_256_CBC_SHA);
 #endif
 
@@ -348,7 +348,7 @@ bool OpenSSLStreamAdapter::SetPeerCertificateDigest(const std::string
   return true;
 }
 
-std::string OpenSSLStreamAdapter::GetSslCipherSuiteName(uint16_t cipher) {
+std::string OpenSSLStreamAdapter::GetSslCipherSuiteName(int cipher) {
 #ifdef OPENSSL_IS_BORINGSSL
   const SSL_CIPHER* ssl_cipher = SSL_get_cipher_by_value(cipher);
   if (!ssl_cipher) {
@@ -359,10 +359,9 @@ std::string OpenSSLStreamAdapter::GetSslCipherSuiteName(uint16_t cipher) {
   OPENSSL_free(cipher_name);
   return rfc_name;
 #else
-  ASSERT(cipher != NULL);
   for (const SslCipherMapEntry* entry = kSslCipherMap; entry->rfc_name;
        ++entry) {
-    if (cipher->id == entry->openssl_id) {
+    if (cipher == entry->openssl_id) {
       return entry->rfc_name;
     }
   }
@@ -370,7 +369,7 @@ std::string OpenSSLStreamAdapter::GetSslCipherSuiteName(uint16_t cipher) {
 #endif
 }
 
-bool OpenSSLStreamAdapter::GetSslCipherSuite(uint16_t* cipher) {
+bool OpenSSLStreamAdapter::GetSslCipherSuite(int* cipher) {
   if (state_ != SSL_CONNECTED)
     return false;
 
@@ -385,17 +384,16 @@ bool OpenSSLStreamAdapter::GetSslCipherSuite(uint16_t* cipher) {
 
 // Key Extractor interface
 bool OpenSSLStreamAdapter::ExportKeyingMaterial(const std::string& label,
-                                                const uint8* context,
+                                                const uint8_t* context,
                                                 size_t context_len,
                                                 bool use_context,
-                                                uint8* result,
+                                                uint8_t* result,
                                                 size_t result_len) {
 #ifdef HAVE_DTLS_SRTP
   int i;
 
-  i = SSL_export_keying_material(ssl_, result, result_len,
-                                 label.c_str(), label.length(),
-                                 const_cast<uint8 *>(context),
+  i = SSL_export_keying_material(ssl_, result, result_len, label.c_str(),
+                                 label.length(), const_cast<uint8_t*>(context),
                                  context_len, use_context);
 
   if (i != 1)
@@ -996,7 +994,7 @@ SSL_CTX* OpenSSLStreamAdapter::SetupSSLContext() {
     return NULL;
   }
 
-#ifdef _DEBUG
+#if !defined(NDEBUG)
   SSL_CTX_set_info_callback(ctx, OpenSSLAdapter::SSLInfoCallback);
 #endif
 
@@ -1131,9 +1129,8 @@ bool OpenSSLStreamAdapter::HaveExporter() {
 #endif
 }
 
-uint16_t OpenSSLStreamAdapter::GetDefaultSslCipherForTest(
-    SSLProtocolVersion version,
-    KeyType key_type) {
+int OpenSSLStreamAdapter::GetDefaultSslCipherForTest(SSLProtocolVersion version,
+                                                     KeyType key_type) {
   if (key_type == KT_RSA) {
     switch (version) {
       case SSL_PROTOCOL_TLS_10:

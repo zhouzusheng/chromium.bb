@@ -6,9 +6,10 @@
 #define ProgrammaticScrollAnimator_h
 
 #include "platform/geometry/FloatPoint.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebCompositorAnimationDelegate.h"
 #include "public/platform/WebCompositorAnimationPlayerClient.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -24,7 +25,7 @@ class WebScrollOffsetAnimationCurve;
 // CSSOM View scroll APIs.
 class ProgrammaticScrollAnimator : private WebCompositorAnimationPlayerClient, WebCompositorAnimationDelegate {
     WTF_MAKE_NONCOPYABLE(ProgrammaticScrollAnimator);
-    WTF_MAKE_FAST_ALLOCATED(ProgrammaticScrollAnimator);
+    USING_FAST_MALLOC(ProgrammaticScrollAnimator);
 public:
     static PassOwnPtr<ProgrammaticScrollAnimator> create(ScrollableArea*);
 
@@ -75,6 +76,7 @@ private:
     OwnPtr<WebCompositorAnimationPlayer> m_compositorPlayer;
     int m_compositorAnimationAttachedToLayerId;
 
+    GC_PLUGIN_IGNORE("509911")
     ScrollableArea* m_scrollableArea;
     OwnPtr<WebScrollOffsetAnimationCurve> m_animationCurve;
     FloatPoint m_targetOffset;

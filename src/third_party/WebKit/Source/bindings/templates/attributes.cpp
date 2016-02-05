@@ -19,14 +19,11 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {# holder #}
     {% if not attribute.is_static %}
     {% if attribute.is_lenient_this %}
-    v8::Local<v8::Object> holder = {{v8_class}}::findInstanceInPrototypeChain(info.This(), info.GetIsolate());
-    if (holder.IsEmpty())
+    {# Make sure that info.Holder() really points to an instance if [LenientThis]. #}
+    if (!{{v8_class}}::hasInstance(info.Holder(), info.GetIsolate()))
         return; // Return silently because of [LenientThis].
-    // Note that it's okay to use |holder|, but |info.Holder()| is still unsafe
-    // and must not be used.
-    {% else %}
-    v8::Local<v8::Object> holder = info.Holder();
     {% endif %}
+    v8::Local<v8::Object> holder = info.Holder();
     {% endif %}
     {# impl #}
     {% if attribute.cached_attribute_validation_method %}
@@ -79,7 +76,7 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {% if not attribute.is_data_type_property %}
     {% if attribute.is_check_security_for_window %}
     if (LocalDOMWindow* window = impl->toDOMWindow()) {
-        if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), window->frame(), exceptionState)) {
+        if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), window->frame(), exceptionState)) {
             v8SetReturnValueNull(info);
             exceptionState.throwIfNeeded();
             return;
@@ -88,7 +85,7 @@ const v8::FunctionCallbackInfo<v8::Value>& info
             return;
     }
     {% elif attribute.is_check_security_for_frame %}
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl->frame(), exceptionState)) {
         v8SetReturnValueNull(info);
         exceptionState.throwIfNeeded();
         return;
@@ -96,7 +93,7 @@ const v8::FunctionCallbackInfo<v8::Value>& info
     {% endif %}
     {% endif %}
     {% if attribute.is_check_security_for_node %}
-    if (!BindingSecurity::shouldAllowAccessToNode(info.GetIsolate(), {{attribute.cpp_value}}, exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessToNode(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), {{attribute.cpp_value}}, exceptionState)) {
         v8SetReturnValueNull(info);
         exceptionState.throwIfNeeded();
         return;
@@ -263,14 +260,11 @@ v8::Local<v8::Value> v8Value, const v8::FunctionCallbackInfo<v8::Value>& info
            not attribute.constructor_type) or
           raise_exception %}
     {% if attribute.is_lenient_this %}
-    v8::Local<v8::Object> holder = {{v8_class}}::findInstanceInPrototypeChain(info.This(), info.GetIsolate());
-    if (holder.IsEmpty())
+    {# Make sure that info.Holder() really points to an instance if [LenientThis]. #}
+    if (!{{v8_class}}::hasInstance(info.Holder(), info.GetIsolate()))
         return; // Return silently because of [LenientThis].
-    // Note that it's okay to use |holder|, but |info.Holder()| is still unsafe
-    // and must not be used.
-    {% else %}
-    v8::Local<v8::Object> holder = info.Holder();
     {% endif %}
+    v8::Local<v8::Object> holder = info.Holder();
     {% endif %}
     {% if raise_exception %}
     ExceptionState exceptionState(ExceptionState::SetterContext, "{{attribute.name}}", "{{interface_name}}", holder, info.GetIsolate());
@@ -300,7 +294,7 @@ v8::Local<v8::Value> v8Value, const v8::FunctionCallbackInfo<v8::Value>& info
     {% if not attribute.is_data_type_property %}
     {% if attribute.is_check_security_for_window %}
     if (LocalDOMWindow* window = impl->toDOMWindow()) {
-        if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), window->frame(), exceptionState)) {
+        if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), window->frame(), exceptionState)) {
             v8SetReturnValue(info, v8Value);
             exceptionState.throwIfNeeded();
             return;
@@ -309,7 +303,7 @@ v8::Local<v8::Value> v8Value, const v8::FunctionCallbackInfo<v8::Value>& info
             return;
     }
     {% elif attribute.is_check_security_for_frame %}
-    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), impl->frame(), exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessToFrame(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), impl->frame(), exceptionState)) {
         v8SetReturnValue(info, v8Value);
         exceptionState.throwIfNeeded();
         return;
@@ -317,7 +311,7 @@ v8::Local<v8::Value> v8Value, const v8::FunctionCallbackInfo<v8::Value>& info
     {% endif %}
     {% endif %}
     {% if attribute.is_check_security_for_node %}
-    if (!BindingSecurity::shouldAllowAccessToNode(info.GetIsolate(), {{attribute.cpp_value}}, exceptionState)) {
+    if (!BindingSecurity::shouldAllowAccessToNode(info.GetIsolate(), callingDOMWindow(info.GetIsolate()), {{attribute.cpp_value}}, exceptionState)) {
         v8SetReturnValue(info, v8Value);
         exceptionState.throwIfNeeded();
         return;

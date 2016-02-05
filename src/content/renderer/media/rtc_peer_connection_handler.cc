@@ -12,7 +12,6 @@
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
@@ -23,6 +22,7 @@
 #include "content/renderer/media/media_stream_track.h"
 #include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/remote_media_stream_impl.h"
+#include "content/renderer/media/rtc_certificate.h"
 #include "content/renderer/media/rtc_data_channel_handler.h"
 #include "content/renderer/media/rtc_dtmf_sender_handler.h"
 #include "content/renderer/media/rtc_media_constraints.h"
@@ -186,31 +186,20 @@ void GetSdpAndTypeFromSessionDescription(
 void GetNativeRtcConfiguration(
     const blink::WebRTCConfiguration& blink_config,
     webrtc::PeerConnectionInterface::RTCConfiguration* webrtc_config) {
-  DCHECK_EQ(webrtc_config->enable_localhost_ice_candidate, false);
-
-  // When we don't have WebRTCConfiguration, treat it as a special case where we
-  // should generate local host candidate. This will only be honored if
-  // enable_multiple_routes is disabled.
-  if (blink_config.isNull()) {
-    webrtc_config->enable_localhost_ice_candidate = true;
+  DCHECK(webrtc_config);
+  if (blink_config.isNull())
     return;
-  }
 
-  if (blink_config.iceServers().isNull()) {
-    // Same as when iceServers is undefined or unspecified.
-    webrtc_config->enable_localhost_ice_candidate = true;
-  } else {
-    for (size_t i = 0; i < blink_config.iceServers().numberOfServers(); ++i) {
-      webrtc::PeerConnectionInterface::IceServer server;
-      const blink::WebRTCICEServer& webkit_server =
-          blink_config.iceServers().server(i);
-      server.username =
-          base::UTF16ToUTF8(base::StringPiece16(webkit_server.username()));
-      server.password =
-          base::UTF16ToUTF8(base::StringPiece16(webkit_server.credential()));
-      server.uri = webkit_server.uri().spec();
-      webrtc_config->servers.push_back(server);
-    }
+  for (size_t i = 0; i < blink_config.numberOfServers(); ++i) {
+    webrtc::PeerConnectionInterface::IceServer server;
+    const blink::WebRTCICEServer& webkit_server =
+        blink_config.server(i);
+    server.username =
+        base::UTF16ToUTF8(base::StringPiece16(webkit_server.username()));
+    server.password =
+        base::UTF16ToUTF8(base::StringPiece16(webkit_server.credential()));
+    server.uri = webkit_server.uri().spec();
+    webrtc_config->servers.push_back(server);
   }
 
   switch (blink_config.iceTransports()) {
@@ -255,6 +244,12 @@ void GetNativeRtcConfiguration(
       break;
     default:
       NOTREACHED();
+  }
+
+  for (size_t i = 0; i < blink_config.numberOfCertificates(); ++i) {
+    webrtc_config->certificates.push_back(
+        static_cast<RTCCertificate*>(
+            blink_config.certificate(i))->rtcCertificate());
   }
 }
 
@@ -336,7 +331,9 @@ class CreateSessionDescriptionRequest
 
  protected:
   ~CreateSessionDescriptionRequest() override {
-    CHECK(webkit_request_.isNull());
+    DCHECK(main_thread_->BelongsToCurrentThread());
+    DLOG_IF(ERROR, !webkit_request_.isNull())
+        << "CreateSessionDescriptionRequest not completed. Shutting down?";
   }
 
   const scoped_refptr<base::SingleThreadTaskRunner> main_thread_;
@@ -383,7 +380,9 @@ class SetSessionDescriptionRequest
 
  protected:
   ~SetSessionDescriptionRequest() override {
-    DCHECK(webkit_request_.isNull());
+    DCHECK(main_thread_->BelongsToCurrentThread());
+    DLOG_IF(ERROR, !webkit_request_.isNull())
+        << "SetSessionDescriptionRequest not completed. Shutting down?";
   }
 
  private:
@@ -797,8 +796,10 @@ RTCPeerConnectionHandler::RTCPeerConnectionHandler(
     blink::WebRTCPeerConnectionHandlerClient* client,
     PeerConnectionDependencyFactory* dependency_factory)
     : client_(client),
+      is_closed_(false),
       dependency_factory_(dependency_factory),
       weak_factory_(this) {
+  CHECK(client_),
   g_peer_connection_handlers.Get().insert(this);
 }
 
@@ -818,13 +819,13 @@ RTCPeerConnectionHandler::~RTCPeerConnectionHandler() {
 
 // static
 void RTCPeerConnectionHandler::DestructAllHandlers() {
+  // Copy g_peer_connection_handlers since releasePeerConnectionHandler will
+  // remove an item.
   std::set<RTCPeerConnectionHandler*> handlers(
       g_peer_connection_handlers.Get().begin(),
       g_peer_connection_handlers.Get().end());
-  for (auto handler : handlers) {
-    if (handler->client_)
-      handler->client_->releasePeerConnectionHandler();
-  }
+  for (auto* handler : handlers)
+    handler->client_->releasePeerConnectionHandler();
 }
 
 // static
@@ -1310,7 +1311,7 @@ void RTCPeerConnectionHandler::GetStats(
 
 void RTCPeerConnectionHandler::CloseClientPeerConnection() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (client_)
+  if (!is_closed_)
     client_->closePeerConnection();
 }
 
@@ -1381,7 +1382,7 @@ void RTCPeerConnectionHandler::stop() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DVLOG(1) << "RTCPeerConnectionHandler::stop";
 
-  if (!client_ || !native_peer_connection_.get())
+  if (is_closed_ || !native_peer_connection_.get())
     return;  // Already stopped.
 
   if (peer_connection_tracker_)
@@ -1389,9 +1390,8 @@ void RTCPeerConnectionHandler::stop() {
 
   native_peer_connection_->Close();
 
-  // The client_ pointer is not considered valid after this point and no further
-  // callbacks must be made.
-  client_ = nullptr;
+  // This object may no longer forward call backs to blink.
+  is_closed_ = true;
 }
 
 void RTCPeerConnectionHandler::OnSignalingChange(
@@ -1403,7 +1403,7 @@ void RTCPeerConnectionHandler::OnSignalingChange(
       GetWebKitSignalingState(new_state);
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackSignalingStateChange(this, state);
-  if (client_)
+  if (!is_closed_)
     client_->didChangeSignalingState(state);
 }
 
@@ -1439,7 +1439,7 @@ void RTCPeerConnectionHandler::OnIceConnectionChange(
       GetWebKitIceConnectionState(new_state);
   if (peer_connection_tracker_)
     peer_connection_tracker_->TrackIceConnectionStateChange(this, state);
-  if(client_)
+  if (!is_closed_)
     client_->didChangeICEConnectionState(state);
 }
 
@@ -1452,7 +1452,7 @@ void RTCPeerConnectionHandler::OnIceGatheringChange(
   if (new_state == webrtc::PeerConnectionInterface::kIceGatheringComplete) {
     // If ICE gathering is completed, generate a NULL ICE candidate,
     // to signal end of candidates.
-    if (client_) {
+    if (!is_closed_) {
       blink::WebRTCICECandidate null_candidate;
       client_->didGenerateICECandidate(null_candidate);
     }
@@ -1509,7 +1509,7 @@ void RTCPeerConnectionHandler::OnAddStream(
 
   track_metrics_.AddStream(MediaStreamTrackMetrics::RECEIVED_STREAM,
                            s->webrtc_stream().get());
-  if (client_)
+  if (!is_closed_)
     client_->didAddRemoteStream(s->webkit_stream());
 }
 
@@ -1537,7 +1537,7 @@ void RTCPeerConnectionHandler::OnRemoveStream(
         this, webkit_stream, PeerConnectionTracker::SOURCE_REMOTE);
   }
 
-  if (client_)
+  if (!is_closed_)
     client_->didRemoveRemoteStream(webkit_stream);
 }
 
@@ -1551,7 +1551,7 @@ void RTCPeerConnectionHandler::OnDataChannel(
         this, handler->channel().get(), PeerConnectionTracker::SOURCE_REMOTE);
   }
 
-  if (client_)
+  if (!is_closed_)
     client_->didAddRemoteDataChannel(handler.release());
 }
 
@@ -1580,7 +1580,7 @@ void RTCPeerConnectionHandler::OnIceCandidate(
       NOTREACHED();
     }
   }
-  if (client_)
+  if (!is_closed_)
     client_->didGenerateICECandidate(web_candidate);
 }
 

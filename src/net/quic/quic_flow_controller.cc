@@ -11,11 +11,6 @@
 
 namespace net {
 
-namespace {
-const QuicByteCount kStreamReceiveWindowLimit = 16 * 1024 * 1024;   // 16 MB
-const QuicByteCount kSessionReceiveWindowLimit = 24 * 1024 * 1024;  // 24 MB
-}
-
 #define ENDPOINT \
   (perspective_ == Perspective::IS_SERVER ? "Server: " : "Client: ")
 
@@ -176,7 +171,7 @@ void QuicFlowController::MaybeSendWindowUpdate() {
   if (available_window >= threshold) {
     DVLOG(1) << ENDPOINT << "Not sending WindowUpdate for stream " << id_
              << ", available window: " << available_window
-             << ">= threshold: " << threshold;
+             << " >= threshold: " << threshold;
     return;
   }
 

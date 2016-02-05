@@ -292,7 +292,7 @@
           # implementation.
           ['exclude', 'KillRingNone\\.cpp$'],
 
-          # The Mac build is USE(CF).
+          # The Mac build uses Core Foundation.
           ['include', 'CF\\.cpp$'],
 
           # Use native Mac font code from core.
@@ -322,8 +322,8 @@
 
           # Mac uses only ScrollAnimatorMac.
           ['exclude', 'scroll/ScrollbarThemeNonMacCommon\\.(cpp|h)$'],
-          ['exclude', 'scroll/ScrollAnimatorNone\\.cpp$'],
-          ['exclude', 'scroll/ScrollAnimatorNone\\.h$'],
+          ['exclude', 'scroll/ScrollAnimator\\.cpp$'],
+          ['exclude', 'scroll/ScrollAnimator\\.h$'],
 
           ['exclude', 'fonts/skia/FontCacheSkia\\.cpp$'],
 

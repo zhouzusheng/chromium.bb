@@ -35,15 +35,16 @@
  * @implements {WebInspector.TimelineModeView}
  * @param {!WebInspector.TimelineModeViewDelegate} delegate
  * @param {!WebInspector.TimelineModel} model
+ * @param {!Array<!WebInspector.TimelineModel.Filter>} filters
  */
-WebInspector.TimelineView = function(delegate, model)
+WebInspector.TimelineView = function(delegate, model, filters)
 {
     WebInspector.VBox.call(this);
     this.element.classList.add("timeline-view");
 
     this._delegate = delegate;
     this._model = model;
-    this._presentationModel = new WebInspector.TimelinePresentationModel(model);
+    this._presentationModel = new WebInspector.TimelinePresentationModel(model, filters);
     this._calculator = new WebInspector.TimelineCalculator(model);
     this._linkifier = new WebInspector.Linkifier();
     this._frameStripByFrame = new Map();
@@ -733,8 +734,10 @@ WebInspector.TimelineView.prototype = {
 
         var taskBarElement = e.target.enclosingNodeOrSelfWithClass("timeline-graph-bar");
         if (taskBarElement && taskBarElement._tasksInfo) {
-            var offset = taskBarElement.offsetLeft;
-            this._timelineGrid.showCurtains(offset >= 0 ? offset : 0, taskBarElement.offsetWidth);
+            var parentWidth = taskBarElement.parentElement.offsetWidth;
+            var offset = Math.max(0, taskBarElement.offsetLeft);
+            var width = taskBarElement.offsetWidth;
+            this._timelineGrid.showCurtains(offset / parentWidth, (offset + width) / parentWidth);
         } else
             this._timelineGrid.hideCurtains();
     },

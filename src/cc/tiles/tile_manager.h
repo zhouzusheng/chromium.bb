@@ -15,7 +15,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "cc/base/unique_notifier.h"
-#include "cc/playback/raster_source.h"
+#include "cc/playback/display_list_raster_source.h"
 #include "cc/raster/tile_task_runner.h"
 #include "cc/resources/memory_history.h"
 #include "cc/resources/resource_pool.h"
@@ -107,7 +107,8 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
 
   static scoped_ptr<TileManager> Create(TileManagerClient* client,
                                         base::SequencedTaskRunner* task_runner,
-                                        size_t scheduled_raster_task_limit);
+                                        size_t scheduled_raster_task_limit,
+                                        bool use_partial_raster);
   ~TileManager() override;
 
   // Assigns tile memory and schedules work to prepare tiles for drawing.
@@ -205,7 +206,8 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
  protected:
   TileManager(TileManagerClient* client,
               const scoped_refptr<base::SequencedTaskRunner>& task_runner,
-              size_t scheduled_raster_task_limit);
+              size_t scheduled_raster_task_limit,
+              bool use_partial_raster);
 
   void FreeResourcesForReleasedTiles();
   void CleanUpReleasedTiles();
@@ -251,13 +253,15 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
     int resource_count_;
   };
 
-  void OnRasterTaskCompleted(Tile::Id tile,
-                             Resource* resource,
-                             const RasterSource::SolidColorAnalysis& analysis,
-                             bool was_canceled);
-  void UpdateTileDrawInfo(Tile* tile,
-                          Resource* resource,
-                          const RasterSource::SolidColorAnalysis& analysis);
+  void OnRasterTaskCompleted(
+      Tile::Id tile,
+      Resource* resource,
+      const DisplayListRasterSource::SolidColorAnalysis& analysis,
+      bool was_canceled);
+  void UpdateTileDrawInfo(
+      Tile* tile,
+      Resource* resource,
+      const DisplayListRasterSource::SolidColorAnalysis& analysis);
 
   void FreeResourcesForTile(Tile* tile);
   void FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(Tile* tile);
@@ -279,6 +283,7 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   bool AreRequiredTilesReadyToDraw(RasterTilePriorityQueue::Type type) const;
   void CheckIfMoreTilesNeedToBePrepared();
   void CheckAndIssueSignals();
+  bool MarkTilesOutOfMemory(scoped_ptr<RasterTilePriorityQueue> queue) const;
 
   ResourceFormat DetermineResourceFormat(const Tile* tile) const;
   bool DetermineResourceRequiresSwizzle(const Tile* tile) const;
@@ -289,6 +294,7 @@ class CC_EXPORT TileManager : public TileTaskRunnerClient {
   TileTaskRunner* tile_task_runner_;
   GlobalStateThatImpactsTilePriority global_state_;
   size_t scheduled_raster_task_limit_;
+  const bool use_partial_raster_;
 
   typedef base::hash_map<Tile::Id, Tile*> TileMap;
   TileMap tiles_;

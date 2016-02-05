@@ -93,8 +93,8 @@ HttpNetworkSession::Params::Params()
       time_func(&base::TimeTicks::Now),
       use_alternative_services(false),
       alternative_service_probability_threshold(1),
+      enable_npn(true),
       enable_quic(false),
-      enable_insecure_quic(false),
       enable_quic_for_proxies(false),
       enable_quic_port_selection(true),
       quic_always_require_handshake_confirmation(false),
@@ -108,6 +108,7 @@ HttpNetworkSession::Params::Params()
       quic_packet_loss_threshold(1.0f),
       quic_socket_receive_buffer_size(kQuicSocketReceiveBufferSize),
       quic_delay_tcp_race(false),
+      quic_store_server_configs_in_properties(false),
       quic_clock(NULL),
       quic_random(NULL),
       quic_max_packet_length(kDefaultMaxPacketSize),
@@ -116,6 +117,7 @@ HttpNetworkSession::Params::Params()
       quic_max_recent_disabled_reasons(kQuicMaxRecentDisabledReasons),
       quic_threshold_public_resets_post_handshake(0),
       quic_threshold_timeouts_streams_open(0),
+      quic_close_sessions_on_ip_change(false),
       proxy_delegate(NULL) {
   quic_supported_versions.push_back(QUIC_VERSION_25);
 }
@@ -167,6 +169,8 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
           params.quic_threshold_timeouts_streams_open,
           params.quic_socket_receive_buffer_size,
           params.quic_delay_tcp_race,
+          params.quic_store_server_configs_in_properties,
+          params.quic_close_sessions_on_ip_change,
           params.quic_connection_options),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
@@ -318,11 +322,19 @@ bool HttpNetworkSession::IsProtocolEnabled(AlternateProtocol protocol) const {
       protocol - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION];
 }
 
-void HttpNetworkSession::GetNextProtos(NextProtoVector* next_protos) const {
+void HttpNetworkSession::GetAlpnProtos(NextProtoVector* alpn_protos) const {
   if (HttpStreamFactory::spdy_enabled()) {
-    *next_protos = next_protos_;
+    *alpn_protos = next_protos_;
   } else {
-    next_protos->clear();
+    alpn_protos->clear();
+  }
+}
+
+void HttpNetworkSession::GetNpnProtos(NextProtoVector* npn_protos) const {
+  if (HttpStreamFactory::spdy_enabled() && params_.enable_npn) {
+    *npn_protos = next_protos_;
+  } else {
+    npn_protos->clear();
   }
 }
 

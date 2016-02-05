@@ -9,8 +9,12 @@
 
 #include <map>
 
-#include "../../../../third_party/base/nonstd_unique_ptr.h"
-#include "../../../include/fpdfapi/fpdf_pageobj.h"
+#include "core/include/fpdfapi/fpdf_page.h"
+#include "core/include/fpdfapi/fpdf_pageobj.h"
+#include "third_party/base/nonstd_unique_ptr.h"
+
+class CPDF_AllStates;
+class CPDF_ParseOptions;
 
 #define PARSE_STEP_LIMIT 100
 
@@ -41,15 +45,25 @@ class CPDF_StreamParser {
   void SkipPathObject();
 
  protected:
+  friend class fpdf_page_parser_old_ReadHexString_Test;
+
   void GetNextWord(FX_BOOL& bIsNumber);
   CFX_ByteString ReadString();
   CFX_ByteString ReadHexString();
   const uint8_t* m_pBuf;
+
+  // Length in bytes of m_pBuf.
   FX_DWORD m_Size;
+
+  // Current byte position within m_pBuf.
   FX_DWORD m_Pos;
+
   uint8_t m_WordBuffer[256];
   FX_DWORD m_WordSize;
   CPDF_Object* m_pLastObj;
+
+ private:
+  bool PositionIsInBounds() const;
 };
 typedef enum {
   PDFOP_CloseFillStrokePath = 0,

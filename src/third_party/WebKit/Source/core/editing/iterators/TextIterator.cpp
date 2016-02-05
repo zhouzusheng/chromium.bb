@@ -285,7 +285,7 @@ void TextIteratorAlgorithm<Strategy>::advance()
             if (m_iterationProgress < HandledOpenShadowRoots) {
                 if (entersOpenShadowRoots() && m_node->isElementNode() && toElement(m_node)->openShadowRoot()) {
                     ShadowRoot* youngestShadowRoot = toElement(m_node)->openShadowRoot();
-                    ASSERT(youngestShadowRoot->type() == ShadowRootType::OpenByDefault || youngestShadowRoot->type() == ShadowRootType::Open);
+                    ASSERT(youngestShadowRoot->type() == ShadowRootType::V0 || youngestShadowRoot->type() == ShadowRootType::Open);
                     m_node = youngestShadowRoot;
                     m_iterationProgress = HandledNone;
                     ++m_shadowDepth;
@@ -374,9 +374,9 @@ void TextIteratorAlgorithm<Strategy>::advance()
                         return;
                     }
                     ShadowRoot* shadowRoot = toShadowRoot(m_node);
-                    if (shadowRoot->type() == ShadowRootType::OpenByDefault || shadowRoot->type() == ShadowRootType::Open) {
+                    if (shadowRoot->type() == ShadowRootType::V0 || shadowRoot->type() == ShadowRootType::Open) {
                         ShadowRoot* nextShadowRoot = shadowRoot->olderShadowRoot();
-                        if (nextShadowRoot && nextShadowRoot->type() == ShadowRootType::OpenByDefault) {
+                        if (nextShadowRoot && nextShadowRoot->type() == ShadowRootType::V0) {
                             m_fullyClippedStack.pop();
                             m_node = nextShadowRoot;
                             m_iterationProgress = HandledNone;
@@ -563,11 +563,11 @@ void TextIteratorAlgorithm<Strategy>::handleTextBox()
             //   FirstLetter seem to have different ideas of where things can split.
             //   FirstLetter takes the punctuation + first letter, and BIDI will
             //   split out the punctuation and possibly reorder it.
-            if (nextTextBox && nextTextBox->layoutObject() != layoutObject) {
+            if (nextTextBox && !(nextTextBox->lineLayoutItem().isEqual(layoutObject))) {
                 m_textBox = 0;
                 return;
             }
-            ASSERT(!nextTextBox || nextTextBox->layoutObject() == layoutObject);
+            ASSERT(!nextTextBox || nextTextBox->lineLayoutItem().isEqual(layoutObject));
 
             if (runStart < runEnd) {
                 // Handle either a single newline character (which becomes a space),

@@ -535,12 +535,10 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
         var event = this._entryEvents[entryIndex];
         if (!event)
             return this._entryIndexToFrame[entryIndex] ? "white" : "#aaa";
-        if (event.name === WebInspector.TimelineModel.RecordType.JSFrame)
-            return WebInspector.TimelineUIUtils.colorForURL(event.args["data"]["url"]);
-        var category = WebInspector.TimelineUIUtils.eventStyle(event).category;
         if (WebInspector.TracingModel.isAsyncPhase(event.phase)) {
             if (event.hasCategory(WebInspector.TracingModel.ConsoleEventCategory))
                 return this._consoleColorGenerator.colorForID(event.name);
+            var category = WebInspector.TimelineUIUtils.eventStyle(event).category;
             var color = this._asyncColorByCategory[category.name];
             if (color)
                 return color;
@@ -549,7 +547,7 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
             this._asyncColorByCategory[category.name] = color;
             return color;
         }
-        return category.fillColorStop1;
+        return WebInspector.TimelineUIUtils.eventColor(event);
     },
 
     /**
@@ -566,7 +564,6 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
     decorateEntry: function(entryIndex, context, text, barX, barY, barWidth, barHeight)
     {
         var frame = this._entryIndexToFrame[entryIndex];
-        var /** @const */ triangleSize = 10;
         if (frame) {
             var /** @const */ vPadding = 1;
             var /** @const */ hPadding = 1;
@@ -577,11 +574,8 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
 
             context.fillStyle = frame.idle ? "white" : "#eee";
             context.fillRect(barX, barY, barWidth, barHeight);
-            if (frame.hasWarnings()) {
-                context.save();
-                paintWarningDecoration();
-                context.restore();
-            }
+            if (frame.hasWarnings())
+                paintWarningDecoration(barX, barWidth);
 
             var frameDurationText = Number.preciseMillisToString(frame.duration, 1);
             var textWidth = context.measureText(frameDurationText).width;
@@ -591,10 +585,8 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
             }
             return true;
         }
-        if (barWidth < 5)
-            return false;
 
-        if (text) {
+        if (barWidth > 10 && text) {
             context.save();
             context.fillStyle = this.textColor(entryIndex);
             context.font = this._font;
@@ -603,23 +595,27 @@ WebInspector.TimelineFlameChartDataProvider.prototype = {
         }
 
         var event = this._entryEvents[entryIndex];
-        if (event && event.warning) {
-            context.save();
+        if (event && event.warning)
+            paintWarningDecoration(barX, barWidth - 1.5);
 
-            context.rect(barX, barY, barWidth, this.barHeight());
-            context.clip();
-            paintWarningDecoration();
-            context.restore();
-        }
-
-        function paintWarningDecoration()
+        /**
+         * @param {number} x
+         * @param {number} width
+         */
+        function paintWarningDecoration(x, width)
         {
+            var /** @const */ triangleSize = 8;
+            context.save();
+            context.beginPath();
+            context.rect(x, barY, width, barHeight);
+            context.clip();
             context.beginPath();
             context.fillStyle = "red";
-            context.moveTo(barX + barWidth - triangleSize, barY + 1);
-            context.lineTo(barX + barWidth - 1, barY + 1);
-            context.lineTo(barX + barWidth - 1, barY + triangleSize);
+            context.moveTo(x + width - triangleSize, barY);
+            context.lineTo(x + width, barY);
+            context.lineTo(x + width, barY + triangleSize);
             context.fill();
+            context.restore();
         }
 
         return true;
@@ -946,17 +942,6 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
     forceDecoration: function(index)
     {
         return true;
-    },
-
-    /**
-     * @override
-     * @param {number} index
-     * @return {?Array.<!{title: string, value: (string|!Element)}>}
-     */
-    prepareHighlightedEntryInfo: function(index)
-    {
-        var request = /** @type {!WebInspector.TimelineModel.NetworkRequest} */ (this._requests[index]);
-        return WebInspector.TimelineUIUtils.buildNetworkRequestInfo(request);
     },
 
     /**

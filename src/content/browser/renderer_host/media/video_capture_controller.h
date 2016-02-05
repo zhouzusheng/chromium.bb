@@ -69,10 +69,8 @@ class CONTENT_EXPORT VideoCaptureController {
   base::WeakPtr<VideoCaptureController> GetWeakPtrForIOThread();
 
   // Return a new VideoCaptureDeviceClient to forward capture events to this
-  // instance. Some device clients need to allocate resources for the given
-  // capture |format| and/or work on Capture Thread (|capture_task_runner|).
-  scoped_ptr<media::VideoCaptureDevice::Client> NewDeviceClient(
-      const scoped_refptr<base::SingleThreadTaskRunner>& capture_task_runner);
+  // instance.
+  scoped_ptr<media::VideoCaptureDevice::Client> NewDeviceClient();
 
   // Start video capturing and try to use the resolution specified in |params|.
   // Buffers will be shared to the client as necessary. The client will continue
@@ -116,7 +114,7 @@ class CONTENT_EXPORT VideoCaptureController {
   void ReturnBuffer(VideoCaptureControllerID id,
                     VideoCaptureControllerEventHandler* event_handler,
                     int buffer_id,
-                    uint32 sync_point,
+                    const gpu::SyncToken& sync_token,
                     double consumer_resource_utilization);
 
   const media::VideoCaptureFormat& GetVideoCaptureFormat() const;
@@ -135,6 +133,11 @@ class CONTENT_EXPORT VideoCaptureController {
  private:
   struct ControllerClient;
   typedef std::list<ControllerClient*> ControllerClients;
+
+  // Notify renderer that a new buffer has been created.
+  void DoNewBufferOnIOThread(ControllerClient* client,
+                             media::VideoCaptureDevice::Client::Buffer* buffer,
+                             const scoped_refptr<media::VideoFrame>& frame);
 
   // Find a client of |id| and |handler| in |clients|.
   ControllerClient* FindClient(VideoCaptureControllerID id,

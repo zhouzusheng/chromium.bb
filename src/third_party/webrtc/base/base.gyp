@@ -29,6 +29,7 @@
       'target_name': 'rtc_base_approved',
       'type': 'static_library',
       'sources': [
+        'array_view.h',
         'atomicops.h',
         'basictypes.h',
         'bitbuffer.cc',
@@ -57,6 +58,7 @@
         'md5.h',
         'md5digest.cc',
         'md5digest.h',
+        'optional.h',
         'platform_file.cc',
         'platform_file.h',
         'platform_thread.cc',
@@ -219,6 +221,8 @@
         'nethelpers.h',
         'network.cc',
         'network.h',
+        'networkmonitor.cc',
+        'networkmonitor.h',
         'nullsocketserver.h',
         'openssl.h',
         'openssladapter.cc',
@@ -252,8 +256,6 @@
         'rollingaccumulator.h',
         'rtccertificate.cc',
         'rtccertificate.h',
-        'schanneladapter.cc',
-        'schanneladapter.h',
         'scoped_autorelease_pool.h',
         'scoped_autorelease_pool.mm',
         'scoped_ref_ptr.h',
@@ -378,9 +380,9 @@
             '../../boringssl/src/include',
           ],
           'sources': [
-            '../../webrtc_overrides/webrtc/base/win32socketinit.cc',
             '../../webrtc_overrides/webrtc/base/logging.cc',
             '../../webrtc_overrides/webrtc/base/logging.h',
+            '../../webrtc_overrides/webrtc/base/win32socketinit.cc',
           ],
           'sources!': [
             'atomicops.h',
@@ -617,8 +619,6 @@
             ['exclude', 'win32[a-z0-9]*\\.(h|cc)$'],
           ],
           'sources!': [
-              'schanneladapter.cc',
-              'schanneladapter.h',
               'winping.cc',
               'winping.h',
               'winfirewall.cc',

@@ -30,7 +30,6 @@
 #include "core/css/RuleSet.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SelectorFilter.h"
-#include "core/css/TreeBoundaryCrossingRules.h"
 #include "core/css/resolver/CSSPropertyPriority.h"
 #include "core/css/resolver/MatchedPropertiesCache.h"
 #include "core/css/resolver/StyleBuilder.h"
@@ -80,10 +79,13 @@ using ActiveInterpolationsMap = HashMap<PropertyHandle, Vector<RefPtr<Interpolat
 
 // This class selects a ComputedStyle for a given element based on a collection of stylesheets.
 class CORE_EXPORT StyleResolver final : public NoBaseWillBeGarbageCollectedFinalized<StyleResolver> {
-    WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleResolver);
+    WTF_MAKE_NONCOPYABLE(StyleResolver); USING_FAST_MALLOC_WILL_BE_REMOVED(StyleResolver);
 public:
-    explicit StyleResolver(Document&);
-    virtual ~StyleResolver();
+    static PassOwnPtrWillBeRawPtr<StyleResolver> create(Document& document)
+    {
+        return adoptPtrWillBeNoop(new StyleResolver(document));
+    }
+    ~StyleResolver();
 
     // FIXME: StyleResolver should not be keeping tree-walk state.
     // These should move to some global tree-walk state, or should be contained in a
@@ -185,6 +187,8 @@ public:
     void addTreeBoundaryCrossingScope(ContainerNode& scope);
 
 private:
+    explicit StyleResolver(Document&);
+
     PassRefPtr<ComputedStyle> initialStyleForElement();
 
     void initWatchedSelectorRules();
@@ -200,9 +204,10 @@ private:
     void collectPseudoRulesForElement(Element*, ElementRuleCollector&, PseudoId, unsigned rulesToInclude);
     void matchRuleSet(ElementRuleCollector&, RuleSet*);
     void matchUARules(ElementRuleCollector&);
-    void matchAuthorRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
+    void matchAuthorRules(Element*, ElementRuleCollector&);
     void matchAllRules(StyleResolverState&, ElementRuleCollector&, bool includeSMILProperties);
     void collectFeatures();
+    void collectTreeBoundaryCrossingRules(Element*, ElementRuleCollector&);
     void resetRuleFeatures();
 
     void applyMatchedProperties(StyleResolverState&, const MatchResult&);
@@ -246,7 +251,8 @@ private:
     OwnPtrWillBeMember<RuleSet> m_siblingRuleSet;
     OwnPtrWillBeMember<RuleSet> m_uncommonAttributeRuleSet;
     OwnPtrWillBeMember<RuleSet> m_watchedSelectorsRules;
-    TreeBoundaryCrossingRules m_treeBoundaryCrossingRules;
+
+    DocumentOrderedList m_treeBoundaryCrossingScopes;
 
     bool m_needCollectFeatures;
     bool m_printMediaType;

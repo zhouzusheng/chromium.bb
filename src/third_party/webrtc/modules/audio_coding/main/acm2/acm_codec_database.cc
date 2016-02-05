@@ -21,18 +21,13 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_common_defs.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/include/trace.h"
 
 namespace webrtc {
 
 namespace acm2 {
 
 namespace {
-
-// Checks if the bitrate is valid for the codec.
-bool IsRateValid(int codec_id, int rate) {
-  return ACMCodecDB::database_[codec_id].rate == rate;
-}
 
 // Checks if the bitrate is valid for iSAC.
 bool IsISACRateValid(int rate) {
@@ -68,7 +63,6 @@ const CodecInst ACMCodecDB::database_[] = {
   {103, "ISAC", 16000, kIsacPacSize480, 1, kIsacWbDefaultRate},
 # if (defined(WEBRTC_CODEC_ISAC))
   {104, "ISAC", 32000, kIsacPacSize960, 1, kIsacSwbDefaultRate},
-  {105, "ISAC", 48000, kIsacPacSize1440, 1, kIsacSwbDefaultRate},
 # endif
 #endif
   // Mono
@@ -124,7 +118,6 @@ const ACMCodecDB::CodecSettings ACMCodecDB::codec_settings_[] = {
     {2, {kIsacPacSize480, kIsacPacSize960}, 0, 1},
 # if (defined(WEBRTC_CODEC_ISAC))
     {1, {kIsacPacSize960}, 0, 1},
-    {1, {kIsacPacSize1440}, 0, 1},
 # endif
 #endif
     // Mono
@@ -175,66 +168,46 @@ const ACMCodecDB::CodecSettings ACMCodecDB::codec_settings_[] = {
 // Create a database of all NetEQ decoders at compile time.
 const NetEqDecoder ACMCodecDB::neteq_decoders_[] = {
 #if (defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX))
-    kDecoderISAC,
+    NetEqDecoder::kDecoderISAC,
 # if (defined(WEBRTC_CODEC_ISAC))
-    kDecoderISACswb,
-    kDecoderISACfb,
+    NetEqDecoder::kDecoderISACswb,
 # endif
 #endif
     // Mono
-    kDecoderPCM16B,
-    kDecoderPCM16Bwb,
-    kDecoderPCM16Bswb32kHz,
+    NetEqDecoder::kDecoderPCM16B, NetEqDecoder::kDecoderPCM16Bwb,
+    NetEqDecoder::kDecoderPCM16Bswb32kHz,
     // Stereo
-    kDecoderPCM16B_2ch,
-    kDecoderPCM16Bwb_2ch,
-    kDecoderPCM16Bswb32kHz_2ch,
+    NetEqDecoder::kDecoderPCM16B_2ch, NetEqDecoder::kDecoderPCM16Bwb_2ch,
+    NetEqDecoder::kDecoderPCM16Bswb32kHz_2ch,
     // G.711, PCM mu-las and A-law.
     // Mono
-    kDecoderPCMu,
-    kDecoderPCMa,
+    NetEqDecoder::kDecoderPCMu, NetEqDecoder::kDecoderPCMa,
     // Stereo
-    kDecoderPCMu_2ch,
-    kDecoderPCMa_2ch,
+    NetEqDecoder::kDecoderPCMu_2ch, NetEqDecoder::kDecoderPCMa_2ch,
 #ifdef WEBRTC_CODEC_ILBC
-    kDecoderILBC,
+    NetEqDecoder::kDecoderILBC,
 #endif
 #ifdef WEBRTC_CODEC_G722
     // Mono
-    kDecoderG722,
+    NetEqDecoder::kDecoderG722,
     // Stereo
-    kDecoderG722_2ch,
+    NetEqDecoder::kDecoderG722_2ch,
 #endif
 #ifdef WEBRTC_CODEC_OPUS
     // Mono and stereo.
-    kDecoderOpus,
+    NetEqDecoder::kDecoderOpus,
 #endif
     // Comfort noise for three different sampling frequencies.
-    kDecoderCNGnb,
-    kDecoderCNGwb,
-    kDecoderCNGswb32kHz
+    NetEqDecoder::kDecoderCNGnb, NetEqDecoder::kDecoderCNGwb,
+    NetEqDecoder::kDecoderCNGswb32kHz,
 #ifdef ENABLE_48000_HZ
-    , kDecoderCNGswb48kHz
+    NetEqDecoder::kDecoderCNGswb48kHz,
 #endif
-    , kDecoderAVT
+    NetEqDecoder::kDecoderAVT,
 #ifdef WEBRTC_CODEC_RED
-    , kDecoderRED
+    NetEqDecoder::kDecoderRED,
 #endif
 };
-
-// Get codec information from database.
-// TODO(tlegrand): replace memcpy with a pointer to the data base memory.
-int ACMCodecDB::Codec(int codec_id, CodecInst* codec_inst) {
-  // Error check to see that codec_id is not out of bounds.
-  if ((codec_id < 0) || (codec_id >= kNumCodecs)) {
-    return -1;
-  }
-
-  // Copy database information for the codec to the output.
-  memcpy(codec_inst, &database_[codec_id], sizeof(CodecInst));
-
-  return 0;
-}
 
 // Enumerator for error codes when asking for codec database id.
 enum {
@@ -257,7 +230,7 @@ int ACMCodecDB::CodecNumber(const CodecInst& codec_inst) {
   }
 
   // Checks the validity of payload type
-  if (!ValidPayloadType(codec_inst.pltype)) {
+  if (!RentACodec::IsPayloadTypeValid(codec_inst.pltype)) {
     return kInvalidPayloadtype;
   }
 
@@ -306,8 +279,7 @@ int ACMCodecDB::CodecNumber(const CodecInst& codec_inst) {
         ? codec_id : kInvalidRate;
   }
 
-  return IsRateValid(codec_id, codec_inst.rate) ?
-      codec_id : kInvalidRate;
+  return database_[codec_id].rate == codec_inst.rate ? codec_id : kInvalidRate;
 }
 
 // Looks for a matching payload name, frequency, and channels in the
@@ -321,7 +293,7 @@ int ACMCodecDB::CodecId(const CodecInst& codec_inst) {
 }
 
 int ACMCodecDB::CodecId(const char* payload_name, int frequency, int channels) {
-  for (int id = 0; id < kNumCodecs; id++) {
+  for (const CodecInst& ci : RentACodec::Database()) {
     bool name_match = false;
     bool frequency_match = false;
     bool channels_match = false;
@@ -329,11 +301,11 @@ int ACMCodecDB::CodecId(const char* payload_name, int frequency, int channels) {
     // Payload name, sampling frequency and number of channels need to match.
     // NOTE! If |frequency| is -1, the frequency is not applicable, and is
     // always treated as true, like for RED.
-    name_match = (STR_CASE_CMP(database_[id].plname, payload_name) == 0);
-    frequency_match = (frequency == database_[id].plfreq) || (frequency == -1);
+    name_match = (STR_CASE_CMP(ci.plname, payload_name) == 0);
+    frequency_match = (frequency == ci.plfreq) || (frequency == -1);
     // The number of channels must match for all codecs but Opus.
     if (STR_CASE_CMP(payload_name, "opus") != 0) {
-      channels_match = (channels == database_[id].channels);
+      channels_match = (channels == ci.channels);
     } else {
       // For opus we just check that number of channels is valid.
       channels_match = (channels == 1 || channels == 2);
@@ -341,7 +313,7 @@ int ACMCodecDB::CodecId(const char* payload_name, int frequency, int channels) {
 
     if (name_match && frequency_match && channels_match) {
       // We have found a matching codec in the list.
-      return id;
+      return &ci - RentACodec::Database().data();
     }
   }
 
@@ -352,22 +324,6 @@ int ACMCodecDB::CodecId(const char* payload_name, int frequency, int channels) {
 int ACMCodecDB::ReceiverCodecNumber(const CodecInst& codec_inst) {
   // Look for a matching codec in the database.
   return CodecId(codec_inst);
-}
-
-// Returns the codec sampling frequency for codec with id = "codec_id" in
-// database.
-int ACMCodecDB::CodecFreq(int codec_id) {
-  // Error check to see that codec_id is not out of bounds.
-  if (codec_id < 0 || codec_id >= kNumCodecs) {
-    return -1;
-  }
-
-  return database_[codec_id].plfreq;
-}
-
-// Checks if the payload type is in the valid range.
-bool ACMCodecDB::ValidPayloadType(int payload_type) {
-  return (payload_type >= 0) && (payload_type <= 127);
 }
 
 }  // namespace acm2

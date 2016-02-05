@@ -149,7 +149,7 @@ class ContainerURLRequestContext : public URLRequestContext {
 
   void set_transport_security_persister(
       scoped_ptr<TransportSecurityPersister> transport_security_persister) {
-    transport_security_persister = transport_security_persister.Pass();
+    transport_security_persister_ = transport_security_persister.Pass();
   }
 
  private:
@@ -178,7 +178,10 @@ URLRequestContextBuilder::HttpNetworkSessionParams::HttpNetworkSessionParams()
       next_protos(NextProtosDefaults()),
       use_alternative_services(true),
       enable_quic(false),
-      enable_insecure_quic(false) {}
+      quic_store_server_configs_in_properties(false),
+      quic_delay_tcp_race(false),
+      quic_max_number_of_lossy_connections(0),
+      quic_packet_loss_threshold(1.0f) {}
 
 URLRequestContextBuilder::HttpNetworkSessionParams::~HttpNetworkSessionParams()
 {}
@@ -240,6 +243,11 @@ void URLRequestContextBuilder::SetSpdyAndQuicEnabled(bool spdy_enabled,
   http_network_session_params_.next_protos =
       NextProtosWithSpdyAndQuic(spdy_enabled, quic_enabled);
   http_network_session_params_.enable_quic = quic_enabled;
+}
+
+void URLRequestContextBuilder::SetCertVerifier(
+    scoped_ptr<CertVerifier> cert_verifier) {
+  cert_verifier_ = cert_verifier.Pass();
 }
 
 void URLRequestContextBuilder::SetInterceptors(
@@ -352,7 +360,11 @@ scoped_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
         scoped_ptr<HttpServerProperties>(new HttpServerPropertiesImpl()));
   }
 
-  storage->set_cert_verifier(CertVerifier::CreateDefault());
+  if (cert_verifier_) {
+    storage->set_cert_verifier(cert_verifier_.Pass());
+  } else {
+    storage->set_cert_verifier(CertVerifier::CreateDefault());
+  }
 
   if (throttling_enabled_) {
     storage->set_throttler_manager(
@@ -381,30 +393,39 @@ scoped_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
       http_network_session_params_.trusted_spdy_proxy;
   network_session_params.next_protos = http_network_session_params_.next_protos;
   network_session_params.enable_quic = http_network_session_params_.enable_quic;
-  network_session_params.enable_insecure_quic =
-      http_network_session_params_.enable_insecure_quic;
+  network_session_params.quic_store_server_configs_in_properties =
+      http_network_session_params_.quic_store_server_configs_in_properties;
+  network_session_params.quic_delay_tcp_race =
+      http_network_session_params_.quic_delay_tcp_race;
+  network_session_params.quic_max_number_of_lossy_connections =
+      http_network_session_params_.quic_max_number_of_lossy_connections;
+  network_session_params.quic_packet_loss_threshold =
+      http_network_session_params_.quic_packet_loss_threshold;
   network_session_params.quic_connection_options =
       http_network_session_params_.quic_connection_options;
+  network_session_params.ssl_session_cache_shard =
+      http_network_session_params_.ssl_session_cache_shard;
+
+  storage->set_http_network_session(
+      make_scoped_ptr(new HttpNetworkSession(network_session_params)));
 
   scoped_ptr<HttpTransactionFactory> http_transaction_factory;
   if (http_cache_enabled_) {
-    HttpCache::BackendFactory* http_cache_backend = NULL;
+    scoped_ptr<HttpCache::BackendFactory> http_cache_backend;
     if (http_cache_params_.type == HttpCacheParams::DISK) {
-      http_cache_backend = new HttpCache::DefaultBackend(
+      http_cache_backend.reset(new HttpCache::DefaultBackend(
           DISK_CACHE, CACHE_BACKEND_DEFAULT, http_cache_params_.path,
-          http_cache_params_.max_size, context->GetFileTaskRunner());
+          http_cache_params_.max_size, context->GetFileTaskRunner()));
     } else {
       http_cache_backend =
           HttpCache::DefaultBackend::InMemory(http_cache_params_.max_size);
     }
 
-    http_transaction_factory.reset(
-        new HttpCache(network_session_params, http_cache_backend));
+    http_transaction_factory.reset(new HttpCache(
+        storage->http_network_session(), http_cache_backend.Pass(), true));
   } else {
-    scoped_refptr<HttpNetworkSession> network_session(
-        new HttpNetworkSession(network_session_params));
-
-    http_transaction_factory.reset(new HttpNetworkLayer(network_session.get()));
+    http_transaction_factory.reset(
+        new HttpNetworkLayer(storage->http_network_session()));
   }
   storage->set_http_transaction_factory(http_transaction_factory.Pass());
 

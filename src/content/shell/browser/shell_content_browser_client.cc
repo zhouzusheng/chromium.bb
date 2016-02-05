@@ -20,7 +20,6 @@
 #include "content/public/common/web_preferences.h"
 #include "content/public/test/test_mojo_app.h"
 #include "content/shell/browser/blink_test_controller.h"
-#include "content/shell/browser/ipc_echo_message_filter.h"
 #include "content/shell/browser/layout_test/layout_test_browser_main_parts.h"
 #include "content/shell/browser/layout_test/layout_test_resource_dispatcher_host_delegate.h"
 #include "content/shell/browser/shell.h"
@@ -147,13 +146,6 @@ BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
   return shell_browser_main_parts_;
 }
 
-void ShellContentBrowserClient::RenderProcessWillLaunch(
-    RenderProcessHost* host) {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kExposeIpcEcho))
-    host->AddFilter(new IPCEchoMessageFilter());
-}
-
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
     BrowserContext* content_browser_context,
     ProtocolHandlerMap* protocol_handlers,
@@ -230,12 +222,12 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
     command_line->AppendSwitch(switches::kEnableFontAntialiasing);
   }
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kExposeInternalsForTesting)) {
-    command_line->AppendSwitch(switches::kExposeInternalsForTesting);
+          switches::kAlwaysUseComplexText)) {
+    command_line->AppendSwitch(switches::kAlwaysUseComplexText);
   }
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kExposeIpcEcho)) {
-    command_line->AppendSwitch(switches::kExposeIpcEcho);
+          switches::kExposeInternalsForTesting)) {
+    command_line->AppendSwitch(switches::kExposeInternalsForTesting);
   }
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kStableReleaseMode)) {
@@ -382,8 +374,8 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
 #endif  // defined(OS_ANDROID)
 
 #if defined(OS_WIN)
-void ShellContentBrowserClient::PreSpawnRenderer(sandbox::TargetPolicy* policy,
-                                                 bool* success) {
+bool ShellContentBrowserClient::PreSpawnRenderer(
+    sandbox::TargetPolicy* policy) {
   // Add sideloaded font files for testing. See also DIR_WINDOWS_FONTS
   // addition in |StartSandboxedProcess|.
   std::vector<std::string> font_files = switches::GetSideloadFontFiles();
@@ -394,6 +386,7 @@ void ShellContentBrowserClient::PreSpawnRenderer(sandbox::TargetPolicy* policy,
         sandbox::TargetPolicy::FILES_ALLOW_READONLY,
         base::UTF8ToWide(*i).c_str());
   }
+  return true;
 }
 #endif  // OS_WIN
 

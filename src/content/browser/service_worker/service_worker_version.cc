@@ -528,6 +528,7 @@ ServiceWorkerVersion::ServiceWorkerVersion(
       should_exclude_from_uma_(
           ServiceWorkerMetrics::ShouldExcludeURLFromHistogram(scope_)),
       weak_factory_(this) {
+  DCHECK_NE(kInvalidServiceWorkerVersionId, version_id);
   DCHECK(context_);
   DCHECK(registration);
   context_->AddLiveVersion(this);
@@ -800,6 +801,7 @@ void ServiceWorkerVersion::DispatchFetchEvent(
 
 void ServiceWorkerVersion::DispatchSyncEvent(
     BackgroundSyncRegistrationHandle::HandleId handle_id,
+    BackgroundSyncEventLastChance last_chance,
     const StatusCallback& callback) {
   OnBeginEvent();
   DCHECK_EQ(ACTIVATED, status()) << status();
@@ -808,7 +810,7 @@ void ServiceWorkerVersion::DispatchSyncEvent(
     StartWorker(base::Bind(
         &RunTaskAfterStartWorker, weak_factory_.GetWeakPtr(), callback,
         base::Bind(&self::DispatchSyncEvent, weak_factory_.GetWeakPtr(),
-                   handle_id, callback)));
+                   handle_id, last_chance, callback)));
     return;
   }
 
@@ -822,8 +824,9 @@ void ServiceWorkerVersion::DispatchSyncEvent(
   }
 
   background_sync_dispatcher_->Sync(
-      handle_id, base::Bind(&self::OnSyncEventFinished,
-                            weak_factory_.GetWeakPtr(), request_id));
+      handle_id, last_chance,
+      base::Bind(&self::OnSyncEventFinished, weak_factory_.GetWeakPtr(),
+                 request_id));
 }
 
 void ServiceWorkerVersion::DispatchNotificationClickEvent(
@@ -1012,10 +1015,6 @@ void ServiceWorkerVersion::RemoveControllee(
   if (HasControllee())
     return;
   FOR_EACH_OBSERVER(Listener, listeners_, OnNoControllees(this));
-}
-
-bool ServiceWorkerVersion::HasWindowClients() {
-  return !GetWindowClientsInternal(false /* include_uncontrolled */).empty();
 }
 
 void ServiceWorkerVersion::AddStreamingURLRequestJob(
@@ -1262,6 +1261,8 @@ bool ServiceWorkerVersion::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ClaimClients,
                         OnClaimClients)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_Pong, OnPongFromWorker)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_RegisterForeignFetchScopes,
+                        OnRegisterForeignFetchScopes)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -1768,7 +1769,7 @@ void ServiceWorkerVersion::DidNavigateClient(int request_id,
                                              int render_frame_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  if (running_status() != RUNNING)
+  if (!context_ || running_status() != RUNNING)
     return;
 
   if (render_process_id == ChildProcessHost::kInvalidUniqueID &&
@@ -1864,6 +1865,29 @@ void ServiceWorkerVersion::OnPongFromWorker() {
   ping_controller_->OnPongReceived();
 }
 
+void ServiceWorkerVersion::OnRegisterForeignFetchScopes(
+    const std::vector<GURL>& sub_scopes) {
+  DCHECK(status() == INSTALLING || status() == REDUNDANT) << status();
+  // Renderer should have already verified all these urls are inside the
+  // worker's scope, but verify again here on the browser process side.
+  GURL origin = scope_.GetOrigin();
+  std::string scope_path = scope_.path();
+  for (const GURL& url : sub_scopes) {
+    if (!url.is_valid() || url.GetOrigin() != origin ||
+        !base::StartsWith(url.path(), scope_path,
+                          base::CompareCase::SENSITIVE)) {
+      DVLOG(1) << "Received unexpected invalid URL from renderer process.";
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE,
+          base::Bind(&KillEmbeddedWorkerProcess, embedded_worker_->process_id(),
+                     RESULT_CODE_KILLED_BAD_MESSAGE));
+      return;
+    }
+  }
+  foreign_fetch_scopes_.insert(foreign_fetch_scopes_.end(), sub_scopes.begin(),
+                               sub_scopes.end());
+}
+
 void ServiceWorkerVersion::DidEnsureLiveRegistrationForStartWorker(
     const StatusCallback& callback,
     ServiceWorkerStatusCode status,
@@ -1932,8 +1956,18 @@ void ServiceWorkerVersion::GetWindowClients(
     const ServiceWorkerClientQueryOptions& options) {
   DCHECK(options.client_type == blink::WebServiceWorkerClientTypeWindow ||
          options.client_type == blink::WebServiceWorkerClientTypeAll);
-  const std::vector<base::Tuple<int, int, std::string>>& clients_info =
-      GetWindowClientsInternal(options.include_uncontrolled);
+
+  std::vector<base::Tuple<int, int, std::string>> clients_info;
+  if (!options.include_uncontrolled) {
+    for (auto& controllee : controllee_map_)
+      AddWindowClient(controllee.second, &clients_info);
+  } else if (context_) {
+    for (auto it =
+             context_->GetClientProviderHostIterator(script_url_.GetOrigin());
+         !it->IsAtEnd(); it->Advance()) {
+      AddWindowClient(it->GetProviderHost(), &clients_info);
+    }
+  }
 
   if (clients_info.empty()) {
     DidGetWindowClients(request_id, options,
@@ -1946,22 +1980,6 @@ void ServiceWorkerVersion::GetWindowClients(
       base::Bind(&OnGetWindowClientsFromUI, clients_info, script_url_,
                  base::Bind(&ServiceWorkerVersion::DidGetWindowClients,
                             weak_factory_.GetWeakPtr(), request_id, options)));
-}
-
-const std::vector<base::Tuple<int, int, std::string>>
-ServiceWorkerVersion::GetWindowClientsInternal(bool include_uncontrolled) {
-  std::vector<base::Tuple<int, int, std::string>> clients_info;
-  if (!include_uncontrolled) {
-    for (auto& controllee : controllee_map_)
-      AddWindowClient(controllee.second, &clients_info);
-  } else {
-    for (auto it =
-             context_->GetClientProviderHostIterator(script_url_.GetOrigin());
-         !it->IsAtEnd(); it->Advance()) {
-      AddWindowClient(it->GetProviderHost(), &clients_info);
-    }
-  }
-  return clients_info;
 }
 
 void ServiceWorkerVersion::DidGetWindowClients(
@@ -1982,7 +2000,7 @@ void ServiceWorkerVersion::GetNonWindowClients(
     for (auto& controllee : controllee_map_) {
       AddNonWindowClient(controllee.second, options, clients);
     }
-  } else {
+  } else if (context_) {
     for (auto it =
              context_->GetClientProviderHostIterator(script_url_.GetOrigin());
          !it->IsAtEnd(); it->Advance()) {
@@ -2030,6 +2048,9 @@ void ServiceWorkerVersion::OnTimeoutTimer() {
   DCHECK(running_status() == STARTING || running_status() == RUNNING ||
          running_status() == STOPPING)
       << running_status();
+
+  if (!context_)
+    return;
 
   MarkIfStale();
 

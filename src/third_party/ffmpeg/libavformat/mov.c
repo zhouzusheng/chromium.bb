@@ -265,6 +265,7 @@ static int mov_read_udta_string(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     uint32_t data_type = 0, str_size, str_size_alloc;
     int (*parse)(MOVContext*, AVIOContext*, unsigned, const char*) = NULL;
     int raw = 0;
+    int num = 0;
 
     switch (atom.type) {
     case MKTAG( '@','P','R','M'): key = "premiere_version"; raw = 1; break;
@@ -368,6 +369,15 @@ retry:
                     av_log(c->fc, AV_LOG_ERROR, "Error parsing cover art.\n");
                 }
                 return ret;
+            } else if (!key && c->found_hdlr_mdta && c->meta_keys) {
+                uint32_t index = AV_RB32(&atom.type);
+                if (index < c->meta_keys_count) {
+                    key = c->meta_keys[index];
+                } else {
+                    av_log(c->fc, AV_LOG_WARNING,
+                           "The index of 'data' is out of range: %d >= %d.\n",
+                           index, c->meta_keys_count);
+                }
             }
         } else return 0;
     } else if (atom.size > 4 && key && !c->itunes_metadata && !raw) {
@@ -394,8 +404,10 @@ retry:
     if (atom.size < 0 || str_size >= INT_MAX/2)
         return AVERROR_INVALIDDATA;
 
+    // Allocates enough space if data_type is a float32 number, otherwise
     // worst-case requirement for output string in case of utf8 coded input
-    str_size_alloc = (raw ? str_size : str_size * 2) + 1;
+    num = (data_type == 23);
+    str_size_alloc = (num ? 512 : (raw ? str_size : str_size * 2)) + 1;
     str = av_mallocz(str_size_alloc);
     if (!str)
         return AVERROR(ENOMEM);
@@ -405,6 +417,13 @@ retry:
     else {
         if (!raw && (data_type == 3 || (data_type == 0 && (langcode < 0x400 || langcode == 0x7fff)))) { // MAC Encoded
             mov_read_mac_string(c, pb, str_size, str, str_size_alloc);
+        } else if (data_type == 23 && str_size >= 4) {  // BE float32
+            float val = av_int2float(avio_rb32(pb));
+            if (snprintf(str, str_size_alloc, "%f", val) >= str_size_alloc) {
+                av_log(c->fc, AV_LOG_ERROR,
+                       "Failed to store the float32 number (%f) in string.\n", val);
+                return AVERROR_INVALIDDATA;
+            }
         } else {
             int ret = ffio_read_size(pb, str, str_size);
             if (ret < 0) {
@@ -599,11 +618,6 @@ static int mov_read_hdlr(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     char *title_str;
     int ret;
 
-    if (c->fc->nb_streams < 1) // meta before first trak
-        return 0;
-
-    st = c->fc->streams[c->fc->nb_streams-1];
-
     avio_r8(pb); /* version */
     avio_rb24(pb); /* flags */
 
@@ -613,6 +627,15 @@ static int mov_read_hdlr(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     av_log(c->fc, AV_LOG_TRACE, "ctype= %.4s (0x%08x)\n", (char*)&ctype, ctype);
     av_log(c->fc, AV_LOG_TRACE, "stype= %.4s\n", (char*)&type);
+
+    if (c->fc->nb_streams < 1) {  // meta before first trak
+        if (type == MKTAG('m','d','t','a')) {
+            c->found_hdlr_mdta = 1;
+        }
+        return 0;
+    }
+
+    st = c->fc->streams[c->fc->nb_streams-1];
 
     if     (type == MKTAG('v','i','d','e'))
         st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
@@ -744,6 +767,61 @@ static int mov_read_dec3(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
+static int mov_read_ddts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    const uint32_t ddts_size = 20;
+    AVStream *st = NULL;
+    uint8_t *buf = NULL;
+    uint32_t frame_duration_code = 0;
+    uint32_t channel_layout_code = 0;
+    GetBitContext gb;
+
+    buf = av_malloc(ddts_size + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!buf) {
+        return AVERROR(ENOMEM);
+    }
+    if (avio_read(pb, buf, ddts_size) < ddts_size) {
+        av_free(buf);
+        return AVERROR_INVALIDDATA;
+    }
+
+    init_get_bits(&gb, buf, 8*ddts_size);
+
+    if (c->fc->nb_streams < 1) {
+        return 0;
+    }
+    st = c->fc->streams[c->fc->nb_streams-1];
+
+    st->codec->sample_rate = get_bits_long(&gb, 32);
+    skip_bits_long(&gb, 32); /* max bitrate */
+    st->codec->bit_rate = get_bits_long(&gb, 32);
+    st->codec->bits_per_coded_sample = get_bits(&gb, 8);
+    frame_duration_code = get_bits(&gb, 2);
+    skip_bits(&gb, 30); /* various fields */
+    channel_layout_code = get_bits(&gb, 16);
+
+    st->codec->frame_size =
+            (frame_duration_code == 0) ? 512 :
+            (frame_duration_code == 1) ? 1024 :
+            (frame_duration_code == 2) ? 2048 :
+            (frame_duration_code == 3) ? 4096 : 0;
+
+    if (channel_layout_code > 0xff) {
+        av_log(c->fc, AV_LOG_WARNING, "Unsupported DTS audio channel layout");
+    }
+    st->codec->channel_layout =
+            ((channel_layout_code & 0x1) ? AV_CH_FRONT_CENTER : 0) |
+            ((channel_layout_code & 0x2) ? AV_CH_FRONT_LEFT : 0) |
+            ((channel_layout_code & 0x2) ? AV_CH_FRONT_RIGHT : 0) |
+            ((channel_layout_code & 0x4) ? AV_CH_SIDE_LEFT : 0) |
+            ((channel_layout_code & 0x4) ? AV_CH_SIDE_RIGHT : 0) |
+            ((channel_layout_code & 0x8) ? AV_CH_LOW_FREQUENCY : 0);
+
+    st->codec->channels = av_get_channel_layout_nb_channels(st->codec->channel_layout);
+
+    return 0;
+}
+
 static int mov_read_chan(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     AVStream *st;
@@ -838,9 +916,9 @@ static int mov_read_adrm(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     }
 
     /* drm blob processing */
-    avio_read(pb, output, 8); // go to offset 8, absolute postion 0x251
+    avio_read(pb, output, 8); // go to offset 8, absolute position 0x251
     avio_read(pb, input, DRM_BLOB_SIZE);
-    avio_read(pb, output, 4); // go to offset 4, absolute postion 0x28d
+    avio_read(pb, output, 4); // go to offset 4, absolute position 0x28d
     avio_read(pb, file_checksum, 20);
 
     av_log(c->fc, AV_LOG_INFO, "[aax] file checksum == "); // required by external tools
@@ -2466,6 +2544,10 @@ static int mov_read_stts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 static void mov_update_dts_shift(MOVStreamContext *sc, int duration)
 {
     if (duration < 0) {
+        if (duration == INT_MIN) {
+            av_log(NULL, AV_LOG_WARNING, "mov_update_dts_shift(): dts_shift set to %d\n", INT_MAX);
+            duration++;
+        }
         sc->dts_shift = FFMAX(sc->dts_shift, -duration);
     }
 }
@@ -3046,6 +3128,13 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         break;
     }
 
+    // If the duration of the mp3 packets is not constant, then they could need a parser
+    if (st->codec->codec_id == AV_CODEC_ID_MP3
+        && sc->stts_count > 3
+        && sc->stts_count*10 > st->nb_frames
+        && sc->time_scale == st->codec->sample_rate) {
+            st->need_parsing = AVSTREAM_PARSE_FULL;
+    }
     /* Do not need those anymore. */
     av_freep(&sc->chunk_offsets);
     av_freep(&sc->stsc_data);
@@ -3066,6 +3155,48 @@ static int mov_read_ilst(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     ret = mov_read_default(c, pb, atom);
     c->itunes_metadata = 0;
     return ret;
+}
+
+static int mov_read_keys(MOVContext *c, AVIOContext *pb, MOVAtom atom)
+{
+    uint32_t count;
+    uint32_t i;
+
+    if (atom.size < 8)
+        return 0;
+
+    avio_skip(pb, 4);
+    count = avio_rb32(pb);
+    if (count > UINT_MAX / sizeof(*c->meta_keys)) {
+        av_log(c->fc, AV_LOG_ERROR,
+               "The 'keys' atom with the invalid key count: %d\n", count);
+        return AVERROR_INVALIDDATA;
+    }
+
+    c->meta_keys_count = count + 1;
+    c->meta_keys = av_mallocz(c->meta_keys_count * sizeof(*c->meta_keys));
+    if (!c->meta_keys)
+        return AVERROR(ENOMEM);
+
+    for (i = 1; i <= count; ++i) {
+        uint32_t key_size = avio_rb32(pb);
+        uint32_t type = avio_rl32(pb);
+        if (key_size < 8) {
+            av_log(c->fc, AV_LOG_ERROR,
+                   "The key# %d in meta has invalid size: %d\n", i, key_size);
+            return AVERROR_INVALIDDATA;
+        }
+        key_size -= 8;
+        if (type != MKTAG('m','d','t','a')) {
+            avio_skip(pb, key_size);
+        }
+        c->meta_keys[i] = av_mallocz(key_size + 1);
+        if (!c->meta_keys[i])
+            return AVERROR(ENOMEM);
+        avio_read(pb, c->meta_keys[i], key_size);
+    }
+
+    return 0;
 }
 
 static int mov_read_custom_2plus(MOVContext *c, AVIOContext *pb, int size)
@@ -3824,6 +3955,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('e','s','d','s'), mov_read_esds },
 { MKTAG('d','a','c','3'), mov_read_dac3 }, /* AC-3 info */
 { MKTAG('d','e','c','3'), mov_read_dec3 }, /* EAC-3 info */
+{ MKTAG('d','d','t','s'), mov_read_ddts }, /* DTS audio descriptor */
 { MKTAG('w','i','d','e'), mov_read_wide }, /* place holder */
 { MKTAG('w','f','e','x'), mov_read_wfex },
 { MKTAG('c','m','o','v'), mov_read_cmov },
@@ -3910,6 +4042,14 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         if (!parse && (atom.type == MKTAG('u','d','t','a') ||
                        atom.type == MKTAG('i','l','s','t')))
             parse = mov_read_udta_string;
+
+        // Supports parsing the QuickTime Metadata Keys.
+        // https://developer.apple.com/library/mac/documentation/QuickTime/QTFF/Metadata/Metadata.html
+        if (!parse && c->found_hdlr_mdta &&
+            atom.type == MKTAG('m','e','t','a') &&
+            a.type == MKTAG('k','e','y','s')) {
+            parse = mov_read_keys;
+        }
 
         if (!parse) { /* skip leaf atoms data */
             avio_skip(pb, a.size);
@@ -4190,6 +4330,13 @@ static int mov_read_close(AVFormatContext *s)
     if (mov->dv_demux) {
         avformat_free_context(mov->dv_fctx);
         mov->dv_fctx = NULL;
+    }
+
+    if (mov->meta_keys) {
+        for (i = 1; i < mov->meta_keys_count; i++) {
+            av_freep(&mov->meta_keys[i]);
+        }
+        av_freep(&mov->meta_keys);
     }
 
     av_freep(&mov->trex_data);

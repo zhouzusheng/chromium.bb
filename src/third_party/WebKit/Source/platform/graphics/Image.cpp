@@ -274,11 +274,9 @@ PassRefPtr<Image> Image::imageForDefaultFrame()
     return image.release();
 }
 
-bool Image::deprecatedBitmapForCurrentFrame(SkBitmap* bitmap)
+bool Image::isTextureBacked()
 {
-    RefPtr<SkImage> image = imageForCurrentFrame();
-
-    return image && image->asLegacyBitmap(bitmap, SkImage::kRO_LegacyBitmapMode);
+    return imageForCurrentFrame()->isTextureBacked();
 }
 
 } // namespace blink

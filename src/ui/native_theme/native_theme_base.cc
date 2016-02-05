@@ -682,9 +682,7 @@ void NativeThemeBase::PaintButton(SkCanvas* canvas,
                                   const gfx::Rect& rect,
                                   const ButtonExtraParams& button) const {
   SkPaint paint;
-  const int kRight = rect.right();
-  const int kBottom = rect.bottom();
-  SkRect skrect = SkRect::MakeLTRB(rect.x(), rect.y(), kRight, kBottom);
+  SkRect skrect = gfx::RectToSkRect(rect);
   SkColor base_color = button.background_color;
 
   color_utils::HSL base_hsl;
@@ -702,14 +700,13 @@ void NativeThemeBase::PaintButton(SkCanvas* canvas,
   }
 
   paint.setColor(SK_ColorBLACK);
-  const int kLightEnd = state == kPressed ? 1 : 0;
-  const int kDarkEnd = !kLightEnd;
-  SkPoint gradient_bounds[2];
-  gradient_bounds[kLightEnd].iset(rect.x(), rect.y());
-  gradient_bounds[kDarkEnd].iset(rect.x(), kBottom - 1);
-  SkColor colors[2];
-  colors[0] = light_color;
-  colors[1] = base_color;
+  SkPoint gradient_bounds[2] = {
+    gfx::PointToSkPoint(rect.origin()),
+    gfx::PointToSkPoint(rect.bottom_left() - gfx::Vector2d(0, 1))
+  };
+  if (state == kPressed)
+    std::swap(gradient_bounds[0], gradient_bounds[1]);
+  SkColor colors[2] = { light_color, base_color };
 
   skia::RefPtr<SkShader> shader = skia::AdoptRef(
       SkGradientShader::CreateLinear(
@@ -770,18 +767,16 @@ void NativeThemeBase::PaintMenuList(
   }
 
   SkPaint paint;
-  paint.setColor(SK_ColorBLACK);
+  paint.setColor(menu_list.arrow_color);
   paint.setAntiAlias(true);
   paint.setStyle(SkPaint::kFill_Style);
 
-  static const int kArrowWidth = 6;
-  static const int kArrowHeight = 6;
-
+  int arrow_size = menu_list.arrow_size;
   gfx::Rect arrow(
     menu_list.arrow_x,
-    menu_list.arrow_y - (kArrowHeight / 2),
-    kArrowWidth,
-    kArrowHeight);
+    menu_list.arrow_y - (arrow_size / 2),
+    arrow_size,
+    arrow_size);
 
   // Constrain to the paint rect.
   arrow.Intersect(rect);

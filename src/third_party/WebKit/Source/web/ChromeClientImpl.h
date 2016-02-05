@@ -64,7 +64,7 @@ public:
     void focusedFrameChanged(LocalFrame*) override;
     bool hadFormInteraction() const override;
     Page* createWindow(
-        LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) override;
+        LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSetOpener) override;
     void show(NavigationPolicy) override;
     void didOverscroll(const FloatSize&, const FloatSize&, const FloatPoint&, const FloatSize&) override;
     void setToolbarsVisible(bool) override;
@@ -82,7 +82,7 @@ public:
         const String& message, unsigned lineNumber,
         const String& sourceID, const String& stackTrace) override;
     bool canOpenBeforeUnloadConfirmPanel() override;
-    bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, const String&) override;
+    bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, const String&, bool isReload) override;
     void closeWindowSoon() override;
     bool openJavaScriptAlertDelegate(LocalFrame*, const String&) override;
     bool openJavaScriptConfirmDelegate(LocalFrame*, const String&) override;
@@ -107,10 +107,10 @@ public:
     void printDelegate(LocalFrame*) override;
     void annotatedRegionsChanged() override;
     PassOwnPtrWillBeRawPtr<ColorChooser> openColorChooser(LocalFrame*, ColorChooserClient*, const Color&) override;
-    PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) override;
+    PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) override;
     void openFileChooser(LocalFrame*, PassRefPtr<FileChooser>) override;
     void enumerateChosenDirectory(FileChooser*) override;
-    void setCursor(const Cursor&) override;
+    void setCursor(const Cursor&, LocalFrame* localRoot) override;
     Cursor lastSetCursorForTesting() const override;
     void needTouchEvents(bool needTouchEvents) override;
     void setTouchAction(TouchAction) override;
@@ -119,9 +119,6 @@ public:
 
     // Pass 0 as the GraphicsLayer to detatch the root layer.
     void attachRootGraphicsLayer(GraphicsLayer*, LocalFrame* localRoot) override;
-
-    void setCompositedDisplayList(PassOwnPtr<CompositedDisplayList>) override;
-    CompositedDisplayList* compositedDisplayListForTesting() override;
 
     void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) override;
     void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) override;
@@ -176,6 +173,8 @@ public:
 
     void didObserveNonGetFetchFromScript() const override;
 
+    PassOwnPtr<WebFrameScheduler> createFrameScheduler() override;
+
 private:
     explicit ChromeClientImpl(WebViewImpl*);
 
@@ -184,13 +183,14 @@ private:
     void unregisterPopupOpeningObserver(PopupOpeningObserver*) override;
 
     void notifyPopupOpeningObservers() const;
-    void setCursor(const WebCursorInfo&);
+    void setCursor(const WebCursorInfo&, LocalFrame* localRoot);
 
     WebViewImpl* m_webView; // Weak pointer.
     WindowFeatures m_windowFeatures;
     Vector<PopupOpeningObserver*> m_popupOpeningObservers;
     Cursor m_lastSetMouseCursorForTesting;
     bool m_cursorOverridden;
+    bool m_didRequestNonEmptyToolTip;
 };
 
 DEFINE_TYPE_CASTS(ChromeClientImpl, ChromeClient, client, client->isChromeClientImpl(), client.isChromeClientImpl());

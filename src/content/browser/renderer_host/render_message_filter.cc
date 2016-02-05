@@ -4,6 +4,9 @@
 
 #include "content/browser/renderer_host/render_message_filter.h"
 
+#include <errno.h>
+#include <string.h>
+
 #include <map>
 
 #include "base/bind.h"
@@ -211,6 +214,7 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
 }
 
 void RenderMessageFilter::OnDestruct() const {
+  const_cast<RenderMessageFilter*>(this)->resource_context_ = nullptr;
   BrowserThread::DeleteOnIOThread::Destruct(this);
 }
 
@@ -235,9 +239,7 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
 
 void RenderMessageFilter::OnCreateWindow(
     const ViewHostMsg_CreateWindow_Params& params,
-    int* route_id,
-    int* main_frame_route_id,
-    int64* cloned_session_storage_namespace_id) {
+    ViewHostMsg_CreateWindow_Reply* reply) {
   bool no_javascript_access;
 
   bool can_create_window =
@@ -259,9 +261,10 @@ void RenderMessageFilter::OnCreateWindow(
           &no_javascript_access);
 
   if (!can_create_window) {
-    *route_id = MSG_ROUTING_NONE;
-    *main_frame_route_id = MSG_ROUTING_NONE;
-    *cloned_session_storage_namespace_id = 0;
+    reply->route_id = MSG_ROUTING_NONE;
+    reply->main_frame_route_id = MSG_ROUTING_NONE;
+    reply->main_frame_widget_route_id = MSG_ROUTING_NONE;
+    reply->cloned_session_storage_namespace_id = 0;
     return;
   }
 
@@ -269,14 +272,12 @@ void RenderMessageFilter::OnCreateWindow(
   scoped_refptr<SessionStorageNamespaceImpl> cloned_namespace =
       new SessionStorageNamespaceImpl(dom_storage_context_.get(),
                                       params.session_storage_namespace_id);
-  *cloned_session_storage_namespace_id = cloned_namespace->id();
+  reply->cloned_session_storage_namespace_id = cloned_namespace->id();
 
-  render_widget_helper_->CreateNewWindow(params,
-                                         no_javascript_access,
-                                         PeerHandle(),
-                                         route_id,
-                                         main_frame_route_id,
-                                         cloned_namespace.get());
+  render_widget_helper_->CreateNewWindow(
+      params, no_javascript_access, PeerHandle(), &reply->route_id,
+      &reply->main_frame_route_id, &reply->main_frame_widget_route_id,
+      cloned_namespace.get());
 }
 
 void RenderMessageFilter::OnCreateWidget(int opener_id,
@@ -399,6 +400,9 @@ void RenderMessageFilter::DownloadUrl(int render_view_id,
                                       const Referrer& referrer,
                                       const base::string16& suggested_name,
                                       const bool use_prompt) const {
+  if (!resource_context_)
+    return;
+
   scoped_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
   save_info->suggested_name = suggested_name;
   save_info->prompt_for_save_location = use_prompt;
@@ -540,19 +544,6 @@ void RenderMessageFilter::OnDeletedDiscardableSharedMemory(
           this, id));
 }
 
-net::URLRequestContext* RenderMessageFilter::GetRequestContextForURL(
-    const GURL& url) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  net::URLRequestContext* context =
-      GetContentClient()->browser()->OverrideRequestContextForURL(
-          url, resource_context_);
-  if (!context)
-    context = request_context_->GetURLRequestContext();
-
-  return context;
-}
-
 void RenderMessageFilter::OnCacheableMetadataAvailable(
     const GURL& url,
     base::Time expected_response_time,
@@ -579,6 +570,9 @@ void RenderMessageFilter::OnKeygen(uint32 key_size_index,
                                    const std::string& challenge_string,
                                    const GURL& url,
                                    IPC::Message* reply_msg) {
+  if (!resource_context_)
+    return;
+
   // Map displayed strings indicating level of keysecurity in the <keygen>
   // menu to the key size in bits. (See SSLKeyGeneratorChromium.cpp in WebCore.)
   int key_size_in_bits;
@@ -703,11 +697,11 @@ void RenderMessageFilter::GpuMemoryBufferAllocated(
 
 void RenderMessageFilter::OnDeletedGpuMemoryBuffer(
     gfx::GpuMemoryBufferId id,
-    uint32 sync_point) {
+    const gpu::SyncToken& sync_token) {
   DCHECK(BrowserGpuMemoryBufferManager::current());
 
   BrowserGpuMemoryBufferManager::current()->ChildProcessDeletedGpuMemoryBuffer(
-      id, PeerHandle(), render_process_id_, sync_point);
+      id, PeerHandle(), render_process_id_, sync_token);
 }
 
 }  // namespace content

@@ -20,12 +20,11 @@
 #include "webrtc/common_types.h"
 #include "webrtc/frame_callback.h"
 #include "webrtc/modules/bitrate_controller/include/bitrate_allocator.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
 #include "webrtc/modules/video_processing/main/interface/video_processing.h"
 #include "webrtc/typedefs.h"
 #include "webrtc/video/video_capture_input.h"
-#include "webrtc/video_engine/vie_defines.h"
 
 namespace webrtc {
 
@@ -49,8 +48,7 @@ class ViEEncoder : public RtcpIntraFrameObserver,
  public:
   friend class ViEBitrateObserver;
 
-  ViEEncoder(int32_t channel_id,
-             uint32_t number_of_cores,
+  ViEEncoder(uint32_t number_of_cores,
              ProcessThread* module_process_thread,
              SendStatisticsProxy* stats_proxy,
              I420FrameCallback* pre_encode_callback,
@@ -89,11 +87,6 @@ class ViEEncoder : public RtcpIntraFrameObserver,
                                   bool internal_source);
   int32_t DeRegisterExternalEncoder(uint8_t pl_type);
   int32_t SetEncoder(const VideoCodec& video_codec);
-  int32_t GetEncoder(VideoCodec* video_codec);
-
-  int32_t GetCodecConfigParameters(
-    unsigned char config_parameters[kConfigParameterSize],
-    unsigned char& config_parameters_size);
 
   // Scale or crop/pad image.
   int32_t ScaleInputImage(bool enable);
@@ -102,14 +95,14 @@ class ViEEncoder : public RtcpIntraFrameObserver,
   void DeliverFrame(VideoFrame video_frame) override;
 
   int32_t SendKeyFrame();
-  int32_t SendCodecStatistics(uint32_t* num_key_frames,
-                              uint32_t* num_delta_frames);
 
   uint32_t LastObservedBitrateBps() const;
   int CodecTargetBitrate(uint32_t* bitrate) const;
-  // Loss protection.
-  int32_t UpdateProtectionMethod(bool nack, bool fec);
-  bool nack_enabled() const { return nack_enabled_; }
+  // Loss protection. Must be called before SetEncoder() to have max packet size
+  // updated according to protection.
+  // TODO(pbos): Set protection method on construction or extract vcm_ outside
+  // this class and set it on construction there.
+  void SetProtectionMethod(bool nack, bool fec);
 
   // Buffering mode.
   void SetSenderBufferingMode(int target_delay_ms);
@@ -134,7 +127,7 @@ class ViEEncoder : public RtcpIntraFrameObserver,
   void OnLocalSsrcChanged(uint32_t old_ssrc, uint32_t new_ssrc) override;
 
   // Sets SSRCs for all streams.
-  bool SetSsrcs(const std::vector<uint32_t>& ssrcs);
+  void SetSsrcs(const std::vector<uint32_t>& ssrcs);
 
   void SetMinTransmitBitrate(int min_transmit_bitrate_kbps);
 
@@ -146,8 +139,6 @@ class ViEEncoder : public RtcpIntraFrameObserver,
   // New-style callbacks, used by VideoSendStream.
   void RegisterPostEncodeImageCallback(
         EncodedImageCallback* post_encode_callback);
-
-  int channel_id() const { return channel_id_; }
 
   int GetPaddingNeededBps() const;
 
@@ -162,9 +153,6 @@ class ViEEncoder : public RtcpIntraFrameObserver,
   void TraceFrameDropStart() EXCLUSIVE_LOCKS_REQUIRED(data_cs_);
   void TraceFrameDropEnd() EXCLUSIVE_LOCKS_REQUIRED(data_cs_);
 
-  void UpdateHistograms();
-
-  const int channel_id_;
   const uint32_t number_of_cores_;
 
   const rtc::scoped_ptr<VideoProcessingModule> vpm_;
@@ -184,7 +172,7 @@ class ViEEncoder : public RtcpIntraFrameObserver,
   // track when video is stopped long enough that we also want to stop sending
   // padding.
   int64_t time_of_last_frame_activity_ms_ GUARDED_BY(data_cs_);
-  bool simulcast_enabled_ GUARDED_BY(data_cs_);
+  VideoCodec encoder_config_ GUARDED_BY(data_cs_);
   int min_transmit_bitrate_kbps_ GUARDED_BY(data_cs_);
   uint32_t last_observed_bitrate_bps_ GUARDED_BY(data_cs_);
   int target_delay_ms_ GUARDED_BY(data_cs_);
@@ -193,9 +181,6 @@ class ViEEncoder : public RtcpIntraFrameObserver,
   bool encoder_paused_and_dropped_frame_ GUARDED_BY(data_cs_);
   std::map<unsigned int, int64_t> time_last_intra_request_ms_
       GUARDED_BY(data_cs_);
-
-  bool fec_enabled_;
-  bool nack_enabled_;
 
   ProcessThread* module_process_thread_;
 
@@ -206,7 +191,6 @@ class ViEEncoder : public RtcpIntraFrameObserver,
   std::map<uint32_t, int> ssrc_streams_ GUARDED_BY(data_cs_);
 
   bool video_suspended_ GUARDED_BY(data_cs_);
-  const int64_t start_ms_;
 };
 
 }  // namespace webrtc

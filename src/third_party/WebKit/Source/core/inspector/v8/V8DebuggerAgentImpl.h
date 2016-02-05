@@ -45,9 +45,9 @@ class CORE_EXPORT V8DebuggerAgentImpl
     , public InspectorBackendDispatcher::DebuggerCommandHandler
     , public PromiseTracker::Listener {
     WTF_MAKE_NONCOPYABLE(V8DebuggerAgentImpl);
-    WTF_MAKE_FAST_ALLOCATED(V8DebuggerAgentImpl);
+    USING_FAST_MALLOC(V8DebuggerAgentImpl);
 public:
-    V8DebuggerAgentImpl(InjectedScriptManager*, V8DebuggerImpl*, V8DebuggerAgent::Client*, int contextGroupId);
+    V8DebuggerAgentImpl(InjectedScriptManager*, V8DebuggerImpl*, int contextGroupId);
     ~V8DebuggerAgentImpl() override;
     DECLARE_TRACE();
 
@@ -96,8 +96,8 @@ public:
         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
         TypeBuilder::OptOutput<bool>* wasThrown,
         RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) final;
-    void compileScript(ErrorString*, const String& expression, const String& sourceURL, bool persistScript, const int* executionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
-    void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, const int* executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
+    void compileScript(ErrorString*, const String& expression, const String& sourceURL, bool persistScript, int executionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
+    void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, int executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
     void setVariableValue(ErrorString*, int in_scopeNumber, const String& in_variableName, const RefPtr<JSONObject>& in_newValue, const String* in_callFrame, const String* in_functionObjectId) final;
     void skipStackFrames(ErrorString*, const String* pattern, const bool* skipContentScripts) final;
     void setAsyncCallStackDepth(ErrorString*, int depth) final;
@@ -132,8 +132,6 @@ public:
     // PromiseTracker::Listener
     void didUpdatePromise(InspectorFrontend::Debugger::EventType::Enum, PassRefPtr<TypeBuilder::Debugger::PromiseDetails>) final;
 
-    InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
-    InjectedScriptManager* injectedScriptManager()  override { return m_injectedScriptManager; }
     void reset() override;
 
 private:
@@ -194,8 +192,8 @@ private:
 
     RawPtrWillBeWeakPersistent<InjectedScriptManager> m_injectedScriptManager;
     V8DebuggerImpl* m_debugger;
-    V8DebuggerAgent::Client* m_client;
     int m_contextGroupId;
+    bool m_enabled;
     InspectorState* m_state;
     InspectorFrontend::Debugger* m_frontend;
     v8::Isolate* m_isolate;

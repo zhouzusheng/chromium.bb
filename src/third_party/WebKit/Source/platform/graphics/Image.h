@@ -73,6 +73,7 @@ public:
     virtual bool currentFrameKnownToBeOpaque() = 0;
     virtual bool currentFrameIsComplete() { return false; }
     virtual bool currentFrameIsLazyDecoded() { return false; }
+    virtual bool isTextureBacked();
 
     // Derived classes should override this if they can assure that the current
     // image frame contains only resources from its own security origin.
@@ -131,8 +132,6 @@ public:
     void setImageObserver(ImageObserver* observer) { m_imageObserver = observer; }
 
     enum TileRule { StretchTile, RoundTile, SpaceTile, RepeatTile };
-
-    bool deprecatedBitmapForCurrentFrame(SkBitmap*) WARN_UNUSED_RETURN;
 
     virtual PassRefPtr<SkImage> imageForCurrentFrame() = 0;
     virtual PassRefPtr<Image> imageForDefaultFrame();

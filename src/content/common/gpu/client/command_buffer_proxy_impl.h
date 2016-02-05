@@ -32,6 +32,7 @@ class SharedMemory;
 
 namespace gpu {
 struct Mailbox;
+struct SyncToken;
 }
 
 namespace media {
@@ -105,11 +106,11 @@ class CommandBufferProxyImpl
   int32 CreateImage(ClientBuffer buffer,
                     size_t width,
                     size_t height,
-                    unsigned internalformat) override;
+                    unsigned internal_format) override;
   void DestroyImage(int32 id) override;
   int32 CreateGpuMemoryBufferImage(size_t width,
                                    size_t height,
-                                   unsigned internalformat,
+                                   unsigned internal_format,
                                    unsigned usage) override;
   uint32 InsertSyncPoint() override;
   uint32_t InsertFutureSyncPoint() override;
@@ -123,14 +124,17 @@ class CommandBufferProxyImpl
   bool IsGpuChannelLost() override;
   gpu::CommandBufferNamespace GetNamespaceID() const override;
   uint64_t GetCommandBufferID() const override;
+  uint64_t GenerateFenceSyncRelease() override;
+  bool IsFenceSyncRelease(uint64_t release) override;
+  bool IsFenceSyncFlushed(uint64_t release) override;
+  bool IsFenceSyncFlushReceived(uint64_t release) override;
+  void SignalSyncToken(const gpu::SyncToken& sync_token,
+                       const base::Closure& callback) override;
+  bool CanWaitUnverifiedSyncToken(const gpu::SyncToken* sync_token) override;
 
   bool ProduceFrontBuffer(const gpu::Mailbox& mailbox);
   void SetContextLostCallback(const base::Closure& callback);
 
-  typedef base::Callback<void(const gpu::MemoryAllocation&)>
-      MemoryAllocationChangedCallback;
-  void SetMemoryAllocationChangedCallback(
-      const MemoryAllocationChangedCallback& callback);
   void AddDeletionObserver(DeletionObserver* observer);
   void RemoveDeletionObserver(DeletionObserver* observer);
 
@@ -186,8 +190,7 @@ class CommandBufferProxyImpl
   void OnDestroyed(gpu::error::ContextLostReason reason,
                    gpu::error::Error error);
   void OnConsoleMessage(const GPUCommandBufferConsoleMessage& message);
-  void OnSetMemoryAllocation(const gpu::MemoryAllocation& allocation);
-  void OnSignalSyncPointAck(uint32 id);
+  void OnSignalAck(uint32 id);
   void OnSwapBuffersCompleted(const std::vector<ui::LatencyInfo>& latency_info,
                               gfx::SwapResult result);
   void OnUpdateVSyncParameters(base::TimeTicks timebase,
@@ -195,6 +198,9 @@ class CommandBufferProxyImpl
 
   // Try to read an updated copy of the state from shared memory.
   void TryUpdateState();
+
+  // Updates the highest verified release fence sync.
+  void UpdateVerifiedReleases(uint32_t verified_flush);
 
   // The shared memory area used to update state.
   gpu::CommandBufferSharedState* shared_state() const;
@@ -220,9 +226,19 @@ class CommandBufferProxyImpl
   int32 last_put_offset_;
   int32 last_barrier_put_offset_;
 
-  base::Closure context_lost_callback_;
+  // Next generated fence sync.
+  uint64_t next_fence_sync_release_;
 
-  MemoryAllocationChangedCallback memory_allocation_changed_callback_;
+  // Unverified flushed fence syncs with their corresponding flush id.
+  std::queue<std::pair<uint64_t, uint32_t>> flushed_release_flush_id_;
+
+  // Last flushed fence sync release, same as last item in queue if not empty.
+  uint64_t flushed_fence_sync_release_;
+
+  // Last verified fence sync.
+  uint64_t verified_fence_sync_release_;
+
+  base::Closure context_lost_callback_;
 
   GpuConsoleMessageCallback console_message_callback_;
 

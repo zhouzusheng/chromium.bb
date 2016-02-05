@@ -49,6 +49,7 @@
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
+#include "core/paint/PaintInfo.h"
 #include "core/paint/PaintLayerPainter.h"
 #include "core/paint/PaintLayerStackingNodeIterator.h"
 #include "core/paint/ScrollableAreaPainter.h"
@@ -61,7 +62,8 @@
 #include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/ClipDisplayItem.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/CullRect.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/graphics/paint/TransformDisplayItem.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/text/StringBuilder.h"
@@ -797,8 +799,9 @@ void CompositedLayerMapping::computeGraphicsLayerParentLocation(const PaintLayer
     if (compositingContainer && compositingContainer->needsCompositedScrolling()) {
         LayoutBox* layoutBox = toLayoutBox(compositingContainer->layoutObject());
         IntSize scrollOffset = layoutBox->scrolledContentOffset();
-        IntPoint scrollOrigin(layoutBox->borderLeft(), layoutBox->borderTop());
-        graphicsLayerParentLocation = scrollOrigin - scrollOffset;
+        IntPoint scrollOrigin = compositingContainer->scrollableArea()->scrollOrigin();
+        scrollOrigin.move(-layoutBox->borderLeft(), -layoutBox->borderTop());
+        graphicsLayerParentLocation = -(scrollOrigin + scrollOffset);
     }
 }
 
@@ -1851,17 +1854,20 @@ bool CompositedLayerMapping::containsPaintedContent() const
     return paintsChildren();
 }
 
-// An image can be directly compositing if it's the sole content of the layer, and has no box decorations
-// that require painting. Direct compositing saves backing store.
+// An image can be directly composited if it's the sole content of the layer,
+// and has no box decorations or clipping that require painting. Direct
+// compositing saves a backing store.
 bool CompositedLayerMapping::isDirectlyCompositedImage() const
 {
     ASSERT(layoutObject()->isImage());
+    LayoutImage* imageLayoutObject = toLayoutImage(layoutObject());
 
-    LayoutObject* layoutObject = this->layoutObject();
-    if (m_owningLayer.hasBoxDecorationsOrBackground() || layoutObject->hasClip() || layoutObject->hasClipPath())
+    if (m_owningLayer.hasBoxDecorationsOrBackground()
+        || imageLayoutObject->hasClip()
+        || imageLayoutObject->hasClipPath()
+        || imageLayoutObject->hasObjectFit())
         return false;
 
-    LayoutImage* imageLayoutObject = toLayoutImage(layoutObject);
     if (ImageResource* cachedImage = imageLayoutObject->cachedImage()) {
         if (!cachedImage->hasImage())
             return false;
@@ -1870,10 +1876,7 @@ bool CompositedLayerMapping::isDirectlyCompositedImage() const
         if (!image->isBitmapImage())
             return false;
 
-        // FIXME: We should be able to handle bitmap images using direct compositing
-        // no matter what image-orientation value. See crbug.com/502267
-        if (imageLayoutObject->style()->respectImageOrientation() != RespectImageOrientation)
-            return true;
+        return true;
     }
 
     return false;
@@ -1906,7 +1909,7 @@ void CompositedLayerMapping::updateImageContents()
         return;
 
     // This is a no-op if the layer doesn't have an inner layer for the image.
-    m_graphicsLayer->setContentsToImage(image);
+    m_graphicsLayer->setContentsToImage(image, imageLayoutObject->shouldRespectImageOrientation());
 
     m_graphicsLayer->setFilterQuality(layoutObject()->style()->imageRendering() == ImageRenderingPixelated ? kNone_SkFilterQuality : kLow_SkFilterQuality);
 
@@ -2043,8 +2046,9 @@ struct SetContentsNeedsDisplayInRectFunctor {
 // r is in the coordinate space of the layer's layout object
 void CompositedLayerMapping::setContentsNeedDisplayInRect(const LayoutRect& r, PaintInvalidationReason invalidationReason)
 {
-    // FIXME: need to split out paint invalidations for the background.
-    // FIXME: need to distinguish invalidations for different layers (e.g. the main layer and scrolling layer). crbug.com/416535.
+    // TODO(wangxianzhu): Enable the following assert after paint invalidation for spv2 is ready.
+    // ASSERT(!RuntimeEnabledFeatures::slimmingPaintV2Enabled());
+
     SetContentsNeedsDisplayInRectFunctor functor = {
         enclosingIntRect(LayoutRect(r.location() + m_owningLayer.subpixelAccumulation(), r.size())),
         invalidationReason
@@ -2052,13 +2056,27 @@ void CompositedLayerMapping::setContentsNeedDisplayInRect(const LayoutRect& r, P
     ApplyToGraphicsLayers(this, functor, ApplyToContentLayers);
 }
 
-void CompositedLayerMapping::invalidateDisplayItemClient(const DisplayItemClientWrapper& displayItemClient)
+struct InvalidateDisplayItemClientFunctor {
+    void operator() (GraphicsLayer* layer) const
+    {
+        IntRect visualRectOnLayer;
+        if (visualRect) {
+            visualRectOnLayer = enclosingIntRect(LayoutRect(visualRect->location() + subpixelAccumulation, visualRect->size()));
+            visualRectOnLayer.move(-layer->offsetFromLayoutObject());
+        }
+        layer->invalidateDisplayItemClient(displayItemClient, invalidationReason, visualRect ? &visualRectOnLayer : nullptr);
+    }
+
+    const DisplayItemClientWrapper& displayItemClient;
+    PaintInvalidationReason invalidationReason;
+    const LayoutRect* visualRect;
+    LayoutSize subpixelAccumulation;
+};
+
+void CompositedLayerMapping::invalidateDisplayItemClient(const DisplayItemClientWrapper& displayItemClient, PaintInvalidationReason paintInvalidationReason, const LayoutRect* visualRect)
 {
-    // FIXME: need to split out paint invalidations for the background.
-    // FIXME: need to distinguish invalidations for different layers (e.g. the main layer and scrolling layer). crbug.com/416535.
-    ApplyToGraphicsLayers(this, [&displayItemClient](GraphicsLayer* layer) {
-        layer->invalidateDisplayItemClient(displayItemClient);
-    }, ApplyToContentLayers);
+    InvalidateDisplayItemClientFunctor functor = { displayItemClient, paintInvalidationReason, visualRect, m_owningLayer.subpixelAccumulation() };
+    ApplyToGraphicsLayers(this, functor, ApplyToContentLayers);
 }
 
 const GraphicsLayerPaintInfo* CompositedLayerMapping::containingSquashedLayer(const LayoutObject* layoutObject, const Vector<GraphicsLayerPaintInfo>& layers, unsigned maxSquashedLayerIndex)
@@ -2143,21 +2161,10 @@ void CompositedLayerMapping::doPaintTask(const GraphicsLayerPaintInfo& paintInfo
         // FIXME: Is it correct to clip to dirtyRect in slimming paint mode?
         // FIXME: Combine similar code here and LayerClipRecorder.
         dirtyRect.intersect(paintInfo.localClipRectForSquashedLayer);
-        {
-            ASSERT(context->displayItemList());
-            if (!context->displayItemList()->displayItemConstructionIsDisabled())
-                context->displayItemList()->createAndAppend<ClipDisplayItem>(*this, DisplayItem::ClipLayerOverflowControls, dirtyRect);
-        }
+        context->paintController().createAndAppend<ClipDisplayItem>(*this, DisplayItem::ClipLayerOverflowControls, dirtyRect);
+
         PaintLayerPainter(*paintInfo.paintLayer).paintLayer(context, paintingInfo, paintLayerFlags);
-        {
-            ASSERT(context->displayItemList());
-            if (!context->displayItemList()->displayItemConstructionIsDisabled()) {
-                if (context->displayItemList()->lastDisplayItemIsNoopBegin())
-                    context->displayItemList()->removeLastDisplayItem();
-                else
-                    context->displayItemList()->createAndAppend<EndClipDisplayItem>(*this, DisplayItem::clipTypeToEndClipType(DisplayItem::ClipLayerOverflowControls));
-            }
-        }
+        context->paintController().endItem<EndClipDisplayItem>(*this, DisplayItem::clipTypeToEndClipType(DisplayItem::ClipLayerOverflowControls));
     }
 }
 
@@ -2170,11 +2177,105 @@ static void paintScrollbar(const Scrollbar* scrollbar, GraphicsContext& context,
     TransformRecorder transformRecorder(context, *scrollbar, AffineTransform::translation(-scrollbarRect.x(), -scrollbarRect.y()));
     IntRect transformedClip = clip;
     transformedClip.moveBy(scrollbarRect.location());
-    scrollbar->paint(&context, transformedClip);
+    scrollbar->paint(&context, CullRect(transformedClip));
 }
 
-// Up-call from compositing layer drawing callback.
-void CompositedLayerMapping::paintContents(const GraphicsLayer* graphicsLayer, GraphicsContext& context, GraphicsLayerPaintingPhase graphicsLayerPaintingPhase, const IntRect& clip) const
+// The following should be kept in sync with the code computing potential_new_recorded_viewport in
+// cc::DisplayListRecordingSource::UpdateAndExpandInvalidation() before we keep only one copy of the algorithm.
+static const int kPixelDistanceToRecord = 4000;
+
+IntRect CompositedLayerMapping::computeInterestRect(const GraphicsLayer* graphicsLayer, LayoutObject* owningLayoutObject)
+{
+    FloatRect graphicsLayerBounds(FloatPoint(), graphicsLayer->size());
+
+    // Start with the bounds of the graphics layer in the space of the owning LayoutObject.
+    FloatRect graphicsLayerBoundsInObjectSpace(graphicsLayerBounds);
+    graphicsLayerBoundsInObjectSpace.move(graphicsLayer->offsetFromLayoutObject());
+
+    // Now map the bounds to its visible content rect in screen space, including applying clips along the way.
+    LayoutRect visibleContentRect(graphicsLayerBoundsInObjectSpace);
+    LayoutView* rootView = owningLayoutObject->view();
+    while (rootView->frame()->ownerLayoutObject())
+        rootView = rootView->frame()->ownerLayoutObject()->view();
+    owningLayoutObject->mapRectToPaintInvalidationBacking(rootView, visibleContentRect, 0);
+    visibleContentRect.intersect(LayoutRect(rootView->frameView()->visibleContentRect()));
+
+    // Map the visible content rect from screen space to local graphics layer space.
+    IntRect localInterestRect;
+    // If the visible content rect is empty, then it makes no sense to map it back since there is nothing to map.
+    if (!visibleContentRect.isEmpty()) {
+        localInterestRect = owningLayoutObject->absoluteToLocalQuad(FloatRect(visibleContentRect), UseTransforms).enclosingBoundingBox();
+        localInterestRect.move(-graphicsLayer->offsetFromLayoutObject());
+    }
+    // Expand by interest rect padding amount.
+    localInterestRect.inflate(kPixelDistanceToRecord);
+    localInterestRect.intersect(enclosingIntRect(graphicsLayerBounds));
+    return localInterestRect;
+}
+
+// The following should be kept in sync with cc::DisplayListRecordingSource::ExposesEnoughNewArea()
+// before we keep only one copy of the algorithm.
+static const int kMinimumDistanceBeforeRepaint = 512;
+
+bool CompositedLayerMapping::interestRectChangedEnoughToRepaint(const IntRect& previousInterestRect, const IntRect& newInterestRect, const IntSize& layerSize)
+{
+    if (previousInterestRect.isEmpty() && newInterestRect.isEmpty())
+        return false;
+
+    // Repaint when going from empty to not-empty, to cover cases where the layer is
+    // painted for the first time, or otherwise becomes visible.
+    if (previousInterestRect.isEmpty())
+        return true;
+
+    // Repaint if the new interest rect includes area outside of a skirt around the existing interest rect.
+    IntRect expandedPreviousInterestRect(previousInterestRect);
+    expandedPreviousInterestRect.inflate(kMinimumDistanceBeforeRepaint);
+    if (!expandedPreviousInterestRect.contains(newInterestRect))
+        return true;
+
+    // Even if the new interest rect doesn't include enough new area to satisfy the condition above,
+    // repaint anyway if it touches a layer edge not touched by the existing interest rect.
+    // Because it's impossible to expose more area in the direction, repainting cannot be deferred
+    // until the exposed new area satisfies the condition above.
+    if (newInterestRect.x() == 0 && previousInterestRect.x() != 0)
+        return true;
+    if (newInterestRect.y() == 0 && previousInterestRect.y() != 0)
+        return true;
+    if (newInterestRect.maxX() == layerSize.width() && previousInterestRect.maxX() != layerSize.width())
+        return true;
+    if (newInterestRect.maxY() == layerSize.height() && previousInterestRect.maxY() != layerSize.height())
+        return true;
+
+    return false;
+}
+
+void CompositedLayerMapping::paintContents(const GraphicsLayer* graphicsLayer, GraphicsContext& context, GraphicsLayerPaintingPhase graphicsLayerPaintingPhase, const IntRect* interestRect) const
+{
+    IntRect defaultInterestRect;
+    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled()) {
+        if (!interestRect) {
+            if (graphicsLayer == m_graphicsLayer || graphicsLayer == m_squashingLayer)
+                defaultInterestRect = computeInterestRect(graphicsLayer, m_owningLayer.layoutObject());
+            else
+                defaultInterestRect = enclosingIntRect(FloatRect(FloatPoint(), graphicsLayer->size()));
+            interestRect = &defaultInterestRect;
+        }
+
+        if (!m_owningLayer.needsRepaint()
+            && !context.paintController().cacheIsEmpty()
+            && !interestRectChangedEnoughToRepaint(m_previousPaintInterestRect, *interestRect, expandedIntSize(graphicsLayer->size()))) {
+            context.paintController().createAndAppend<CachedDisplayItem>(*this, DisplayItem::CachedDisplayItemList);
+            return;
+        }
+
+        m_previousPaintInterestRect = *interestRect;
+    }
+
+    ASSERT(interestRect);
+    paintContentsInternal(graphicsLayer, context, graphicsLayerPaintingPhase, *interestRect);
+}
+
+void CompositedLayerMapping::paintContentsInternal(const GraphicsLayer* graphicsLayer, GraphicsContext& context, GraphicsLayerPaintingPhase graphicsLayerPaintingPhase, const IntRect& interestRect) const
 {
     // https://code.google.com/p/chromium/issues/detail?id=343772
     DisableCompositingQueryAsserts disabler;
@@ -2183,7 +2284,8 @@ void CompositedLayerMapping::paintContents(const GraphicsLayer* graphicsLayer, G
     if (Page* page = layoutObject()->frame()->page())
         page->setIsPainting(true);
 #endif
-    TRACE_EVENT1("devtools.timeline", "Paint", "data", InspectorPaintEvent::data(m_owningLayer.layoutObject(), LayoutRect(clip), graphicsLayer));
+
+    TRACE_EVENT1("devtools.timeline", "Paint", "data", InspectorPaintEvent::data(m_owningLayer.layoutObject(), LayoutRect(interestRect), graphicsLayer));
 
     PaintLayerFlags paintLayerFlags = 0;
     if (graphicsLayerPaintingPhase & GraphicsLayerPaintBackground)
@@ -2218,20 +2320,21 @@ void CompositedLayerMapping::paintContents(const GraphicsLayer* graphicsLayer, G
         paintInfo.offsetFromLayoutObject = graphicsLayer->offsetFromLayoutObject();
 
         // We have to use the same root as for hit testing, because both methods can compute and cache clipRects.
-        doPaintTask(paintInfo, paintLayerFlags, &context, clip);
+        doPaintTask(paintInfo, paintLayerFlags, &context, interestRect);
     } else if (graphicsLayer == m_squashingLayer.get()) {
         for (size_t i = 0; i < m_squashedLayers.size(); ++i)
-            doPaintTask(m_squashedLayers[i], paintLayerFlags, &context, clip);
+            doPaintTask(m_squashedLayers[i], paintLayerFlags, &context, interestRect);
     } else if (graphicsLayer == layerForHorizontalScrollbar()) {
-        paintScrollbar(m_owningLayer.scrollableArea()->horizontalScrollbar(), context, clip);
+        paintScrollbar(m_owningLayer.scrollableArea()->horizontalScrollbar(), context, interestRect);
     } else if (graphicsLayer == layerForVerticalScrollbar()) {
-        paintScrollbar(m_owningLayer.scrollableArea()->verticalScrollbar(), context, clip);
+        paintScrollbar(m_owningLayer.scrollableArea()->verticalScrollbar(), context, interestRect);
     } else if (graphicsLayer == layerForScrollCorner()) {
         IntPoint scrollCornerAndResizerLocation = m_owningLayer.scrollableArea()->scrollCornerAndResizerRect().location();
-        ScrollableAreaPainter(*m_owningLayer.scrollableArea()).paintScrollCorner(&context, -scrollCornerAndResizerLocation, clip);
-        ScrollableAreaPainter(*m_owningLayer.scrollableArea()).paintResizer(&context, -scrollCornerAndResizerLocation, clip);
+        CullRect cullRect(enclosingIntRect(interestRect));
+        ScrollableAreaPainter(*m_owningLayer.scrollableArea()).paintScrollCorner(&context, -scrollCornerAndResizerLocation, cullRect);
+        ScrollableAreaPainter(*m_owningLayer.scrollableArea()).paintResizer(&context, -scrollCornerAndResizerLocation, cullRect);
     }
-    InspectorInstrumentation::didPaint(m_owningLayer.layoutObject(), graphicsLayer, &context, LayoutRect(clip));
+    InspectorInstrumentation::didPaint(m_owningLayer.layoutObject(), graphicsLayer, &context, LayoutRect(interestRect));
 #if ENABLE(ASSERT)
     if (Page* page = layoutObject()->frame()->page())
         page->setIsPainting(false);
@@ -2256,10 +2359,23 @@ void CompositedLayerMapping::notifyAnimationStarted(const GraphicsLayer*, double
     layoutObject()->node()->document().compositorPendingAnimations().notifyCompositorAnimationStarted(monotonicTime, group);
 }
 
-void CompositedLayerMapping::notifyTextPainted()
+void CompositedLayerMapping::notifyFirstPaint()
+{
+    // TODO(ksakamoto): This shouldn't be reported to Document. crbug.com/544811
+    if (Node* node = layoutObject()->node())
+        node->document().markFirstPaint();
+}
+
+void CompositedLayerMapping::notifyFirstTextPaint()
 {
     if (Node* node = layoutObject()->node())
         node->document().markFirstTextPaint();
+}
+
+void CompositedLayerMapping::notifyFirstImagePaint()
+{
+    if (Node* node = layoutObject()->node())
+        node->document().markFirstImagePaint();
 }
 
 IntRect CompositedLayerMapping::pixelSnappedCompositedBounds() const
@@ -2366,7 +2482,7 @@ String CompositedLayerMapping::debugName(const GraphicsLayer* graphicsLayer)
     } else if (graphicsLayer == m_squashingContainmentLayer.get()) {
         name = "Squashing Containment Layer";
     } else if (graphicsLayer == m_squashingLayer.get()) {
-        name = "Squashing Layer";
+        name = "Squashing Layer (first squashed layer: " + (m_squashedLayers.size() > 0 ? m_squashedLayers[0].paintLayer->debugName() : "") + ")";
     } else if (graphicsLayer == m_ancestorClippingLayer.get()) {
         name = "Ancestor Clipping Layer";
     } else if (graphicsLayer == m_foregroundLayer.get()) {

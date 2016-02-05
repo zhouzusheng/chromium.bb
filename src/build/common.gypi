@@ -416,11 +416,9 @@
       'configuration_policy%': 1,
 
       # Variable safe_browsing is used to control the build time configuration
-      # for safe browsing feature. Safe browsing can be compiled in 4 different
-      # levels: 0 disables it, 1 enables it fully, and 2 enables only UI and
-      # reporting features for use with Data Saver on Mobile, and 3 enables
-      # extended mobile protection via an external API.  When 3 is fully
-      # deployed, it will replace 2.
+      # for safe browsing feature. Safe browsing can be compiled in 3 different
+      # levels: 0 disables it, 1 enables it fully, and 2 enables mobile
+      # protection via an external API.
       'safe_browsing%': 1,
 
       # Web speech is enabled by default. Set to 0 to disable.
@@ -646,12 +644,8 @@
       # Supervised users are enabled by default.
       'enable_supervised_users%': 1,
 
-      # Platform sends memory pressure signals natively.
-      'native_memory_pressure_signals%': 0,
-
       'enable_mdns%' : 0,
       'enable_service_discovery%': 0,
-      'enable_wifi_bootstrapping%': 0,
       'enable_hangout_services_extension%': 0,
 
        # Enable the Syzygy optimization step.
@@ -815,7 +809,6 @@
           'remoting%': 0,
           'arm_neon%': 0,
           'arm_neon_optional%': 1,
-          'native_memory_pressure_signals%': 1,
           'enable_basic_printing%': 1,
           'enable_print_preview%': 0,
           'enable_task_manager%':0,
@@ -834,10 +827,6 @@
           'proprietary_codecs%': 1,
         }, {
           'proprietary_codecs%': 0,
-        }],
-
-        ['OS=="mac" or OS=="ios"', {
-          'native_memory_pressure_signals%': 1,
         }],
 
         # Enable autofill dialog when not on iOS.
@@ -871,7 +860,7 @@
           'enable_webrtc%': 0,
           'notifications%': 0,
           'remoting%': 0,
-          'safe_browsing%': 0,
+          'safe_browsing%': 2,
           'enable_supervised_users%': 0,
           'enable_task_manager%': 0,
           'enable_media_router%': 0,
@@ -1010,10 +999,6 @@
           'remoting%': 0,
           'enable_basic_printing%': 0,
           'enable_print_preview%': 0,
-        }],
-
-        ['OS=="win" or OS=="mac"', {
-          'enable_wifi_bootstrapping%' : 1,
         }],
 
         # Path to sas.dll, which provides the SendSAS function.
@@ -1240,10 +1225,8 @@
     'google_default_client_id%': '<(google_default_client_id)',
     'google_default_client_secret%': '<(google_default_client_secret)',
     'enable_supervised_users%': '<(enable_supervised_users)',
-    'native_memory_pressure_signals%': '<(native_memory_pressure_signals)',
     'enable_mdns%' : '<(enable_mdns)',
     'enable_service_discovery%' : '<(enable_service_discovery)',
-    'enable_wifi_bootstrapping%': '<(enable_wifi_bootstrapping)',
     'enable_hangout_services_extension%' : '<(enable_hangout_services_extension)',
     'proprietary_codecs%': '<(proprietary_codecs)',
     'use_goma%': '<(use_goma)',
@@ -1515,6 +1498,16 @@
     # Compile d8 for the host toolset.
     'v8_toolset_for_d8': 'host',
 
+    # V8 extras
+    # Adding V8 extras files requires API owners review
+    # Be sure to synchronize with build/module_args/v8.gni
+
+    'v8_extra_library_files': [
+    ],
+    'v8_experimental_extra_library_files': [
+      '../third_party/WebKit/Source/core/streams/ByteLengthQueuingStrategy.js',
+    ],
+
     # Use brlapi from brltty for braille display support.
     'use_brlapi%': 0,
 
@@ -1542,7 +1535,7 @@
     'ozone_platform_egltest%': 0,
     'ozone_platform_gbm%': 0,
     'ozone_platform_ozonex%': 0,
-    'ozone_platform_test%': 0,
+    'ozone_platform_headless%': 0,
 
     # Experiment: http://crbug.com/426914
     'envoy%': 0,
@@ -1710,7 +1703,7 @@
             'android_host_arch%': '<!(uname -m)',
             # Android API-level of the SDK used for compilation.
             'android_sdk_version%': '23',
-            'android_sdk_build_tools_version%': '23.0.0',
+            'android_sdk_build_tools_version%': '23.0.1',
             'host_os%': "<!(uname -s | sed -e 's/Linux/linux/;s/Darwin/mac/')",
 
             'conditions': [
@@ -1839,7 +1832,7 @@
 
         'proprietary_codecs%': '<(proprietary_codecs)',
 
-        'safe_browsing%': 3,
+        'safe_browsing%': 2,
 
         'enable_web_speech%': 0,
         'java_bridge%': 1,
@@ -1920,13 +1913,17 @@
           'conditions': [
             ['OS=="ios"', {
               'mac_sdk_min%': '10.8',
+              # The iOS build can use Xcode's clang, and that will complain
+              # about -stdlib=libc++ if the deployment target is not at least
+              # 10.7.
+              'mac_deployment_target%': '10.7',
             }, {  # else OS!="ios"
               'mac_sdk_min%': '10.10',
+              'mac_deployment_target%': '10.6',
             }],
           ],
           'mac_sdk_path%': '',
 
-          'mac_deployment_target%': '10.6',
         },
 
         'mac_sdk_min': '<(mac_sdk_min)',
@@ -2180,9 +2177,6 @@
       ['notifications==1', {
         'grit_defines': ['-D', 'enable_notifications'],
       }],
-      ['enable_wifi_bootstrapping==1', {
-        'grit_defines': ['-D', 'enable_wifi_bootstrapping'],
-      }],
       ['mac_views_browser==1', {
         'grit_defines': ['-D', 'mac_views_browser'],
       }],
@@ -2218,13 +2212,8 @@
               # no need to load it dynamically.
               'clang_dynlib_flags%': '',
             }],
-            # https://crbug.com/441916
-            ['OS=="android" or OS=="linux" or OS=="mac"', {
-              'clang_plugin_args%': '-Xclang -plugin-arg-find-bad-constructs -Xclang check-templates ',
-            }, { # OS != "linux"
-              'clang_plugin_args%': ''
-            }],
           ],
+          'clang_plugin_args%': '-Xclang -plugin-arg-find-bad-constructs -Xclang check-templates ',
         },
         # If you change these, also change build/config/clang/BUILD.gn.
         'clang_chrome_plugins_flags%':
@@ -2374,13 +2363,13 @@
       }],
 
       ['use_ozone==1 and ozone_auto_platforms==1', {
-        # Use test as the default platform.
-        'ozone_platform%': 'test',
+        # Use headless as the default platform.
+        'ozone_platform%': 'headless',
 
         # Build all platforms whose deps are in install-build-deps.sh.
         # Only these platforms will be compile tested by buildbots.
         'ozone_platform_gbm%': 1,
-        'ozone_platform_test%': 1,
+        'ozone_platform_headless%': 1,
         'ozone_platform_egltest%': 1,
       }],
 
@@ -2758,9 +2747,6 @@
       ['enable_topchrome_md==1', {
         'defines': ['ENABLE_TOPCHROME_MD=1'],
       }],
-      ['native_memory_pressure_signals==1', {
-        'defines': ['SYSTEM_NATIVELY_SIGNALS_MEMORY_PRESSURE'],
-      }],
       ['use_udev==1', {
         'defines': ['USE_UDEV'],
       }],
@@ -3028,9 +3014,6 @@
       ['enable_service_discovery==1', {
         'defines' : [ 'ENABLE_SERVICE_DISCOVERY=1' ],
       }],
-      ['enable_wifi_bootstrapping==1', {
-        'defines' : [ 'ENABLE_WIFI_BOOTSTRAPPING=1' ],
-      }],
       ['enable_hangout_services_extension==1', {
         'defines': ['ENABLE_HANGOUT_SERVICES_EXTENSION=1'],
       }],
@@ -3047,7 +3030,6 @@
         'defines': ['ENABLE_WEBVR'],
       }],
 
-      # SAFE_BROWSING_SERVICE - browser manages a safe-browsing service.
       # SAFE_BROWSING_DB_LOCAL - service manages a local database.
       # SAFE_BROWSING_DB_REMOTE - service talks via API to a database
       # SAFE_BROWSING_CSD - enable client-side phishing detection.
@@ -3057,22 +3039,11 @@
           'FULL_SAFE_BROWSING',
           'SAFE_BROWSING_CSD',
           'SAFE_BROWSING_DB_LOCAL',
-          'SAFE_BROWSING_SERVICE',
         ],
       }],
-      ['safe_browsing==2', {
+      ['safe_browsing==2 and OS!="ios"', {
         'defines': [
-          # TODO(nparker): Remove existing uses of MOBILE_SAFE_BROWSING
-          'MOBILE_SAFE_BROWSING',
-          'SAFE_BROWSING_SERVICE',
-        ],
-      }],
-      ['safe_browsing==3', {
-        'defines': [
-          # TODO(nparker): Remove existing uses of MOBILE_SAFE_BROWSING
-          'MOBILE_SAFE_BROWSING',
           'SAFE_BROWSING_DB_REMOTE',
-          'SAFE_BROWSING_SERVICE',
         ],
       }],
     ],  # conditions for 'target_defaults'
@@ -3108,9 +3079,6 @@
       ['chromium_code==0', {
         'variables': {
           'clang_warning_flags': [
-            # TODO(thakis): Move this suppression into individual third-party
-            # libraries as required. http://crbug.com/505316.
-            '-Wno-unused-function',
             # Lots of third-party libraries have unused variables. Instead of
             # suppressing them individually, we just blanket suppress them here.
             '-Wno-unused-variable',
@@ -4912,8 +4880,18 @@
                       '-target i686-linux-androideabi',
                     ],
                   }],
+                  # Place holder for arm64 support, not tested.
+                  # TODO: Enable clang support for Android Arm64. http://crbug.com/539781
+                  ['target_arch=="arm64"', {
+                    'cflags': [
+                      '-target aarch64-linux-androideabi',
+                    ],
+                    'ldflags': [
+                      '-target aarch64-linux-androideabi',
+                    ],
+                  }],
                   # Place holder for x64 support, not tested.
-                  # TODO: Enable clang support for Android x64. http://crbug.com/346626
+                  # TODO: Enable clang support for Android x64. http://crbug.com/539781
                   ['target_arch=="x64"', {
                     'cflags': [
                       '-target x86_64-linux-androideabi',
@@ -5253,6 +5231,28 @@
           },  # configuration "Release"
         },  # configurations
         'xcode_settings': {
+          # Tell the compiler to use libc++'s headers and the linker to link
+          # against libc++.  The latter part normally requires OS X 10.7,
+          # but we still support running on 10.6.  How does this work?  Two
+          # parts:
+          # 1. Chromium's clang doesn't error on -mmacosx-version-min=10.6
+          #    combined with -stdlib=libc++ (it normally silently produced a
+          #    binary that doesn't run on 10.6)
+          # 2. Further down, library_dirs is set to
+          #    third_party/libc++-static, which contains a static
+          #    libc++.a library.  The linker then links against that instead
+          #    of against /usr/lib/libc++.dylib when it sees the -lc++ flag
+          #    added by the driver.
+          #
+          # In component builds, just link to the system libc++.  This has
+          # the effect of making everything depend on libc++, which means
+          # component-build binaries won't run on 10.6 (no libc++ there),
+          # but for a developer-only configuration that's ok.  (We don't
+          # want to raise the deployment target yet so that official and
+          # dev builds have the same deployment target.  This affects
+          # things like which functions are considered deprecated.)
+          'CLANG_CXX_LIBRARY': 'libc++',  # -stdlib=libc++
+
           'GCC_DYNAMIC_NO_PIC': 'NO',               # No -mdynamic-no-pic
                                                     # (Equivalent to -fPIC)
           # MACOSX_DEPLOYMENT_TARGET maps to -mmacosx-version-min
@@ -5271,6 +5271,18 @@
           ],
         },
         'target_conditions': [
+          ['>(nacl_untrusted_build)==0 and component=="static_library"', {
+            # See the comment for CLANG_CXX_LIBRARY above for what this does.
+            # The NaCl toolchains have their own toolchain and don't need this.
+            # ASan requires 10.7+ and clang implicitly adds -lc++abi in ASan
+            # mode.  Our libc++.a contains both libc++ and libc++abi in one
+            # library, so it doesn't work in that mode.
+            'conditions': [
+              ['asan==0', {
+                'library_dirs': [ '<(DEPTH)/third_party/libc++-static' ],
+              }],
+            ],
+          }],
           ['_type=="executable"', {
             'postbuilds': [
               {
@@ -5385,7 +5397,6 @@
       ],
       'target_defaults': {
         'xcode_settings' : {
-          'CLANG_CXX_LANGUAGE_STANDARD': 'c++11',
           'ENABLE_BITCODE': 'NO',
           'CLANG_CXX_LIBRARY': 'libc++',  # -stdlib=libc++
 
@@ -5430,6 +5441,17 @@
               ],
               'ARCHS': [
                 'x86_64',
+              ],
+              'WARNING_CFLAGS': [
+                # TODO(thakis): Remove this once the deployment target on OS X
+                # is 10.7 too, http://crbug.com/547071
+                # In general, it is NOT OK to add -Wno-deprecated-declarations
+                # anywhere, you should instead fix your code instead.  But host
+                # compiles on iOS are really mac compiles, so this will be fixed
+                # when the mac deployment target is increased.  (Some of the
+                # fixes depend on OS X 10.7 so they can't be done before mac
+                # upgrades).
+                '-Wno-deprecated-declarations',
               ],
             },
           }],
@@ -5763,7 +5785,11 @@
                   '-Qunused-arguments',  # http://crbug.com/504658
                   '-Wno-microsoft-enum-value',  # http://crbug.com/505296
                   '-Wno-unknown-pragmas',  # http://crbug.com/505314
-                  '-Wno-unused-value',  # http://crbug.com/505318
+                  '-Wno-microsoft-cast',  # http://crbug.com/550065
+                  # Disable unused-value (crbug.com/505318) except
+                  # -Wunused-result.
+                  '-Wno-unused-value',
+                  '-Wunused-result',
                 ],
               },
             }],
@@ -5971,6 +5997,9 @@
         # Limited to Windows because lld-link is the driver that is
         # compatible with link.exe.
         ['LD', '<(make_clang_dir)/bin/lld-link'],
+        # lld-link includes a replacement for lib.exe that can produce thin
+        # archives and understands bitcode (for use_lto==1).
+        ['AR', '<(make_clang_dir)/bin/lld-link /lib /llvmlibthin'],
       ],
     }],
     ['OS=="android" and clang==0', {
@@ -6056,10 +6085,19 @@
             ],
           }],
         ],
+        'msvs_settings': {
+          'VCCLCompilerTool': {
+            'AdditionalOptions': [
+              # TODO(pcc): Add LTO support to clang-cl driver and use it here.
+              '-Xclang',
+              '-emit-llvm-bc',
+            ],
+          },
+        },
       },
     }],
-    # Apply a lower LTO optimization level in non-official builds.
-    ['use_lto==1 and clang==1 and buildtype!="Official"', {
+    # Apply a lower LTO optimization level as the default is too slow.
+    ['use_lto==1 and clang==1', {
       'target_defaults': {
         'target_conditions': [
           ['_toolset=="target"', {
@@ -6075,6 +6113,13 @@
             },
           }],
         ],
+        'msvs_settings': {
+          'VCLinkerTool': {
+            'AdditionalOptions': [
+              '/opt:lldlto=1',
+            ],
+          },
+        },
       },
     }],
     ['use_lto==1 and clang==1 and target_arch=="arm"', {
@@ -6191,16 +6236,6 @@
                 '-fsanitize-blacklist=<(cfi_blacklist)',
               ],
             },
-            'msvs_settings': {
-              'VCCLCompilerTool': {
-                'AdditionalOptions': [
-                  '-fsanitize=cfi-vcall',
-                  '-fsanitize=cfi-derived-cast',
-                  '-fsanitize=cfi-unrelated-cast',
-                  '-fsanitize-blacklist=<(cfi_blacklist)',
-                ],
-              },
-            },
           }],
           ['_toolset=="target" and _type!="static_library"', {
             'xcode_settings':  {
@@ -6209,6 +6244,38 @@
                 '-fsanitize=cfi-derived-cast',
                 '-fsanitize=cfi-unrelated-cast',
               ],
+            },
+          }],
+        ],
+      },
+    }],
+    ['cfi_vptr==1 and OS=="win"', {
+      'target_defaults': {
+        'target_conditions': [
+          ['_toolset=="target"', {
+            'msvs_settings': {
+              'VCCLCompilerTool': {
+                'AdditionalOptions': [
+                  # TODO(pcc): Use regular -fsanitize=* flags here once clang-cl
+                  # supports LTO.
+                  '-Xclang',
+                  '-fsanitize=cfi-vcall',
+                  '-Xclang',
+                  '-fsanitize=cfi-derived-cast',
+                  '-Xclang',
+                  '-fsanitize=cfi-unrelated-cast',
+                  '-Xclang',
+                  '-fsanitize-trap=cfi-vcall',
+                  '-Xclang',
+                  '-fsanitize-trap=cfi-derived-cast',
+                  '-Xclang',
+                  '-fsanitize-trap=cfi-unrelated-cast',
+                  '-Xclang',
+                  '-fsanitize-blacklist=<(cfi_blacklist)',
+                  '-Xclang',
+                  '-fsanitize-blacklist=../../<(make_clang_dir)/lib/clang/<!(python <(DEPTH)/tools/clang/scripts/update.py --print-clang-version)/cfi_blacklist.txt',
+                ],
+              },
             },
           }],
         ],

@@ -543,7 +543,7 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
     view_data_.is_page_visible = !render_frame_->GetRenderWidget()->is_hidden();
 
     // Set the initial focus.
-    SetContentAreaFocus(render_frame_->GetRenderWidget()->has_focus());
+    SetContentAreaFocus(render_frame_->render_view()->has_focus());
 
     if (!module_->IsProxied()) {
       PepperBrowserConnection* browser_connection =
@@ -773,7 +773,7 @@ void PepperPluginInstanceImpl::CommitBackingTexture() {
   DCHECK(!mailbox.IsZero());
   DCHECK_NE(sync_point, 0u);
   texture_layer_->SetTextureMailboxWithoutReleaseCallback(
-      cc::TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point));
+      cc::TextureMailbox(mailbox, gpu::SyncToken(sync_point), GL_TEXTURE_2D));
   texture_layer_->SetNeedsDisplay();
 }
 
@@ -2005,7 +2005,8 @@ void PepperPluginInstanceImpl::UpdateLayer(bool device_changed) {
           cc_blink::WebLayerImpl::LayerSettings(), NULL);
       opaque = bound_graphics_3d_->IsOpaque();
       texture_layer_->SetTextureMailboxWithoutReleaseCallback(
-          cc::TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point));
+          cc::TextureMailbox(mailbox, gpu::SyncToken(sync_point),
+                             GL_TEXTURE_2D));
     } else {
       DCHECK(bound_graphics_2d_platform_);
       texture_layer_ = cc::TextureLayer::CreateForMailbox(
@@ -2574,7 +2575,9 @@ PP_Bool PepperPluginInstanceImpl::GetScreenSize(PP_Instance instance,
     *size = view_data_.rect.size;
   } else {
     // All other cases: Report the screen size.
-    blink::WebScreenInfo info = render_frame()->GetRenderWidget()->screenInfo();
+    if (!render_frame_ || !render_frame_->GetRenderWidget())
+      return PP_FALSE;
+    blink::WebScreenInfo info = render_frame_->GetRenderWidget()->screenInfo();
     *size = PP_MakeSize(info.rect.width, info.rect.height);
   }
   return PP_TRUE;

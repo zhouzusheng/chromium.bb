@@ -144,6 +144,9 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   // Cancels the pending stream creation request.
   void CancelRequest(StreamRequest* request);
 
+  // QuicSpdySession methods:
+  void OnHeadersHeadOfLineBlocking(QuicTime::Delta delta) override;
+
   // QuicSession methods:
   void OnStreamFrame(const QuicStreamFrame& frame) override;
   QuicReliableClientStream* CreateOutgoingDynamicStream() override;
@@ -158,6 +161,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
   void OnCryptoHandshakeMessageReceived(
       const CryptoHandshakeMessage& message) override;
   void OnGoAway(const QuicGoAwayFrame& frame) override;
+  void OnRstStream(const QuicRstStreamFrame& frame) override;
 
   // QuicClientSessionBase methods:
   void OnProofValid(const QuicCryptoClientConfig::CachedState& cached) override;
@@ -219,7 +223,7 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
 
  protected:
   // QuicSession methods:
-  QuicDataStream* CreateIncomingDynamicStream(QuicStreamId id) override;
+  QuicSpdyStream* CreateIncomingDynamicStream(QuicStreamId id) override;
 
  private:
   friend class test::QuicChromiumClientSessionPeer;

@@ -37,8 +37,8 @@ class GPU_BLINK_EXPORT WebGraphicsContext3DImpl
 
   uint32_t lastFlushID() override;
 
-  unsigned int insertSyncPoint() override;
-  void waitSyncPoint(unsigned int sync_point) override;
+  bool insertSyncPoint(blink::WGC3Dbyte* sync_token) override;
+  void waitSyncToken(const blink::WGC3Dbyte* sync_token) override;
 
   void loseContextCHROMIUM(blink::WGC3Denum current,
                            blink::WGC3Denum other) override;
@@ -194,6 +194,14 @@ class GPU_BLINK_EXPORT WebGraphicsContext3DImpl
   void getIntegerv(blink::WGC3Denum pname, blink::WGC3Dint* value) override;
 
   void getInteger64v(blink::WGC3Denum pname, blink::WGC3Dint64* value) override;
+
+  void getIntegeri_v(blink::WGC3Denum target,
+                     blink::WGC3Duint index,
+                     blink::WGC3Dint *data) override;
+
+  void getInteger64i_v(blink::WGC3Denum pname,
+                       blink::WGC3Duint index,
+                       blink::WGC3Dint64* value) override;
 
   void getProgramiv(blink::WebGLId program,
                     blink::WGC3Denum pname,
@@ -923,8 +931,6 @@ class GPU_BLINK_EXPORT WebGraphicsContext3DImpl
 
   bool isContextLost() override;
   blink::WGC3Denum getGraphicsResetStatusARB() override;
-
-  GrGLInterface* createGrGLInterface() override;
 
   ::gpu::gles2::GLES2Interface* GetGLInterface() {
     return gl_;

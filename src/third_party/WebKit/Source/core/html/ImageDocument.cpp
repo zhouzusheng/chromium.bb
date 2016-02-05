@@ -67,7 +67,7 @@ public:
             : 0;
     }
 
-    virtual bool operator==(const EventListener& other);
+    bool operator==(const EventListener& other) const override;
 
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
@@ -156,8 +156,10 @@ void ImageDocumentParser::finish()
 {
     if (!isStopped() && document()->imageElement() && document()->cachedImage()) {
         ImageResource* cachedImage = document()->cachedImage();
+        DocumentLoader* loader = document()->loader();
+        cachedImage->setResponse(loader->response());
+        cachedImage->setLoadFinishTime(loader->timing().responseEnd());
         cachedImage->finish();
-        cachedImage->setResponse(document()->frame()->loader().documentLoader()->response());
 
         // Report the natural image size in the page title, regardless of zoom level.
         // At a zoom level of 1 the image is guaranteed to have an integer size.
@@ -451,7 +453,7 @@ void ImageEventListener::handleEvent(ExecutionContext*, Event* event)
     }
 }
 
-bool ImageEventListener::operator==(const EventListener& listener)
+bool ImageEventListener::operator==(const EventListener& listener) const
 {
     if (const ImageEventListener* imageEventListener = ImageEventListener::cast(&listener))
         return m_doc == imageEventListener->m_doc;

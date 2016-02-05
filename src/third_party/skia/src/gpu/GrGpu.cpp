@@ -55,6 +55,28 @@ void GrGpu::contextAbandoned() {}
 
 ////////////////////////////////////////////////////////////////////////////////
 
+bool GrGpu::makeCopyForTextureParams(int width, int height, const GrTextureParams& textureParams,
+                                     GrTextureProducer::CopyParams* copyParams) const {
+    const GrCaps& caps = *this->caps();
+    if (textureParams.isTiled() && !caps.npotTextureTileSupport() &&
+        (!SkIsPow2(width) || !SkIsPow2(height))) {
+        copyParams->fWidth = GrNextPow2(width);
+        copyParams->fHeight = GrNextPow2(height);
+        switch (textureParams.filterMode()) {
+            case GrTextureParams::kNone_FilterMode:
+                copyParams->fFilter = GrTextureParams::kNone_FilterMode;
+                break;
+            case GrTextureParams::kBilerp_FilterMode:
+            case GrTextureParams::kMipMap_FilterMode:
+                // We are only ever scaling up so no reason to ever indicate kMipMap.
+                copyParams->fFilter = GrTextureParams::kBilerp_FilterMode;
+                break;
+        }
+        return true;
+    }
+    return false;
+}
+
 static GrSurfaceOrigin resolve_origin(GrSurfaceOrigin origin, bool renderTarget) {
     // By default, GrRenderTargets are GL's normal orientation so that they
     // can be drawn to by the outside world without the client having

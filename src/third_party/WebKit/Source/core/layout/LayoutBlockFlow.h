@@ -73,6 +73,15 @@ template <class Run> class BidiRunList;
 // perform inline layout. See LayoutBlockFlowLine.cpp for these parts.
 //
 // TODO(jchaffraix): We need some float and line box expert to expand on this.
+//
+// LayoutBlockFlow enforces the following invariant:
+//
+// All in-flow children (ie excluding floating and out-of-flow positioned) are
+// either all blocks or all inline boxes.
+//
+// This is suggested by CSS to correctly the layout mixed inlines and blocks
+// lines (http://www.w3.org/TR/CSS21/visuren.html#anonymous-block-level). See
+// LayoutBlock::addChild about how the invariant is enforced.
 class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
 public:
     explicit LayoutBlockFlow(ContainerNode*);
@@ -84,7 +93,7 @@ public:
 
     void layoutBlock(bool relayoutChildren) override;
 
-    void computeOverflow(LayoutUnit oldClientAfterEdge) override;
+    void computeOverflow(LayoutUnit oldClientAfterEdge, bool recomputeFloats = false) override;
 
     void deleteLineBoxTree() final;
 
@@ -143,9 +152,6 @@ public:
     LayoutUnit logicalLeftForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.x() : floatingObject.y(); }
     LayoutUnit logicalRightForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.maxX() : floatingObject.maxY(); }
     LayoutUnit logicalWidthForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.width() : floatingObject.height(); }
-
-    int pixelSnappedLogicalTopForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.frameRect().pixelSnappedY() : floatingObject.frameRect().pixelSnappedX(); }
-    int pixelSnappedLogicalBottomForFloat(const FloatingObject& floatingObject) const { return isHorizontalWritingMode() ? floatingObject.frameRect().pixelSnappedMaxY() : floatingObject.frameRect().pixelSnappedMaxX(); }
 
     void setLogicalTopForFloat(FloatingObject& floatingObject, LayoutUnit logicalTop)
     {
@@ -217,8 +223,21 @@ public:
     LayoutRect blockSelectionGap(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
         LayoutUnit lastLogicalTop, LayoutUnit lastLogicalLeft, LayoutUnit lastLogicalRight, LayoutUnit logicalBottom, const PaintInfo*) const;
 
-    LayoutUnit paginationStrut() const { return m_rareData ? m_rareData->m_paginationStrut : LayoutUnit(); }
-    void setPaginationStrut(LayoutUnit);
+    bool allowsPaginationStrut() const;
+    // Pagination strut caused by the first line or child block inside this block-level object.
+    //
+    // When the first piece of content (first child block or line) inside an object wants to insert
+    // a soft page or column break, rather than setting a pagination strut on itself it normally
+    // propagates the strut to its containing block (|this|), as long as our implementation can
+    // handle it. The idea is that we want to push the entire object to the next page or column
+    // along with the child content that caused the break, instead of leaving unusable space at the
+    // beginning of the object at the end of one column or page and just push the first line or
+    // block to the next column or page. That would waste space in the container for no good
+    // reason, and it would also be a spec violation, since there is no break opportunity defined
+    // between the content logical top of an object and its first child or line (only *between*
+    // blocks or lines).
+    LayoutUnit paginationStrutPropagatedFromChild() const { return m_rareData ? m_rareData->m_paginationStrutPropagatedFromChild : LayoutUnit(); }
+    void setPaginationStrutPropagatedFromChild(LayoutUnit);
 
     void positionSpannerDescendant(LayoutMultiColumnSpannerPlaceholder& child);
 
@@ -373,7 +392,7 @@ private:
 
 public:
     struct FloatWithRect {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
         FloatWithRect(LayoutBox* f)
             : object(f)
             , rect(f->frameRect())
@@ -388,7 +407,7 @@ public:
     };
 
     class MarginValues {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         MarginValues(LayoutUnit beforePos, LayoutUnit beforeNeg, LayoutUnit afterPos, LayoutUnit afterNeg)
             : m_positiveMarginBefore(beforePos)
@@ -417,11 +436,10 @@ public:
 
     // Allocated only when some of these fields have non-default values
     struct LayoutBlockFlowRareData {
-        WTF_MAKE_NONCOPYABLE(LayoutBlockFlowRareData); WTF_MAKE_FAST_ALLOCATED(LayoutBlockFlowRareData);
+        WTF_MAKE_NONCOPYABLE(LayoutBlockFlowRareData); USING_FAST_MALLOC(LayoutBlockFlowRareData);
     public:
         LayoutBlockFlowRareData(const LayoutBlockFlow* block)
             : m_margins(positiveMarginBeforeDefault(block), negativeMarginBeforeDefault(block), positiveMarginAfterDefault(block), negativeMarginAfterDefault(block))
-            , m_paginationStrut(0)
             , m_multiColumnFlowThread(nullptr)
             , m_lineBreakToAvoidWidow(-1)
             , m_didBreakAtLineToAvoidWidow(false)
@@ -448,7 +466,7 @@ public:
         }
 
         MarginValues m_margins;
-        LayoutUnit m_paginationStrut;
+        LayoutUnit m_paginationStrutPropagatedFromChild;
 
         LayoutMultiColumnFlowThread* m_multiColumnFlowThread;
 
@@ -512,7 +530,7 @@ private:
     // Computes a deltaOffset value that put a line at the top of the next page if it doesn't fit on the current page.
     void adjustLinePositionForPagination(RootInlineBox&, LayoutUnit& deltaOffset);
     // If the child is unsplittable and can't fit on the current page, return the top of the next page/column.
-    LayoutUnit adjustForUnsplittableChild(LayoutBox&, LayoutUnit logicalOffset);
+    LayoutUnit adjustForUnsplittableChild(LayoutBox&, LayoutUnit logicalOffset) const;
 
     // Used to store state between styleWillChange and styleDidChange
     static bool s_canPropagateFloatIntoSibling;

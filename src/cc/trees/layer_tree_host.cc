@@ -29,7 +29,6 @@
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/input/layer_selection_bound.h"
 #include "cc/input/page_scale_animation.h"
-#include "cc/input/top_controls_manager.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
@@ -99,9 +98,9 @@ LayerTreeHost::LayerTreeHost(InitParams* params)
       top_controls_shrink_blink_size_(false),
       top_controls_height_(0.f),
       top_controls_shown_ratio_(0.f),
-      hide_pinch_scrollbars_near_min_scale_(false),
       device_scale_factor_(1.f),
-      visible_(true),
+      painted_device_scale_factor_(1.f),
+      visible_(false),
       page_scale_factor_(1.f),
       min_page_scale_factor_(1.f),
       max_page_scale_factor_(1.f),
@@ -138,9 +137,9 @@ void LayerTreeHost::InitializeThreaded(
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
     scoped_ptr<BeginFrameSource> external_begin_frame_source) {
-  InitializeProxy(ThreadProxy::Create(this,
-                                      main_task_runner,
-                                      impl_task_runner,
+  task_runner_provider_ =
+      TaskRunnerProvider::Create(main_task_runner, impl_task_runner);
+  InitializeProxy(ThreadProxy::Create(this, task_runner_provider_.get(),
                                       external_begin_frame_source.Pass()));
 }
 
@@ -148,14 +147,16 @@ void LayerTreeHost::InitializeSingleThreaded(
     LayerTreeHostSingleThreadClient* single_thread_client,
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_ptr<BeginFrameSource> external_begin_frame_source) {
-  InitializeProxy(
-      SingleThreadProxy::Create(this,
-                                single_thread_client,
-                                main_task_runner,
-                                external_begin_frame_source.Pass()));
+  task_runner_provider_ = TaskRunnerProvider::Create(main_task_runner, nullptr);
+  InitializeProxy(SingleThreadProxy::Create(
+      this, single_thread_client, task_runner_provider_.get(),
+      external_begin_frame_source.Pass()));
 }
 
-void LayerTreeHost::InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing) {
+void LayerTreeHost::InitializeForTesting(
+    scoped_ptr<TaskRunnerProvider> task_runner_provider,
+    scoped_ptr<Proxy> proxy_for_testing) {
+  task_runner_provider_ = task_runner_provider.Pass();
   InitializeProxy(proxy_for_testing.Pass());
 }
 
@@ -188,8 +189,11 @@ LayerTreeHost::~LayerTreeHost() {
   BreakSwapPromises(SwapPromise::COMMIT_FAILS);
 
   if (proxy_) {
-    DCHECK(proxy_->IsMainThread());
+    DCHECK(task_runner_provider_->IsMainThread());
     proxy_->Stop();
+
+    // Proxy must be destroyed before the Task Runner Provider.
+    proxy_ = nullptr;
   }
 
   // We must clear any pointers into the layer tree prior to destroying it.
@@ -201,10 +205,6 @@ LayerTreeHost::~LayerTreeHost() {
     // will outlive them, and we must make good.
     root_layer_ = NULL;
   }
-}
-
-void LayerTreeHost::SetLayerTreeHostClientReady() {
-  proxy_->SetLayerTreeHostClientReady();
 }
 
 void LayerTreeHost::WillBeginMainFrame() {
@@ -229,8 +229,8 @@ void LayerTreeHost::DidStopFlinging() {
   proxy_->MainThreadHasStoppedFlinging();
 }
 
-void LayerTreeHost::Layout() {
-  client_->Layout();
+void LayerTreeHost::RequestMainFrameUpdate() {
+  client_->UpdateLayerTreeHost();
 }
 
 // This function commits the LayerTreeHost to an impl tree. When modifying
@@ -239,7 +239,7 @@ void LayerTreeHost::Layout() {
 // should be delayed until the LayerTreeHost::CommitComplete, which will run
 // after the commit, but on the main thread.
 void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
-  DCHECK(proxy_->IsImplThread());
+  DCHECK(task_runner_provider_->IsImplThread());
 
   bool is_new_trace;
   TRACE_EVENT_IS_NEW_TRACE(&is_new_trace);
@@ -294,9 +294,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   // Setting property trees must happen before pushing the page scale.
   sync_tree->SetPropertyTrees(property_trees_);
 
-  sync_tree->set_hide_pinch_scrollbars_near_min_scale(
-      hide_pinch_scrollbars_near_min_scale_);
-
   sync_tree->PushPageScaleFromMainThread(
       page_scale_factor_, min_page_scale_factor_, max_page_scale_factor_);
   sync_tree->elastic_overscroll()->PushFromMainThread(elastic_overscroll_);
@@ -320,6 +317,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   // properties are set, since those trigger an update of GPU rasterization
   // status, which depends on the device scale factor. (crbug.com/535700)
   sync_tree->SetDeviceScaleFactor(device_scale_factor_);
+  sync_tree->set_painted_device_scale_factor(painted_device_scale_factor_);
   host_impl->SetDebugState(debug_state_);
   if (pending_page_scale_animation_) {
     sync_tree->SetPendingPageScaleAnimation(
@@ -426,26 +424,24 @@ void LayerTreeHost::DidFailToInitializeOutputSurface() {
 
 scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
     LayerTreeHostImplClient* client) {
-  DCHECK(proxy_->IsImplThread());
+  DCHECK(task_runner_provider_->IsImplThread());
   scoped_ptr<LayerTreeHostImpl> host_impl = LayerTreeHostImpl::Create(
-      settings_, client, proxy_.get(), rendering_stats_instrumentation_.get(),
-      shared_bitmap_manager_, gpu_memory_buffer_manager_, task_graph_runner_,
-      id_);
+      settings_, client, task_runner_provider_.get(),
+      rendering_stats_instrumentation_.get(), shared_bitmap_manager_,
+      gpu_memory_buffer_manager_, task_graph_runner_, id_);
   host_impl->SetHasGpuRasterizationTrigger(has_gpu_rasterization_trigger_);
   host_impl->SetContentIsSuitableForGpuRasterization(
       content_is_suitable_for_gpu_rasterization_);
   shared_bitmap_manager_ = NULL;
   gpu_memory_buffer_manager_ = NULL;
   task_graph_runner_ = NULL;
-  top_controls_manager_weak_ptr_ =
-      host_impl->top_controls_manager()->AsWeakPtr();
   input_handler_weak_ptr_ = host_impl->AsWeakPtr();
   return host_impl.Pass();
 }
 
 void LayerTreeHost::DidLoseOutputSurface() {
   TRACE_EVENT0("cc", "LayerTreeHost::DidLoseOutputSurface");
-  DCHECK(proxy_->IsMainThread());
+  DCHECK(task_runner_provider_->IsMainThread());
 
   if (output_surface_lost_)
     return;
@@ -539,7 +535,7 @@ void LayerTreeHost::SetNextCommitForcesRedraw() {
 
 void LayerTreeHost::SetAnimationEvents(
     scoped_ptr<AnimationEventsVector> events) {
-  DCHECK(proxy_->IsMainThread());
+  DCHECK(task_runner_provider_->IsMainThread());
   if (animation_host_)
     animation_host_->SetAnimationEvents(events.Pass());
   else
@@ -677,22 +673,29 @@ void LayerTreeHost::NotifyInputThrottledUntilCommit() {
 }
 
 void LayerTreeHost::LayoutAndUpdateLayers() {
-  DCHECK(!proxy_->HasImplThread());
+  DCHECK(!task_runner_provider_->HasImplThread());
   // This function is only valid when not using the scheduler.
   DCHECK(!settings_.single_thread_proxy_scheduler);
   SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
 
-  SetLayerTreeHostClientReady();
-  proxy->LayoutAndUpdateLayers();
+  if (output_surface_lost()) {
+    proxy->RequestNewOutputSurface();
+    // RequestNewOutputSurface could have synchronously created an output
+    // surface, so check again before returning.
+    if (output_surface_lost())
+      return;
+  }
+
+  RequestMainFrameUpdate();
+  UpdateLayers();
 }
 
 void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
-  DCHECK(!proxy_->HasImplThread());
+  DCHECK(!task_runner_provider_->HasImplThread());
   // This function is only valid when not using the scheduler.
   DCHECK(!settings_.single_thread_proxy_scheduler);
   SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
 
-  SetLayerTreeHostClientReady();
   proxy->CompositeImmediately(frame_begin_time);
 }
 
@@ -729,7 +732,8 @@ static Layer* FindFirstScrollableLayer(Layer* layer) {
 void LayerTreeHost::RecordGpuRasterizationHistogram() {
   // Gpu rasterization is only supported for Renderer compositors.
   // Checking for proxy_->HasImplThread() to exclude Browser compositors.
-  if (gpu_rasterization_histogram_recorded_ || !proxy_->HasImplThread())
+  if (gpu_rasterization_histogram_recorded_ ||
+      !task_runner_provider_->HasImplThread())
     return;
 
   // Record how widely gpu rasterization is enabled.
@@ -792,7 +796,8 @@ bool LayerTreeHost::DoUpdateLayers(Layer* root_layer) {
         root_layer, page_scale_layer, inner_viewport_scroll_layer_.get(),
         outer_viewport_scroll_layer_.get(), page_scale_factor_,
         device_scale_factor_, gfx::Rect(device_viewport_size_),
-        identity_transform, &property_trees_, &update_layer_list);
+        identity_transform, can_render_to_separate_surface, &property_trees_,
+        &update_layer_list);
   }
 
   for (const auto& layer : update_layer_list)
@@ -883,17 +888,21 @@ void LayerTreeHost::SetDeviceScaleFactor(float device_scale_factor) {
   SetNeedsCommit();
 }
 
+void LayerTreeHost::SetPaintedDeviceScaleFactor(
+    float painted_device_scale_factor) {
+  if (painted_device_scale_factor == painted_device_scale_factor_)
+    return;
+  painted_device_scale_factor_ = painted_device_scale_factor;
+
+  SetNeedsCommit();
+}
+
 void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
                                            TopControlsState current,
                                            bool animate) {
   // Top controls are only used in threaded mode.
-  proxy_->ImplThreadTaskRunner()->PostTask(
-      FROM_HERE,
-      base::Bind(&TopControlsManager::UpdateTopControlsState,
-                 top_controls_manager_weak_ptr_,
-                 constraints,
-                 current,
-                 animate));
+  DCHECK(task_runner_provider_->HasImplThread());
+  proxy_->UpdateTopControlsState(constraints, current, animate);
 }
 
 void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {
@@ -972,8 +981,8 @@ void LayerTreeHost::RegisterViewportLayers(
     scoped_refptr<Layer> page_scale_layer,
     scoped_refptr<Layer> inner_viewport_scroll_layer,
     scoped_refptr<Layer> outer_viewport_scroll_layer) {
-  DCHECK_IMPLIES(inner_viewport_scroll_layer,
-                 inner_viewport_scroll_layer != outer_viewport_scroll_layer);
+  DCHECK(!inner_viewport_scroll_layer ||
+         inner_viewport_scroll_layer != outer_viewport_scroll_layer);
   overscroll_elasticity_layer_ = overscroll_elasticity_layer;
   page_scale_layer_ = page_scale_layer;
   inner_viewport_scroll_layer_ = inner_viewport_scroll_layer;
@@ -1088,6 +1097,10 @@ bool LayerTreeHost::IsLayerInTree(int layer_id, LayerTreeType tree_type) const {
 
 void LayerTreeHost::SetMutatorsNeedCommit() {
   SetNeedsCommit();
+}
+
+void LayerTreeHost::SetMutatorsNeedRebuildPropertyTrees() {
+  property_trees_.needs_rebuild = true;
 }
 
 void LayerTreeHost::SetLayerFilterMutated(int layer_id,

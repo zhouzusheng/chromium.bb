@@ -27,6 +27,7 @@
 #include "net/http/http_server_properties.h"
 #include "net/quic/crypto/channel_id_chromium.h"
 #include "net/quic/crypto/proof_verifier_chromium.h"
+#include "net/quic/crypto/properties_based_quic_server_info.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/crypto/quic_server_info.h"
 #include "net/quic/port_suggester.h"
@@ -123,29 +124,6 @@ QuicPacketWriter* DefaultPacketWriterFactory::Create(
 
 }  // namespace
 
-QuicStreamFactory::IpAliasKey::IpAliasKey() {}
-
-QuicStreamFactory::IpAliasKey::IpAliasKey(IPEndPoint ip_endpoint,
-                                          bool is_https)
-    : ip_endpoint(ip_endpoint),
-      is_https(is_https) {}
-
-QuicStreamFactory::IpAliasKey::~IpAliasKey() {}
-
-bool QuicStreamFactory::IpAliasKey::operator<(
-    const QuicStreamFactory::IpAliasKey& other) const {
-  if (!(ip_endpoint == other.ip_endpoint)) {
-    return ip_endpoint < other.ip_endpoint;
-  }
-  return is_https < other.is_https;
-}
-
-bool QuicStreamFactory::IpAliasKey::operator==(
-    const QuicStreamFactory::IpAliasKey& other) const {
-  return is_https == other.is_https &&
-      ip_endpoint == other.ip_endpoint;
-};
-
 // Responsible for creating a new QUIC session to the specified server, and
 // for notifying any associated requests when complete.
 class QuicStreamFactory::Job {
@@ -154,7 +132,6 @@ class QuicStreamFactory::Job {
       HostResolver* host_resolver,
       const HostPortPair& host_port_pair,
       bool server_and_origin_have_same_host,
-      bool is_https,
       bool was_alternative_service_recently_broken,
       PrivacyMode privacy_mode,
       int cert_verify_flags,
@@ -231,7 +208,6 @@ QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
                             HostResolver* host_resolver,
                             const HostPortPair& host_port_pair,
                             bool server_and_origin_have_same_host,
-                            bool is_https,
                             bool was_alternative_service_recently_broken,
                             PrivacyMode privacy_mode,
                             int cert_verify_flags,
@@ -241,7 +217,7 @@ QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
     : io_state_(STATE_RESOLVE_HOST),
       factory_(factory),
       host_resolver_(host_resolver),
-      server_id_(host_port_pair, is_https, privacy_mode),
+      server_id_(host_port_pair, privacy_mode),
       cert_verify_flags_(cert_verify_flags),
       server_and_origin_have_same_host_(server_and_origin_have_same_host),
       is_post_(is_post),
@@ -251,8 +227,7 @@ QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
       started_another_job_(false),
       net_log_(net_log),
       session_(nullptr),
-      weak_factory_(this) {
-}
+      weak_factory_(this) {}
 
 QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
                             HostResolver* host_resolver,
@@ -515,7 +490,6 @@ QuicStreamRequest::~QuicStreamRequest() {
 }
 
 int QuicStreamRequest::Request(const HostPortPair& host_port_pair,
-                               bool is_https,
                                PrivacyMode privacy_mode,
                                int cert_verify_flags,
                                base::StringPiece origin_host,
@@ -527,12 +501,10 @@ int QuicStreamRequest::Request(const HostPortPair& host_port_pair,
   DCHECK(factory_);
   origin_host_ = origin_host.as_string();
   privacy_mode_ = privacy_mode;
-  int rv =
-      factory_->Create(host_port_pair, is_https, privacy_mode,
-                       cert_verify_flags, origin_host, method, net_log, this);
+  int rv = factory_->Create(host_port_pair, privacy_mode, cert_verify_flags,
+                            origin_host, method, net_log, this);
   if (rv == ERR_IO_PENDING) {
     host_port_pair_ = host_port_pair;
-    is_https_ = is_https;
     net_log_ = net_log;
     callback_ = callback;
   } else {
@@ -557,7 +529,7 @@ base::TimeDelta QuicStreamRequest::GetTimeDelayForWaitingJob() const {
   if (!factory_)
     return base::TimeDelta();
   return factory_->GetTimeDelayForWaitingJob(
-      QuicServerId(host_port_pair_, is_https_, privacy_mode_));
+      QuicServerId(host_port_pair_, privacy_mode_));
 }
 
 scoped_ptr<QuicHttpStream> QuicStreamRequest::ReleaseStream() {
@@ -573,7 +545,7 @@ QuicStreamFactory::QuicStreamFactory(
     CertPolicyEnforcer* cert_policy_enforcer,
     ChannelIDService* channel_id_service,
     TransportSecurityState* transport_security_state,
-    const SocketPerformanceWatcherFactory* socket_performance_watcher_factory,
+    SocketPerformanceWatcherFactory* socket_performance_watcher_factory,
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
     QuicRandom* random_generator,
     QuicClock* clock,
@@ -595,19 +567,23 @@ QuicStreamFactory::QuicStreamFactory(
     int threshold_timeouts_with_open_streams,
     int socket_receive_buffer_size,
     bool delay_tcp_race,
+    bool store_server_configs_in_properties,
+    bool close_sessions_on_ip_change,
     const QuicTagVector& connection_options)
     : require_confirmation_(true),
       host_resolver_(host_resolver),
       client_socket_factory_(client_socket_factory),
       http_server_properties_(http_server_properties),
       transport_security_state_(transport_security_state),
-      quic_server_info_factory_(nullptr),
       quic_crypto_client_stream_factory_(quic_crypto_client_stream_factory),
       random_generator_(random_generator),
       clock_(clock),
       max_packet_length_(max_packet_length),
       socket_performance_watcher_factory_(socket_performance_watcher_factory),
       config_(InitializeQuicConfig(connection_options)),
+      crypto_config_(new ProofVerifierChromium(cert_verifier,
+                                               cert_policy_enforcer,
+                                               transport_security_state)),
       supported_versions_(supported_versions),
       enable_port_selection_(enable_port_selection),
       always_require_handshake_confirmation_(
@@ -635,18 +611,19 @@ QuicStreamFactory::QuicStreamFactory(
       yield_after_packets_(kQuicYieldAfterPacketsRead),
       yield_after_duration_(QuicTime::Delta::FromMilliseconds(
           kQuicYieldAfterDurationMilliseconds)),
+      store_server_configs_in_properties_(store_server_configs_in_properties),
+      close_sessions_on_ip_change_(close_sessions_on_ip_change),
       port_seed_(random_generator_->RandUint64()),
       check_persisted_supports_quic_(true),
-      quic_supported_servers_at_startup_initialzied_(false),
+      has_initialized_data_(false),
       task_runner_(nullptr),
       weak_factory_(this) {
   DCHECK(transport_security_state_);
+  DCHECK(http_server_properties_);
   crypto_config_.set_user_agent_id(user_agent_id);
   crypto_config_.AddCanonicalSuffix(".c.youtube.com");
   crypto_config_.AddCanonicalSuffix(".googlevideo.com");
   crypto_config_.AddCanonicalSuffix(".googleusercontent.com");
-  crypto_config_.SetProofVerifier(new ProofVerifierChromium(
-      cert_verifier, cert_policy_enforcer, transport_security_state));
   // TODO(rtenneti): http://crbug.com/487355. Temporary fix for b/20760730 until
   // channel_id_service is supported in cronet.
   if (channel_id_service) {
@@ -666,6 +643,17 @@ QuicStreamFactory::QuicStreamFactory(
     crypto_config_.PreferAesGcm();
   if (!IsEcdsaSupported())
     crypto_config_.DisableEcdsa();
+  // When disk cache is used to store the server configs, HttpCache code calls
+  // |set_quic_server_info_factory| if |quic_server_info_factory_| wasn't
+  // created.
+  if (store_server_configs_in_properties_) {
+    quic_server_info_factory_.reset(
+        new PropertiesBasedQuicServerInfoFactory(http_server_properties_));
+  }
+
+  if (close_sessions_on_ip_change_) {
+    NetworkChangeNotifier::AddIPAddressObserver(this);
+  }
 }
 
 QuicStreamFactory::~QuicStreamFactory() {
@@ -679,11 +667,14 @@ QuicStreamFactory::~QuicStreamFactory() {
     STLDeleteElements(&(active_jobs_[server_id]));
     active_jobs_.erase(server_id);
   }
+  if (close_sessions_on_ip_change_) {
+    NetworkChangeNotifier::RemoveIPAddressObserver(this);
+  }
 }
 
 void QuicStreamFactory::set_require_confirmation(bool require_confirmation) {
   require_confirmation_ = require_confirmation;
-  if (http_server_properties_ && (!(local_address_ == IPEndPoint()))) {
+  if (!(local_address_ == IPEndPoint())) {
     http_server_properties_->SetSupportsQuic(!require_confirmation,
                                              local_address_.address());
   }
@@ -702,15 +693,19 @@ base::TimeDelta QuicStreamFactory::GetTimeDelayForWaitingJob(
   return base::TimeDelta::FromMicroseconds(srtt);
 }
 
+void QuicStreamFactory::set_quic_server_info_factory(
+    QuicServerInfoFactory* quic_server_info_factory) {
+  quic_server_info_factory_.reset(quic_server_info_factory);
+}
+
 int QuicStreamFactory::Create(const HostPortPair& host_port_pair,
-                              bool is_https,
                               PrivacyMode privacy_mode,
                               int cert_verify_flags,
                               base::StringPiece origin_host,
                               base::StringPiece method,
                               const BoundNetLog& net_log,
                               QuicStreamRequest* request) {
-  QuicServerId server_id(host_port_pair, is_https, privacy_mode);
+  QuicServerId server_id(host_port_pair, privacy_mode);
   // TODO(rtenneti): crbug.com/498823 - delete active_sessions_.empty() checks.
   if (!active_sessions_.empty()) {
     SessionMap::iterator it = active_sessions_.find(server_id);
@@ -735,17 +730,14 @@ int QuicStreamFactory::Create(const HostPortPair& host_port_pair,
     task_runner_ = base::ThreadTaskRunnerHandle::Get().get();
 
   QuicServerInfo* quic_server_info = nullptr;
-  if (quic_server_info_factory_) {
+  if (quic_server_info_factory_.get()) {
     bool load_from_disk_cache = !disable_disk_cache_;
-    if (http_server_properties_) {
-      if (!quic_supported_servers_at_startup_initialzied_)
-        InitializeQuicSupportedServersAtStartup();
-      if (!ContainsKey(quic_supported_servers_at_startup_,
-                       server_id.host_port_pair())) {
-        // If there is no entry for QUIC, consider that as a new server and
-        // don't wait for Cache thread to load the data for that server.
-        load_from_disk_cache = false;
-      }
+    MaybeInitialize();
+    if (!ContainsKey(quic_supported_servers_at_startup_,
+                     server_id.host_port_pair())) {
+      // If there is no entry for QUIC, consider that as a new server and
+      // don't wait for Cache thread to load the data for that server.
+      load_from_disk_cache = false;
     }
     if (load_from_disk_cache && CryptoConfigCacheIsEmpty(server_id)) {
       quic_server_info = quic_server_info_factory_->GetForServer(server_id);
@@ -753,11 +745,10 @@ int QuicStreamFactory::Create(const HostPortPair& host_port_pair,
   }
 
   bool server_and_origin_have_same_host = host_port_pair.host() == origin_host;
-  scoped_ptr<Job> job(new Job(this, host_resolver_, host_port_pair,
-                              server_and_origin_have_same_host, is_https,
-                              WasQuicRecentlyBroken(server_id), privacy_mode,
-                              cert_verify_flags, method == "POST" /* is_post */,
-                              quic_server_info, net_log));
+  scoped_ptr<Job> job(new Job(
+      this, host_resolver_, host_port_pair, server_and_origin_have_same_host,
+      WasQuicRecentlyBroken(server_id), privacy_mode, cert_verify_flags,
+      method == "POST" /* is_post */, quic_server_info, net_log));
   int rv = job->Run(base::Bind(&QuicStreamFactory::OnJobComplete,
                                base::Unretained(this), job.get()));
   if (rv == ERR_IO_PENDING) {
@@ -788,11 +779,10 @@ void QuicStreamFactory::CreateAuxilaryJob(const QuicServerId server_id,
                                           bool server_and_origin_have_same_host,
                                           bool is_post,
                                           const BoundNetLog& net_log) {
-  Job* aux_job =
-      new Job(this, host_resolver_, server_id.host_port_pair(),
-              server_and_origin_have_same_host, server_id.is_https(),
-              WasQuicRecentlyBroken(server_id), server_id.privacy_mode(),
-              cert_verify_flags, is_post, nullptr, net_log);
+  Job* aux_job = new Job(
+      this, host_resolver_, server_id.host_port_pair(),
+      server_and_origin_have_same_host, WasQuicRecentlyBroken(server_id),
+      server_id.privacy_mode(), cert_verify_flags, is_post, nullptr, net_log);
   active_jobs_[server_id].insert(aux_job);
   task_runner_->PostTask(FROM_HERE,
                          base::Bind(&QuicStreamFactory::Job::RunAuxilaryJob,
@@ -807,11 +797,10 @@ bool QuicStreamFactory::OnResolution(
     return false;
   }
   for (const IPEndPoint& address : address_list) {
-    const IpAliasKey ip_alias_key(address, server_id.is_https());
-    if (!ContainsKey(ip_aliases_, ip_alias_key))
+    if (!ContainsKey(ip_aliases_, address))
       continue;
 
-    const SessionSet& sessions = ip_aliases_[ip_alias_key];
+    const SessionSet& sessions = ip_aliases_[address];
     for (QuicChromiumClientSession* session : sessions) {
       if (!session->CanPool(server_id.host(), server_id.privacy_mode()))
         continue;
@@ -941,12 +930,10 @@ bool QuicStreamFactory::OnHandshakeConfirmed(QuicChromiumClientSession* session,
     return false;
   }
 
-  if (http_server_properties_) {
-    // We mark it as recently broken, which means that 0-RTT will be disabled
-    // but we'll still race.
-    http_server_properties_->MarkAlternativeServiceRecentlyBroken(
-        AlternativeService(QUIC, session->server_id().host(), port));
-  }
+  // We mark it as recently broken, which means that 0-RTT will be disabled
+  // but we'll still race.
+  http_server_properties_->MarkAlternativeServiceRecentlyBroken(
+      AlternativeService(QUIC, session->server_id().host(), port));
 
   bool was_quic_disabled = IsQuicDisabled(port);
   ++number_of_lossy_connections_[port];
@@ -992,11 +979,10 @@ void QuicStreamFactory::OnSessionGoingAway(QuicChromiumClientSession* session) {
   }
   ProcessGoingAwaySession(session, all_sessions_[session], false);
   if (!aliases.empty()) {
-    const IpAliasKey ip_alias_key(session->connection()->peer_address(),
-                                  aliases.begin()->is_https());
-    ip_aliases_[ip_alias_key].erase(session);
-    if (ip_aliases_[ip_alias_key].empty()) {
-      ip_aliases_.erase(ip_alias_key);
+    const IPEndPoint peer_address = session->connection()->peer_address();
+    ip_aliases_[peer_address].erase(session);
+    if (ip_aliases_[peer_address].empty()) {
+      ip_aliases_.erase(peer_address);
     }
   }
   session_aliases_.erase(session);
@@ -1061,7 +1047,7 @@ void QuicStreamFactory::MaybeDisableQuic(QuicChromiumClientSession* session) {
 }
 
 void QuicStreamFactory::OnSessionClosed(QuicChromiumClientSession* session) {
-  DCHECK_EQ(0u, session->GetNumOpenStreams());
+  DCHECK_EQ(0u, session->GetNumActiveStreams());
   MaybeDisableQuic(session);
   OnSessionGoingAway(session);
   delete session;
@@ -1082,11 +1068,10 @@ void QuicStreamFactory::OnSessionConnectTimeout(
     return;
   }
 
-  const IpAliasKey ip_alias_key(session->connection()->peer_address(),
-                                aliases.begin()->is_https());
-  ip_aliases_[ip_alias_key].erase(session);
-  if (ip_aliases_[ip_alias_key].empty()) {
-    ip_aliases_.erase(ip_alias_key);
+  const IPEndPoint peer_address = session->connection()->peer_address();
+  ip_aliases_[peer_address].erase(session);
+  if (ip_aliases_[peer_address].empty()) {
+    ip_aliases_.erase(peer_address);
   }
   QuicServerId server_id = *aliases.begin();
   session_aliases_.erase(session);
@@ -1250,7 +1235,7 @@ int QuicStreamFactory::CreateSession(const QuicServerId& server_id,
   }
 
   socket->GetLocalAddress(&local_address_);
-  if (check_persisted_supports_quic_ && http_server_properties_) {
+  if (check_persisted_supports_quic_) {
     check_persisted_supports_quic_ = false;
     IPAddressNumber last_address;
     if (http_server_properties_->GetSupportsQuic(&last_address) &&
@@ -1269,8 +1254,7 @@ int QuicStreamFactory::CreateSession(const QuicServerId& server_id,
 
   QuicConnection* connection = new QuicConnection(
       connection_id, addr, helper_.get(), packet_writer_factory,
-      true /* owns_writer */, Perspective::IS_CLIENT, server_id.is_https(),
-      supported_versions_);
+      true /* owns_writer */, Perspective::IS_CLIENT, supported_versions_);
   connection->SetMaxPacketLength(max_packet_length_);
 
   InitializeCachedStateInCryptoConfig(server_id, server_info);
@@ -1286,7 +1270,7 @@ int QuicStreamFactory::CreateSession(const QuicServerId& server_id,
     config.SetInitialRoundTripTimeUsToSend(static_cast<uint32>(srtt));
   config.SetBytesForConnectionIdToSend(0);
 
-  if (quic_server_info_factory_ && !server_info) {
+  if (quic_server_info_factory_.get() && !server_info) {
     // Start the disk cache loading so that we can persist the newer QUIC server
     // information and/or inform the disk cache that we have reused
     // |server_info|.
@@ -1298,8 +1282,9 @@ int QuicStreamFactory::CreateSession(const QuicServerId& server_id,
   // ownership to QuicChromiumClientSession.
   scoped_ptr<SocketPerformanceWatcher> socket_performance_watcher;
   if (socket_performance_watcher_factory_) {
-    socket_performance_watcher = socket_performance_watcher_factory_
-                                     ->CreateUDPSocketPerformanceWatcher();
+    socket_performance_watcher =
+        socket_performance_watcher_factory_->CreateSocketPerformanceWatcher(
+            SocketPerformanceWatcherFactory::PROTOCOL_QUIC);
   }
 
   *session = new QuicChromiumClientSession(
@@ -1332,16 +1317,13 @@ void QuicStreamFactory::ActivateSession(const QuicServerId& server_id,
   UMA_HISTOGRAM_COUNTS("Net.QuicActiveSessions", active_sessions_.size());
   active_sessions_[server_id] = session;
   session_aliases_[session].insert(server_id);
-  const IpAliasKey ip_alias_key(session->connection()->peer_address(),
-                                server_id.is_https());
-  DCHECK(!ContainsKey(ip_aliases_[ip_alias_key], session));
-  ip_aliases_[ip_alias_key].insert(session);
+  const IPEndPoint peer_address = session->connection()->peer_address();
+  DCHECK(!ContainsKey(ip_aliases_[peer_address], session));
+  ip_aliases_[peer_address].insert(session);
 }
 
 int64 QuicStreamFactory::GetServerNetworkStatsSmoothedRttInMicroseconds(
     const QuicServerId& server_id) const {
-  if (!http_server_properties_)
-    return 0;
   const ServerNetworkStats* stats =
       http_server_properties_->GetServerNetworkStats(
           server_id.host_port_pair());
@@ -1352,8 +1334,6 @@ int64 QuicStreamFactory::GetServerNetworkStatsSmoothedRttInMicroseconds(
 
 bool QuicStreamFactory::WasQuicRecentlyBroken(
     const QuicServerId& server_id) const {
-  if (!http_server_properties_)
-    return false;
   const AlternativeService alternative_service(QUIC,
                                                server_id.host_port_pair());
   return http_server_properties_->WasAlternativeServiceRecentlyBroken(
@@ -1380,36 +1360,30 @@ void QuicStreamFactory::InitializeCachedStateInCryptoConfig(
   if (!cached->IsEmpty())
     return;
 
-  if (http_server_properties_) {
-    DCHECK(quic_supported_servers_at_startup_initialzied_);
-    // TODO(rtenneti): Delete the following histogram after collecting stats.
-    // If the AlternativeServiceMap contained an entry for this host, check if
-    // the disk cache contained an entry for it.
-    if (ContainsKey(quic_supported_servers_at_startup_,
-                    server_id.host_port_pair())) {
-      UMA_HISTOGRAM_BOOLEAN(
-          "Net.QuicServerInfo.ExpectConfigMissingFromDiskCache",
-          server_info->state().server_config.empty());
-    }
+  // TODO(rtenneti): Delete the following histogram after collecting stats.
+  // If the AlternativeServiceMap contained an entry for this host, check if
+  // the disk cache contained an entry for it.
+  if (ContainsKey(quic_supported_servers_at_startup_,
+                  server_id.host_port_pair())) {
+    UMA_HISTOGRAM_BOOLEAN("Net.QuicServerInfo.ExpectConfigMissingFromDiskCache",
+                          server_info->state().server_config.empty());
   }
 
-  if (!cached->Initialize(server_info->state().server_config,
-                          server_info->state().source_address_token,
-                          server_info->state().certs,
-                          server_info->state().server_config_sig,
-                          clock_->WallNow()))
-    return;
-
-  if (!server_id.is_https()) {
-    // Don't check the certificates for insecure QUIC.
-    cached->SetProofValid();
-  }
+  cached->Initialize(server_info->state().server_config,
+                     server_info->state().source_address_token,
+                     server_info->state().certs, "",
+                     server_info->state().server_config_sig, clock_->WallNow());
 }
 
-void QuicStreamFactory::InitializeQuicSupportedServersAtStartup() {
-  DCHECK(http_server_properties_);
-  DCHECK(!quic_supported_servers_at_startup_initialzied_);
-  quic_supported_servers_at_startup_initialzied_ = true;
+void QuicStreamFactory::MaybeInitialize() {
+  // We don't initialize data from HttpServerProperties in the constructor
+  // because HttpServerProperties has not yet initialized. We're guaranteed
+  // HttpServerProperties has been initialized by the first time a request is
+  // made.
+  if (has_initialized_data_)
+    return;
+
+  has_initialized_data_ = true;
   for (const std::pair<const HostPortPair, AlternativeServiceInfoVector>&
            key_value : http_server_properties_->alternative_service_map()) {
     for (const AlternativeServiceInfo& alternative_service_info :
@@ -1418,6 +1392,22 @@ void QuicStreamFactory::InitializeQuicSupportedServersAtStartup() {
         quic_supported_servers_at_startup_.insert(key_value.first);
         break;
       }
+    }
+  }
+
+  if (!store_server_configs_in_properties_)
+    return;
+  // Create a temporary QuicServerInfo object to deserialize and to populate the
+  // in-memory crypto server config cache.
+  scoped_ptr<QuicServerInfo> server_info;
+  CompletionCallback callback;
+  for (const auto& key_value :
+       http_server_properties_->quic_server_info_map()) {
+    const QuicServerId& server_id = key_value.first;
+    server_info.reset(quic_server_info_factory_->GetForServer(server_id));
+    if (server_info->WaitForDataReady(callback) == OK) {
+      DVLOG(1) << "Initialized server config for: " << server_id.ToString();
+      InitializeCachedStateInCryptoConfig(server_id, server_info);
     }
   }
 }

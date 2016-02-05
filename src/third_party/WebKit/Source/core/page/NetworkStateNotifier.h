@@ -27,8 +27,9 @@
 #define NetworkStateNotifier_h
 
 #include "core/CoreExport.h"
+#include "core/dom/ExecutionContext.h"
 #include "public/platform/WebConnectionType.h"
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/ThreadingPrimitives.h"
@@ -36,10 +37,8 @@
 
 namespace blink {
 
-class ExecutionContext;
-
 class CORE_EXPORT NetworkStateNotifier {
-    WTF_MAKE_NONCOPYABLE(NetworkStateNotifier); WTF_MAKE_FAST_ALLOCATED(NetworkStateNotifier);
+    WTF_MAKE_NONCOPYABLE(NetworkStateNotifier); USING_FAST_MALLOC(NetworkStateNotifier);
 public:
     class NetworkStateObserver {
     public:
@@ -91,6 +90,10 @@ public:
 
     // When true, setWebConnectionType calls are ignored and only setWebConnectionTypeForTest
     // can update the connection type. This is used for layout tests (see crbug.com/377736).
+    //
+    // Since this class is a singleton, tests must call this with false when completed to
+    // avoid indeterminate state across the test harness. When switching in or out of test
+    // mode, all state will be reset to default values.
     void setTestUpdatesOnly(bool);
     // Tests should call this as it will change the type regardless of the value of m_testUpdatesOnly.
     void setWebConnectionForTest(WebConnectionType, double maxBandwidthMbps);
@@ -109,7 +112,10 @@ private:
     void setWebConnectionImpl(WebConnectionType, double maxBandwidthMbps);
     void setMaxBandwidthImpl(double maxBandwidthMbps);
 
-    using ObserverListMap = HashMap<ExecutionContext*, OwnPtr<ObserverList>>;
+    // The ObserverListMap is cross-thread accessed, adding/removing Observers running
+    // within an ExecutionContext. Kept off-heap to ease cross-thread allocation and use;
+    // the observers are (already) responsible for explicitly unregistering while finalizing.
+    using ObserverListMap = HashMap<RawPtrWillBeUntracedMember<ExecutionContext>, OwnPtr<ObserverList>>;
 
     void notifyObserversOfConnectionChangeOnContext(WebConnectionType, double maxBandwidthMbps, ExecutionContext*);
 

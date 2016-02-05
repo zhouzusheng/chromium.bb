@@ -317,23 +317,6 @@ PassRefPtr<StringImpl> StringImpl::createUninitialized(unsigned length, UChar*& 
     return adoptRef(new (string) StringImpl(length));
 }
 
-PassRefPtr<StringImpl> StringImpl::reallocate(PassRefPtr<StringImpl> originalString, unsigned length)
-{
-    ASSERT(originalString->hasOneRef());
-
-    if (!length)
-        return empty();
-
-    bool is8Bit = originalString->is8Bit();
-    // Same as createUninitialized() except here we use realloc.
-    size_t size = is8Bit ? allocationSize<LChar>(length) : allocationSize<UChar>(length);
-    originalString->~StringImpl();
-    StringImpl* string = static_cast<StringImpl*>(Partitions::bufferRealloc(originalString.leakRef(), size));
-    if (is8Bit)
-        return adoptRef(new (string) StringImpl(length, Force8BitConstructor));
-    return adoptRef(new (string) StringImpl(length));
-}
-
 static StaticStringsTable& staticStrings()
 {
     DEFINE_STATIC_LOCAL(StaticStringsTable, staticStrings, ());
@@ -699,7 +682,7 @@ static PassRefPtr<StringImpl> caseConvert(const UChar* source16, size_t length, 
         targetLength = converter(data16, targetLength, source16, length, locale, &status);
         if (U_SUCCESS(status)) {
             if (length > 0)
-                output->truncateAssumingIsolated(targetLength);
+                return output->substring(0, targetLength);
             return output.release();
         }
         if (status != U_BUFFER_OVERFLOW_ERROR)

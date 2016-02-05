@@ -9,6 +9,7 @@
  */
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/trace_event.h"
 #include "webrtc/common_types.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_coding/codecs/interface/video_codec_interface.h"
@@ -16,9 +17,8 @@
 #include "webrtc/modules/video_coding/main/source/jitter_buffer.h"
 #include "webrtc/modules/video_coding/main/source/packet.h"
 #include "webrtc/modules/video_coding/main/source/video_coding_impl.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/trace_event.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/logging.h"
 
 // #define DEBUG_DECODER_BIT_STREAM
 
@@ -45,7 +45,7 @@ VideoReceiver::VideoReceiver(Clock* clock, EventFactory* event_factory)
       _scheduleKeyRequest(false),
       max_nack_list_size_(0),
       pre_decode_image_callback_(NULL),
-      _codecDataBase(NULL),
+      _codecDataBase(nullptr, nullptr),
       _receiveStatsTimer(1000, clock_),
       _retransmissionTimer(10, clock_),
       _keyRequestTimer(500, clock_) {
@@ -302,7 +302,12 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
 
     if (pre_decode_image_callback_) {
       EncodedImage encoded_image(frame->EncodedImage());
-      pre_decode_image_callback_->Encoded(encoded_image, NULL, NULL);
+      int qp = -1;
+      if (qp_parser_.GetQp(*frame, &qp)) {
+        encoded_image.qp_ = qp;
+      }
+      pre_decode_image_callback_->Encoded(
+          encoded_image, frame->CodecSpecific(), NULL);
     }
 
 #ifdef DEBUG_DECODER_BIT_STREAM

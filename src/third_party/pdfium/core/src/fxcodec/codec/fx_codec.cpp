@@ -4,13 +4,13 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fxcodec/fx_codec.h"
+#include "core/include/fxcodec/fx_codec.h"
 
 #include <cmath>
 
-#include "../../../../third_party/base/logging.h"
-#include "../../../include/fxcrt/fx_safe_types.h"
 #include "codec_int.h"
+#include "core/include/fxcrt/fx_safe_types.h"
+#include "third_party/base/logging.h"
 
 CCodec_ModuleMgr::CCodec_ModuleMgr()
     : m_pBasicModule(new CCodec_BasicModule),
@@ -24,8 +24,7 @@ CCodec_ModuleMgr::CCodec_ModuleMgr()
 CCodec_ScanlineDecoder::ImageDataCache::ImageDataCache(int width,
                                                        int height,
                                                        FX_DWORD pitch)
-    : m_Width(width), m_Height(height), m_Pitch(pitch), m_nCachedLines(0) {
-}
+    : m_Width(width), m_Height(height), m_Pitch(pitch), m_nCachedLines(0) {}
 
 CCodec_ScanlineDecoder::ImageDataCache::~ImageDataCache() {
 }

@@ -51,6 +51,7 @@
 #include "net/url_request/url_request_redirect_job.h"
 #include "net/url_request/url_request_throttler_manager.h"
 #include "net/websockets/websocket_handshake_stream_base.h"
+#include "url/origin.h"
 
 static const char kAvailDictionaryHeader[] = "Avail-Dictionary";
 
@@ -277,11 +278,9 @@ void URLRequestHttpJob::Start() {
 }
 
 void URLRequestHttpJob::Kill() {
-  if (!transaction_.get())
-    return;
-
   weak_factory_.InvalidateWeakPtrs();
-  DestroyTransaction();
+  if (transaction_)
+    DestroyTransaction();
   URLRequestJob::Kill();
 }
 
@@ -481,6 +480,9 @@ void URLRequestHttpJob::MaybeStartTransactionInternal(int result) {
 }
 
 void URLRequestHttpJob::StartTransactionInternal() {
+  // This should only be called while the request's status is IO_PENDING.
+  DCHECK_EQ(URLRequestStatus::IO_PENDING, request_->status().status());
+
   // NOTE: This method assumes that request_info_ is already setup properly.
 
   // If we already have a transaction, then we should restart the transaction
@@ -661,8 +663,8 @@ void URLRequestHttpJob::DoLoadCookies() {
   // TODO(mkwst): Drop this `if` once we decide whether or not to ship
   // first-party cookies: https://crbug.com/459154
   if (network_delegate() &&
-      network_delegate()->FirstPartyOnlyCookieExperimentEnabled())
-    options.set_first_party_url(request_->first_party_for_cookies());
+      network_delegate()->AreExperimentalCookieFeaturesEnabled())
+    options.set_first_party(url::Origin(request_->first_party_for_cookies()));
   else
     options.set_include_first_party_only();
 
@@ -749,6 +751,8 @@ void URLRequestHttpJob::SaveNextCookie() {
     CookieOptions options;
     options.set_include_httponly();
     options.set_server_time(response_date_);
+    if (network_delegate()->AreExperimentalCookieFeaturesEnabled())
+      options.set_enforce_prefixes();
 
     CookieStore::SetCookiesCallback callback(base::Bind(
         &URLRequestHttpJob::OnCookieSaved, weak_factory_.GetWeakPtr(),
@@ -1330,7 +1334,8 @@ bool URLRequestHttpJob::ShouldFixMismatchedContentLength(int rv) const {
   return false;
 }
 
-bool URLRequestHttpJob::ReadRawData(IOBuffer* buf, int buf_size,
+bool URLRequestHttpJob::ReadRawData(IOBuffer* buf,
+                                    int buf_size,
                                     int* bytes_read) {
   DCHECK_NE(buf_size, 0);
   DCHECK(bytes_read);

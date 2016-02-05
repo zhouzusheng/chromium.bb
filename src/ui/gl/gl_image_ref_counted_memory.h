@@ -12,9 +12,9 @@ namespace base {
 class RefCountedMemory;
 }
 
-namespace gfx {
+namespace gl {
 
-class GL_EXPORT GLImageRefCountedMemory : public GLImageMemory {
+class GL_EXPORT GLImageRefCountedMemory : public gl::GLImageMemory {
  public:
   GLImageRefCountedMemory(const gfx::Size& size, unsigned internalformat);
 
@@ -36,6 +36,6 @@ class GL_EXPORT GLImageRefCountedMemory : public GLImageMemory {
   DISALLOW_COPY_AND_ASSIGN(GLImageRefCountedMemory);
 };
 
-}  // namespace gfx
+}  // namespace gl
 
 #endif  // UI_GL_GL_IMAGE_REF_COUNTED_MEMORY_H_

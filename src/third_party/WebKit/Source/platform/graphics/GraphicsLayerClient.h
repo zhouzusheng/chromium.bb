@@ -65,9 +65,11 @@ public:
     // Callback for when compositor animation started.
     virtual void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime, int group) { }
 
-    virtual void notifyTextPainted() { }
+    virtual void notifyFirstPaint() { }
+    virtual void notifyFirstTextPaint() { }
+    virtual void notifyFirstImagePaint() { }
 
-    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) const = 0;
+    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect* inClip) const = 0;
     virtual bool isTrackingPaintInvalidations() const { return false; }
 
     virtual String debugName(const GraphicsLayer*) = 0;

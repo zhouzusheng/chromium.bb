@@ -81,15 +81,6 @@ class StreamInterfaceChannel : public rtc::StreamInterface {
 //     which translates it into packet writes on channel_.
 class DtlsTransportChannelWrapper : public TransportChannelImpl {
  public:
-    enum State {
-      STATE_NONE,      // No state or rejected.
-      STATE_OFFERED,   // Our identity has been set.
-      STATE_ACCEPTED,  // The other side sent a fingerprint.
-      STATE_STARTED,   // We are negotiating.
-      STATE_OPEN,      // Negotiation complete.
-      STATE_CLOSED     // Connection closed.
-    };
-
   // The parameters here are:
   // transport -- the DtlsTransport that created us
   // channel -- the TransportChannel we are wrapping
@@ -104,9 +95,12 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   rtc::scoped_refptr<rtc::RTCCertificate> GetLocalCertificate() const override;
 
   bool SetRemoteFingerprint(const std::string& digest_alg,
-                            const uint8* digest,
+                            const uint8_t* digest,
                             size_t digest_len) override;
-  bool IsDtlsActive() const override { return dtls_state_ != STATE_NONE; }
+
+  // Returns false if no local certificate was set, or if the peer doesn't
+  // support DTLS.
+  bool IsDtlsActive() const override { return dtls_active_; }
 
   // Called to send a packet (via DTLS, if turned on).
   int SendPacket(const char* data,
@@ -141,7 +135,7 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   bool SetSslRole(rtc::SSLRole role) override;
 
   // Find out which DTLS cipher was negotiated
-  bool GetSslCipherSuite(uint16_t* cipher) override;
+  bool GetSslCipherSuite(int* cipher) override;
 
   // Once DTLS has been established, this method retrieves the certificate in
   // use by the remote peer, for use in external identity verification.
@@ -152,10 +146,10 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   // encryption. DTLS-SRTP uses this to extract the needed SRTP keys.
   // See the SSLStreamAdapter documentation for info on the specific parameters.
   bool ExportKeyingMaterial(const std::string& label,
-                            const uint8* context,
+                            const uint8_t* context,
                             size_t context_len,
                             bool use_context,
-                            uint8* result,
+                            uint8_t* result,
                             size_t result_len) override {
     return (dtls_.get()) ? dtls_->ExportKeyingMaterial(label, context,
                                                        context_len,
@@ -170,7 +164,7 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   TransportChannelState GetState() const override {
     return channel_->GetState();
   }
-  void SetIceTiebreaker(uint64 tiebreaker) override {
+  void SetIceTiebreaker(uint64_t tiebreaker) override {
     channel_->SetIceTiebreaker(tiebreaker);
   }
   void SetIceCredentials(const std::string& ice_ufrag,
@@ -209,6 +203,8 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
   void OnWritableState(TransportChannel* channel);
   void OnReadPacket(TransportChannel* channel, const char* data, size_t size,
                     const rtc::PacketTime& packet_time, int flags);
+  void OnSentPacket(TransportChannel* channel,
+                    const rtc::SentPacket& sent_packet);
   void OnReadyToSend(TransportChannel* channel);
   void OnReceivingState(TransportChannel* channel);
   void OnDtlsEvent(rtc::StreamInterface* stream_, int sig, int err);
@@ -223,11 +219,12 @@ class DtlsTransportChannelWrapper : public TransportChannelImpl {
 
   Transport* transport_;  // The transport_ that created us.
   rtc::Thread* worker_thread_;  // Everything should occur on this thread.
-  TransportChannelImpl* channel_;  // Underlying channel, owned by transport_.
+  // Underlying channel, owned by transport_.
+  TransportChannelImpl* const channel_;
   rtc::scoped_ptr<rtc::SSLStreamAdapter> dtls_;  // The DTLS stream
   StreamInterfaceChannel* downward_;  // Wrapper for channel_, owned by dtls_.
   std::vector<std::string> srtp_ciphers_;  // SRTP ciphers to use with DTLS.
-  State dtls_state_;
+  bool dtls_active_ = false;
   rtc::scoped_refptr<rtc::RTCCertificate> local_certificate_;
   rtc::SSLRole ssl_role_;
   rtc::SSLProtocolVersion ssl_max_version_;

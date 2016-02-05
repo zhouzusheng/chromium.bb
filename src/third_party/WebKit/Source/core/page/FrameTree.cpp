@@ -144,7 +144,7 @@ AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
     const int framePathSuffixLength = 3;
 
     // Find the nearest parent that has a frame with a path in it.
-    Vector<Frame*, 16> chain;
+    WillBeHeapVector<RawPtrWillBeMember<Frame>, 16> chain;
     Frame* frame;
     for (frame = m_thisFrame; frame; frame = frame->tree().parent()) {
         if (frame->tree().uniqueName().startsWith(framePathPrefix))
@@ -195,24 +195,16 @@ Frame* FrameTree::scopedChild(const AtomicString& name) const
     return nullptr;
 }
 
-inline unsigned FrameTree::scopedChildCount(TreeScope* scope) const
-{
-    unsigned scopedCount = 0;
-    for (Frame* child = firstChild(); child; child = child->tree().nextSibling()) {
-        if (child->client()->inShadowTree())
-            continue;
-        scopedCount++;
-    }
-
-    return scopedCount;
-}
-
 unsigned FrameTree::scopedChildCount() const
 {
     if (m_scopedChildCount == invalidChildCount) {
-        // FIXME: implement a TreeScope for RemoteFrames.
-        TreeScope* scope = m_thisFrame->isLocalFrame() ? toLocalFrame(m_thisFrame)->document() : nullptr;
-        m_scopedChildCount = scopedChildCount(scope);
+        unsigned scopedCount = 0;
+        for (Frame* child = firstChild(); child; child = child->tree().nextSibling()) {
+            if (child->client()->inShadowTree())
+                continue;
+            scopedCount++;
+        }
+        m_scopedChildCount = scopedCount;
     }
     return m_scopedChildCount;
 }
@@ -274,7 +266,7 @@ Frame* FrameTree::find(const AtomicString& name) const
 
     // Search the entire tree of each of the other pages in this namespace.
     // FIXME: Is random order OK?
-    const HashSet<Page*>& pages = Page::ordinaryPages();
+    const WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<Page>>& pages = Page::ordinaryPages();
     for (const Page* otherPage : pages) {
         if (otherPage != page) {
             for (Frame* frame = otherPage->mainFrame(); frame; frame = frame->tree().traverseNext()) {

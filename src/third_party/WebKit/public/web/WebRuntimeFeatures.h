@@ -54,10 +54,10 @@ public:
     // be called before blink::initalize(). We can't create WebString objects
     // before blink::initialize().
     BLINK_EXPORT static void enableFeatureFromString(const std::string& name, bool enable);
-    // TODO(bashi): Remove.
-    BLINK_EXPORT static void enableFeatureFromString(const WebString& name, bool enable);
 
     BLINK_EXPORT static void enableApplicationCache(bool);
+
+    BLINK_EXPORT static void enableAudioOutputDevices(bool);
 
     BLINK_EXPORT static void enableDatabase(bool);
 
@@ -75,11 +75,12 @@ public:
     BLINK_EXPORT static void enablePrefixedEncryptedMedia(bool);
     BLINK_EXPORT static bool isPrefixedEncryptedMediaEnabled();
 
-    BLINK_EXPORT static void enableBleedingEdgeFastPaths(bool);
-
     BLINK_EXPORT static void enableCompositorAnimationTimelines(bool);
 
     BLINK_EXPORT static void enableExperimentalCanvasFeatures(bool);
+
+    BLINK_EXPORT static void enableExperimentalFramework(bool);
+    BLINK_EXPORT static bool isExperimentalFrameworkEnabled();
 
     BLINK_EXPORT static void enableFastMobileScrolling(bool);
 

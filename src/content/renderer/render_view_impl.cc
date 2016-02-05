@@ -38,6 +38,7 @@
 #include "content/child/v8_value_converter_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/content_constants_internal.h"
+#include "content/common/content_switches_internal.h"
 #include "content/common/database_messages.h"
 #include "content/common/dom_storage/dom_storage_types.h"
 #include "content/common/drag_messages.h"
@@ -128,7 +129,6 @@
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
-#include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebColorSuggestion.h"
 #include "third_party/WebKit/public/web/WebDOMEvent.h"
 #include "third_party/WebKit/public/web/WebDOMMessageEvent.h"
@@ -151,7 +151,6 @@
 #include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebNetworkStateNotifier.h"
-#include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebPageImportanceSignals.h"
 #include "third_party/WebKit/public/web/WebPlugin.h"
 #include "third_party/WebKit/public/web/WebPluginAction.h"
@@ -217,7 +216,6 @@ using blink::WebApplicationCacheHost;
 using blink::WebApplicationCacheHostClient;
 using blink::WebCString;
 using blink::WebColor;
-using blink::WebColorName;
 using blink::WebConsoleMessage;
 using blink::WebData;
 using blink::WebDataSource;
@@ -640,8 +638,10 @@ RenderViewImpl::RenderViewImpl(CompositorDependencies* compositor_deps,
 #if defined(OS_ANDROID)
       top_controls_constraints_(TOP_CONTROLS_STATE_BOTH),
 #endif
+      has_focus_(false),
       has_scrolled_focused_editable_node_into_rect_(false),
       main_render_frame_(nullptr),
+      frame_widget_(nullptr),
       speech_recognition_dispatcher_(NULL),
       mouse_lock_dispatcher_(NULL),
 #if defined(OS_ANDROID)
@@ -656,8 +656,7 @@ RenderViewImpl::RenderViewImpl(CompositorDependencies* compositor_deps,
       pepper_last_mouse_event_target_(NULL),
 #endif
       enumeration_completion_id_(0),
-      session_storage_namespace_id_(params.session_storage_namespace_id),
-      page_scale_factor_is_one_(true) {
+      session_storage_namespace_id_(params.session_storage_namespace_id) {
 }
 
 void RenderViewImpl::Initialize(const ViewMsg_New_Params& params,
@@ -688,8 +687,9 @@ void RenderViewImpl::Initialize(const ViewMsg_New_Params& params,
     stats_collection_observer_.reset(new StatsCollectionObserver(this));
 
   if (params.main_frame_routing_id != MSG_ROUTING_NONE) {
-    main_render_frame_ =
-        RenderFrameImpl::CreateMainFrame(this, params.main_frame_routing_id);
+    main_render_frame_ = RenderFrameImpl::CreateMainFrame(
+        this, params.main_frame_routing_id, params.main_frame_widget_routing_id,
+        params.hidden, screen_info(), compositor_deps_);
   }
 
   if (params.proxy_routing_id != MSG_ROUTING_NONE) {
@@ -741,8 +741,7 @@ void RenderViewImpl::Initialize(const ViewMsg_New_Params& params,
   // completing initialization.  Otherwise, we can finish it now.
   if (opener_id_ == MSG_ROUTING_NONE)
     did_show_ = true;
-
-  webview()->setDeviceScaleFactor(device_scale_factor_);
+  UpdateDeviceScaleFactor();
   webview()->setDisplayMode(display_mode_);
   webview()->settings()->setPreferCompositingToLCDTextEnabled(
       PreferCompositingToLCDText(compositor_deps_, device_scale_factor_));
@@ -755,9 +754,6 @@ void RenderViewImpl::Initialize(const ViewMsg_New_Params& params,
 
   if (switches::IsTouchDragDropEnabled())
     webview()->settings()->setTouchDragDropEnabled(true);
-
-  if (switches::IsTouchEditingEnabled())
-    webview()->settings()->setTouchEditingEnabled(true);
 
   WebSettings::SelectionStrategyType selection_strategy =
       WebSettings::SelectionStrategyType::Character;
@@ -800,7 +796,9 @@ void RenderViewImpl::Initialize(const ViewMsg_New_Params& params,
   // along with the RenderView automatically.
   mouse_lock_dispatcher_ = new RenderViewMouseLockDispatcher(this);
 
-  history_controller_.reset(new HistoryController(this));
+  // We don't use HistoryController in OOPIF-enabled modes.
+  if (!SiteIsolationPolicy::UseSubframeNavigationEntries())
+    history_controller_.reset(new HistoryController(this));
 
   new IdleUserDetector(this);
 
@@ -823,6 +821,8 @@ void RenderViewImpl::Initialize(const ViewMsg_New_Params& params,
 }
 
 RenderViewImpl::~RenderViewImpl() {
+  DCHECK(!frame_widget_);
+
   for (BitmapMap::iterator it = disambiguation_bitmaps_.begin();
        it != disambiguation_bitmaps_.end();
        ++it)
@@ -1047,8 +1047,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 
   settings->setSupportsMultipleWindows(prefs.supports_multiple_windows);
 
-  settings->setInertVisualViewport(prefs.inert_visual_viewport);
-
   // TODO(bokan): Remove once Blink side is gone.
   settings->setInvertViewportScrollOrder(true);
 
@@ -1132,13 +1130,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 #if defined(OS_MACOSX)
   settings->setDoubleTapToZoomEnabled(true);
   web_view->setMaximumLegibleScale(prefs.default_maximum_page_scale_factor);
-#endif
-
-#if !defined(OS_ANDROID) && !defined(OS_MACOSX)
-  // On platforms where the pinch viewport and the layout viewport can
-  // both show scrollbars, hide pinch scrollbars when we are near minimum
-  // page scale. (See http://crbug.com/446411 and http://crbug.com/515746.)
-  settings->setHidePinchScrollbarsNearMinScale(true);
 #endif
 }
 
@@ -1285,6 +1276,11 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
   if (main_frame && main_frame->isWebLocalFrame())
     GetContentClient()->SetActiveURL(main_frame->document().url());
 
+  // Input IPC messages must not be processed if the RenderView is in
+  // swapped out state.
+  if (is_swapped_out_ && IPC_MESSAGE_ID_CLASS(message.type()) == InputMsgStart)
+    return false;
+
   base::ObserverListBase<RenderViewObserver>::Iterator it(&observers_);
   RenderViewObserver* observer;
   while ((observer = it.GetNext()) != NULL)
@@ -1303,7 +1299,7 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SaveImageAt, OnSaveImageAt)
     IPC_MESSAGE_HANDLER(ViewMsg_Find, OnFind)
     IPC_MESSAGE_HANDLER(ViewMsg_StopFinding, OnStopFinding)
-    IPC_MESSAGE_HANDLER(ViewMsg_ResetPageScale, OnResetPageScale)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetPageScale, OnSetPageScale)
     IPC_MESSAGE_HANDLER(ViewMsg_Zoom, OnZoom)
     IPC_MESSAGE_HANDLER(ViewMsg_SetZoomLevelForLoadingURL,
                         OnSetZoomLevelForLoadingURL)
@@ -1476,6 +1472,9 @@ void RenderViewImpl::OnSetInLiveResize(bool in_live_resize) {
 ///////////////////////////////////////////////////////////////////////////////
 
 void RenderViewImpl::SendUpdateState() {
+  // We don't use this path in OOPIF-enabled modes.
+  DCHECK(!SiteIsolationPolicy::UseSubframeNavigationEntries());
+
   HistoryEntry* entry = history_controller_->GetCurrentEntry();
   if (!entry)
     return;
@@ -1580,14 +1579,9 @@ WebView* RenderViewImpl::createView(WebLocalFrame* creator,
   for (size_t i = 0; i < features.additionalFeatures.size(); ++i)
     params.additional_features.push_back(features.additionalFeatures[i]);
 
-  int32 routing_id = MSG_ROUTING_NONE;
-  int32 main_frame_routing_id = MSG_ROUTING_NONE;
-  int64 cloned_session_storage_namespace_id = 0;
-
-  RenderThread::Get()->Send(
-      new ViewHostMsg_CreateWindow(params, &routing_id, &main_frame_routing_id,
-                                   &cloned_session_storage_namespace_id));
-  if (routing_id == MSG_ROUTING_NONE)
+  ViewHostMsg_CreateWindow_Reply reply;
+  RenderThread::Get()->Send(new ViewHostMsg_CreateWindow(params, &reply));
+  if (reply.route_id == MSG_ROUTING_NONE)
     return NULL;
 
   WebUserGestureIndicator::consumeUserGesture();
@@ -1615,14 +1609,14 @@ WebView* RenderViewImpl::createView(WebLocalFrame* creator,
   view_params.window_was_created_with_opener = true;
   view_params.renderer_preferences = renderer_preferences_;
   view_params.web_preferences = webkit_preferences_;
-  view_params.view_id = routing_id;
-  view_params.main_frame_routing_id = main_frame_routing_id;
+  view_params.view_id = reply.route_id;
+  view_params.main_frame_routing_id = reply.main_frame_route_id;
+  view_params.main_frame_widget_routing_id = reply.main_frame_widget_route_id;
   view_params.session_storage_namespace_id =
-      cloned_session_storage_namespace_id;
+      reply.cloned_session_storage_namespace_id;
   view_params.swapped_out = false;
   // WebCore will take care of setting the correct name.
   view_params.replicated_frame_state = FrameReplicationState();
-  view_params.proxy_routing_id = MSG_ROUTING_NONE;
   view_params.hidden = (params.disposition == NEW_BACKGROUND_TAB);
   view_params.never_visible = never_visible;
   view_params.next_page_id = 1;
@@ -1699,6 +1693,12 @@ void RenderViewImpl::FrameDidStopLoading(WebFrame* frame) {
     DidStopLoadingIcons();
     FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidStopLoading());
   }
+}
+
+void RenderViewImpl::AttachWebFrameWidget(blink::WebWidget* frame_widget) {
+  // The previous WebFrameWidget must already be detached by CloseForFrame().
+  DCHECK(!frame_widget_);
+  frame_widget_ = frame_widget;
 }
 
 void RenderViewImpl::SetZoomLevel(double zoom_level) {
@@ -1852,6 +1852,11 @@ gfx::RectF RenderViewImpl::ClientRectToPhysicalWindowRect(
 }
 
 void RenderViewImpl::StartNavStateSyncTimerIfNecessary() {
+  // TODO(creis): Move this to RenderFrameHost.  In the meantime, we'll ignore
+  // state changes between navigation events in OOPIF-enabled modes.
+  if (SiteIsolationPolicy::UseSubframeNavigationEntries())
+    return;
+
   int delay;
   if (send_content_state_immediately_)
     delay = 0;
@@ -1983,14 +1988,6 @@ void RenderViewImpl::didFocus() {
   if (WebUserGestureIndicator::isProcessingUserGesture() &&
       !RenderThreadImpl::current()->layout_test_mode()) {
     Send(new ViewHostMsg_Focus(routing_id_));
-  }
-}
-
-void RenderViewImpl::didBlur() {
-  // TODO(jcivelli): see TODO above in didFocus().
-  if (WebUserGestureIndicator::isProcessingUserGesture() &&
-      !RenderThreadImpl::current()->layout_test_mode()) {
-    Send(new ViewHostMsg_Blur(routing_id_));
   }
 }
 
@@ -2472,10 +2469,10 @@ void RenderViewImpl::OnFindMatchRects(int current_version) {
 }
 #endif
 
-void RenderViewImpl::OnResetPageScale() {
+void RenderViewImpl::OnSetPageScale(float page_scale_factor) {
   if (!webview())
     return;
-  webview()->setPageScaleFactor(1);
+  webview()->setPageScaleFactor(page_scale_factor);
 }
 
 void RenderViewImpl::OnZoom(PageZoom zoom) {
@@ -2709,8 +2706,7 @@ void RenderViewImpl::OnSetRendererPrefs(
 
 #if defined(USE_DEFAULT_RENDER_THEME)
   if (renderer_prefs.use_custom_colors) {
-    WebColorName name = blink::WebColorWebkitFocusRingColor;
-    blink::setNamedColors(&name, &renderer_prefs.focus_ring_color, 1);
+    blink::setFocusRingColor(renderer_prefs.focus_ring_color);
     blink::setCaretBlinkInterval(renderer_prefs.caret_blink_interval);
 
     if (webview()) {
@@ -2962,6 +2958,12 @@ void RenderViewImpl::OnPluginImeCompositionCompleted(const base::string16& text,
 }
 #endif  // OS_MACOSX
 
+void RenderViewImpl::CloseForFrame() {
+  DCHECK(frame_widget_);
+  frame_widget_->close();
+  frame_widget_ = nullptr;
+}
+
 void RenderViewImpl::Close() {
   // We need to grab a pointer to the doomed WebView before we destroy it.
   WebView* doomed = webview();
@@ -3078,6 +3080,14 @@ GURL RenderViewImpl::GetURLForGraphicsContext3D() {
 }
 
 void RenderViewImpl::OnSetFocus(bool enable) {
+  // This message must always be received when the main frame is a
+  // WebLocalFrame.
+  CHECK(webview()->mainFrame()->isWebLocalFrame());
+  SetFocus(enable);
+}
+
+void RenderViewImpl::SetFocus(bool enable) {
+  has_focus_ = enable;
   RenderWidget::OnSetFocus(enable);
 
 #if defined(ENABLE_PLUGINS)
@@ -3192,7 +3202,7 @@ void RenderViewImpl::OnImeConfirmComposition(
 void RenderViewImpl::SetDeviceScaleFactor(float device_scale_factor) {
   RenderWidget::SetDeviceScaleFactor(device_scale_factor);
   if (webview()) {
-    webview()->setDeviceScaleFactor(device_scale_factor);
+    UpdateDeviceScaleFactor();
     webview()->settings()->setPreferCompositingToLCDTextEnabled(
         PreferCompositingToLCDText(compositor_deps_, device_scale_factor_));
   }
@@ -3380,12 +3390,9 @@ void RenderViewImpl::zoomLevelChanged() {
 void RenderViewImpl::pageScaleFactorChanged() {
   if (!webview())
     return;
-  bool page_scale_factor_is_one = webview()->pageScaleFactor() == 1;
-  if (page_scale_factor_is_one == page_scale_factor_is_one_)
-    return;
-  page_scale_factor_is_one_ = page_scale_factor_is_one;
-  Send(new ViewHostMsg_PageScaleFactorIsOneChanged(routing_id_,
-                                                   page_scale_factor_is_one_));
+
+  Send(new ViewHostMsg_PageScaleFactorChanged(routing_id_,
+                                              webview()->pageScaleFactor()));
 }
 
 double RenderViewImpl::zoomLevelToZoomFactor(double zoom_level) const {
@@ -3447,14 +3454,13 @@ WebContentDetectionResult RenderViewImpl::detectContentAround(
   return WebContentDetectionResult();
 }
 
-void RenderViewImpl::scheduleContentIntent(const WebURL& intent) {
+void RenderViewImpl::scheduleContentIntent(const WebURL& intent,
+                                           bool is_main_frame) {
   // Introduce a short delay so that the user can notice the content.
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&RenderViewImpl::LaunchAndroidContentIntent,
-                 AsWeakPtr(),
-                 intent,
-                 expected_content_intent_id_),
+      base::Bind(&RenderViewImpl::LaunchAndroidContentIntent, AsWeakPtr(),
+                 intent, expected_content_intent_id_, is_main_frame),
       base::TimeDelta::FromMilliseconds(kContentIntentDelayMilliseconds));
 }
 
@@ -3463,15 +3469,18 @@ void RenderViewImpl::cancelScheduledContentIntents() {
 }
 
 void RenderViewImpl::LaunchAndroidContentIntent(const GURL& intent,
-                                                size_t request_id) {
+                                                size_t request_id,
+                                                bool is_main_frame) {
   if (request_id != expected_content_intent_id_)
     return;
 
   // Remove the content highlighting if any.
   ScheduleComposite();
 
-  if (!intent.is_empty())
-    Send(new ViewHostMsg_StartContentIntent(routing_id_, intent));
+  if (!intent.is_empty()) {
+    Send(
+        new ViewHostMsg_StartContentIntent(routing_id_, intent, is_main_frame));
+  }
 }
 
 bool RenderViewImpl::openDateTimeChooser(
@@ -3698,6 +3707,16 @@ void RenderViewImpl::DidStopLoadingIcons() {
           FaviconURL(url, ToFaviconType(icon_urls[i].iconType()), sizes));
   }
   SendUpdateFaviconURL(urls);
+}
+
+void RenderViewImpl::UpdateDeviceScaleFactor() {
+  if (IsUseZoomForDSFEnabled()) {
+    compositor_->SetPaintedDeviceScaleFactor(device_scale_factor_);
+    webview()->setZoomFactorForDeviceScaleFactor(
+        device_scale_factor_);
+  } else {
+    webview()->setDeviceScaleFactor(device_scale_factor_);
+  }
 }
 
 }  // namespace content

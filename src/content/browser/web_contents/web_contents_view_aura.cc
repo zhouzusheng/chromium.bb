@@ -218,10 +218,10 @@ void PrepareDragForDownload(
 }
 #endif  // defined(OS_WIN)
 
-// Returns the CustomFormat to store file system files.
-const ui::OSExchangeData::CustomFormat& GetFileSystemFileCustomFormat() {
+// Returns the FormatType to store file system files.
+const ui::Clipboard::FormatType& GetFileSystemFileFormatType() {
   static const char kFormatString[] = "chromium/x-file-system-files";
-  CR_DEFINE_STATIC_LOCAL(ui::OSExchangeData::CustomFormat,
+  CR_DEFINE_STATIC_LOCAL(ui::Clipboard::FormatType,
                          format,
                          (ui::Clipboard::GetFormatType(kFormatString)));
   return format;
@@ -298,7 +298,7 @@ void PrepareDragData(const DropData& drop_data,
   if (!drop_data.file_system_files.empty()) {
     base::Pickle pickle;
     WriteFileSystemFilesToPickle(drop_data.file_system_files, &pickle);
-    provider->SetPickledData(GetFileSystemFileCustomFormat(), pickle);
+    provider->SetPickledData(GetFileSystemFileFormatType(), pickle);
   }
   if (!drop_data.custom_data.empty()) {
     base::Pickle pickle;
@@ -338,7 +338,7 @@ void PrepareDropData(DropData* drop_data, const ui::OSExchangeData& data) {
 
   base::Pickle pickle;
   std::vector<DropData::FileSystemFileInfo> file_system_files;
-  if (data.GetPickledData(GetFileSystemFileCustomFormat(), &pickle) &&
+  if (data.GetPickledData(GetFileSystemFileFormatType(), &pickle) &&
       ReadFileSystemFilesFromPickle(pickle, &file_system_files))
     drop_data->file_system_files = file_system_files;
 
@@ -593,8 +593,9 @@ class WebContentsViewAura::WindowObserver
 
  private:
   void SendScreenRects() {
-    RenderWidgetHostImpl::From(view_->web_contents_->GetRenderViewHost())->
-        SendScreenRects();
+    RenderWidgetHostImpl::From(
+        view_->web_contents_->GetRenderViewHost()->GetWidget())
+        ->SendScreenRects();
   }
 
 #if defined(OS_WIN)
@@ -687,7 +688,7 @@ void WebContentsViewAura::EndDrag(blink::WebDragOperationsMask ops) {
       gfx::Screen::GetScreenFor(GetNativeView())->GetCursorScreenPoint();
   gfx::Point client_loc = screen_loc;
   RenderViewHost* rvh = web_contents_->GetRenderViewHost();
-  aura::Window* window = rvh->GetView()->GetNativeView();
+  aura::Window* window = rvh->GetWidget()->GetView()->GetNativeView();
   aura::Window::ConvertPointToTarget(root_window, window, &client_loc);
   if (!web_contents_)
     return;
@@ -885,8 +886,7 @@ RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForWidget(
 
   RenderWidgetHostViewAura* view =
       new RenderWidgetHostViewAura(render_widget_host, is_guest_view_hack);
-  view->InitAsChild(NULL);
-  GetNativeView()->AddChild(view->GetNativeView());
+  view->InitAsChild(GetNativeView());
 
   RenderWidgetHostImpl* host_impl =
       RenderWidgetHostImpl::From(render_widget_host);
@@ -943,9 +943,12 @@ void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
 
 void WebContentsViewAura::ShowContextMenu(RenderFrameHost* render_frame_host,
                                           const ContextMenuParams& params) {
-  ui::TouchSelectionController* selection_controller = GetSelectionController();
-  if (selection_controller)
-    selection_controller->HideAndDisallowShowingAutomatically();
+  TouchSelectionControllerClientAura* selection_controller_client =
+      GetSelectionControllerClient();
+  if (selection_controller_client &&
+      selection_controller_client->HandleContextMenu(params)) {
+    return;
+  }
   if (delegate_) {
     RenderWidgetHostViewAura* view = ToRenderWidgetHostViewAura(
         web_contents_->GetRenderWidgetHostView());

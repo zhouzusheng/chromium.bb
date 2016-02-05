@@ -394,7 +394,7 @@ size_t SourceState::EstimateVideoDataSize(size_t muxed_data_chunk_size) const {
     // At this point either audio or video buffer is empty, which means buffer
     // levels are probably low anyway and we should have enough space in the
     // buffers for appending new data, so just take a very rough guess.
-    return muxed_data_chunk_size / 2;
+    return muxed_data_chunk_size * 7 / 8;
   }
 
   // We need to estimate how much audio and video data is going to be in the
@@ -1308,6 +1308,12 @@ DemuxerStream* ChunkDemuxer::GetStream(DemuxerStream::Type type) {
 
 TimeDelta ChunkDemuxer::GetStartTime() const {
   return TimeDelta();
+}
+
+int64_t ChunkDemuxer::GetMemoryUsage() const {
+  base::AutoLock auto_lock(lock_);
+  return (audio_ ? audio_->GetBufferedSize() : 0) +
+         (video_ ? video_->GetBufferedSize() : 0);
 }
 
 void ChunkDemuxer::StartWaitingForSeek(TimeDelta seek_time) {

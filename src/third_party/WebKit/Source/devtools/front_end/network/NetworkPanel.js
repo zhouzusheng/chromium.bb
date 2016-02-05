@@ -159,8 +159,7 @@ WebInspector.NetworkPanel.prototype = {
     {
         var setting = WebInspector.moduleSetting("blockedURLs");
         setting.addChangeListener(updateButton);
-        var button = new WebInspector.ToolbarButton(WebInspector.UIString("Block network requests"), "block-toolbar-item", 2);
-        button.setAction("network.blocked-urls.show");
+        var button = WebInspector.ToolbarButton.createActionButton("network.blocked-urls.show");
         updateButton();
         button.setVisible(Runtime.experiments.isEnabled("requestBlocking"));
         return button;
@@ -316,7 +315,7 @@ WebInspector.NetworkPanel.prototype = {
     _resetFilmStripView: function()
     {
         this._filmStripView.reset();
-        this._filmStripView.setStatusText(WebInspector.UIString("Hit %s to reload and capture filmstrip.", WebInspector.ShortcutsScreen.TimelinePanelShortcuts.RecordPageReload[0].name));
+        this._filmStripView.setStatusText(WebInspector.UIString("Hit %s to reload and capture filmstrip.", WebInspector.shortcutRegistry.shortcutDescriptorsForAction("main.reload")[0].name));
     },
 
     /**
@@ -638,13 +637,15 @@ WebInspector.NetworkPanel.show = function()
 }
 
 /**
-  * @param {!WebInspector.NetworkLogView.FilterType} filterType
-  * @param {string} filterValue
+  * @param {!Array<{filterType: !WebInspector.NetworkLogView.FilterType, filterValue: string}>} filters
   */
-WebInspector.NetworkPanel.revealAndFilter = function(filterType, filterValue)
+WebInspector.NetworkPanel.revealAndFilter = function(filters)
 {
     var panel = WebInspector.NetworkPanel._instance();
-    panel._networkLogView.setTextFilterValue(filterType, filterValue);
+    var filterString = '';
+    for (var filter of filters)
+        filterString += filter.filterType + ':' + filter.filterValue + ' ';
+    panel._networkLogView.setTextFilterValue(filterString);
     WebInspector.inspectorView.setCurrentPanel(panel);
 }
 
@@ -787,11 +788,13 @@ WebInspector.NetworkPanel.RecordActionDelegate.prototype = {
      * @override
      * @param {!WebInspector.Context} context
      * @param {string} actionId
+     * @return {boolean}
      */
     handleAction: function(context, actionId)
     {
         var panel = WebInspector.context.flavor(WebInspector.NetworkPanel);
         console.assert(panel && panel instanceof WebInspector.NetworkPanel);
         panel._toggleRecording();
+        return true;
     }
 }

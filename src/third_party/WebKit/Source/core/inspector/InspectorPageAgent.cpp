@@ -53,6 +53,7 @@
 #include "core/inspector/ContentSearchUtils.h"
 #include "core/inspector/DOMPatchSupport.h"
 #include "core/inspector/IdentifiersFactory.h"
+#include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorCSSAgent.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
 #include "core/inspector/InspectorInstrumentation.h"
@@ -256,15 +257,9 @@ bool InspectorPageAgent::dataContent(const char* data, unsigned size, const Stri
     return decodeBuffer(data, size, textEncodingName, result);
 }
 
-PassOwnPtrWillBeRawPtr<InspectorPageAgent> InspectorPageAgent::create(LocalFrame* inspectedFrame, Client* client, InspectorResourceContentLoader* resourceContentLoader)
+PassOwnPtrWillBeRawPtr<InspectorPageAgent> InspectorPageAgent::create(InspectedFrames* inspectedFrames, Client* client, InspectorResourceContentLoader* resourceContentLoader, InspectorDebuggerAgent* debuggerAgent)
 {
-    return adoptPtrWillBeNoop(new InspectorPageAgent(inspectedFrame, client, resourceContentLoader));
-}
-
-void InspectorPageAgent::setDebuggerAgent(InspectorDebuggerAgent* debuggerAgent)
-{
-    ASSERT(!m_debuggerAgent);
-    m_debuggerAgent = debuggerAgent;
+    return adoptPtrWillBeNoop(new InspectorPageAgent(inspectedFrames, client, resourceContentLoader, debuggerAgent));
 }
 
 Resource* InspectorPageAgent::cachedResource(LocalFrame* frame, const KURL& url)
@@ -274,7 +269,7 @@ Resource* InspectorPageAgent::cachedResource(LocalFrame* frame, const KURL& url)
         return nullptr;
     Resource* cachedResource = document->fetcher()->cachedResource(url);
     if (!cachedResource) {
-        Vector<Document*> allImports = InspectorPageAgent::importsForFrame(frame);
+        WillBeHeapVector<RawPtrWillBeMember<Document>> allImports = InspectorPageAgent::importsForFrame(frame);
         for (Document* import : allImports) {
             cachedResource = import->fetcher()->cachedResource(url);
             if (cachedResource)
@@ -349,10 +344,10 @@ TypeBuilder::Page::ResourceType::Enum InspectorPageAgent::cachedResourceTypeJson
     return resourceTypeJson(cachedResourceType(cachedResource));
 }
 
-InspectorPageAgent::InspectorPageAgent(LocalFrame* inspectedFrame, Client* client, InspectorResourceContentLoader* resourceContentLoader)
+InspectorPageAgent::InspectorPageAgent(InspectedFrames* inspectedFrames, Client* client, InspectorResourceContentLoader* resourceContentLoader, InspectorDebuggerAgent* debuggerAgent)
     : InspectorBaseAgent<InspectorPageAgent, InspectorFrontend::Page>("Page")
-    , m_inspectedFrame(inspectedFrame)
-    , m_debuggerAgent(nullptr)
+    , m_inspectedFrames(inspectedFrames)
+    , m_debuggerAgent(debuggerAgent)
     , m_client(client)
     , m_lastScriptIdentifier(0)
     , m_enabled(false)
@@ -427,15 +422,15 @@ void InspectorPageAgent::reload(ErrorString*, const bool* const optionalIgnoreCa
     ErrorString unused;
     m_debuggerAgent->setSkipAllPauses(&unused, true);
     m_reloading = true;
-    inspectedFrame()->reload(asBool(optionalIgnoreCache) ? FrameLoadTypeReloadFromOrigin : FrameLoadTypeReload, NotClientRedirect);
+    m_inspectedFrames->root()->reload(asBool(optionalIgnoreCache) ? FrameLoadTypeReloadFromOrigin : FrameLoadTypeReload, NotClientRedirect);
 }
 
 void InspectorPageAgent::navigate(ErrorString*, const String& url, String* outFrameId)
 {
-    *outFrameId = frameId(inspectedFrame());
+    *outFrameId = frameId(m_inspectedFrames->root());
 }
 
-static void cachedResourcesForDocument(Document* document, Vector<Resource*>& result, bool skipXHRs)
+static void cachedResourcesForDocument(Document* document, WillBeHeapVector<RawPtrWillBeMember<Resource>>& result, bool skipXHRs)
 {
     const ResourceFetcher::DocumentResourceMap& allResources = document->fetcher()->allResources();
     for (const auto& resource : allResources) {
@@ -466,9 +461,9 @@ static void cachedResourcesForDocument(Document* document, Vector<Resource*>& re
 }
 
 // static
-Vector<Document*> InspectorPageAgent::importsForFrame(LocalFrame* frame)
+WillBeHeapVector<RawPtrWillBeMember<Document>> InspectorPageAgent::importsForFrame(LocalFrame* frame)
 {
-    Vector<Document*> result;
+    WillBeHeapVector<RawPtrWillBeMember<Document>> result;
     Document* rootDocument = frame->document();
 
     if (HTMLImportsController* controller = rootDocument->importsController()) {
@@ -481,11 +476,11 @@ Vector<Document*> InspectorPageAgent::importsForFrame(LocalFrame* frame)
     return result;
 }
 
-static Vector<Resource*> cachedResourcesForFrame(LocalFrame* frame, bool skipXHRs)
+static WillBeHeapVector<RawPtrWillBeMember<Resource>> cachedResourcesForFrame(LocalFrame* frame, bool skipXHRs)
 {
-    Vector<Resource*> result;
+    WillBeHeapVector<RawPtrWillBeMember<Resource>> result;
     Document* rootDocument = frame->document();
-    Vector<Document*> loaders = InspectorPageAgent::importsForFrame(frame);
+    WillBeHeapVector<RawPtrWillBeMember<Document>> loaders = InspectorPageAgent::importsForFrame(frame);
 
     cachedResourcesForDocument(rootDocument, result, skipXHRs);
     for (size_t i = 0; i < loaders.size(); ++i)
@@ -496,7 +491,7 @@ static Vector<Resource*> cachedResourcesForFrame(LocalFrame* frame, bool skipXHR
 
 void InspectorPageAgent::getResourceTree(ErrorString*, RefPtr<TypeBuilder::Page::FrameResourceTree>& object)
 {
-    object = buildObjectForFrameTree(inspectedFrame());
+    object = buildObjectForFrameTree(m_inspectedFrames->root());
 }
 
 void InspectorPageAgent::finishReload()
@@ -513,7 +508,7 @@ void InspectorPageAgent::getResourceContentAfterResourcesContentLoaded(const Str
     if (!callback->isActive())
         return;
 
-    LocalFrame* frame = IdentifiersFactory::frameById(m_inspectedFrame, frameId);
+    LocalFrame* frame = IdentifiersFactory::frameById(m_inspectedFrames, frameId);
     if (!frame) {
         callback->sendFailure("No frame for given id found");
         return;
@@ -555,7 +550,7 @@ void InspectorPageAgent::searchInResource(ErrorString*, const String& frameId, c
 {
     results = TypeBuilder::Array<TypeBuilder::Debugger::SearchMatch>::create();
 
-    LocalFrame* frame = IdentifiersFactory::frameById(m_inspectedFrame, frameId);
+    LocalFrame* frame = IdentifiersFactory::frameById(m_inspectedFrames, frameId);
     KURL kurl(ParsedURLString, url);
 
     FrameLoader* frameLoader = frame ? &frame->loader() : nullptr;
@@ -577,7 +572,7 @@ void InspectorPageAgent::searchInResource(ErrorString*, const String& frameId, c
 
 void InspectorPageAgent::setDocumentContent(ErrorString* errorString, const String& frameId, const String& html)
 {
-    LocalFrame* frame = IdentifiersFactory::frameById(m_inspectedFrame, frameId);
+    LocalFrame* frame = IdentifiersFactory::frameById(m_inspectedFrames, frameId);
     if (!frame) {
         *errorString = "No frame for given id found";
         return;
@@ -610,21 +605,21 @@ void InspectorPageAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
 
 void InspectorPageAgent::domContentLoadedEventFired(LocalFrame* frame)
 {
-    if (frame != inspectedFrame())
+    if (frame != m_inspectedFrames->root())
         return;
     frontend()->domContentEventFired(monotonicallyIncreasingTime());
 }
 
 void InspectorPageAgent::loadEventFired(LocalFrame* frame)
 {
-    if (frame != inspectedFrame())
+    if (frame != m_inspectedFrames->root())
         return;
     frontend()->loadEventFired(monotonicallyIncreasingTime());
 }
 
 void InspectorPageAgent::didCommitLoad(LocalFrame*, DocumentLoader* loader)
 {
-    if (loader->frame() == inspectedFrame()) {
+    if (loader->frame() == m_inspectedFrames->root()) {
         finishReload();
         m_scriptToEvaluateOnLoadOnce = m_pendingScriptToEvaluateOnLoadOnce;
         m_pendingScriptToEvaluateOnLoadOnce = String();
@@ -643,23 +638,6 @@ void InspectorPageAgent::frameAttachedToParent(LocalFrame* frame)
 void InspectorPageAgent::frameDetachedFromParent(LocalFrame* frame)
 {
     frontend()->frameDetached(frameId(frame));
-}
-
-FrameHost* InspectorPageAgent::frameHost()
-{
-    return m_inspectedFrame->host();
-}
-
-LocalFrame* InspectorPageAgent::findFrameWithSecurityOrigin(const String& originRawString)
-{
-    for (Frame* frame = inspectedFrame(); frame; frame = frame->tree().traverseNext(inspectedFrame())) {
-        if (!frame->isLocalFrame())
-            continue;
-        RefPtr<SecurityOrigin> documentOrigin = toLocalFrame(frame)->document()->securityOrigin();
-        if (documentOrigin->toRawString() == originRawString)
-            return toLocalFrame(frame);
-    }
-    return nullptr;
 }
 
 bool InspectorPageAgent::screencastEnabled()
@@ -705,7 +683,7 @@ void InspectorPageAgent::didUpdateLayout()
 
 void InspectorPageAgent::didResizeMainFrame()
 {
-    if (!inspectedFrame()->isMainFrame())
+    if (!m_inspectedFrames->root()->isMainFrame())
         return;
 #if !OS(ANDROID)
     if (m_enabled && m_client)
@@ -750,7 +728,7 @@ PassRefPtr<TypeBuilder::Page::FrameResourceTree> InspectorPageAgent::buildObject
         .setFrame(frameObject)
         .setResources(subresources);
 
-    Vector<Resource*> allResources = cachedResourcesForFrame(frame, true);
+    WillBeHeapVector<RawPtrWillBeMember<Resource>> allResources = cachedResourcesForFrame(frame, true);
     for (Resource* cachedResource : allResources) {
         RefPtr<TypeBuilder::Page::FrameResourceTree::Resources> resourceObject = TypeBuilder::Page::FrameResourceTree::Resources::create()
             .setUrl(urlWithoutFragment(cachedResource->url()).string())
@@ -763,7 +741,7 @@ PassRefPtr<TypeBuilder::Page::FrameResourceTree> InspectorPageAgent::buildObject
         subresources->addItem(resourceObject);
     }
 
-    Vector<Document*> allImports = InspectorPageAgent::importsForFrame(frame);
+    WillBeHeapVector<RawPtrWillBeMember<Document>> allImports = InspectorPageAgent::importsForFrame(frame);
     for (Document* import : allImports) {
         RefPtr<TypeBuilder::Page::FrameResourceTree::Resources> resourceObject = TypeBuilder::Page::FrameResourceTree::Resources::create()
             .setUrl(urlWithoutFragment(import->url()).string())
@@ -811,7 +789,6 @@ void InspectorPageAgent::setOverlayMessage(ErrorString*, const String* message)
 
 DEFINE_TRACE(InspectorPageAgent)
 {
-    visitor->trace(m_inspectedFrame);
     visitor->trace(m_debuggerAgent);
     visitor->trace(m_inspectorResourceContentLoader);
     InspectorBaseAgent::trace(visitor);

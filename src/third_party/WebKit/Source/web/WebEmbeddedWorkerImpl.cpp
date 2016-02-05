@@ -140,8 +140,15 @@ void WebEmbeddedWorkerImpl::terminateWorkerContext()
         m_workerContextClient->workerContextFailedToStart();
         return;
     }
-    if (m_workerThread)
-        m_workerThread->terminate();
+    if (!m_workerThread) {
+        // The worker thread has not been created yet if the worker is asked to
+        // terminate during waiting for debugger.
+        ASSERT(m_workerStartData.waitForDebuggerMode == WebEmbeddedWorkerStartData::WaitForDebugger);
+        // This deletes 'this'.
+        m_workerContextClient->workerContextFailedToStart();
+        return;
+    }
+    m_workerThread->terminate();
     m_workerInspectorProxy->workerThreadTerminated();
 }
 
@@ -186,7 +193,7 @@ void WebEmbeddedWorkerImpl::postMessageToPageInspector(const String& message)
 
 void WebEmbeddedWorkerImpl::postTaskToLoader(PassOwnPtr<ExecutionContextTask> task)
 {
-    m_mainFrame->frame()->document()->postTask(FROM_HERE, task);
+    m_mainFrame->frame()->document()->postTask(BLINK_FROM_HERE, task);
 }
 
 bool WebEmbeddedWorkerImpl::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task)
@@ -194,7 +201,7 @@ bool WebEmbeddedWorkerImpl::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionCont
     if (m_askedToTerminate || !m_workerThread)
         return false;
 
-    m_workerThread->postTask(FROM_HERE, task);
+    m_workerThread->postTask(BLINK_FROM_HERE, task);
     return !m_workerThread->terminated();
 }
 

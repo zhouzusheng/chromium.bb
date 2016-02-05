@@ -5,8 +5,10 @@
 #include "ui/events/base_event_utils.h"
 
 #include "base/atomic_sequence_num.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "ui/events/event_constants.h"
+#include "ui/events/event_switches.h"
 
 namespace ui {
 
@@ -17,7 +19,6 @@ const int kSystemKeyModifierMask = EF_ALT_DOWN | EF_COMMAND_DOWN;
 #else
 const int kSystemKeyModifierMask = EF_ALT_DOWN;
 #endif  // defined(OS_CHROMEOS)
-
 
 }  // namespace
 

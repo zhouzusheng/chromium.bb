@@ -1,6 +1,4 @@
-
-
-  Polymer({
+Polymer({
 
     is: 'iron-collapse',
 
@@ -84,6 +82,9 @@
 
     _openedChanged: function() {
       if (this.opened) {
+        this.setAttribute('aria-expanded', 'true');
+        this.setAttribute('aria-hidden', 'false');
+
         this.toggleClass('iron-collapse-closed', false);
         this.updateSize('auto', false);
         var s = this._calcSize();
@@ -91,16 +92,18 @@
         // force layout to ensure transition will go
         /** @suppress {suspiciousCode} */ this.offsetHeight;
         this.updateSize(s, true);
-      }
-      else {
+        // focus the current collapse
+        this.focus();
+      } else {
+        this.setAttribute('aria-expanded', 'false');
+        this.setAttribute('aria-hidden', 'true');
+
         this.toggleClass('iron-collapse-opened', false);
         this.updateSize(this._calcSize(), false);
         // force layout to ensure transition will go
         /** @suppress {suspiciousCode} */ this.offsetHeight;
         this.updateSize('0px', true);
       }
-      this.setAttribute('aria-expanded', this.opened ? 'true' : 'false');
-
     },
 
     _transitionEnd: function() {
@@ -118,4 +121,3 @@
 
 
   });
-

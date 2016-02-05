@@ -229,7 +229,7 @@ HandleSignalsState Dispatcher::GetHandleSignalsState() const {
 
 MojoResult Dispatcher::AddAwakable(Awakable* awakable,
                                    MojoHandleSignals signals,
-                                   uint32_t context,
+                                   uintptr_t context,
                                    HandleSignalsState* signals_state) {
   base::AutoLock locker(lock_);
   if (is_closed_) {
@@ -381,7 +381,7 @@ HandleSignalsState Dispatcher::GetHandleSignalsStateImplNoLock() const {
 MojoResult Dispatcher::AddAwakableImplNoLock(
     Awakable* /*awakable*/,
     MojoHandleSignals /*signals*/,
-    uint32_t /*context*/,
+    uintptr_t /*context*/,
     HandleSignalsState* signals_state) {
   lock_.AssertAcquired();
   DCHECK(!is_closed_);
@@ -404,7 +404,6 @@ void Dispatcher::RemoveAwakableImplNoLock(Awakable* /*awakable*/,
 
 void Dispatcher::StartSerializeImplNoLock(size_t* max_size,
                                           size_t* max_platform_handles) {
-  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   DCHECK(!is_closed_);
   *max_size = 0;
   *max_platform_handles = 0;
@@ -414,7 +413,6 @@ bool Dispatcher::EndSerializeAndCloseImplNoLock(
     void* /*destination*/,
     size_t* /*actual_size*/,
     PlatformHandleVector* /*platform_handles*/) {
-  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
   DCHECK(is_closed_);
   // By default, serializing isn't supported, so just close.
   CloseImplNoLock();
@@ -453,6 +451,7 @@ void Dispatcher::StartSerialize(size_t* max_size,
   DCHECK(max_size);
   DCHECK(max_platform_handles);
   DCHECK(!is_closed_);
+  base::AutoLock locker(lock_);
   StartSerializeImplNoLock(max_size, max_platform_handles);
 }
 
@@ -467,13 +466,7 @@ bool Dispatcher::EndSerializeAndClose(void* destination,
   // shouldn't be in |Core|'s handle table.
   is_closed_ = true;
 
-#if !defined(NDEBUG)
-  // See the comment above |EndSerializeAndCloseImplNoLock()|. In brief: Locking
-  // isn't actually needed, but we need to satisfy assertions (which we don't
-  // want to remove or weaken).
   base::AutoLock locker(lock_);
-#endif
-
   return EndSerializeAndCloseImplNoLock(destination, actual_size,
                                         platform_handles);
 }

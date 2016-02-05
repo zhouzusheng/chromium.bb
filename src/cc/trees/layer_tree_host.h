@@ -96,8 +96,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
       InitParams* params);
   virtual ~LayerTreeHost();
 
-  void SetLayerTreeHostClientReady();
-
   // LayerTreeHost interface to Proxy.
   void WillBeginMainFrame();
   void DidBeginMainFrame();
@@ -105,7 +103,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void BeginMainFrameNotExpectedSoon();
   void AnimateLayers(base::TimeTicks monotonic_frame_begin_time);
   void DidStopFlinging();
-  void Layout();
+  void RequestMainFrameUpdate();
   void FinishCommitOnImplThread(LayerTreeHostImpl* host_impl);
   void WillCommit();
   void CommitComplete();
@@ -157,7 +155,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
     return rendering_stats_instrumentation_.get();
   }
 
-  const RendererCapabilities& GetRendererCapabilities() const;
+  virtual const RendererCapabilities& GetRendererCapabilities() const;
 
   void SetNeedsAnimate();
   virtual void SetNeedsUpdateLayers();
@@ -210,10 +208,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void SetTopControlsHeight(float height, bool shrink);
   void SetTopControlsShownRatio(float ratio);
 
-  void set_hide_pinch_scrollbars_near_min_scale(bool hide) {
-    hide_pinch_scrollbars_near_min_scale_ = hide;
-  }
-
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
 
   void ApplyPageScaleDeltaFromImplSide(float page_scale_delta);
@@ -244,6 +238,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void SetImplTransform(const gfx::Transform& transform);
 
   void SetDeviceScaleFactor(float device_scale_factor);
+  void SetPaintedDeviceScaleFactor(float painted_device_scale_factor);
+
   float device_scale_factor() const { return device_scale_factor_; }
 
   void UpdateTopControlsState(TopControlsState constraints,
@@ -253,6 +249,9 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   HeadsUpDisplayLayer* hud_layer() const { return hud_layer_.get(); }
 
   Proxy* proxy() const { return proxy_.get(); }
+  TaskRunnerProvider* task_runner_provider() const {
+    return task_runner_provider_.get();
+  }
   AnimationRegistrar* animation_registrar() const {
     return animation_registrar_.get();
   }
@@ -323,6 +322,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // LayerTreeMutatorsClient implementation.
   bool IsLayerInTree(int layer_id, LayerTreeType tree_type) const override;
   void SetMutatorsNeedCommit() override;
+  void SetMutatorsNeedRebuildPropertyTrees() override;
   void SetLayerFilterMutated(int layer_id,
                              LayerTreeType tree_type,
                              const FilterOperations& filters) override;
@@ -369,7 +369,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
       LayerTreeHostSingleThreadClient* single_thread_client,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_ptr<BeginFrameSource> external_begin_frame_source);
-  void InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
+  void InitializeForTesting(scoped_ptr<TaskRunnerProvider> task_runner_provider,
+                            scoped_ptr<Proxy> proxy_for_testing);
   void SetOutputSurfaceLostForTesting(bool is_lost) {
     output_surface_lost_ = is_lost;
   }
@@ -422,6 +423,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   LayerTreeHostClient* client_;
   scoped_ptr<Proxy> proxy_;
+  scoped_ptr<TaskRunnerProvider> task_runner_provider_;
 
   int source_frame_number_;
   int meta_information_sequence_number_;
@@ -440,7 +442,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   scoped_refptr<HeadsUpDisplayLayer> hud_layer_;
 
   base::WeakPtr<InputHandler> input_handler_weak_ptr_;
-  base::WeakPtr<TopControlsManager> top_controls_manager_weak_ptr_;
 
   const LayerTreeSettings settings_;
   LayerTreeDebugState debug_state_;
@@ -449,8 +450,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   bool top_controls_shrink_blink_size_;
   float top_controls_height_;
   float top_controls_shown_ratio_;
-  bool hide_pinch_scrollbars_near_min_scale_;
   float device_scale_factor_;
+  float painted_device_scale_factor_;
 
   bool visible_;
 

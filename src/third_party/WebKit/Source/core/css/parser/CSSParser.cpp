@@ -5,6 +5,7 @@
 #include "config.h"
 #include "core/css/parser/CSSParser.h"
 
+#include "core/css/CSSColorValue.h"
 #include "core/css/CSSKeyframeRule.h"
 #include "core/css/StyleColor.h"
 #include "core/css/StylePropertySet.h"
@@ -108,7 +109,7 @@ bool CSSParser::parseSupportsCondition(const String& condition)
     return CSSSupportsParser::supportsCondition(scope.tokenRange(), parser) == CSSSupportsParser::Supported;
 }
 
-bool CSSParser::parseColor(RGBA32& color, const String& string, bool strict)
+bool CSSParser::parseColor(Color& color, const String& string, bool strict)
 {
     if (string.isEmpty())
         return false;
@@ -117,7 +118,7 @@ bool CSSParser::parseColor(RGBA32& color, const String& string, bool strict)
     // handle these first.
     Color namedColor;
     if (namedColor.setNamedColor(string)) {
-        color = namedColor.rgb();
+        color = namedColor;
         return true;
     }
 
@@ -126,18 +127,13 @@ bool CSSParser::parseColor(RGBA32& color, const String& string, bool strict)
     if (!value)
         value = parseSingleValue(CSSPropertyColor, string, strictCSSParserContext());
 
-    if (!value || !value->isPrimitiveValue())
+    if (!value || !value->isColorValue())
         return false;
-
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value.get());
-    if (!primitiveValue->isRGBColor())
-        return false;
-
-    color = primitiveValue->getRGBA32Value();
+    color = toCSSColorValue(*value).value();
     return true;
 }
 
-bool CSSParser::parseSystemColor(RGBA32& color, const String& colorString)
+bool CSSParser::parseSystemColor(Color& color, const String& colorString)
 {
     CSSParserString cssColor;
     cssColor.init(colorString);
@@ -145,8 +141,7 @@ bool CSSParser::parseSystemColor(RGBA32& color, const String& colorString)
     if (!CSSPropertyParser::isSystemColor(id))
         return false;
 
-    Color parsedColor = LayoutTheme::theme().systemColor(id);
-    color = parsedColor.rgb();
+    color = LayoutTheme::theme().systemColor(id);
     return true;
 }
 

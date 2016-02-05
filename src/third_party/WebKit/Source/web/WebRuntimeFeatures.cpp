@@ -51,19 +51,6 @@ void WebRuntimeFeatures::enableFeatureFromString(const std::string& name, bool e
     RuntimeEnabledFeatures::setFeatureEnabledFromString(name, enable);
 }
 
-// TODO(bashi): Remove.
-void WebRuntimeFeatures::enableFeatureFromString(const WebString& name, bool enable)
-{
-    RuntimeEnabledFeatures::setFeatureEnabledFromString(name.latin1(), enable);
-}
-
-void WebRuntimeFeatures::enableBleedingEdgeFastPaths(bool enable)
-{
-    ASSERT(enable);
-    RuntimeEnabledFeatures::setBleedingEdgeFastPathsEnabled(enable);
-    RuntimeEnabledFeatures::setWebAnimationsAPIEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableCompositorAnimationTimelines(bool enable)
 {
     RuntimeEnabledFeatures::setCompositorAnimationTimelinesEnabled(enable);
@@ -77,6 +64,11 @@ void WebRuntimeFeatures::enableTestOnlyFeatures(bool enable)
 void WebRuntimeFeatures::enableApplicationCache(bool enable)
 {
     RuntimeEnabledFeatures::setApplicationCacheEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableAudioOutputDevices(bool enable)
+{
+    RuntimeEnabledFeatures::setAudioOutputDevicesEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableCompositedSelectionUpdate(bool enable)
@@ -132,6 +124,16 @@ bool WebRuntimeFeatures::isPrefixedEncryptedMediaEnabled()
 void WebRuntimeFeatures::enableExperimentalCanvasFeatures(bool enable)
 {
     RuntimeEnabledFeatures::setExperimentalCanvasFeaturesEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableExperimentalFramework(bool enable)
+{
+    RuntimeEnabledFeatures::setExperimentalFrameworkEnabled(enable);
+}
+
+bool WebRuntimeFeatures::isExperimentalFrameworkEnabled()
+{
+    return RuntimeEnabledFeatures::experimentalFrameworkEnabled();
 }
 
 void WebRuntimeFeatures::enableFastMobileScrolling(bool enable)

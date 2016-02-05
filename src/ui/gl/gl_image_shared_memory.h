@@ -6,17 +6,25 @@
 #define UI_GL_GL_IMAGE_SHARED_MEMORY_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "ui/gfx/gpu_memory_buffer.h"
+#include "base/memory/shared_memory_handle.h"
+#include "ui/gfx/generic_shared_memory_id.h"
 #include "ui/gl/gl_image_memory.h"
 
-namespace gfx {
+namespace base {
+class SharedMemory;
+}
+
+namespace gl {
 
 class GL_EXPORT GLImageSharedMemory : public GLImageMemory {
  public:
   GLImageSharedMemory(const gfx::Size& size, unsigned internalformat);
 
-  bool Initialize(const gfx::GpuMemoryBufferHandle& handle,
-                  gfx::BufferFormat format);
+  bool Initialize(const base::SharedMemoryHandle& handle,
+                  gfx::GenericSharedMemoryId shared_memory_id,
+                  gfx::BufferFormat format,
+                  size_t offset,
+                  size_t stride);
 
   // Overridden from GLImage:
   void Destroy(bool have_context) override;
@@ -34,6 +42,6 @@ class GL_EXPORT GLImageSharedMemory : public GLImageMemory {
   DISALLOW_COPY_AND_ASSIGN(GLImageSharedMemory);
 };
 
-}  // namespace gfx
+}  // namespace gl
 
 #endif  // UI_GL_GL_IMAGE_SHARED_MEMORY_H_

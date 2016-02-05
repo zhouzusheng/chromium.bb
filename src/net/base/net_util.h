@@ -21,9 +21,7 @@
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_offset_string_conversions.h"
-#include "net/base/address_family.h"
 #include "net/base/escape.h"
-#include "net/base/net_export.h"
 #include "net/base/network_change_notifier.h"
 
 class GURL;
@@ -163,13 +161,6 @@ NET_EXPORT std::string GetDirectoryListingEntry(const base::string16& name,
                                                 int64_t size,
                                                 base::Time modified);
 
-// If text starts with "www." it is removed, otherwise text is returned
-// unmodified.
-NET_EXPORT base::string16 StripWWW(const base::string16& text);
-
-// Runs |url|'s host through StripWWW().  |url| must be valid.
-NET_EXPORT base::string16 StripWWWFromHost(const GURL& url);
-
 // Set socket to non-blocking mode
 NET_EXPORT int SetNonBlocking(int fd);
 
@@ -182,13 +173,6 @@ NET_EXPORT_PRIVATE GURL SimplifyUrlForRequest(const GURL& url);
 // i.e. if only 127.0.0.1 and ::1 are routable.
 // Also returns false if it cannot determine this.
 bool HaveOnlyLoopbackAddresses();
-
-// Returns AddressFamily of the address.
-NET_EXPORT_PRIVATE AddressFamily GetAddressFamily(
-    const IPAddressNumber& address);
-
-// Maps the given AddressFamily to either AF_INET, AF_INET6 or AF_UNSPEC.
-NET_EXPORT_PRIVATE int ConvertAddressFamily(AddressFamily address_family);
 
 // Retuns the port field of the |sockaddr|.
 const uint16_t* GetPortFieldFromSockaddr(const struct sockaddr* address,
@@ -214,59 +198,9 @@ NET_EXPORT_PRIVATE bool ResolveLocalHostname(base::StringPiece host,
 // machine.
 NET_EXPORT_PRIVATE bool IsLocalhost(base::StringPiece host);
 
-NET_EXPORT_PRIVATE bool IsLocalhostTLD(base::StringPiece host);
-
 // Returns true if the url's host is a Google server. This should only be used
 // for histograms and shouldn't be used to affect behavior.
 NET_EXPORT_PRIVATE bool HasGoogleHost(const GURL& url);
-
-// A subset of IP address attributes which are actionable by the
-// application layer. Currently unimplemented for all hosts;
-// IP_ADDRESS_ATTRIBUTE_NONE is always returned.
-enum IPAddressAttributes {
-  IP_ADDRESS_ATTRIBUTE_NONE = 0,
-
-  // A temporary address is dynamic by nature and will not contain MAC
-  // address. Presence of MAC address in IPv6 addresses can be used to
-  // track an endpoint and cause privacy concern. Please refer to
-  // RFC4941.
-  IP_ADDRESS_ATTRIBUTE_TEMPORARY = 1 << 0,
-
-  // A temporary address could become deprecated once the preferred
-  // lifetime is reached. It is still valid but shouldn't be used to
-  // create new connections.
-  IP_ADDRESS_ATTRIBUTE_DEPRECATED = 1 << 1,
-};
-
-// Differentiated Services Code Point.
-// See http://tools.ietf.org/html/rfc2474 for details.
-enum DiffServCodePoint {
-  DSCP_NO_CHANGE = -1,
-  DSCP_FIRST = DSCP_NO_CHANGE,
-  DSCP_DEFAULT = 0,  // Same as DSCP_CS0
-  DSCP_CS0  = 0,   // The default
-  DSCP_CS1  = 8,   // Bulk/background traffic
-  DSCP_AF11 = 10,
-  DSCP_AF12 = 12,
-  DSCP_AF13 = 14,
-  DSCP_CS2  = 16,
-  DSCP_AF21 = 18,
-  DSCP_AF22 = 20,
-  DSCP_AF23 = 22,
-  DSCP_CS3  = 24,
-  DSCP_AF31 = 26,
-  DSCP_AF32 = 28,
-  DSCP_AF33 = 30,
-  DSCP_CS4  = 32,
-  DSCP_AF41 = 34,  // Video
-  DSCP_AF42 = 36,  // Video
-  DSCP_AF43 = 38,  // Video
-  DSCP_CS5  = 40,  // Video
-  DSCP_EF   = 46,  // Voice
-  DSCP_CS6  = 48,  // Voice
-  DSCP_CS7  = 56,  // Control messages
-  DSCP_LAST = DSCP_CS7
-};
 
 }  // namespace net
 

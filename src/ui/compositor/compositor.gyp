@@ -25,6 +25,8 @@
         'COMPOSITOR_IMPLEMENTATION',
       ],
       'sources': [
+        'callback_layer_animation_observer.cc',
+        'callback_layer_animation_observer.h',
         'canvas_painter.cc',
         'canvas_painter.h',
         'clip_transform_recorder.cc',
@@ -120,9 +122,12 @@
         'test/in_process_context_factory.h',
         'test/in_process_context_provider.cc',
         'test/in_process_context_provider.h',
+        'test/layer_animation_observer_test_api.cc',
+        'test/layer_animation_observer_test_api.h',
         'test/layer_animator_test_controller.cc',
         'test/layer_animator_test_controller.h',
         'test/test_compositor_host.h',
+        'test/test_compositor_host_android.cc',
         'test/test_compositor_host_mac.mm',
         'test/test_compositor_host_ozone.cc',
         'test/test_compositor_host_win.cc',
@@ -149,7 +154,7 @@
     },
     {
       'target_name': 'compositor_unittests',
-      'type': 'executable',
+      'type': '<(gtest_target_type)',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:test_support_base',
@@ -167,6 +172,7 @@
         'compositor_test_support',
       ],
       'sources': [
+        'callback_layer_animation_observer_unittest.cc',
         'compositor_unittest.cc',
         'layer_animation_element_unittest.cc',
         'layer_animation_sequence_unittest.cc',
@@ -190,6 +196,11 @@
                 '<(DEPTH)/base/allocator/allocator.gyp:allocator',
               ],
             }],
+          ],
+        }],
+        ['OS == "android"', {
+          'dependencies': [
+            '../../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
       ],
@@ -216,5 +227,21 @@
         },
       ],
     }],
+    ['OS == "android"', {
+      'targets': [
+        {
+          'target_name': 'compositor_unittests_apk',
+          'type': 'none',
+          'dependencies': [
+            'compositor_unittests',
+          ],
+          'variables': {
+            'test_suite_name': 'compositor_unittests',
+          },
+          'includes': [
+            '../../build/apk_test.gypi',
+          ],
+        },
+    ]}]
   ],
 }

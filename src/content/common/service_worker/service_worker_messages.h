@@ -290,6 +290,11 @@ IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_SkipWaiting,
 IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_ClaimClients,
                     int /* request_id */)
 
+// Informs the browser of new foreign fetch subscopes this worker wants to
+// handle. Should only be sent while an install event is being handled.
+IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_RegisterForeignFetchScopes,
+                    std::vector<GURL> /* sub_scopes */)
+
 //---------------------------------------------------------------------------
 // Messages sent from the browser to the child process.
 //
@@ -402,10 +407,9 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerStateChanged,
                      int /* handle_id */,
                      blink::WebServiceWorkerState)
 
-// Tells the child process to set service workers for the given provider.
-IPC_MESSAGE_CONTROL5(ServiceWorkerMsg_SetVersionAttributes,
+// Tells the child process to set service workers for the given registration.
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_SetVersionAttributes,
                      int /* thread_id */,
-                     int /* provider_id */,
                      int /* registration_handle_id */,
                      int /* changed_mask */,
                      content::ServiceWorkerVersionAttributes)

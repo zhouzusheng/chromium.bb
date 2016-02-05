@@ -439,6 +439,7 @@
         'atomicops_unittest.cc',
         'barrier_closure_unittest.cc',
         'base64_unittest.cc',
+        'base64url_unittest.cc',
         'big_endian_unittest.cc',
         'bind_unittest.cc',
         'bind_unittest.nc',
@@ -552,6 +553,7 @@
         'metrics/sparse_histogram_unittest.cc',
         'metrics/statistics_recorder_unittest.cc',
         'move_unittest.cc',
+        'native_library_unittest.cc',
         'numerics/safe_numerics_unittest.cc',
         'observer_list_unittest.cc',
         'os_compat_android_unittest.cc',
@@ -623,6 +625,7 @@
         'threading/non_thread_safe_unittest.cc',
         'threading/platform_thread_unittest.cc',
         'threading/sequenced_worker_pool_unittest.cc',
+        'threading/sequenced_task_runner_handle_unittest.cc',
         'threading/simple_thread_unittest.cc',
         'threading/thread_checker_unittest.cc',
         'threading/thread_collision_warner_unittest.cc',
@@ -765,6 +768,9 @@
         [ 'OS == "win" and target_arch == "x64"', {
           'sources': [
             'profiler/win32_stack_frame_unwinder_unittest.cc',
+          ],
+          'dependencies': [
+            'base_profiler_test_support_library',
           ],
         }],
         ['OS == "win"', {
@@ -1271,6 +1277,21 @@
         },
       ],
     }],
+    ['OS == "win" and target_arch=="x64"', {
+      'targets': [
+        {
+          'target_name': 'base_profiler_test_support_library',
+          # Must be a shared library so that it can be unloaded during testing.
+          'type': 'shared_library',
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'profiler/test_support_library.cc',
+          ],
+        },
+      ]
+    }],
     ['os_posix==1 and OS!="mac" and OS!="ios"', {
       'targets': [
         {
@@ -1413,7 +1434,7 @@
           'includes': [ '../build/jar_file_jni_generator.gypi' ],
         },
         {
-          # TODO(GN)
+          # GN: //base:base_unittests_jni_headers
           'target_name': 'base_unittests_jni_headers',
           'type': 'none',
           'sources': [
@@ -1439,6 +1460,22 @@
           'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
         {
+          # GN: //base:base_multidex_gen
+          'target_name': 'base_multidex_gen',
+          'type': 'none',
+          'sources': [
+            'android/java/templates/ChromiumMultiDex.template',
+          ],
+          'variables': {
+            'package_name': 'org/chromium/base/multidex',
+            'template_deps': [],
+            'additional_gcc_preprocess_options': [
+              '--defines', 'CONFIGURATION_NAME_<(CONFIGURATION_NAME)',
+            ],
+          },
+          'includes': ['../build/android/java_cpp_template.gypi'],
+        },
+        {
           # GN: //base:base_android_java_enums_srcjar
           'target_name': 'base_java_library_process_type',
           'type': 'none',
@@ -1460,6 +1497,7 @@
             'base_java_library_load_from_apk_status_codes',
             'base_java_library_process_type',
             'base_java_memory_pressure_level',
+            'base_multidex_gen',
             'base_native_libraries_gen',
             '../third_party/android_tools/android_tools.gyp:android_support_multidex_javalib',
             '../third_party/jsr-305/jsr-305.gyp:jsr_305_javalib',
@@ -1591,7 +1629,7 @@
           ],
         },
         {
-          # TODO(GN)
+          # GN: //base:base_perftests_apk
           'target_name': 'base_perftests_apk',
           'type': 'none',
           'dependencies': [

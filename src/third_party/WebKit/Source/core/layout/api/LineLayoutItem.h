@@ -25,7 +25,7 @@ class LineLayoutPaintShim;
 enum HitTestFilter;
 
 class LineLayoutItem {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
 public:
     explicit LineLayoutItem(LayoutObject* layoutObject)
         : m_layoutObject(layoutObject)
@@ -43,6 +43,11 @@ public:
     // switching all of core/layout/line to using the API.
     // https://crbug.com/499321
     operator LayoutObject*() const { return m_layoutObject; }
+
+    bool isEqual(const LayoutObject* layoutObject) const
+    {
+        return m_layoutObject == layoutObject;
+    }
 
     bool needsLayout() const
     {
@@ -304,6 +309,11 @@ public:
         return m_layoutObject->selectionBackgroundColor();
     }
 
+    bool isInFlowPositioned() const
+    {
+        return m_layoutObject->isInFlowPositioned();
+    }
+
     PositionWithAffinity positionForPoint(const LayoutPoint& point)
     {
         return m_layoutObject->positionForPoint(point);
@@ -312,6 +322,11 @@ public:
     PositionWithAffinity createPositionWithAffinity(int offset, TextAffinity affinity)
     {
         return m_layoutObject->createPositionWithAffinity(offset, affinity);
+    }
+
+    LineLayoutItem previousInPreOrder(const LayoutObject* stayWithin) const
+    {
+        return LineLayoutItem(m_layoutObject->previousInPreOrder(stayWithin));
     }
 
 #ifndef NDEBUG

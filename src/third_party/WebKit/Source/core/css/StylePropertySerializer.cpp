@@ -428,6 +428,8 @@ String StylePropertySerializer::getPropertyValue(CSSPropertyID propertyID) const
         return getShorthandValue(gridRowShorthand(), " / ");
     case CSSPropertyGridArea:
         return getShorthandValue(gridAreaShorthand(), " / ");
+    case CSSPropertyGridGap:
+        return getShorthandValue(gridGapShorthand());
     case CSSPropertyFont:
         return fontValue();
     case CSSPropertyMargin:
@@ -607,7 +609,7 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
     const unsigned size = shorthand.length();
 
     // Begin by collecting the properties into a vector.
-    WillBeHeapVector<const CSSValue*> values(size);
+    WillBeHeapVector<RawPtrWillBeMember<const CSSValue>> values(size);
     // If the below loop succeeds, there should always be at minimum 1 layer.
     size_t numLayers = 1U;
 
@@ -660,7 +662,7 @@ String StylePropertySerializer::getLayeredShorthandValue(const StylePropertyShor
                 ASSERT(shorthand.properties()[propertyIndex + 1] == CSSPropertyBackgroundRepeatY
                     || shorthand.properties()[propertyIndex + 1] == CSSPropertyWebkitMaskRepeatY);
                 const CSSValue* yValue = values[propertyIndex + 1]->isValueList() ?
-                    toCSSValueList(values[propertyIndex + 1])->item(layer) : values[propertyIndex + 1];
+                    toCSSValueList(values[propertyIndex + 1])->item(layer) : values[propertyIndex + 1].get();
 
 
                 // FIXME: At some point we need to fix this code to avoid returning an invalid shorthand,
@@ -813,7 +815,7 @@ String StylePropertySerializer::borderPropertyValue(CommonValueMode valueMode) c
 static void appendBackgroundRepeatValue(StringBuilder& builder, const CSSValue& repeatXCSSValue, const CSSValue& repeatYCSSValue)
 {
     // FIXME: Ensure initial values do not appear in CSS_VALUE_LISTS.
-    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(CSSPrimitiveValue, initialRepeatValue, (CSSPrimitiveValue::create(CSSValueRepeat)));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(CSSPrimitiveValue, initialRepeatValue, (CSSPrimitiveValue::createIdentifier(CSSValueRepeat)));
     const CSSPrimitiveValue& repeatX = repeatXCSSValue.isInitialValue() ? *initialRepeatValue : toCSSPrimitiveValue(repeatXCSSValue);
     const CSSPrimitiveValue& repeatY = repeatYCSSValue.isInitialValue() ? *initialRepeatValue : toCSSPrimitiveValue(repeatYCSSValue);
     CSSValueID repeatXValueId = repeatX.getValueID();

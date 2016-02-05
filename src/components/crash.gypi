@@ -5,6 +5,23 @@
 {
   'targets': [
     {
+      # GN version: //components/crash/core/browser
+      'target_name': 'crash_core_browser',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        'upload_list',
+        '../base/base.gyp:base',
+        '../components/components_strings.gyp:components_strings',
+      ],
+      'sources': [
+        'crash/core/browser/crashes_ui_util.cc',
+        'crash/core/browser/crashes_ui_util.h',
+      ],
+    },
+    {
       # GN version: //components/crash/core/common
       'target_name': 'crash_core_common',
       'type': 'static_library',
@@ -95,6 +112,8 @@
           # crash_component_breakpad_mac_to_be_deleted for old Breakpad behavior on
           # all platforms, or preferably, depend on crash_component to get Breakpad
           # everywhere except for Mac, where you will get Crashpad.
+          #
+          # GN version: //components/crash/content/app:app_non_mac
           'target_name': 'crash_component_non_mac',
           'variables': {
             'conditions': [
@@ -203,6 +222,8 @@
           # removed shortly and all consumers will be expected to use Crashpad as
           # the Mac crash-reporting client. See the comment in the
           # crash_component_non_mac target for more details.
+          #
+          # GN version: //components/crash/content/app:app_breakpad_mac_to_be_deleted
           'target_name': 'crash_component_breakpad_mac_to_be_deleted',
           'variables': {
             'conditions': [
@@ -231,6 +252,7 @@
               ],
               'include_dirs': [
                 '..',
+                '../breakpad/src',
               ],
             }],
           ],

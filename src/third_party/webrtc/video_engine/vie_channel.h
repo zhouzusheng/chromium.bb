@@ -16,13 +16,12 @@
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/scoped_ref_ptr.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/tick_util.h"
 #include "webrtc/typedefs.h"
-#include "webrtc/video_engine/vie_defines.h"
 #include "webrtc/video_engine/vie_receiver.h"
 #include "webrtc/video_engine/vie_sync_module.h"
 
@@ -108,9 +107,6 @@ class ViEChannel : public VCMFrameTypeCallback,
                          int payload_type_fec);
   bool IsSendingFecEnabled();
   int SetSenderBufferingMode(int target_delay_ms);
-  int SetReceiverBufferingMode(int target_delay_ms);
-  int32_t SetKeyFrameRequestMethod(const KeyFrameRequestMethod method);
-  void EnableRemb(bool enable);
   int SetSendTimestampOffsetStatus(bool enable, int id);
   int SetReceiveTimestampOffsetStatus(bool enable, int id);
   int SetSendAbsoluteSendTimeStatus(bool enable, int id);
@@ -120,7 +116,6 @@ class ViEChannel : public VCMFrameTypeCallback,
   int SetSendTransportSequenceNumber(bool enable, int id);
   int SetReceiveTransportSequenceNumber(bool enable, int id);
   void SetRtcpXrRrtrStatus(bool enable);
-  void SetTransmissionSmoothingStatus(bool enable);
   void EnableTMMBR(bool enable);
 
   // Sets SSRC for outgoing stream.
@@ -132,10 +127,15 @@ class ViEChannel : public VCMFrameTypeCallback,
   int32_t GetLocalSSRC(uint8_t idx, unsigned int* ssrc);
 
   // Gets SSRC for the incoming stream.
-  int32_t GetRemoteSSRC(uint32_t* ssrc);
+  uint32_t GetRemoteSSRC();
 
   int SetRtxSendPayloadType(int payload_type, int associated_payload_type);
   void SetRtxReceivePayloadType(int payload_type, int associated_payload_type);
+  // If set to true, the RTX payload type mapping supplied in
+  // |SetRtxReceivePayloadType| will be used when restoring RTX packets. Without
+  // it, RTX packets will always be restored to the last non-RTX packet payload
+  // type received.
+  void SetUseRtxPayloadMappingOnRestore(bool val);
 
   void SetRtpStateForSsrc(uint32_t ssrc, const RtpState& rtp_state);
   RtpState GetRtpStateForSsrc(uint32_t ssrc);
@@ -248,10 +248,10 @@ class ViEChannel : public VCMFrameTypeCallback,
                                int min_playout_delay_ms,
                                int render_delay_ms);
 
-  // Implements VideoFrameTypeCallback.
+  // Implements FrameTypeCallback.
   virtual int32_t RequestKeyFrame();
 
-  // Implements VideoFrameTypeCallback.
+  // Implements FrameTypeCallback.
   virtual int32_t SliceLossIndicationRequest(
       const uint64_t picture_id);
 
@@ -443,6 +443,7 @@ class ViEChannel : public VCMFrameTypeCallback,
 
   int64_t time_of_first_rtt_ms_ GUARDED_BY(crit_);
   int64_t rtt_sum_ms_ GUARDED_BY(crit_);
+  int64_t last_rtt_ms_ GUARDED_BY(crit_);
   size_t num_rtts_ GUARDED_BY(crit_);
 
   // RtpRtcp modules, declared last as they use other members on construction.

@@ -35,9 +35,10 @@ class QualifiedName;
 struct CSSParserFunction;
 struct CSSParserCalcFunction;
 class CSSParserValueList;
+class CSSVariableData;
 
 struct CSSParserValue {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     CSSValueID id;
     bool isInt;
     union {
@@ -51,6 +52,7 @@ struct CSSParserValue {
             UChar32 start;
             UChar32 end;
         } m_unicodeRange;
+        CSSVariableData* variableData;
     };
     enum {
         Operator  = 0x100000,
@@ -63,6 +65,9 @@ struct CSSParserValue {
         DimensionList = 0x100006,
         // Represents a unicode range by a pair of UChar32 values
         UnicodeRange = 0x100007,
+        String = 0x100008,
+        URI = 0x100009,
+        VariableReference = 0x100010,
     };
     int m_unit;
     CSSPrimitiveValue::UnitType unit() const { return static_cast<CSSPrimitiveValue::UnitType>(m_unit); }
@@ -74,7 +79,7 @@ struct CSSParserValue {
 };
 
 class CORE_EXPORT CSSParserValueList {
-    WTF_MAKE_FAST_ALLOCATED(CSSParserValueList);
+    USING_FAST_MALLOC(CSSParserValueList);
 public:
     CSSParserValueList()
         : m_current(0)
@@ -109,19 +114,22 @@ public:
     void destroyAndClear();
 
 private:
+    void checkForVariableReferencesOrDestroyAndClear(const CSSParserTokenRange& originalRange);
+    void consumeVariableValue(const CSSParserTokenRange&);
+
     unsigned m_current;
     Vector<CSSParserValue, 4> m_values;
 };
 
 struct CSSParserFunction {
-    WTF_MAKE_FAST_ALLOCATED(CSSParserFunction);
+    USING_FAST_MALLOC(CSSParserFunction);
 public:
     CSSValueID id;
     OwnPtr<CSSParserValueList> args;
 };
 
 struct CSSParserCalcFunction {
-    WTF_MAKE_FAST_ALLOCATED(CSSParserCalcFunction);
+    USING_FAST_MALLOC(CSSParserCalcFunction);
 public:
     CSSParserCalcFunction(CSSParserTokenRange args_) : args(args_) {}
     CSSParserTokenRange args;

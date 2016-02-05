@@ -54,7 +54,13 @@ namespace {
 
 const float s_resourceAdjustedRatio = 0.5;
 
-DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, drawingBufferCounter, ("DrawingBuffer"));
+#ifndef NDEBUG
+WTF::RefCountedLeakCounter& drawingBufferCounter()
+{
+    DEFINE_STATIC_LOCAL(WTF::RefCountedLeakCounter, staticDrawingBufferCounter, ("DrawingBuffer"));
+    return staticDrawingBufferCounter;
+}
+#endif
 
 class ScopedTextureUnit0BindingRestorer {
 public:
@@ -168,7 +174,7 @@ DrawingBuffer::DrawingBuffer(PassOwnPtr<WebGraphicsContext3D> context,
     // Used by browser tests to detect the use of a DrawingBuffer.
     TRACE_EVENT_INSTANT0("test_gpu", "DrawingBufferCreation", TRACE_EVENT_SCOPE_GLOBAL);
 #ifndef NDEBUG
-    drawingBufferCounter.increment();
+    drawingBufferCounter().increment();
 #endif
 }
 
@@ -179,7 +185,7 @@ DrawingBuffer::~DrawingBuffer()
     m_layer.clear();
     m_context.clear();
 #ifndef NDEBUG
-    drawingBufferCounter.decrement();
+    drawingBufferCounter().decrement();
 #endif
 }
 
@@ -307,7 +313,7 @@ bool DrawingBuffer::prepareMailbox(WebExternalTextureMailbox* outMailbox, WebExt
 
     m_context->produceTextureDirectCHROMIUM(frontColorBufferMailbox->textureInfo.textureId, GL_TEXTURE_2D, frontColorBufferMailbox->mailbox.name);
     m_context->flush();
-    frontColorBufferMailbox->mailbox.syncPoint = m_context->insertSyncPoint();
+    frontColorBufferMailbox->mailbox.validSyncToken = m_context->insertSyncPoint(frontColorBufferMailbox->mailbox.syncToken);
     frontColorBufferMailbox->mailbox.allowOverlay = frontColorBufferMailbox->textureInfo.imageId != 0;
     setBufferClearNeeded(true);
 
@@ -329,7 +335,9 @@ void DrawingBuffer::mailboxReleased(const WebExternalTextureMailbox& mailbox, bo
     for (size_t i = 0; i < m_textureMailboxes.size(); i++) {
         RefPtr<MailboxInfo> mailboxInfo = m_textureMailboxes[i];
         if (nameEquals(mailboxInfo->mailbox, mailbox)) {
-            mailboxInfo->mailbox.syncPoint = mailbox.syncPoint;
+            memcpy(mailboxInfo->mailbox.syncToken, mailbox.syncToken,
+                sizeof(mailboxInfo->mailbox.syncToken));
+            mailboxInfo->mailbox.validSyncToken = mailbox.validSyncToken;
             ASSERT(mailboxInfo->m_parentDrawingBuffer.get() == this);
             mailboxInfo->m_parentDrawingBuffer.clear();
             m_recycledMailboxQueue.prepend(mailboxInfo->mailbox);
@@ -369,9 +377,9 @@ PassRefPtr<DrawingBuffer::MailboxInfo> DrawingBuffer::recycledMailbox()
     }
     ASSERT(mailboxInfo);
 
-    if (mailboxInfo->mailbox.syncPoint) {
-        m_context->waitSyncPoint(mailboxInfo->mailbox.syncPoint);
-        mailboxInfo->mailbox.syncPoint = 0;
+    if (mailboxInfo->mailbox.validSyncToken) {
+        m_context->waitSyncToken(mailboxInfo->mailbox.syncToken);
+        mailboxInfo->mailbox.validSyncToken = false;
     }
 
     if (mailboxInfo->size != m_size) {
@@ -397,8 +405,8 @@ void DrawingBuffer::deleteMailbox(const WebExternalTextureMailbox& mailbox)
 {
     for (size_t i = 0; i < m_textureMailboxes.size(); i++) {
         if (nameEquals(m_textureMailboxes[i]->mailbox, mailbox)) {
-            if (mailbox.syncPoint)
-                m_context->waitSyncPoint(mailbox.syncPoint);
+            if (mailbox.validSyncToken)
+                m_context->waitSyncToken(mailbox.syncToken);
 
             deleteChromiumImageForTexture(&m_textureMailboxes[i]->textureInfo);
 
@@ -506,10 +514,10 @@ bool DrawingBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platfor
         m_context->genMailboxCHROMIUM(mailbox.name);
         m_context->produceTextureDirectCHROMIUM(textureId, GL_TEXTURE_2D, mailbox.name);
         m_context->flush();
-        mailbox.syncPoint = m_context->insertSyncPoint();
+        mailbox.validSyncToken = m_context->insertSyncPoint(mailbox.syncToken);
     }
 
-    context->waitSyncPoint(mailbox.syncPoint);
+    context->waitSyncToken(mailbox.syncToken);
     Platform3DObject sourceTexture = context->createAndConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
 
     GLboolean unpackPremultiplyAlphaNeeded = GL_FALSE;
@@ -524,7 +532,9 @@ bool DrawingBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platfor
     context->deleteTexture(sourceTexture);
 
     context->flush();
-    m_context->waitSyncPoint(context->insertSyncPoint());
+    GLbyte syncToken[24];
+    if (context->insertSyncPoint(syncToken))
+        m_context->waitSyncToken(syncToken);
 
     return true;
 }
@@ -866,11 +876,6 @@ void DrawingBuffer::setPackAlignment(GLint param)
     m_packAlignment = param;
 }
 
-void DrawingBuffer::paintRenderingResultsToCanvas(ImageBuffer* imageBuffer)
-{
-    paintFramebufferToCanvas(framebuffer(), size().width(), size().height(), !m_actualAttributes.premultipliedAlpha, imageBuffer);
-}
-
 bool DrawingBuffer::paintRenderingResultsToImageData(int& width, int& height, SourceDrawingBuffer sourceBuffer, WTF::ArrayBufferContents& contents)
 {
     ASSERT(!m_actualAttributes.premultipliedAlpha);
@@ -906,45 +911,6 @@ bool DrawingBuffer::paintRenderingResultsToImageData(int& width, int& height, So
 
     pixels.transfer(contents);
     return true;
-}
-
-void DrawingBuffer::paintFramebufferToCanvas(int framebuffer, int width, int height, bool premultiplyAlpha, ImageBuffer* imageBuffer)
-{
-    unsigned char* pixels = 0;
-
-    const SkBitmap& canvasBitmap = imageBuffer->deprecatedBitmapForOverwrite();
-    const SkBitmap* readbackBitmap = 0;
-    ASSERT(canvasBitmap.colorType() == kN32_SkColorType);
-    if (canvasBitmap.width() == width && canvasBitmap.height() == height) {
-        // This is the fastest and most common case. We read back
-        // directly into the canvas's backing store.
-        readbackBitmap = &canvasBitmap;
-        m_resizingBitmap.reset();
-    } else {
-        // We need to allocate a temporary bitmap for reading back the
-        // pixel data. We will then use Skia to rescale this bitmap to
-        // the size of the canvas's backing store.
-        if (m_resizingBitmap.width() != width || m_resizingBitmap.height() != height) {
-            if (!m_resizingBitmap.tryAllocN32Pixels(width, height))
-                return;
-        }
-        readbackBitmap = &m_resizingBitmap;
-    }
-
-    // Read back the frame buffer.
-    SkAutoLockPixels bitmapLock(*readbackBitmap);
-    pixels = static_cast<unsigned char*>(readbackBitmap->getPixels());
-
-    m_context->bindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-    readBackFramebuffer(pixels, width, height, ReadbackSkia, premultiplyAlpha ? WebGLImageConversion::AlphaDoPremultiply : WebGLImageConversion::AlphaDoNothing);
-    flipVertically(pixels, width, height);
-
-    readbackBitmap->notifyPixelsChanged();
-    if (m_resizingBitmap.readyToDraw()) {
-        // We need to draw the resizing bitmap into the canvas's backing store.
-        SkCanvas canvas(canvasBitmap);
-        canvas.drawBitmapRect(m_resizingBitmap, SkRect::MakeIWH(canvasBitmap.width(), canvasBitmap.height()), nullptr);
-    }
 }
 
 void DrawingBuffer::readBackFramebuffer(unsigned char* pixels, int width, int height, ReadbackOrder readbackOrder, WebGLImageConversion::AlphaOp op)

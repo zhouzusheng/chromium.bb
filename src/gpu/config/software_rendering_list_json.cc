@@ -1039,6 +1039,12 @@ LONG_STRING_CONST(
             "op": ">=",
             "value": "3.0"
           }
+        },
+        {
+          "os": {
+            "type": "android"
+          },
+          "gl_renderer": ".*Google.*"
         }
       ],
       "features": [

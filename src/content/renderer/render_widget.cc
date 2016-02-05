@@ -22,8 +22,10 @@
 #include "cc/debug/benchmark_instrumentation.h"
 #include "cc/output/output_surface.h"
 #include "cc/trees/layer_tree_host.h"
+#include "components/scheduler/renderer/render_widget_scheduling_state.h"
 #include "components/scheduler/renderer/renderer_scheduler.h"
 #include "content/child/npapi/webplugin.h"
+#include "content/common/content_switches_internal.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
@@ -49,6 +51,7 @@
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
+#include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_blink_platform_impl.h"
 #include "content/renderer/resizing_mode_selector.h"
 #include "ipc/ipc_sync_message.h"
@@ -81,6 +84,8 @@
 #if defined(OS_ANDROID)
 #include <android/keycodes.h>
 #include "content/renderer/android/synchronous_compositor_factory.h"
+#include "content/renderer/android/synchronous_compositor_filter.h"
+#include "content/renderer/android/synchronous_compositor_output_surface.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -492,13 +497,12 @@ RenderWidget::RenderWidget(CompositorDependencies* compositor_deps,
       need_update_rect_for_auto_resize_(false),
       did_show_(false),
       is_hidden_(hidden),
-      never_visible_(never_visible),
+      compositor_never_visible_(never_visible),
       is_fullscreen_granted_(false),
       display_mode_(blink::WebDisplayModeUndefined),
-      has_focus_(false),
       handling_input_event_(false),
       handling_event_overscroll_(nullptr),
-      handling_ime_event_(false),
+      ime_event_guard_(nullptr),
       handling_event_type_(WebInputEvent::Undefined),
       ignore_ack_for_mouse_move_from_debugger_(false),
       closing_(false),
@@ -530,6 +534,15 @@ RenderWidget::RenderWidget(CompositorDependencies* compositor_deps,
 #if defined(OS_ANDROID)
   text_input_info_history_.push_back(blink::WebTextInputInfo());
 #endif
+
+  // In tests there may not be a RenderThreadImpl.
+  if (RenderThreadImpl::current()) {
+    render_widget_scheduling_state_ = RenderThreadImpl::current()
+                                          ->GetRendererScheduler()
+                                          ->NewRenderWidgetSchedulingState()
+                                          .Pass();
+    render_widget_scheduling_state_->SetHidden(is_hidden_);
+  }
 }
 
 RenderWidget::~RenderWidget() {
@@ -562,6 +575,14 @@ RenderWidget* RenderWidget::CreateForFrame(
     CompositorDependencies* compositor_deps,
     blink::WebLocalFrame* frame) {
   CHECK_NE(routing_id, MSG_ROUTING_NONE);
+  // TODO(avi): Before RenderViewImpl has-a RenderWidget, the browser passes the
+  // same routing ID for both the view routing ID and the main frame widget
+  // routing ID. https://crbug.com/545684
+  RenderViewImpl* view = RenderViewImpl::FromRoutingID(routing_id);
+  if (view) {
+    view->AttachWebFrameWidget(RenderWidget::CreateWebFrameWidget(view, frame));
+    return view;
+  }
   scoped_refptr<RenderWidget> widget(
       new RenderWidget(compositor_deps, blink::WebPopupTypeNone, screen_info,
                        false, hidden, false));
@@ -581,6 +602,11 @@ RenderWidget* RenderWidget::CreateForFrame(
 blink::WebWidget* RenderWidget::CreateWebFrameWidget(
     RenderWidget* render_widget,
     blink::WebLocalFrame* frame) {
+  if (!frame->parent()) {
+    // TODO(dcheng): The main frame widget currently has a special case.
+    // Eliminate this once WebView is no longer a WebWidget.
+    return blink::WebFrameWidget::create(render_widget, frame->view(), frame);
+  }
   return blink::WebFrameWidget::create(render_widget, frame);
 }
 
@@ -769,11 +795,15 @@ void RenderWidget::Resize(const gfx::Size& new_size,
   if (!webwidget_)
     return;
 
-  if (compositor_) {
-    compositor_->setViewportSize(new_size, physical_backing_size);
-  }
+  if (compositor_)
+    compositor_->setViewportSize(physical_backing_size);
 
+  bool resized = size_ != new_size ||
+      physical_backing_size_ != physical_backing_size;
+
+  size_ = new_size;
   physical_backing_size_ = physical_backing_size;
+
   top_controls_shrink_blink_size_ = top_controls_shrink_blink_size;
   top_controls_height_ = top_controls_height;
   visible_viewport_size_ = visible_viewport_size;
@@ -787,18 +817,25 @@ void RenderWidget::Resize(const gfx::Size& new_size,
   webwidget_->setTopControlsHeight(top_controls_height,
                                    top_controls_shrink_blink_size_);
 
-  if (size_ != new_size) {
-    size_ = new_size;
-
+  if (resized) {
+    gfx::Size new_widget_size =
+        IsUseZoomForDSFEnabled() ?  physical_backing_size_ : size_;
     // When resizing, we want to wait to paint before ACK'ing the resize.  This
     // ensures that we only resize as fast as we can paint.  We only need to
     // send an ACK if we are resized to a non-empty rect.
-    webwidget_->resize(new_size);
+    webwidget_->resize(new_widget_size);
+  }
+  WebSize visual_viewport_size;
+
+  if (IsUseZoomForDSFEnabled()) {
+    gfx::SizeF scaled_visible_viewport_size =
+        gfx::ScaleSize(gfx::SizeF(visible_viewport_size), device_scale_factor_);
+    visual_viewport_size = gfx::ToCeiledSize(scaled_visible_viewport_size);
+  } else {
+    visual_viewport_size = visible_viewport_size_;
   }
 
-  webwidget()->resizePinchViewport(gfx::Size(
-      visible_viewport_size.width(),
-      visible_viewport_size.height()));
+  webwidget()->resizeVisualViewport(visual_viewport_size);
 
   if (new_size.IsEmpty() || physical_backing_size.IsEmpty()) {
     // In this case there is no paint/composite and therefore no
@@ -965,17 +1002,10 @@ GURL RenderWidget::GetURLForGraphicsContext3D() {
 }
 
 scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
+  DCHECK(webwidget_);
   // For widgets that are never visible, we don't start the compositor, so we
   // never get a request for a cc::OutputSurface.
-  DCHECK(!never_visible_);
-
-#if defined(OS_ANDROID)
-  if (SynchronousCompositorFactory* factory =
-      SynchronousCompositorFactory::GetInstance()) {
-    return factory->CreateOutputSurface(routing_id(),
-                                        frame_swap_message_queue_);
-  }
-#endif
+  DCHECK(!compositor_never_visible_);
 
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
@@ -983,21 +1013,50 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
   if (command_line.HasSwitch(switches::kDisableGpuCompositing))
     use_software = true;
 
+  scoped_refptr<GpuChannelHost> gpu_channel_host;
+  if (!use_software) {
+    CauseForGpuLaunch cause =
+        CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
+    gpu_channel_host =
+        RenderThreadImpl::current()->EstablishGpuChannelSync(cause);
+    if (!gpu_channel_host.get()) {
+      // Cause the compositor to wait and try again.
+      return nullptr;
+    }
+    // We may get a valid channel, but with a software renderer. In that case,
+    // disable GPU compositing.
+    if (gpu_channel_host->gpu_info().software_rendering)
+      use_software = true;
+  }
+
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
   scoped_refptr<ContextProviderCommandBuffer> worker_context_provider;
   if (!use_software) {
     context_provider = ContextProviderCommandBuffer::Create(
-        CreateGraphicsContext3D(true), RENDER_COMPOSITOR_CONTEXT);
-    if (!context_provider.get()) {
-      // Cause the compositor to wait and try again.
-      return nullptr;
-    }
+        CreateGraphicsContext3D(gpu_channel_host.get()),
+        RENDER_COMPOSITOR_CONTEXT);
+    DCHECK(context_provider);
     worker_context_provider =
         RenderThreadImpl::current()->SharedWorkerContextProvider();
     if (!worker_context_provider) {
       // Cause the compositor to wait and try again.
       return nullptr;
     }
+
+#if defined(OS_ANDROID)
+    if (SynchronousCompositorFactory* factory =
+            SynchronousCompositorFactory::GetInstance()) {
+      return factory->CreateOutputSurface(
+          routing_id(), frame_swap_message_queue_, context_provider,
+          worker_context_provider);
+    } else if (RenderThreadImpl::current()->sync_compositor_message_filter()) {
+      return make_scoped_ptr(new SynchronousCompositorOutputSurface(
+          context_provider, worker_context_provider, routing_id(),
+          content::RenderThreadImpl::current()
+              ->sync_compositor_message_filter(),
+          frame_swap_message_queue_));
+    }
+#endif
   }
 
   uint32 output_surface_id = next_output_surface_id_++;
@@ -1044,8 +1103,7 @@ void RenderWidget::OnSwapBuffersComplete() {
 }
 
 void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
-                                      const ui::LatencyInfo& latency_info,
-                                      bool is_keyboard_shortcut) {
+                                      const ui::LatencyInfo& latency_info) {
   if (!input_event)
     return;
   base::AutoReset<bool> handling_input_event_resetter(&handling_input_event_,
@@ -1061,25 +1119,30 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
                                          &event_overscroll);
 
 #if defined(OS_ANDROID)
-  // On Android, when a key is pressed or sent from the Keyboard using IME,
-  // |AdapterInputConnection| generates input key events to make sure all JS
-  // listeners that monitor KeyUp and KeyDown events receive the proper key
-  // code. Since this input key event comes from IME, we need to set the
-  // IME event guard here to make sure it does not interfere with other IME
-  // events.
-  scoped_ptr<ImeEventGuard> ime_event_guard_maybe;
+  bool from_ime = false;
+
+  // For most keyboard events, we want the change source to be FROM_IME because
+  // we don't need to update IME states in AdapterInputConnection.
   if (WebInputEvent::isKeyboardEventType(input_event->type)) {
     const WebKeyboardEvent& key_event =
         *static_cast<const WebKeyboardEvent*>(input_event);
-    // Some keys are special and it's essential that no events get blocked.
+    // TODO(changwan): this if-condition is a stop-gap solution to update IME
+    // states in AdapterInputConnection when using DPAD navigation. This is not
+    // a correct solution because InputConnection#getTextBeforeCursor()
+    // immediately after InputConnection#sendKeyEvent() will not return the
+    // correct value. The correct solution is either redesign the architecture
+    // or emulate the DPAD behavior in AdapterInputConnection, either is
+    // non-trivial.
     if (key_event.nativeKeyCode != AKEYCODE_TAB &&
         key_event.nativeKeyCode != AKEYCODE_DPAD_CENTER &&
         key_event.nativeKeyCode != AKEYCODE_DPAD_LEFT &&
         key_event.nativeKeyCode != AKEYCODE_DPAD_RIGHT &&
         key_event.nativeKeyCode != AKEYCODE_DPAD_UP &&
         key_event.nativeKeyCode != AKEYCODE_DPAD_DOWN)
-      ime_event_guard_maybe.reset(new ImeEventGuard(this));
+      from_ime = true;
   }
+
+  ImeEventGuard guard(this, false, from_ime);
 #endif
 
   base::TimeTicks start_time;
@@ -1157,6 +1220,9 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   // If this RawKeyDown event corresponds to a browser keyboard shortcut and
   // it's not processed by webkit, then we need to suppress the upcoming Char
   // events.
+  bool is_keyboard_shortcut =
+      input_event->type == WebInputEvent::RawKeyDown &&
+      static_cast<const WebKeyboardEvent*>(input_event)->isBrowserShortcut;
   if (!processed && is_keyboard_shortcut)
     suppress_next_char_events_ = true;
 
@@ -1291,7 +1357,6 @@ void RenderWidget::OnMouseCaptureLost() {
 }
 
 void RenderWidget::OnSetFocus(bool enable) {
-  has_focus_ = enable;
   if (webwidget_)
     webwidget_->setFocus(enable);
 }
@@ -1309,6 +1374,7 @@ void RenderWidget::FlushPendingInputEventAck() {
 // WebWidgetClient
 
 void RenderWidget::didAutoResize(const WebSize& new_size) {
+  // TODO(oshima): support UseZoomForDSFEnabled()
   if (size_.width() != new_size.width || size_.height() != new_size.height) {
     size_ = new_size;
 
@@ -1331,14 +1397,20 @@ void RenderWidget::didAutoResize(const WebSize& new_size) {
 void RenderWidget::AutoResizeCompositor()  {
   physical_backing_size_ = gfx::ScaleToCeiledSize(size_, device_scale_factor_);
   if (compositor_)
-    compositor_->setViewportSize(size_, physical_backing_size_);
+    compositor_->setViewportSize(physical_backing_size_);
 }
 
 void RenderWidget::initializeLayerTreeView() {
   DCHECK(!host_closing_);
 
   compositor_ = RenderWidgetCompositor::Create(this, compositor_deps_);
-  compositor_->setViewportSize(size_, physical_backing_size_);
+  compositor_->setViewportSize(physical_backing_size_);
+
+  // For background pages and certain tests, we don't want to trigger
+  // OutputSurface creation.
+  if (compositor_never_visible_ || !RenderThreadImpl::current())
+    compositor_->SetNeverVisible();
+
   StartCompositor();
 }
 
@@ -1359,14 +1431,14 @@ blink::WebLayerTreeView* RenderWidget::layerTreeView() {
   return compositor_.get();
 }
 
-void RenderWidget::didFirstVisuallyNonEmptyLayout() {
-  QueueMessage(
-      new ViewHostMsg_DidFirstVisuallyNonEmptyPaint(routing_id_),
-      MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE);
-}
+void RenderWidget::didMeaningfulLayout(blink::WebMeaningfulLayout layout_type) {
+  if (layout_type == blink::WebMeaningfulLayout::VisuallyNonEmpty) {
+    QueueMessage(new ViewHostMsg_DidFirstVisuallyNonEmptyPaint(routing_id_),
+                 MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE);
+  }
 
-void RenderWidget::didFirstLayoutAfterFinishedParsing() {
-  // TODO(dglazkov): Use this hook to drive CapturePageInfo.
+  FOR_EACH_OBSERVER(RenderFrameImpl, render_frames_,
+                    DidMeaningfulLayout(layout_type));
 }
 
 void RenderWidget::WillBeginCompositorFrame() {
@@ -1489,7 +1561,7 @@ void RenderWidget::QueueMessage(IPC::Message* msg,
 void RenderWidget::didChangeCursor(const WebCursorInfo& cursor_info) {
   // TODO(darin): Eliminate this temporary.
   WebCursor cursor;
-  InitializeCursorFromWebKitCursorInfo(&cursor, cursor_info);
+  InitializeCursorFromWebCursorInfo(&cursor, cursor_info);
   // Only send a SetCursor message if we need to make a change.
   if (!current_cursor_.IsEqual(cursor)) {
     current_cursor_ = cursor;
@@ -1521,9 +1593,6 @@ void RenderWidget::show(WebNavigationPolicy) {
 }
 
 void RenderWidget::didFocus() {
-}
-
-void RenderWidget::didBlur() {
 }
 
 void RenderWidget::DoDeferredClose() {
@@ -1593,6 +1662,7 @@ void RenderWidget::setToolTipText(const blink::WebString& text,
 }
 
 void RenderWidget::setWindowRect(const WebRect& rect) {
+  // TODO(oshima): Scale back to DIP coordinates.
   WebRect window_rect = rect;
   if (popup_origin_scale_for_emulation_) {
     float scale = popup_origin_scale_for_emulation_;
@@ -1826,6 +1896,9 @@ void RenderWidget::SetHidden(bool hidden) {
     RenderThreadImpl::current()->WidgetHidden();
   else
     RenderThreadImpl::current()->WidgetRestored();
+
+  if (render_widget_scheduling_state_)
+    render_widget_scheduling_state_->SetHidden(hidden);
 }
 
 void RenderWidget::DidToggleFullscreen() {
@@ -1860,29 +1933,49 @@ static bool IsDateTimeInput(ui::TextInputType type) {
       type == ui::TEXT_INPUT_TYPE_WEEK;
 }
 
-
-void RenderWidget::StartHandlingImeEvent() {
-  DCHECK(!handling_ime_event_);
-  handling_ime_event_ = true;
+void RenderWidget::OnImeEventGuardStart(ImeEventGuard* guard) {
+  if (!ime_event_guard_)
+    ime_event_guard_ = guard;
 }
 
-void RenderWidget::FinishHandlingImeEvent() {
-  DCHECK(handling_ime_event_);
-  handling_ime_event_ = false;
+void RenderWidget::OnImeEventGuardFinish(ImeEventGuard* guard) {
+  if (ime_event_guard_ != guard) {
+#if defined(OS_ANDROID)
+    // In case a from-IME event (e.g. touch) ends up in not-from-IME event
+    // (e.g. long press gesture), we want to treat it as not-from-IME event
+    // so that AdapterInputConnection can make changes to its Editable model.
+    // Therefore, we want to mark this text state update as 'from IME' only
+    // when all the nested events are all originating from IME.
+    ime_event_guard_->set_from_ime(
+        ime_event_guard_->from_ime() && guard->from_ime());
+#endif
+    return;
+  }
+  ime_event_guard_ = nullptr;
+
   // While handling an ime event, text input state and selection bounds updates
   // are ignored. These must explicitly be updated once finished handling the
   // ime event.
   UpdateSelectionBounds();
 #if defined(OS_ANDROID)
-  UpdateTextInputState(NO_SHOW_IME, FROM_IME);
+  UpdateTextInputState(
+      guard->show_ime() ? SHOW_IME_IF_NEEDED : NO_SHOW_IME,
+      guard->from_ime() ? FROM_IME : FROM_NON_IME);
 #endif
 }
 
 void RenderWidget::UpdateTextInputState(ShowIme show_ime,
                                         ChangeSource change_source) {
   TRACE_EVENT0("renderer", "RenderWidget::UpdateTextInputState");
-  if (handling_ime_event_)
+  if (ime_event_guard_) {
+    // show_ime should still be effective even if it was set inside the IME
+    // event guard.
+    if (show_ime == SHOW_IME_IF_NEEDED) {
+      ime_event_guard_->set_show_ime(true);
+    }
     return;
+  }
+
   ui::TextInputType new_type = GetTextInputType();
   if (IsDateTimeInput(new_type))
     return;  // Not considered as a text input field in WebKit/Chromium.
@@ -1940,15 +2033,23 @@ void RenderWidget::GetSelectionBounds(gfx::Rect* focus, gfx::Rect* anchor) {
   WebRect focus_webrect;
   WebRect anchor_webrect;
   webwidget_->selectionBounds(focus_webrect, anchor_webrect);
-  *focus = focus_webrect;
-  *anchor = anchor_webrect;
+  if (IsUseZoomForDSFEnabled()) {
+    float inverse_scale = 1.f / device_scale_factor_;
+    gfx::RectF focus_rect(focus_webrect);
+    *focus = gfx::ToEnclosingRect(gfx::ScaleRect(focus_rect, inverse_scale));
+    gfx::RectF anchor_rect(anchor_webrect);
+    *anchor = gfx::ToEnclosingRect(gfx::ScaleRect(anchor_rect, inverse_scale));
+  } else {
+    *focus = focus_webrect;
+    *anchor = anchor_webrect;
+  }
 }
 
 void RenderWidget::UpdateSelectionBounds() {
   TRACE_EVENT0("renderer", "RenderWidget::UpdateSelectionBounds");
   if (!webwidget_)
     return;
-  if (handling_ime_event_)
+  if (ime_event_guard_)
     return;
 
 #if defined(USE_AURA)
@@ -2089,10 +2190,6 @@ WebScreenInfo RenderWidget::screenInfo() {
   return screen_info_;
 }
 
-float RenderWidget::deviceScaleFactor() {
-  return device_scale_factor_;
-}
-
 void RenderWidget::resetInputMethod() {
   ImeEventGuard guard(this);
   // If the last text input type is not None, then we should finish any
@@ -2168,15 +2265,8 @@ void RenderWidget::didOverscroll(
 }
 
 void RenderWidget::StartCompositor() {
-  // For widgets that are never visible, we don't need the compositor to run
-  // at all.
-  if (never_visible_)
-    return;
-  // In tests without a RenderThreadImpl, don't set ready as this kicks
-  // off creating output surfaces that the test can't create.
-  if (!RenderThreadImpl::current())
-    return;
-  compositor_->StartCompositor();
+  if (!is_hidden())
+    compositor_->setVisible(true);
 }
 
 void RenderWidget::SchedulePluginMove(const WebPluginGeometry& move) {
@@ -2242,6 +2332,8 @@ void RenderWidget::ObserveWheelEventAndResult(
 }
 
 void RenderWidget::hasTouchEventHandlers(bool has_handlers) {
+  if (render_widget_scheduling_state_)
+    render_widget_scheduling_state_->SetHasTouchHandler(has_handlers);
   Send(new ViewHostMsg_HasTouchEventHandlers(routing_id_, has_handlers));
 }
 
@@ -2249,13 +2341,6 @@ void RenderWidget::hasTouchEventHandlers(bool has_handlers) {
 #define STATIC_ASSERT_WTI_ENUM_MATCH(a, b)                                         \
     static_assert(int(blink::WebTouchAction##a) == int(TOUCH_ACTION_##b), \
                   "mismatching enums: " #a)
-
-inline content::TouchAction& operator|=(content::TouchAction& a,
-                                        content::TouchAction b) {
-  a = static_cast<content::TouchAction>(static_cast<int>(a) |
-                                        static_cast<int>(b));
-  return a;
-}
 
 void RenderWidget::setTouchAction(
     blink::WebTouchAction web_touch_action) {
@@ -2266,7 +2351,6 @@ void RenderWidget::setTouchAction(
     return;
 
   // Verify the same values are used by the types so we can cast between them.
-   STATIC_ASSERT_WTI_ENUM_MATCH(Auto,      AUTO);
    STATIC_ASSERT_WTI_ENUM_MATCH(None,      NONE);
    STATIC_ASSERT_WTI_ENUM_MATCH(PanLeft,   PAN_LEFT);
    STATIC_ASSERT_WTI_ENUM_MATCH(PanRight,  PAN_RIGHT);
@@ -2274,7 +2358,11 @@ void RenderWidget::setTouchAction(
    STATIC_ASSERT_WTI_ENUM_MATCH(PanUp,     PAN_UP);
    STATIC_ASSERT_WTI_ENUM_MATCH(PanDown,   PAN_DOWN);
    STATIC_ASSERT_WTI_ENUM_MATCH(PanY,      PAN_Y);
+   STATIC_ASSERT_WTI_ENUM_MATCH(Pan,       PAN);
    STATIC_ASSERT_WTI_ENUM_MATCH(PinchZoom, PINCH_ZOOM);
+   STATIC_ASSERT_WTI_ENUM_MATCH(Manipulation, MANIPULATION);
+   STATIC_ASSERT_WTI_ENUM_MATCH(DoubleTapZoom, DOUBLE_TAP_ZOOM);
+   STATIC_ASSERT_WTI_ENUM_MATCH(Auto,      AUTO);
 
    content::TouchAction content_touch_action =
        static_cast<content::TouchAction>(web_touch_action);
@@ -2292,21 +2380,7 @@ bool RenderWidget::HasTouchEventHandlersAt(const gfx::Point& point) const {
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
-RenderWidget::CreateGraphicsContext3D(bool compositor) {
-  if (!webwidget_)
-    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGpuCompositing))
-    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-  if (!RenderThreadImpl::current())
-    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-  CauseForGpuLaunch cause =
-      CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
-  scoped_refptr<GpuChannelHost> gpu_channel_host(
-      RenderThreadImpl::current()->EstablishGpuChannelSync(cause));
-  if (!gpu_channel_host.get())
-    return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
-
+RenderWidget::CreateGraphicsContext3D(GpuChannelHost* gpu_channel_host) {
   // Explicitly disable antialiasing for the compositor. As of the time of
   // this writing, the only platform that supported antialiasing for the
   // compositor was Mac OS X, because the on-screen OpenGL context creation
@@ -2326,12 +2400,19 @@ RenderWidget::CreateGraphicsContext3D(bool compositor) {
   bool lose_context_when_out_of_memory = true;
   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
 #if defined(OS_ANDROID)
+  bool using_synchronous_compositing =
+      SynchronousCompositorFactory::GetInstance() ||
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kIPCSyncCompositing);
   // If we raster too fast we become upload bound, and pending
   // uploads consume memory. For maximum upload throughput, we would
   // want to allow for upload_throughput * pipeline_time of pending
   // uploads, after which we are just wasting memory. Since we don't
   // know our upload throughput yet, this just caps our memory usage.
-  size_t divider = 1;
+  // Synchronous compositor uses half because synchronous compositor
+  // pipeline is only one frame deep. But twice of half for low end
+  // because 16bit texture is not supported.
+  size_t divider = using_synchronous_compositing ? 2 : 1;
   if (base::SysInfo::IsLowEndDevice())
     divider = 6;
   // For reference Nexus10 can upload 1MB in about 2.5ms.
@@ -2347,22 +2428,13 @@ RenderWidget::CreateGraphicsContext3D(bool compositor) {
   limits.mapped_memory_reclaim_limit =
       max_transfer_buffer_usage_mb * kBytesPerMegabyte;
 #endif
-  if (compositor) {
-    limits.command_buffer_size = 64 * 1024;
-    limits.start_transfer_buffer_size = 64 * 1024;
-    limits.min_transfer_buffer_size = 64 * 1024;
-  }
+  limits.command_buffer_size = 64 * 1024;
+  limits.start_transfer_buffer_size = 64 * 1024;
+  limits.min_transfer_buffer_size = 64 * 1024;
 
-  // TODO(piman): we still need to create a View command buffer until
-  // crbug.com/526196 is fixed. The surface_id doesn't matter, it just needs to
-  // be !0.
-  const int32 kDummySurfaceId = 1;
-  scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
-      new WebGraphicsContext3DCommandBufferImpl(
-          kDummySurfaceId, GetURLForGraphicsContext3D(),
-          gpu_channel_host.get(), attributes, lose_context_when_out_of_memory,
-          limits, NULL));
-  return context.Pass();
+  return make_scoped_ptr(new WebGraphicsContext3DCommandBufferImpl(
+          0, GetURLForGraphicsContext3D(), gpu_channel_host, attributes,
+          lose_context_when_out_of_memory, limits, NULL));
 }
 
 void RenderWidget::RegisterRenderFrameProxy(RenderFrameProxy* proxy) {

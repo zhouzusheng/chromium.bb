@@ -412,7 +412,9 @@ embed
 fixed
 hand
 hide
-invert
+isolate
+isolate-override
+plaintext
 -webkit-isolate
 -webkit-isolate-override
 -webkit-plaintext
@@ -528,12 +530,6 @@ read-write-plaintext-only
 // -webkit-user-drag
 //
 element
-
-//
-// width/min-width/max-width
-//
-intrinsic
-min-intrinsic
 
 //
 // CSS3 intrinsic dimension keywords
@@ -783,7 +779,6 @@ tb-rl
 horizontal-tb
 vertical-rl
 vertical-lr
-horizontal-bt
 
 // -webkit-ruby-position
 after
@@ -812,7 +807,8 @@ farthest-corner
 // contain
 // cover
 
-// -webkit-text-orientation
+// text-orientation/-webkit-text-orientation
+mixed
 sideways
 sideways-right
 upright
@@ -966,7 +962,6 @@ linear-gradient
 radial-gradient
 repeating-linear-gradient
 repeating-radial-gradient
--webkit-canvas
 -webkit-cross-fade
 -webkit-gradient
 -webkit-linear-gradient
@@ -996,6 +991,7 @@ polygon
 format
 
 // (-webkit-)filter
+invert
 grayscale
 sepia
 saturate
@@ -1047,3 +1043,6 @@ calc
 mandatory
 proximity
 from-image
+
+var
+-internal-variable-value

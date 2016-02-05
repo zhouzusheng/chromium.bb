@@ -66,7 +66,8 @@ void URLRequestFileDirJob::Kill() {
   weak_factory_.InvalidateWeakPtrs();
 }
 
-bool URLRequestFileDirJob::ReadRawData(IOBuffer* buf, int buf_size,
+bool URLRequestFileDirJob::ReadRawData(IOBuffer* buf,
+                                       int buf_size,
                                        int* bytes_read) {
   DCHECK(bytes_read);
   *bytes_read = 0;

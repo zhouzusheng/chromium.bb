@@ -811,6 +811,12 @@ class CFX_BitStream {
 
   void Rewind() { m_BitPos = 0; }
 
+  FX_DWORD GetPos() const { return m_BitPos; }
+
+  FX_DWORD BitsRemaining() const {
+    return m_BitSize >= m_BitPos ? m_BitSize - m_BitPos : 0;
+  }
+
  protected:
   FX_DWORD m_BitPos;
 
@@ -953,20 +959,6 @@ struct FxFreeDeleter {
 template <class T>
 struct ReleaseDeleter {
   inline void operator()(T* ptr) const { ptr->Release(); }
-};
-
-// TODO(thestig) Remove in favor of nonstd::unique_ptr.
-template <class T>
-class CFX_SmartPointer {
- public:
-  CFX_SmartPointer(T* pObj) : m_pObj(pObj) {}
-  ~CFX_SmartPointer() { m_pObj->Release(); }
-  T* Get(void) { return m_pObj; }
-  T& operator*(void) { return *m_pObj; }
-  T* operator->(void) { return m_pObj; }
-
- protected:
-  T* m_pObj;
 };
 
 #define FX_DATALIST_LENGTH 1024

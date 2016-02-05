@@ -22,6 +22,7 @@
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_version_info.h"
 #include "ui/gl/trace_util.h"
 
 namespace gpu {
@@ -302,8 +303,7 @@ void TextureManager::Destroy(bool have_context) {
     glDeleteTextures(arraysize(black_texture_ids_), black_texture_ids_);
   }
 
-  DCHECK_EQ(0u, memory_tracker_managed_->GetMemRepresented());
-  DCHECK_EQ(0u, memory_tracker_unmanaged_->GetMemRepresented());
+  DCHECK_EQ(0u, memory_type_tracker_->GetMemRepresented());
 }
 
 Texture::Texture(GLuint service_id)
@@ -320,7 +320,6 @@ Texture::Texture(GLuint service_id)
       wrap_s_(GL_REPEAT),
       wrap_t_(GL_REPEAT),
       usage_(GL_NONE),
-      pool_(GL_TEXTURE_POOL_UNMANAGED_CHROMIUM),
       compare_func_(GL_LEQUAL),
       compare_mode_(GL_NONE),
       max_lod_(1000.0f),
@@ -330,10 +329,8 @@ Texture::Texture(GLuint service_id)
       max_level_set_(-1),
       texture_complete_(false),
       texture_mips_dirty_(false),
-      texture_mips_complete_(false),
       cube_complete_(false),
       texture_level0_dirty_(false),
-      texture_level0_complete_(false),
       npot_(false),
       has_been_bound_(false),
       framebuffer_attachment_count_(0),
@@ -381,7 +378,7 @@ void Texture::RemoveTextureRef(TextureRef* ref, bool have_context) {
 
 MemoryTypeTracker* Texture::GetMemTracker() {
   DCHECK(memory_tracking_ref_);
-  return memory_tracking_ref_->manager()->GetMemTracker(pool_);
+  return memory_tracking_ref_->manager()->GetMemTracker();
 }
 
 Texture::LevelInfo::LevelInfo()
@@ -394,8 +391,8 @@ Texture::LevelInfo::LevelInfo()
       border(0),
       format(0),
       type(0),
-      estimated_size(0) {
-}
+      image_state(UNBOUND),
+      estimated_size(0) {}
 
 Texture::LevelInfo::LevelInfo(const LevelInfo& rhs)
     : cleared_rect(rhs.cleared_rect),
@@ -409,8 +406,8 @@ Texture::LevelInfo::LevelInfo(const LevelInfo& rhs)
       format(rhs.format),
       type(rhs.type),
       image(rhs.image),
-      estimated_size(rhs.estimated_size) {
-}
+      image_state(rhs.image_state),
+      estimated_size(rhs.estimated_size) {}
 
 Texture::LevelInfo::~LevelInfo() {
 }
@@ -834,6 +831,7 @@ void Texture::SetLevelInfo(const FeatureInfo* feature_info,
   info.format = format;
   info.type = type;
   info.image = 0;
+  info.image_state = UNBOUND;
 
   UpdateMipCleared(&info, width, height, cleared_rect);
 
@@ -953,14 +951,6 @@ GLenum Texture::SetParameteri(
       }
       mag_filter_ = param;
       break;
-    case GL_TEXTURE_POOL_CHROMIUM:
-      if (!feature_info->validators()->texture_pool.IsValid(param)) {
-        return GL_INVALID_ENUM;
-      }
-      GetMemTracker()->TrackMemFree(estimated_size());
-      pool_ = param;
-      GetMemTracker()->TrackMemAlloc(estimated_size());
-      break;
     case GL_TEXTURE_WRAP_R:
       if (!feature_info->validators()->texture_wrap_mode.IsValid(param)) {
         return GL_INVALID_ENUM;
@@ -1029,7 +1019,6 @@ GLenum Texture::SetParameterf(
   switch (pname) {
     case GL_TEXTURE_MIN_FILTER:
     case GL_TEXTURE_MAG_FILTER:
-    case GL_TEXTURE_POOL_CHROMIUM:
     case GL_TEXTURE_WRAP_R:
     case GL_TEXTURE_WRAP_S:
     case GL_TEXTURE_WRAP_T:
@@ -1095,8 +1084,8 @@ void Texture::Update(const FeatureInfo* feature_info) {
     texture_complete_ = false;
   }
 
+  bool texture_level0_complete = true;
   if (cube_complete_ && texture_level0_dirty_) {
-    texture_level0_complete_ = true;
     for (size_t ii = 0; ii < face_infos_.size(); ++ii) {
       const Texture::LevelInfo& level0 = face_infos_[ii].level_infos[0];
       if (!TextureFaceComplete(first_level,
@@ -1108,18 +1097,17 @@ void Texture::Update(const FeatureInfo* feature_info) {
                                level0.depth,
                                level0.format,
                                level0.type)) {
-        texture_level0_complete_ = false;
+        texture_level0_complete = false;
         break;
       }
     }
     texture_level0_dirty_ = false;
   }
-  cube_complete_ &= texture_level0_complete_;
+  cube_complete_ &= texture_level0_complete;
 
+  bool texture_mips_complete = true;
   if (texture_complete_ && texture_mips_dirty_) {
-    texture_mips_complete_ = true;
-    for (size_t ii = 0;
-         ii < face_infos_.size() && texture_mips_complete_;
+    for (size_t ii = 0; ii < face_infos_.size() && texture_mips_complete;
          ++ii) {
       const Texture::FaceInfo& face_info = face_infos_[ii];
       const Texture::LevelInfo& level0 = face_info.level_infos[0];
@@ -1134,14 +1122,14 @@ void Texture::Update(const FeatureInfo* feature_info) {
                                 level_info.depth,
                                 level_info.format,
                                 level_info.type)) {
-          texture_mips_complete_ = false;
+          texture_mips_complete = false;
           break;
         }
       }
     }
     texture_mips_dirty_ = false;
   }
-  texture_complete_ &= texture_mips_complete_;
+  texture_complete_ &= texture_mips_complete;
 }
 
 bool Texture::ClearRenderableLevels(GLES2Decoder* decoder) {
@@ -1248,11 +1236,10 @@ bool Texture::ClearLevel(
   return true;
 }
 
-void Texture::SetLevelImage(
-    const FeatureInfo* feature_info,
-    GLenum target,
-    GLint level,
-    gfx::GLImage* image) {
+void Texture::SetLevelImage(GLenum target,
+                            GLint level,
+                            gl::GLImage* image,
+                            ImageState state) {
   DCHECK_GE(level, 0);
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
   DCHECK_LT(static_cast<size_t>(face_index),
@@ -1264,15 +1251,14 @@ void Texture::SetLevelImage(
   DCHECK_EQ(info.target, target);
   DCHECK_EQ(info.level, level);
   info.image = image;
+  info.image_state = state;
   UpdateCanRenderCondition();
   UpdateHasImages();
-
-  // TODO(ericrk): Images may have complex sizing not accounted for by
-  // |estimated_size_|, we should add logic here to update |estimated_size_|
-  // based on the new GLImage. crbug.com/526298
 }
 
-gfx::GLImage* Texture::GetLevelImage(GLint target, GLint level) const {
+gl::GLImage* Texture::GetLevelImage(GLint target,
+                                    GLint level,
+                                    ImageState* state) const {
   if (target != GL_TEXTURE_2D && target != GL_TEXTURE_EXTERNAL_OES &&
       target != GL_TEXTURE_RECTANGLE_ARB) {
     return NULL;
@@ -1283,22 +1269,16 @@ gfx::GLImage* Texture::GetLevelImage(GLint target, GLint level) const {
       static_cast<size_t>(level) < face_infos_[face_index].level_infos.size()) {
     const LevelInfo& info = face_infos_[face_index].level_infos[level];
     if (info.target != 0) {
+      if (state)
+        *state = info.image_state;
       return info.image.get();
     }
   }
   return NULL;
 }
 
-void Texture::OnWillModifyPixels() {
-  gfx::GLImage* image = GetLevelImage(target(), 0);
-  if (image)
-    image->WillModifyTexImage();
-}
-
-void Texture::OnDidModifyPixels() {
-  gfx::GLImage* image = GetLevelImage(target(), 0);
-  if (image)
-    image->DidModifyTexImage();
+gl::GLImage* Texture::GetLevelImage(GLint target, GLint level) const {
+  return GetLevelImage(target, level, nullptr);
 }
 
 void Texture::DumpLevelMemory(base::trace_event::ProcessMemoryDump* pmd,
@@ -1313,14 +1293,18 @@ void Texture::DumpLevelMemory(base::trace_event::ProcessMemoryDump* pmd,
       if (!level_infos[level_index].estimated_size)
         continue;
 
+      // If a level has a GLImage, ask the GLImage to dump itself.
       if (level_infos[level_index].image) {
-        // If a level is backed by a GLImage, ask the GLImage to dump itself.
         level_infos[level_index].image->OnMemoryDump(
             pmd, client_tracing_id,
             base::StringPrintf("%s/face_%d/level_%d", dump_name.c_str(),
                                face_index, level_index));
-      } else {
-        // If a level is not backed by a GLImage, create a simple dump.
+      }
+
+      // If a level does not have a GLImage bound to it, then dump the
+      // texture allocation also as the storage is not provided by the
+      // GLImage in that case.
+      if (level_infos[level_index].image_state != BOUND) {
         base::trace_event::MemoryAllocatorDump* dump = pmd->CreateAllocatorDump(
             base::StringPrintf("%s/face_%d/level_%d", dump_name.c_str(),
                                face_index, level_index));
@@ -1365,10 +1349,7 @@ TextureManager::TextureManager(MemoryTracker* memory_tracker,
                                GLint max_rectangle_texture_size,
                                GLint max_3d_texture_size,
                                bool use_default_textures)
-    : memory_tracker_managed_(
-          new MemoryTypeTracker(memory_tracker, MemoryTracker::kManaged)),
-      memory_tracker_unmanaged_(
-          new MemoryTypeTracker(memory_tracker, MemoryTracker::kUnmanaged)),
+    : memory_type_tracker_(new MemoryTypeTracker(memory_tracker)),
       memory_tracker_(memory_tracker),
       feature_info_(feature_info),
       framebuffer_manager_(NULL),
@@ -1432,7 +1413,7 @@ bool TextureManager::Initialize() {
   // so don't register a dump provider.
   if (memory_tracker_) {
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        this, base::ThreadTaskRunnerHandle::Get());
+        this, "gpu::TextureManager", base::ThreadTaskRunnerHandle::Get());
   }
 
   return true;
@@ -1614,11 +1595,7 @@ void TextureManager::SetParameteri(
           error_state, result, function_name, pname, param);
     }
   } else {
-    // Texture tracking pools exist only for the command decoder, so
-    // do not pass them on to the native GL implementation.
-    if (pname != GL_TEXTURE_POOL_CHROMIUM) {
-      glTexParameteri(texture->target(), pname, param);
-    }
+    glTexParameteri(texture->target(), pname, param);
   }
 }
 
@@ -1638,11 +1615,7 @@ void TextureManager::SetParameterf(
           error_state, result, function_name, pname, param);
     }
   } else {
-    // Texture tracking pools exist only for the command decoder, so
-    // do not pass them on to the native GL implementation.
-    if (pname != GL_TEXTURE_POOL_CHROMIUM) {
-      glTexParameterf(texture->target(), pname, param);
-    }
+    glTexParameterf(texture->target(), pname, param);
   }
 }
 
@@ -1719,19 +1692,8 @@ void TextureManager::StopTracking(TextureRef* ref) {
   DCHECK_GE(num_uncleared_mips_, 0);
 }
 
-MemoryTypeTracker* TextureManager::GetMemTracker(GLenum tracking_pool) {
-  switch (tracking_pool) {
-    case GL_TEXTURE_POOL_MANAGED_CHROMIUM:
-      return memory_tracker_managed_.get();
-      break;
-    case GL_TEXTURE_POOL_UNMANAGED_CHROMIUM:
-      return memory_tracker_unmanaged_.get();
-      break;
-    default:
-      break;
-  }
-  NOTREACHED();
-  return NULL;
+MemoryTypeTracker* TextureManager::GetMemTracker() {
+  return memory_type_tracker_.get();
 }
 
 Texture* TextureManager::GetTextureForServiceId(GLuint service_id) const {
@@ -1758,13 +1720,13 @@ GLsizei TextureManager::ComputeMipMapCount(GLenum target,
   }
 }
 
-void TextureManager::SetLevelImage(
-    TextureRef* ref,
-    GLenum target,
-    GLint level,
-    gfx::GLImage* image) {
+void TextureManager::SetLevelImage(TextureRef* ref,
+                                   GLenum target,
+                                   GLint level,
+                                   gl::GLImage* image,
+                                   Texture::ImageState state) {
   DCHECK(ref);
-  ref->texture()->SetLevelImage(feature_info_.get(), target, level, image);
+  ref->texture()->SetLevelImage(target, level, image, state);
 }
 
 size_t TextureManager::GetSignatureSize() const {
@@ -1812,22 +1774,6 @@ void TextureManager::UpdateNumImages(int delta) {
 void TextureManager::IncFramebufferStateChangeCount() {
   if (framebuffer_manager_)
     framebuffer_manager_->IncFramebufferStateChangeCount();
-}
-
-bool TextureManager::ValidateFormatAndTypeCombination(
-    ErrorState* error_state, const char* function_name, GLenum format,
-    GLenum type) {
-  // TODO(zmo): now this is only called by GLES2DecoderImpl::DoCopyTexImage2D
-  // and is incorrect for ES3. Fix this.
-  if (!g_format_type_validator.Get().IsValid(format, format, type)) {
-    ERRORSTATE_SET_GL_ERROR(
-        error_state, GL_INVALID_OPERATION, function_name,
-        (std::string("invalid type ") +
-         GLES2Util::GetStringEnum(type) + " for format " +
-         GLES2Util::GetStringEnum(format)).c_str());
-    return false;
-  }
-  return true;
 }
 
 bool TextureManager::ValidateTextureParameters(
@@ -1978,7 +1924,7 @@ bool TextureManager::ValidateTexImage(
     return false;
   }
 
-  if (!memory_tracker_managed_->EnsureGPUMemoryAvailable(args.pixels_size)) {
+  if (!memory_type_tracker_->EnsureGPUMemoryAvailable(args.pixels_size)) {
     ERRORSTATE_SET_GL_ERROR(error_state, GL_OUT_OF_MEMORY, function_name,
                             "out of memory");
     return false;
@@ -2031,7 +1977,7 @@ void TextureManager::ValidateAndDoTexImage(
     }
 
     DCHECK(undefined_faces.size());
-    if (!memory_tracker_managed_->EnsureGPUMemoryAvailable(
+    if (!memory_type_tracker_->EnsureGPUMemoryAvailable(
             undefined_faces.size() * args.pixels_size)) {
       ERRORSTATE_SET_GL_ERROR(state->GetErrorState(), GL_OUT_OF_MEMORY,
                               function_name, "out of memory");
@@ -2055,6 +2001,138 @@ void TextureManager::ValidateAndDoTexImage(
 
   DoTexImage(texture_state, state->GetErrorState(), framebuffer_state,
              function_name, texture_ref, args);
+}
+
+bool TextureManager::ValidateTexSubImage(ContextState* state,
+                                         const char* function_name,
+                                         const DoTexSubImageArguments& args,
+                                         TextureRef** texture_ref) {
+  ErrorState* error_state = state->GetErrorState();
+  const Validators* validators = feature_info_->validators();
+
+  if (!validators->texture_target.IsValid(args.target)) {
+    ERRORSTATE_SET_GL_ERROR_INVALID_ENUM(error_state, function_name,
+                                         args.target, "target");
+    return false;
+  }
+  if (args.width < 0) {
+    ERRORSTATE_SET_GL_ERROR(error_state, GL_INVALID_VALUE, function_name,
+                            "width < 0");
+    return false;
+  }
+  if (args.height < 0) {
+    ERRORSTATE_SET_GL_ERROR(error_state, GL_INVALID_VALUE, function_name,
+                            "height < 0");
+    return false;
+  }
+  TextureRef* local_texture_ref = GetTextureInfoForTarget(state, args.target);
+  if (!local_texture_ref) {
+    ERRORSTATE_SET_GL_ERROR(error_state, GL_INVALID_OPERATION, function_name,
+                            "unknown texture for target");
+    return false;
+  }
+  Texture* texture = local_texture_ref->texture();
+  GLenum current_type = 0;
+  GLenum internal_format = 0;
+  if (!texture->GetLevelType(args.target, args.level, &current_type,
+                             &internal_format)) {
+    ERRORSTATE_SET_GL_ERROR(error_state, GL_INVALID_OPERATION, function_name,
+                            "level does not exist.");
+    return false;
+  }
+  if (!ValidateTextureParameters(error_state, function_name, args.format,
+                                 args.type, internal_format, args.level)) {
+    return false;
+  }
+  if (args.type != current_type && !feature_info_->IsES3Enabled()) {
+    ERRORSTATE_SET_GL_ERROR(error_state, GL_INVALID_OPERATION, function_name,
+                            "type does not match type of texture.");
+    return false;
+  }
+  if (!texture->ValidForTexture(args.target, args.level, args.xoffset,
+                                args.yoffset, 0, args.width, args.height, 1)) {
+    ERRORSTATE_SET_GL_ERROR(error_state, GL_INVALID_VALUE, function_name,
+                            "bad dimensions.");
+    return false;
+  }
+  if ((GLES2Util::GetChannelsForFormat(args.format) &
+       (GLES2Util::kDepth | GLES2Util::kStencil)) != 0 &&
+      !feature_info_->IsES3Enabled()) {
+    ERRORSTATE_SET_GL_ERROR(
+        error_state, GL_INVALID_OPERATION, function_name,
+        "can not supply data for depth or stencil textures");
+    return false;
+  }
+  DCHECK(args.pixels);
+  *texture_ref = local_texture_ref;
+  return true;
+}
+
+void TextureManager::ValidateAndDoTexSubImage(
+    GLES2Decoder* decoder,
+    DecoderTextureState* texture_state,
+    ContextState* state,
+    DecoderFramebufferState* framebuffer_state,
+    const char* function_name,
+    const DoTexSubImageArguments& args) {
+  ErrorState* error_state = state->GetErrorState();
+  TextureRef* texture_ref;
+  if (!ValidateTexSubImage(state, function_name, args, &texture_ref)) {
+    return;
+  }
+
+  Texture* texture = texture_ref->texture();
+  GLsizei tex_width = 0;
+  GLsizei tex_height = 0;
+  bool ok = texture->GetLevelSize(args.target, args.level, &tex_width,
+                                  &tex_height, nullptr);
+  DCHECK(ok);
+  if (args.xoffset != 0 || args.yoffset != 0 || args.width != tex_width ||
+      args.height != tex_height) {
+    gfx::Rect cleared_rect;
+    if (CombineAdjacentRects(
+            texture->GetLevelClearedRect(args.target, args.level),
+            gfx::Rect(args.xoffset, args.yoffset, args.width, args.height),
+            &cleared_rect)) {
+      DCHECK_GE(cleared_rect.size().GetArea(),
+                texture->GetLevelClearedRect(args.target, args.level)
+                    .size()
+                    .GetArea());
+      SetLevelClearedRect(texture_ref, args.target, args.level, cleared_rect);
+    } else {
+      // Otherwise clear part of texture level that is not already cleared.
+      if (!ClearTextureLevel(decoder, texture_ref, args.target, args.level)) {
+        ERRORSTATE_SET_GL_ERROR(error_state, GL_OUT_OF_MEMORY,
+                                "glTexSubImage2D", "dimensions too big");
+        return;
+      }
+    }
+    ScopedTextureUploadTimer timer(texture_state);
+    glTexSubImage2D(args.target, args.level, args.xoffset, args.yoffset,
+                    args.width, args.height, AdjustTexFormat(args.format),
+                    args.type, args.pixels);
+    return;
+  }
+
+  if (!texture_state->texsubimage_faster_than_teximage &&
+      !texture->IsImmutable() && !texture->HasImages()) {
+    ScopedTextureUploadTimer timer(texture_state);
+    GLenum internal_format;
+    GLenum tex_type;
+    texture->GetLevelType(args.target, args.level, &tex_type, &internal_format);
+    // NOTE: In OpenGL ES 2.0 border is always zero. If that changes we'll need
+    // to look it up.
+    glTexImage2D(args.target, args.level, internal_format, args.width,
+                 args.height, 0, AdjustTexFormat(args.format), args.type,
+                 args.pixels);
+  } else {
+    ScopedTextureUploadTimer timer(texture_state);
+    glTexSubImage2D(args.target, args.level, args.xoffset, args.yoffset,
+                    args.width, args.height, AdjustTexFormat(args.format),
+                    args.type, args.pixels);
+  }
+  SetLevelCleared(texture_ref, args.target, args.level, true);
+  return;
 }
 
 GLenum TextureManager::AdjustTexFormat(GLenum format) const {
@@ -2142,6 +2220,31 @@ void TextureManager::DoTexImage(
         args.pixels != NULL ? gfx::Rect(args.width, args.height) : gfx::Rect());
     texture_state->tex_image_failed = false;
   }
+}
+
+bool TextureManager::CombineAdjacentRects(const gfx::Rect& rect1,
+                                          const gfx::Rect& rect2,
+                                          gfx::Rect* result) {
+  // Return |rect2| if |rect1| is empty or |rect2| contains |rect1|.
+  if (rect1.IsEmpty() || rect2.Contains(rect1)) {
+    *result = rect2;
+    return true;
+  }
+
+  // Return |rect1| if |rect2| is empty or |rect1| contains |rect2|.
+  if (rect2.IsEmpty() || rect1.Contains(rect2)) {
+    *result = rect1;
+    return true;
+  }
+
+  // Return the union of |rect1| and |rect2| if they share an edge.
+  if (rect1.SharesEdgeWith(rect2)) {
+    *result = gfx::UnionRects(rect1, rect2);
+    return true;
+  }
+
+  // Return false if it's not possible to combine |rect1| and |rect2|.
+  return false;
 }
 
 ScopedTextureUploadTimer::ScopedTextureUploadTimer(

@@ -22,7 +22,7 @@
 
 AdditiveAnimations status=experimental, depends_on=StackedCSSPropertyAnimations
 AppBanner status=stable
-AlwaysUseComplexText
+AlwaysUseComplexText status=experimental
 ApplicationCache status=stable
 AudioOutputDevices status=experimental
 AudioVideoTracks depends_on=Media, status=experimental
@@ -30,10 +30,6 @@ AuthorShadowDOMForAnyElement
 BackgroundSync status=experimental
 BackgroundSyncPeriodic status=experimental
 BackgroundSyncV2 status=experimental
-// Enable bleeding-edge code to make Blink draw content faster.
-// The changes enabled behind this flag are very likely to break lots of content.
-// ** DO NOT use this flag unless you know what you are doing. **
-BleedingEdgeFastPaths
 CacheStorageMatchAll status=stable
 ClientHints status=stable
 ColumnFill status=experimental
@@ -42,7 +38,6 @@ CompositorWorker status=experimental
 // Unified Chrome Compositor and Blink Animations engine (Project Heaviside). crbug.com/394772
 CompositorAnimationTimelines
 ContextMenu status=experimental
-CreateShadowRootWithParameter status=experimental
 CredentialManager status=test
 CSS3Text status=experimental
 CSS3TextDecorations status=experimental
@@ -57,6 +52,8 @@ CSSMotionPath status=stable
 CSSOMSmoothScroll status=experimental
 CSSStickyPosition
 CSSTouchActionPanDirections status=experimental
+CSSTypedOM status=experimental
+CSSVariables status=experimental
 CSSViewport status=experimental
 CSSScrollSnapPoints status=test
 // getPropertyCSSValue, CSSValue, etc. will be removed once layout tests no longer depend on them. crbug.com/331608
@@ -64,17 +61,21 @@ CustomSchemeHandler depends_on=NavigatorContentUtils, status=experimental
 Database status=stable
 DecodeToYUV status=experimental
 DeviceLight status=experimental
+DeviceOrientationAbsolute status=experimental
 DisplayList2dCanvas status=stable
 DurableStorage status=experimental
 ForceDisplayList2dCanvas
 EncryptedMedia status=stable
 ExecCommandInJavaScript status=test
 ComputedAccessibilityInfo status=experimental
+EventListenerOptions status=experimental
 ExperimentalCanvasFeatures status=test
 ExperimentalContentSecurityPolicyFeatures status=experimental
+ExperimentalFramework
 FastMobileScrolling
 FileAPIBlobClose status=experimental
 FileSystem status=stable
+ForeignFetch status=experimental
 FormDataNewMethods status=experimental
 FullscreenUnprefixed status=test
 FrameTimingSupport status=experimental
@@ -89,7 +90,8 @@ ImageRenderingPixelated status=stable
 IndexedDBExperimental status=experimental
 InputDeviceCapabilities status=stable
 InputModeAttribute status=experimental
-KeyboardEventCode status=experimental
+IterableCollections status=experimental
+KeyboardEventCode status=stable
 KeyboardEventKey status=experimental
 LangAttributeAwareFormControlUI
 LinkPreconnect status=stable
@@ -98,7 +100,7 @@ LinkHeader status=stable
 FractionalScrollOffsets status=experimental
 Media status=stable
 MediaCapture
-MediaController depends_on=Media, status=experimental
+MediaConstraints status=test
 MediaDevices status=stable
 MediaRecorder status=experimental
 MediaSession
@@ -110,7 +112,7 @@ NavigatorConnect status=experimental
 NavigatorContentUtils
 WebNFC status=experimental
 NetworkInformation status=stable
-NetInfoDownlinkMax status=experimental
+NetInfoDownlinkMax status=stable
 NewMediaPlaybackUi
 NotificationConstructor status=stable
 NotificationExperimental status=test
@@ -120,6 +122,7 @@ OrientationEvent
 ForceOverlayFullscreenVideo
 OverlayScrollbars
 PagePopup status=stable
+PassPaintVisualRectToCompositor
 PathOpsSVGClipping status=stable
 PerformanceObserver status=experimental
 Permissions status=stable
@@ -131,15 +134,18 @@ PrefixedEncryptedMedia status=test
 // See https://crbug.com/346236 for current status.
 PrefixedVideoFullscreen status=stable
 Presentation status=stable
+PresentationReceiver status=test
 PromiseRejectionEvent status=experimental
 PushMessaging status=stable
 // Push messaging payloads are blocked on the Push API supporting encryption.
 PushMessagingData status=test
 QuotaPromise status=experimental
 ReducedReferrerGranularity
+RenderingPipelineThrottling status=experimental
 RequestIdleCallback status=stable
 RequestAutocomplete status=test
 RestrictIFramePermissions
+RTCCertificate status=experimental
 SandboxBlocksModals status=stable
 ScreenOrientation status=stable
 ScriptedSpeech status=stable
@@ -151,6 +157,7 @@ SelectionPaintingWithoutSelectionGaps status=stable
 ServiceWorkerClientAttributes status=stable
 ServiceWorkerPerformanceTimeline status=stable
 ServiceWorkerWindowClientNavigate status=experimental
+ShadowDOMV1 status=experimental
 ShadowRootClosedMode status=experimental
 ShadowRootDelegatesFocus status=experimental
 SharedArrayBuffer
@@ -158,7 +165,6 @@ SharedWorker status=stable
 SlimmingPaintV2
 SlimmingPaintOffsetCaching implied_by=SlimmingPaintV2
 SlimmingPaintStrictCullRectClipping
-SlimmingPaintSubsequenceCaching implied_by=SlimmingPaintV2
 SlimmingPaintSynchronizedPainting implied_by=SlimmingPaintV2
 SlimmingPaintUnderInvalidationChecking
 StackedCSSPropertyAnimations status=experimental
@@ -189,7 +195,7 @@ WebBluetooth
 WebGLDraftExtensions status=experimental
 WebGLImageChromium
 WebUSB status=experimental
-WebVR depends_on=GeometryInterfaces
+WebVR depends_on=GeometryInterfaces, status=test
 WebVTTRegions depends_on=Media, status=experimental
 V8IdleTasks
 XSLT status=stable

@@ -36,11 +36,13 @@
 #include "core/InspectorBackendDispatcher.h"
 #include "core/InspectorFrontend.h"
 #include "core/frame/FrameConsole.h"
+#include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
+#include "core/inspector/InspectedFrames.h"
 #include "core/inspector/InspectorAnimationAgent.h"
 #include "core/inspector/InspectorApplicationCacheAgent.h"
 #include "core/inspector/InspectorCSSAgent.h"
@@ -83,7 +85,7 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebLayerTreeView.h"
 #include "public/platform/WebRect.h"
@@ -159,7 +161,7 @@ private:
         agent->flushPendingProtocolNotifications();
 
         Vector<WebViewImpl*> views;
-        Vector<WebFrameWidgetImpl*> widgets;
+        WillBeHeapVector<RawPtrWillBeMember<WebFrameWidgetImpl>> widgets;
 
         // 1. Disable input events.
         const HashSet<WebViewImpl*>& viewImpls = WebViewImpl::allInstances();
@@ -171,9 +173,9 @@ private:
             view->setIgnoreInputEvents(true);
         }
 
-        const HashSet<WebFrameWidgetImpl*>& widgetImpls = WebFrameWidgetImpl::allInstances();
-        HashSet<WebFrameWidgetImpl*>::const_iterator widgetImplsEnd = widgetImpls.end();
-        for (HashSet<WebFrameWidgetImpl*>::const_iterator it =  widgetImpls.begin(); it != widgetImplsEnd; ++it) {
+        const WebFrameWidgetsSet& widgetImpls = WebFrameWidgetImpl::allInstances();
+        WebFrameWidgetsSet::const_iterator widgetImplsEnd = widgetImpls.end();
+        for (WebFrameWidgetsSet::const_iterator it =  widgetImpls.begin(); it != widgetImplsEnd; ++it) {
             WebFrameWidgetImpl* widget = *it;
             m_frozenWidgets.add(widget);
             widgets.append(widget);
@@ -199,7 +201,7 @@ private:
                 (*it)->setIgnoreInputEvents(false);
             }
         }
-        for (Vector<WebFrameWidgetImpl*>::iterator it = widgets.begin(); it != widgets.end(); ++it) {
+        for (WillBeHeapVector<RawPtrWillBeMember<WebFrameWidgetImpl>>::iterator it = widgets.begin(); it != widgets.end(); ++it) {
             if (m_frozenWidgets.contains(*it)) {
                 // The widget was not closed during the dispatch.
                 (*it)->setIgnoreInputEvents(false);
@@ -225,8 +227,7 @@ private:
     OwnPtr<WebDevToolsAgentClient::WebKitClientMessageLoop> m_messageLoop;
     typedef HashSet<WebViewImpl*> FrozenViewsSet;
     FrozenViewsSet m_frozenViews;
-    typedef HashSet<WebFrameWidgetImpl*> FrozenWidgetsSet;
-    FrozenWidgetsSet m_frozenWidgets;
+    WebFrameWidgetsSet m_frozenWidgets;
     static ClientMessageLoopAdapter* s_instance;
 };
 
@@ -289,13 +290,14 @@ PassOwnPtrWillBeRawPtr<WebDevToolsAgentImpl> WebDevToolsAgentImpl::create(WebLoc
     }
 
     WebDevToolsAgentImpl* agent = new WebDevToolsAgentImpl(frame, client, InspectorOverlay::create(view));
-    agent->registerAgent(InspectorRenderingAgent::create(view));
-    agent->registerAgent(InspectorEmulationAgent::create(view));
+    // TODO(dgozman): we should actually pass the view instead of frame, but during
+    // remote->local transition we cannot access mainFrameImpl() yet, so we have to store the
+    // frame which will become the main frame later.
+    agent->registerAgent(InspectorRenderingAgent::create(frame));
+    agent->registerAgent(InspectorEmulationAgent::create(frame));
     // TODO(dgozman): migrate each of the following agents to frame once module is ready.
     agent->registerAgent(InspectorDatabaseAgent::create(view->page()));
     agent->registerAgent(DeviceOrientationInspectorAgent::create(view->page()));
-    agent->registerAgent(InspectorFileSystemAgent::create(view->page()));
-    agent->registerAgent(InspectorIndexedDBAgent::create(view->page()));
     agent->registerAgent(InspectorAccessibilityAgent::create(view->page()));
     agent->registerAgent(InspectorDOMStorageAgent::create(view->page()));
     agent->registerAgent(InspectorCacheStorageAgent::create());
@@ -318,9 +320,15 @@ WebDevToolsAgentImpl::WebDevToolsAgentImpl(
     , m_resourceContentLoader(InspectorResourceContentLoader::create(m_webLocalFrameImpl->frame()))
     , m_state(adoptPtrWillBeNoop(new InspectorCompositeState(this)))
     , m_overlay(overlay)
-    , m_cssAgent(nullptr)
+    , m_inspectedFrames(adoptPtr(new InspectedFrames(m_webLocalFrameImpl->frame())))
+    , m_inspectorAgent(nullptr)
+    , m_domAgent(nullptr)
+    , m_pageAgent(nullptr)
     , m_resourceAgent(nullptr)
     , m_layerTreeAgent(nullptr)
+    , m_tracingAgent(nullptr)
+    , m_pageRuntimeAgent(nullptr)
+    , m_pageConsoleAgent(nullptr)
     , m_agents(m_instrumentingAgents.get(), m_state.get())
     , m_deferredAgentsInitialized(false)
 {
@@ -336,15 +344,11 @@ WebDevToolsAgentImpl::WebDevToolsAgentImpl(
     m_inspectorAgent = inspectorAgentPtr.get();
     m_agents.append(inspectorAgentPtr.release());
 
-    OwnPtrWillBeRawPtr<InspectorPageAgent> pageAgentPtr(InspectorPageAgent::create(m_webLocalFrameImpl->frame(), m_overlay.get(), m_resourceContentLoader.get()));
-    m_pageAgent = pageAgentPtr.get();
-    m_agents.append(pageAgentPtr.release());
-
-    OwnPtrWillBeRawPtr<InspectorDOMAgent> domAgentPtr(InspectorDOMAgent::create(m_pageAgent, injectedScriptManager, m_overlay.get()));
+    OwnPtrWillBeRawPtr<InspectorDOMAgent> domAgentPtr(InspectorDOMAgent::create(m_inspectedFrames.get(), injectedScriptManager, m_overlay.get()));
     m_domAgent = domAgentPtr.get();
     m_agents.append(domAgentPtr.release());
 
-    OwnPtrWillBeRawPtr<InspectorLayerTreeAgent> layerTreeAgentPtr(InspectorLayerTreeAgent::create(m_pageAgent));
+    OwnPtrWillBeRawPtr<InspectorLayerTreeAgent> layerTreeAgentPtr(InspectorLayerTreeAgent::create(m_inspectedFrames.get()));
     m_layerTreeAgent = layerTreeAgentPtr.get();
     m_agents.append(layerTreeAgentPtr.release());
 
@@ -353,16 +357,16 @@ WebDevToolsAgentImpl::WebDevToolsAgentImpl(
     ClientMessageLoopAdapter::ensureMainThreadDebuggerCreated(m_client);
     MainThreadDebugger* mainThreadDebugger = MainThreadDebugger::instance();
 
-    OwnPtrWillBeRawPtr<PageRuntimeAgent> pageRuntimeAgentPtr(PageRuntimeAgent::create(injectedScriptManager, this, mainThreadDebugger->debugger(), m_pageAgent));
+    OwnPtrWillBeRawPtr<PageRuntimeAgent> pageRuntimeAgentPtr(PageRuntimeAgent::create(injectedScriptManager, this, mainThreadDebugger->debugger(), m_inspectedFrames.get()));
     m_pageRuntimeAgent = pageRuntimeAgentPtr.get();
     m_agents.append(pageRuntimeAgentPtr.release());
 
-    OwnPtrWillBeRawPtr<PageConsoleAgent> pageConsoleAgentPtr = PageConsoleAgent::create(injectedScriptManager, m_domAgent, m_pageAgent);
+    OwnPtrWillBeRawPtr<PageConsoleAgent> pageConsoleAgentPtr = PageConsoleAgent::create(injectedScriptManager, m_domAgent, m_inspectedFrames.get());
     m_pageConsoleAgent = pageConsoleAgentPtr.get();
 
     OwnPtrWillBeRawPtr<InspectorWorkerAgent> workerAgentPtr = InspectorWorkerAgent::create(pageConsoleAgentPtr.get());
 
-    OwnPtrWillBeRawPtr<InspectorTracingAgent> tracingAgentPtr = InspectorTracingAgent::create(this, workerAgentPtr.get(), m_pageAgent);
+    OwnPtrWillBeRawPtr<InspectorTracingAgent> tracingAgentPtr = InspectorTracingAgent::create(this, workerAgentPtr.get(), m_inspectedFrames.get());
     m_tracingAgent = tracingAgentPtr.get();
     m_agents.append(tracingAgentPtr.release());
 
@@ -412,7 +416,6 @@ DEFINE_TRACE(WebDevToolsAgentImpl)
     visitor->trace(m_inspectorAgent);
     visitor->trace(m_domAgent);
     visitor->trace(m_pageAgent);
-    visitor->trace(m_cssAgent);
     visitor->trace(m_resourceAgent);
     visitor->trace(m_layerTreeAgent);
     visitor->trace(m_tracingAgent);
@@ -424,11 +427,8 @@ DEFINE_TRACE(WebDevToolsAgentImpl)
 
 void WebDevToolsAgentImpl::willBeDestroyed()
 {
-#if ENABLE(ASSERT)
-    Frame* frame = m_webLocalFrameImpl->frame();
-    ASSERT(frame);
-    ASSERT(m_pageAgent->inspectedFrame()->view());
-#endif
+    ASSERT(m_webLocalFrameImpl->frame());
+    ASSERT(m_inspectedFrames->root()->view());
 
     detach();
     m_injectedScriptManager->disconnect();
@@ -445,34 +445,39 @@ void WebDevToolsAgentImpl::initializeDeferredAgents()
 
     InjectedScriptManager* injectedScriptManager = m_injectedScriptManager.get();
 
-    OwnPtrWillBeRawPtr<InspectorResourceAgent> resourceAgentPtr(InspectorResourceAgent::create(m_pageAgent));
+    OwnPtrWillBeRawPtr<InspectorResourceAgent> resourceAgentPtr(InspectorResourceAgent::create(m_inspectedFrames.get()));
     m_resourceAgent = resourceAgentPtr.get();
     m_agents.append(resourceAgentPtr.release());
 
-    OwnPtrWillBeRawPtr<InspectorCSSAgent> cssAgentPtr(InspectorCSSAgent::create(m_domAgent, m_pageAgent, m_resourceAgent, m_resourceContentLoader.get()));
-    m_cssAgent = cssAgentPtr.get();
+    OwnPtrWillBeRawPtr<InspectorCSSAgent> cssAgentPtr(InspectorCSSAgent::create(m_domAgent, m_inspectedFrames.get(), m_resourceAgent, m_resourceContentLoader.get()));
+    InspectorCSSAgent* cssAgent = cssAgentPtr.get();
     m_agents.append(cssAgentPtr.release());
 
-    m_agents.append(InspectorAnimationAgent::create(m_pageAgent, m_domAgent));
+    m_agents.append(InspectorAnimationAgent::create(m_inspectedFrames.get(), m_domAgent, cssAgent, injectedScriptManager));
 
     m_agents.append(InspectorMemoryAgent::create());
 
-    m_agents.append(InspectorApplicationCacheAgent::create(m_pageAgent));
+    m_agents.append(InspectorApplicationCacheAgent::create(m_inspectedFrames.get()));
+    m_agents.append(InspectorFileSystemAgent::create(m_inspectedFrames.get()));
+    m_agents.append(InspectorIndexedDBAgent::create(m_inspectedFrames.get()));
 
-    OwnPtrWillBeRawPtr<InspectorDebuggerAgent> debuggerAgentPtr(PageDebuggerAgent::create(MainThreadDebugger::instance(), m_pageAgent, injectedScriptManager));
+    OwnPtrWillBeRawPtr<InspectorDebuggerAgent> debuggerAgentPtr(PageDebuggerAgent::create(MainThreadDebugger::instance(), m_inspectedFrames.get(), injectedScriptManager));
     InspectorDebuggerAgent* debuggerAgent = debuggerAgentPtr.get();
     m_agents.append(debuggerAgentPtr.release());
 
     m_agents.append(InspectorDOMDebuggerAgent::create(injectedScriptManager, m_domAgent, debuggerAgent->v8DebuggerAgent()));
 
-    m_agents.append(InspectorInputAgent::create(m_pageAgent));
+    m_agents.append(InspectorInputAgent::create(m_inspectedFrames.get()));
 
     v8::Isolate* isolate = V8PerIsolateData::mainThreadIsolate();
-    m_agents.append(InspectorProfilerAgent::create(isolate, injectedScriptManager, m_overlay.get()));
+    m_agents.append(InspectorProfilerAgent::create(isolate, m_overlay.get()));
 
     m_agents.append(InspectorHeapProfilerAgent::create(isolate, injectedScriptManager));
 
-    m_pageAgent->setDebuggerAgent(debuggerAgent);
+    OwnPtrWillBeRawPtr<InspectorPageAgent> pageAgentPtr(InspectorPageAgent::create(m_inspectedFrames.get(), m_overlay.get(), m_resourceContentLoader.get(), debuggerAgent));
+    m_pageAgent = pageAgentPtr.get();
+    m_agents.append(pageAgentPtr.release());
+
     m_pageConsoleAgent->setDebuggerAgent(debuggerAgent->v8DebuggerAgent());
 
     MainThreadDebugger* mainThreadDebugger = MainThreadDebugger::instance();
@@ -484,7 +489,7 @@ void WebDevToolsAgentImpl::initializeDeferredAgents()
         adoptPtr(new PageInjectedScriptHostClient()));
 
     if (m_overlay)
-        m_overlay->init(m_cssAgent.get(), debuggerAgent, m_domAgent.get());
+        m_overlay->init(cssAgent, debuggerAgent, m_domAgent.get());
 }
 
 void WebDevToolsAgentImpl::registerAgent(PassOwnPtrWillBeRawPtr<InspectorAgent> agent)
@@ -565,7 +570,7 @@ void WebDevToolsAgentImpl::didCommitLoadForLocalFrame(LocalFrame* frame)
 
 bool WebDevToolsAgentImpl::screencastEnabled()
 {
-    return m_pageAgent->screencastEnabled();
+    return m_pageAgent && m_pageAgent->screencastEnabled();
 }
 
 void WebDevToolsAgentImpl::willAddPageOverlay(const GraphicsLayer* layer)
@@ -661,6 +666,14 @@ void WebDevToolsAgentImpl::resumeStartup()
 void WebDevToolsAgentImpl::evaluateInWebInspector(long callId, const WebString& script)
 {
     m_inspectorAgent->evaluateForTestInFrontend(callId, script);
+}
+
+WebString WebDevToolsAgentImpl::evaluateInWebInspectorOverlay(const WebString& script)
+{
+    if (!m_overlay)
+        return WebString();
+
+    return m_overlay->evaluateInOverlayForTest(script);
 }
 
 void WebDevToolsAgentImpl::flushPendingProtocolNotifications()

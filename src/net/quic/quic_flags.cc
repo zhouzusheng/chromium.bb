@@ -51,20 +51,12 @@ bool FLAGS_quic_limit_max_cwnd = true;
 
 // If true, require handshake confirmation for QUIC connections, functionally
 // disabling 0-rtt handshakes.
-// TODO(rtenneti): Enable this flag after fixing tests.
+// TODO(rtenneti): Enable this flag after CryptoServerTest's are fixed.
 bool FLAGS_quic_require_handshake_confirmation = false;
-
-// Disables special treatment of truncated acks, since older retransmissions are
-// proactively discarded in QUIC.
-bool FLAGS_quic_disable_truncated_ack_handling = true;
 
 // If true, after a server silo receives a packet from a migrated QUIC
 // client, a GO_AWAY frame is sent to the client.
 bool FLAGS_send_goaway_after_client_migration = true;
-
-// Close the connection instead of attempting to write a packet out of sequence
-// number order.
-bool FLAGS_quic_close_connection_out_of_order_sending = true;
 
 // QUIC-specific flag. If true, Cubic's epoch is reset when the sender is
 // application-limited.
@@ -73,6 +65,64 @@ bool FLAGS_reset_cubic_epoch_when_app_limited = true;
 // If true, use an interval set as the internal representation of a packet queue
 // instead of a set.
 bool FLAGS_quic_packet_queue_use_interval_set = true;
+
+// If true, Cubic's epoch is shifted when the sender is application-limited.
+bool FLAGS_shift_quic_cubic_epoch_when_app_limited = true;
+
+// If true, accounts for available (implicitly opened) streams under a separate
+// quota from open streams, which is 10 times larger.
+bool FLAGS_allow_many_available_streams = true;
+
+// If true, QuicPacketReader::ReadAndDispatchPackets will only return true if
+// recvmmsg fills all of the passed in messages. Otherwise, it will return true
+// if recvmmsg read any messages.
+bool FLAGS_quic_read_packets_full_recvmmsg = true;
+
+// If true, QUIC will measure head of line (HOL) blocking due between
+// streams due to packet losses on the headers stream.  The
+// measurements will be surfaced via UMA histogram
+// Net.QuicSession.HeadersHOLBlockedTime.
+bool FLAGS_quic_measure_headers_hol_blocking_time = true;
+
+// Disable QUIC's userspace pacing.
+bool FLAGS_quic_disable_pacing = false;
+
+// If true, a FIN received on a stream with read_side_closed_ true will be
+// recorded correctly.
+bool FLAGS_quic_fix_fin_accounting = true;
+
+// If true, ReliableQuicStream::StopReading (formerly CloseReadSide) causes
+// incoming data to be ignored but the read side of the stream object is not
+// closed.
+bool FLAGS_quic_implement_stop_reading = true;
+
+// Invoke the QuicAckListener directly, instead of going through the AckNotifier
+// and AckNotifierManager.
+bool FLAGS_quic_no_ack_notifier = true;
+
+// If true, QuicSession::GetNumOpenStreams will count unfinished
+// streams as open streams, QuicSession::PostProcessAfterData will not
+// check the quota of unifinished streams.
+bool FLAGS_quic_count_unfinished_as_open_streams = true;
+
+// If true, use the unrolled prefetch path in QuicPacketCreator::CopyToBuffer.
+bool FLAGS_quic_packet_creator_prefetch = false;
+
+// If true, only migrate QUIC connections when client address changes are
+// considered to be caused by NATs.
+bool FLAGS_quic_disable_non_nat_address_migration = true;
+
+// If true, QUIC connections will timeout when packets are not being recieved,
+// even if they are being sent.
+bool FLAGS_quic_use_new_idle_timeout = true;
+
+// If true, replace QuicFrameList with StreamSequencerBuffer as underlying data
+// structure for QuicStreamSequencer bufferring.
+bool FLAGS_quic_use_stream_sequencer_buffer = true;
+
+// If true, don't send QUIC packets if the send alarm is set.
+// Disabled until b/25638635 is resolved.
+bool FLAGS_respect_send_alarm = false;
 
 // If true, QUIC sessions will write block streams that attempt to write
 // unencrypted data.

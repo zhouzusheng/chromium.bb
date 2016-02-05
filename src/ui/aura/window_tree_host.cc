@@ -49,17 +49,6 @@ WindowTreeHost::~WindowTreeHost() {
   }
 }
 
-#if defined(OS_ANDROID)
-// static
-WindowTreeHost* WindowTreeHost::Create(const gfx::Rect& bounds) {
-  // This is only hit for tests and ash, right now these aren't an issue so
-  // adding the CHECK.
-  // TODO(sky): decide if we want a factory.
-  CHECK(false);
-  return nullptr;
-}
-#endif
-
 // static
 WindowTreeHost* WindowTreeHost::GetForAcceleratedWidget(
     gfx::AcceleratedWidget widget) {
@@ -133,13 +122,13 @@ void WindowTreeHost::ConvertPointFromNativeScreen(gfx::Point* point) const {
 }
 
 void WindowTreeHost::ConvertPointToHost(gfx::Point* point) const {
-  gfx::Point3F point_3f(*point);
+  auto point_3f = gfx::Point3F(gfx::PointF(*point));
   GetRootTransform().TransformPoint(&point_3f);
   *point = gfx::ToFlooredPoint(point_3f.AsPointF());
 }
 
 void WindowTreeHost::ConvertPointFromHost(gfx::Point* point) const {
-  gfx::Point3F point_3f(*point);
+  auto point_3f = gfx::Point3F(gfx::PointF(*point));
   GetInverseRootTransform().TransformPoint(&point_3f);
   *point = gfx::ToFlooredPoint(point_3f.AsPointF());
 }
@@ -256,7 +245,7 @@ void WindowTreeHost::CreateCompositor() {
 }
 
 void WindowTreeHost::OnAcceleratedWidgetAvailable() {
-  compositor_->SetAcceleratedWidgetAndStartCompositor(GetAcceleratedWidget());
+  compositor_->SetAcceleratedWidget(GetAcceleratedWidget());
   prop_.reset(new ui::ViewProp(GetAcceleratedWidget(),
                                kWindowTreeHostForAcceleratedWidget, this));
 }

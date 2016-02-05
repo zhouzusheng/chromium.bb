@@ -30,6 +30,7 @@ namespace webrtc {
 class Clock;
 class ViECodec;
 class ViEDecoderObserver;
+struct CodecSpecificInfo;
 
 class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
                                public RtcpStatisticsCallback,
@@ -51,7 +52,11 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
                        int target_delay_ms,
                        int jitter_buffer_ms,
                        int min_playout_delay_ms,
-                       int render_delay_ms);
+                       int render_delay_ms,
+                       int64_t rtt_ms);
+
+  void OnPreDecode(const EncodedImage& encoded_image,
+                   const CodecSpecificInfo* codec_specific_info);
 
   // Overrides VCMReceiveStatisticsCallback.
   void OnReceiveRatesUpdated(uint32_t bitRate, uint32_t frameRate) override;
@@ -81,6 +86,9 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
     int sum;
     int num_samples;
   };
+  struct QpCounters {
+    SampleCounter vp8;
+  };
 
   void UpdateHistograms() EXCLUSIVE_LOCKS_REQUIRED(crit_);
 
@@ -91,10 +99,13 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
   RateStatistics decode_fps_estimator_ GUARDED_BY(crit_);
   RateStatistics renders_fps_estimator_ GUARDED_BY(crit_);
   rtc::RateTracker render_fps_tracker_ GUARDED_BY(crit_);
+  rtc::RateTracker render_pixel_tracker_ GUARDED_BY(crit_);
   SampleCounter render_width_counter_ GUARDED_BY(crit_);
   SampleCounter render_height_counter_ GUARDED_BY(crit_);
   SampleCounter decode_time_counter_ GUARDED_BY(crit_);
+  SampleCounter delay_counter_ GUARDED_BY(crit_);
   ReportBlockStats report_block_stats_ GUARDED_BY(crit_);
+  QpCounters qp_counters_;  // Only accessed on the decoding thread.
 };
 
 }  // namespace webrtc

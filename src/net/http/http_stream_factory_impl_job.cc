@@ -12,6 +12,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -42,9 +43,11 @@
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/ssl_client_socket_pool.h"
 #include "net/spdy/spdy_http_stream.h"
+#include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
 #include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_failure_state.h"
 
 namespace net {
@@ -772,7 +775,7 @@ int HttpStreamFactoryImpl::Job::DoResolveProxyComplete(int result) {
 bool HttpStreamFactoryImpl::Job::ShouldForceQuic() const {
   return session_->params().enable_quic &&
          session_->params().origin_to_force_quic_on.Equals(server_) &&
-         proxy_info_.is_direct();
+         proxy_info_.is_direct() && origin_url_.SchemeIs("https");
 }
 
 int HttpStreamFactoryImpl::Job::DoWaitForJob() {
@@ -831,31 +834,29 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
     }
     HostPortPair destination;
     std::string origin_host;
-    bool secure_quic;
     SSLConfig* ssl_config;
     if (proxy_info_.is_quic()) {
       // A proxy's certificate is expected to be valid for the proxy hostname.
       destination = proxy_info_.proxy_server().host_port_pair();
       origin_host = destination.host();
-      secure_quic = true;
       ssl_config = &proxy_ssl_config_;
 
       // If QUIC is disabled on the destination port, return error.
       if (session_->quic_stream_factory()->IsQuicDisabled(destination.port()))
         return ERR_QUIC_PROTOCOL_ERROR;
     } else {
+      DCHECK(using_ssl_);
       // The certificate of a QUIC alternative server is expected to be valid
       // for the origin of the request (in addition to being valid for the
       // server itself).
       destination = server_;
       origin_host = origin_url_.host();
-      secure_quic = using_ssl_;
       ssl_config = &server_ssl_config_;
     }
-    int rv = quic_request_.Request(
-        destination, secure_quic, request_info_.privacy_mode,
-        ssl_config->GetCertVerifyFlags(), origin_host, request_info_.method,
-        net_log_, io_callback_);
+    int rv =
+        quic_request_.Request(destination, request_info_.privacy_mode,
+                              ssl_config->GetCertVerifyFlags(), origin_host,
+                              request_info_.method, net_log_, io_callback_);
     if (rv == OK) {
       using_existing_quic_session_ = true;
     } else {
@@ -946,7 +947,8 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
   if (stream_factory_->for_websockets_) {
     // TODO(ricea): Re-enable NPN when WebSockets over SPDY is supported.
     SSLConfig websocket_server_ssl_config = server_ssl_config_;
-    websocket_server_ssl_config.next_protos.clear();
+    websocket_server_ssl_config.alpn_protos.clear();
+    websocket_server_ssl_config.npn_protos.clear();
     return InitSocketHandleForWebSocketRequest(
         GetSocketGroup(), server_, request_info_.extra_headers,
         request_info_.load_flags, priority_, session_, proxy_info_, expect_spdy,
@@ -1228,6 +1230,17 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
     spdy_session->CloseSessionOnError(
         ERR_SPDY_INADEQUATE_TRANSPORT_SECURITY, "");
     return ERR_SPDY_INADEQUATE_TRANSPORT_SECURITY;
+  }
+
+  SSLInfo ssl_info;
+  bool was_npn_negotiated;
+  NextProto protocol_negotiated;
+  if (spdy_session->GetProtocolVersion() >= HTTP2 &&
+      spdy_session->GetSSLInfo(&ssl_info, &was_npn_negotiated,
+                               &protocol_negotiated)) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY(
+        "Net.Http2SSLCipherSuite",
+        SSLConnectionStatusToCipherSuite(ssl_info.connection_status));
   }
 
   new_spdy_session_ = spdy_session;

@@ -4,9 +4,10 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fxge/fx_ge.h"
-#include "../../../include/fxcodec/fx_codec.h"
+#include "core/include/fxge/fx_ge.h"
+#include "core/include/fxcodec/fx_codec.h"
 #include "dib_int.h"
+
 const uint8_t _color_sqrt[256] = {
     0x00, 0x03, 0x07, 0x0B, 0x0F, 0x12, 0x16, 0x19, 0x1D, 0x20, 0x23, 0x26,
     0x29, 0x2C, 0x2F, 0x32, 0x35, 0x37, 0x3A, 0x3C, 0x3F, 0x41, 0x43, 0x46,
@@ -4056,8 +4057,8 @@ inline void _ScanlineCompositor_InitSourcePalette(FXDIB_Format src_format,
                                                   void* icc_module,
                                                   void* pIccTransform) {
   ICodec_IccModule* pIccModule = (ICodec_IccModule*)icc_module;
-  FX_BOOL isSrcCmyk = src_format & 0x0400 ? TRUE : FALSE;
-  FX_BOOL isDstCmyk = dest_format & 0x0400 ? TRUE : FALSE;
+  FX_BOOL isSrcCmyk = !!(src_format & 0x0400);
+  FX_BOOL isDstCmyk = !!(dest_format & 0x0400);
   pDestPalette = NULL;
   if (pIccTransform) {
     if (pSrcPalette) {
@@ -4912,7 +4913,7 @@ FX_BOOL CFX_DIBitmap::CompositeRect(int left,
   }
   int Bpp = m_bpp / 8;
   FX_BOOL bAlpha = HasAlpha();
-  FX_BOOL bArgb = GetFormat() == FXDIB_Argb ? TRUE : FALSE;
+  FX_BOOL bArgb = GetFormat() == FXDIB_Argb;
   if (src_alpha == 255) {
     for (int row = rect.top; row < rect.bottom; row++) {
       uint8_t* dest_scan = m_pBuffer + row * m_Pitch + rect.left * Bpp;

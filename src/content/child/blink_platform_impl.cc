@@ -34,11 +34,11 @@
 #include "blink/public/resources/grit/blink_image_resources.h"
 #include "blink/public/resources/grit/blink_resources.h"
 #include "components/mime_util/mime_util.h"
+#include "components/scheduler/child/web_task_runner_impl.h"
 #include "components/scheduler/child/webthread_impl_for_worker_scheduler.h"
 #include "content/app/resources/grit/content_resources.h"
 #include "content/app/strings/grit/content_strings.h"
 #include "content/child/background_sync/background_sync_provider.h"
-#include "content/child/background_sync/background_sync_provider_thread_proxy.h"
 #include "content/child/child_thread_impl.h"
 #include "content/child/content_child_helpers.h"
 #include "content/child/geofencing/web_geofencing_provider_impl.h"
@@ -459,8 +459,8 @@ void BlinkPlatformImpl::InternalInit() {
     push_dispatcher_ = ChildThreadImpl::current()->push_dispatcher();
     permission_client_.reset(new PermissionDispatcher(
         ChildThreadImpl::current()->service_registry()));
-    sync_provider_.reset(new BackgroundSyncProvider(
-        ChildThreadImpl::current()->service_registry()));
+    main_thread_sync_provider_.reset(
+        new BackgroundSyncProvider(main_thread_task_runner_.get()));
   }
 }
 
@@ -478,7 +478,8 @@ WebURLLoader* BlinkPlatformImpl::createURLLoader() {
   // data URLs to bypass the ResourceDispatcher.
   return new WebURLLoaderImpl(
       child_thread ? child_thread->resource_dispatcher() : NULL,
-      MainTaskRunnerForCurrentThread());
+      make_scoped_ptr(new scheduler::WebTaskRunnerImpl(
+            base::ThreadTaskRunnerHandle::Get())));
 }
 
 blink::WebSocketHandle* BlinkPlatformImpl::createWebSocketHandle() {
@@ -486,7 +487,12 @@ blink::WebSocketHandle* BlinkPlatformImpl::createWebSocketHandle() {
 }
 
 WebString BlinkPlatformImpl::userAgent() {
-  return WebString::fromUTF8(GetContentClient()->GetUserAgent());
+  CR_DEFINE_STATIC_LOCAL(
+      blink::WebString, user_agent,
+      (blink::WebString::fromUTF8(GetContentClient()->GetUserAgent())));
+  DCHECK(user_agent ==
+         blink::WebString::fromUTF8(GetContentClient()->GetUserAgent()));
+  return user_agent;
 }
 
 WebData BlinkPlatformImpl::parseDataURL(const WebURL& url,
@@ -645,8 +651,8 @@ blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
       }
     }
   }
-  base::TraceTicks timestamp_tt =
-      base::TraceTicks() + base::TimeDelta::FromSecondsD(timestamp);
+  base::TimeTicks timestamp_tt =
+      base::TimeTicks() + base::TimeDelta::FromSecondsD(timestamp);
   base::trace_event::TraceEventHandle handle =
       TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
           phase, category_group_enabled, name, id, trace_event_internal::kNoId,
@@ -681,8 +687,8 @@ blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
       }
     }
   }
-  base::TraceTicks timestamp_tt =
-      base::TraceTicks() + base::TimeDelta::FromSecondsD(timestamp);
+  base::TimeTicks timestamp_tt =
+      base::TimeTicks() + base::TimeDelta::FromSecondsD(timestamp);
   base::trace_event::TraceEventHandle handle =
       TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
           phase, category_group_enabled, name, id, trace_event_internal::kNoId,
@@ -704,7 +710,7 @@ void BlinkPlatformImpl::updateTraceEventDuration(
 }
 
 void BlinkPlatformImpl::registerMemoryDumpProvider(
-    blink::WebMemoryDumpProvider* wmdp) {
+    blink::WebMemoryDumpProvider* wmdp, const char* name) {
   WebMemoryDumpProviderAdapter* wmdp_adapter =
       new WebMemoryDumpProviderAdapter(wmdp);
   bool did_insert =
@@ -713,7 +719,7 @@ void BlinkPlatformImpl::registerMemoryDumpProvider(
     return;
   wmdp_adapter->set_is_registered(true);
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-      wmdp_adapter, base::ThreadTaskRunnerHandle::Get());
+      wmdp_adapter, name, base::ThreadTaskRunnerHandle::Get());
 }
 
 void BlinkPlatformImpl::unregisterMemoryDumpProvider(
@@ -809,21 +815,9 @@ const DataResource kDataResources[] = {
     {"mediaplayerPauseNew",
      IDR_MEDIAPLAYER_PAUSE_BUTTON_NEW,
      ui::SCALE_FACTOR_100P},
-    {"mediaplayerPauseHover",
-     IDR_MEDIAPLAYER_PAUSE_BUTTON_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerPauseDown",
-     IDR_MEDIAPLAYER_PAUSE_BUTTON_DOWN,
-     ui::SCALE_FACTOR_100P},
     {"mediaplayerPlay", IDR_MEDIAPLAYER_PLAY_BUTTON, ui::SCALE_FACTOR_100P},
     {"mediaplayerPlayNew",
      IDR_MEDIAPLAYER_PLAY_BUTTON_NEW,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerPlayHover",
-     IDR_MEDIAPLAYER_PLAY_BUTTON_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerPlayDown",
-     IDR_MEDIAPLAYER_PLAY_BUTTON_DOWN,
      ui::SCALE_FACTOR_100P},
     {"mediaplayerPlayDisabled",
      IDR_MEDIAPLAYER_PLAY_BUTTON_DISABLED,
@@ -834,41 +828,17 @@ const DataResource kDataResources[] = {
     {"mediaplayerSoundLevel3New",
      IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_NEW,
      ui::SCALE_FACTOR_100P},
-    {"mediaplayerSoundLevel3Hover",
-     IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerSoundLevel3Down",
-     IDR_MEDIAPLAYER_SOUND_LEVEL3_BUTTON_DOWN,
-     ui::SCALE_FACTOR_100P},
     {"mediaplayerSoundLevel2",
      IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON,
      ui::SCALE_FACTOR_100P},
-    {"mediaplayerSoundLevel2Hover",
-     IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerSoundLevel2Down",
-     IDR_MEDIAPLAYER_SOUND_LEVEL2_BUTTON_DOWN,
-     ui::SCALE_FACTOR_100P},
     {"mediaplayerSoundLevel1",
      IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerSoundLevel1Hover",
-     IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerSoundLevel1Down",
-     IDR_MEDIAPLAYER_SOUND_LEVEL1_BUTTON_DOWN,
      ui::SCALE_FACTOR_100P},
     {"mediaplayerSoundLevel0",
      IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON,
      ui::SCALE_FACTOR_100P},
     {"mediaplayerSoundLevel0New",
      IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_NEW,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerSoundLevel0Hover",
-     IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerSoundLevel0Down",
-     IDR_MEDIAPLAYER_SOUND_LEVEL0_BUTTON_DOWN,
      ui::SCALE_FACTOR_100P},
     {"mediaplayerSoundDisabled",
      IDR_MEDIAPLAYER_SOUND_DISABLED,
@@ -879,23 +849,11 @@ const DataResource kDataResources[] = {
     {"mediaplayerSliderThumbNew",
      IDR_MEDIAPLAYER_SLIDER_THUMB_NEW,
      ui::SCALE_FACTOR_100P},
-    {"mediaplayerSliderThumbHover",
-     IDR_MEDIAPLAYER_SLIDER_THUMB_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerSliderThumbDown",
-     IDR_MEDIAPLAYER_SLIDER_THUMB_DOWN,
-     ui::SCALE_FACTOR_100P},
     {"mediaplayerVolumeSliderThumb",
      IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB,
      ui::SCALE_FACTOR_100P},
     {"mediaplayerVolumeSliderThumbNew",
      IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_NEW,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerVolumeSliderThumbHover",
-     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerVolumeSliderThumbDown",
-     IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DOWN,
      ui::SCALE_FACTOR_100P},
     {"mediaplayerVolumeSliderThumbDisabled",
      IDR_MEDIAPLAYER_VOLUME_SLIDER_THUMB_DISABLED,
@@ -905,12 +863,6 @@ const DataResource kDataResources[] = {
      ui::SCALE_FACTOR_100P},
     {"mediaplayerClosedCaptionNew",
      IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_NEW,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerClosedCaptionHover",
-     IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerClosedCaptionDown",
-     IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_DOWN,
      ui::SCALE_FACTOR_100P},
     {"mediaplayerClosedCaptionDisabled",
      IDR_MEDIAPLAYER_CLOSEDCAPTION_BUTTON_DISABLED,
@@ -926,12 +878,6 @@ const DataResource kDataResources[] = {
      ui::SCALE_FACTOR_100P},
     {"mediaplayerFullscreen",
      IDR_MEDIAPLAYER_FULLSCREEN_BUTTON,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerFullscreenHover",
-     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_HOVER,
-     ui::SCALE_FACTOR_100P},
-    {"mediaplayerFullscreenDown",
-     IDR_MEDIAPLAYER_FULLSCREEN_BUTTON_DOWN,
      ui::SCALE_FACTOR_100P},
     {"mediaplayerCastOff",
      IDR_MEDIAPLAYER_CAST_BUTTON_OFF,
@@ -1128,17 +1074,17 @@ WebString BlinkPlatformImpl::queryLocalizedString(
       GetContentClient()->GetLocalizedString(message_id), values, NULL);
 }
 
-double BlinkPlatformImpl::currentTime() {
+double BlinkPlatformImpl::currentTimeSeconds() {
   return base::Time::Now().ToDoubleT();
 }
 
-double BlinkPlatformImpl::monotonicallyIncreasingTime() {
+double BlinkPlatformImpl::monotonicallyIncreasingTimeSeconds() {
   return base::TimeTicks::Now().ToInternalValue() /
       static_cast<double>(base::Time::kMicrosecondsPerSecond);
 }
 
 double BlinkPlatformImpl::systemTraceTime() {
-  return (base::TraceTicks::Now() - base::TraceTicks()).InSecondsF();
+  return (base::TimeTicks::Now() - base::TimeTicks()).InSecondsF();
 }
 
 void BlinkPlatformImpl::cryptographicallyRandomValues(
@@ -1213,14 +1159,11 @@ blink::WebPermissionClient* BlinkPlatformImpl::permissionClient() {
 }
 
 blink::WebSyncProvider* BlinkPlatformImpl::backgroundSyncProvider() {
-  if (!sync_provider_.get())
-    return nullptr;
-
   if (IsMainThread())
-    return sync_provider_.get();
+    return main_thread_sync_provider_.get();
 
-  return BackgroundSyncProviderThreadProxy::GetThreadInstance(
-      main_thread_task_runner_.get(), sync_provider_.get());
+  return BackgroundSyncProvider::GetOrCreateThreadSpecificInstance(
+      main_thread_task_runner_.get());
 }
 
 WebThemeEngine* BlinkPlatformImpl::themeEngine() {
@@ -1272,20 +1215,6 @@ blink::WebString BlinkPlatformImpl::signedPublicKeyAndChallengeString(
   return blink::WebString("");
 }
 
-static scoped_ptr<base::ProcessMetrics> CurrentProcessMetrics() {
-  using base::ProcessMetrics;
-#if defined(OS_MACOSX)
-  return scoped_ptr<ProcessMetrics>(
-      // The default port provider is sufficient to get data for the current
-      // process.
-      ProcessMetrics::CreateProcessMetrics(base::GetCurrentProcessHandle(),
-                                           NULL));
-#else
-  return scoped_ptr<ProcessMetrics>(
-      ProcessMetrics::CreateProcessMetrics(base::GetCurrentProcessHandle()));
-#endif
-}
-
 static size_t getMemoryUsageMB(bool bypass_cache) {
   size_t current_mem_usage = 0;
   MemoryUsageCache* mem_usage_cache_singleton = MemoryUsageCache::GetInstance();
@@ -1325,7 +1254,9 @@ size_t BlinkPlatformImpl::numberOfProcessors() {
 bool BlinkPlatformImpl::processMemorySizesInBytes(
     size_t* private_bytes,
     size_t* shared_bytes) {
-  return CurrentProcessMetrics()->GetMemoryBytes(private_bytes, shared_bytes);
+  scoped_ptr<base::ProcessMetrics> current_process_metrics(
+      base::ProcessMetrics::CreateCurrentProcessMetrics());
+  return current_process_metrics->GetMemoryBytes(private_bytes, shared_bytes);
 }
 
 bool BlinkPlatformImpl::memoryAllocatorWasteInBytes(size_t* size) {
@@ -1363,16 +1294,6 @@ uint32_t BlinkPlatformImpl::getUniqueIdForProcess() {
   return base::trace_event::TraceLog::GetInstance()->process_id();
 }
 
-scoped_refptr<base::SingleThreadTaskRunner>
-BlinkPlatformImpl::MainTaskRunnerForCurrentThread() {
-  if (main_thread_task_runner_.get() &&
-      main_thread_task_runner_->BelongsToCurrentThread()) {
-    return main_thread_task_runner_;
-  } else {
-    return base::ThreadTaskRunnerHandle::Get();
-  }
-}
-
 bool BlinkPlatformImpl::IsMainThread() const {
   return main_thread_task_runner_.get() &&
          main_thread_task_runner_->BelongsToCurrentThread();
@@ -1385,7 +1306,7 @@ WebString BlinkPlatformImpl::domCodeStringFromEnum(int dom_code) {
 
 int BlinkPlatformImpl::domEnumFromCodeString(const WebString& code) {
   return static_cast<int>(ui::KeycodeConverter::CodeStringToDomCode(
-      code.utf8().data()));
+      code.utf8()));
 }
 
 WebString BlinkPlatformImpl::domKeyStringFromEnum(int dom_key) {
@@ -1395,7 +1316,7 @@ WebString BlinkPlatformImpl::domKeyStringFromEnum(int dom_key) {
 
 int BlinkPlatformImpl::domKeyEnumFromString(const WebString& key_string) {
   return static_cast<int>(
-      ui::KeycodeConverter::KeyStringToDomKey(key_string.utf8().data()));
+      ui::KeycodeConverter::KeyStringToDomKey(key_string.utf8()));
 }
 
 }  // namespace content

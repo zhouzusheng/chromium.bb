@@ -100,8 +100,8 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   LayerImpl::PushPropertiesTo(base_layer);
 
   // Twin relationships should never change once established.
-  DCHECK_IMPLIES(twin_layer_, twin_layer_ == layer_impl);
-  DCHECK_IMPLIES(twin_layer_, layer_impl->twin_layer_ == this);
+  DCHECK(!twin_layer_ || twin_layer_ == layer_impl);
+  DCHECK(!twin_layer_ || layer_impl->twin_layer_ == this);
   // The twin relationship does not need to exist before the first
   // PushPropertiesTo from pending to active layer since before that the active
   // layer can not have a pile or tilings, it has only been created and inserted
@@ -112,7 +112,7 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   layer_impl->SetNearestNeighbor(nearest_neighbor_);
 
   // Solid color layers have no tilings.
-  DCHECK_IMPLIES(raster_source_->IsSolidColor(), tilings_->num_tilings() == 0);
+  DCHECK(!raster_source_->IsSolidColor() || tilings_->num_tilings() == 0);
   // The pending tree should only have a high res (and possibly low res) tiling.
   DCHECK_LE(tilings_->num_tilings(),
             layer_tree_impl()->create_low_res_tiling() ? 2u : 1u);
@@ -123,8 +123,8 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   DCHECK(invalidation_.IsEmpty());
 
   // After syncing a solid color layer, the active layer has no tilings.
-  DCHECK_IMPLIES(raster_source_->IsSolidColor(),
-                 layer_impl->tilings_->num_tilings() == 0);
+  DCHECK(!raster_source_->IsSolidColor() ||
+         layer_impl->tilings_->num_tilings() == 0);
 
   layer_impl->raster_page_scale_ = raster_page_scale_;
   layer_impl->raster_device_scale_ = raster_device_scale_;
@@ -144,8 +144,8 @@ void PictureLayerImpl::AppendQuads(RenderPass* render_pass,
                                    AppendQuadsData* append_quads_data) {
   // The bounds and the pile size may differ if the pile wasn't updated (ie.
   // PictureLayer::Update didn't happen). In that case the pile will be empty.
-  DCHECK_IMPLIES(!raster_source_->GetSize().IsEmpty(),
-                 bounds() == raster_source_->GetSize())
+  DCHECK(raster_source_->GetSize().IsEmpty() ||
+         bounds() == raster_source_->GetSize())
       << " bounds " << bounds().ToString() << " pile "
       << raster_source_->GetSize().ToString();
 
@@ -404,6 +404,7 @@ void PictureLayerImpl::AppendQuads(RenderPass* render_pass,
 bool PictureLayerImpl::UpdateTiles(bool resourceless_software_draw) {
   if (!resourceless_software_draw) {
     visible_rect_for_tile_priority_ = visible_layer_rect();
+    screen_space_transform_for_tile_priority_ = screen_space_transform();
   }
 
   if (!CanHaveTilings()) {
@@ -492,7 +493,7 @@ void PictureLayerImpl::UpdateViewportRectForTilePriorityInContentSpace() {
   if (visible_rect_in_content_space.IsEmpty() ||
       layer_tree_impl()->DeviceViewport() != viewport_rect_for_tile_priority) {
     gfx::Transform view_to_layer(gfx::Transform::kSkipInitialization);
-    if (screen_space_transform().GetInverse(&view_to_layer)) {
+    if (screen_space_transform_for_tile_priority_.GetInverse(&view_to_layer)) {
       // Transform from view space to content space.
       visible_rect_in_content_space = MathUtil::ProjectEnclosingClippedRect(
           view_to_layer, viewport_rect_for_tile_priority);
@@ -524,13 +525,13 @@ PictureLayerImpl* PictureLayerImpl::GetPendingOrActiveTwinLayer() const {
 }
 
 void PictureLayerImpl::UpdateRasterSource(
-    scoped_refptr<RasterSource> raster_source,
+    scoped_refptr<DisplayListRasterSource> raster_source,
     Region* new_invalidation,
     const PictureLayerTilingSet* pending_set) {
   // The bounds and the pile size may differ if the pile wasn't updated (ie.
   // PictureLayer::Update didn't happen). In that case the pile will be empty.
-  DCHECK_IMPLIES(!raster_source->GetSize().IsEmpty(),
-                 bounds() == raster_source->GetSize())
+  DCHECK(raster_source->GetSize().IsEmpty() ||
+         bounds() == raster_source->GetSize())
       << " bounds " << bounds().ToString() << " pile "
       << raster_source->GetSize().ToString();
 
@@ -545,9 +546,8 @@ void PictureLayerImpl::UpdateRasterSource(
   invalidation_.Swap(new_invalidation);
 
   bool can_have_tilings = CanHaveTilings();
-  DCHECK_IMPLIES(
-      pending_set,
-      can_have_tilings == GetPendingOrActiveTwinLayer()->CanHaveTilings());
+  DCHECK(!pending_set ||
+         can_have_tilings == GetPendingOrActiveTwinLayer()->CanHaveTilings());
 
   // Need to call UpdateTiles again if CanHaveTilings changed.
   if (could_have_tilings != can_have_tilings)
@@ -586,7 +586,7 @@ void PictureLayerImpl::UpdateCanUseLCDTextAfterCommit() {
 
   // Raster sources are considered const, so in order to update the state
   // a new one must be created and all tiles recreated.
-  scoped_refptr<RasterSource> new_raster_source =
+  scoped_refptr<DisplayListRasterSource> new_raster_source =
       raster_source_->CreateCloneWithoutLCDText();
   raster_source_.swap(new_raster_source);
 
@@ -779,8 +779,8 @@ void PictureLayerImpl::GetContentsResourceId(ResourceId* resource_id,
                                              gfx::Size* resource_size) const {
   // The bounds and the pile size may differ if the pile wasn't updated (ie.
   // PictureLayer::Update didn't happen). In that case the pile will be empty.
-  DCHECK_IMPLIES(!raster_source_->GetSize().IsEmpty(),
-                 bounds() == raster_source_->GetSize())
+  DCHECK(raster_source_->GetSize().IsEmpty() ||
+         bounds() == raster_source_->GetSize())
       << " bounds " << bounds().ToString() << " pile "
       << raster_source_->GetSize().ToString();
   gfx::Rect content_rect(bounds());
@@ -920,7 +920,7 @@ void PictureLayerImpl::AddLowResolutionTilingIfNeeded() {
 
   PictureLayerTiling* low_res =
       tilings_->FindTilingWithScale(low_res_raster_contents_scale_);
-  DCHECK_IMPLIES(low_res, low_res->resolution() != HIGH_RESOLUTION);
+  DCHECK(!low_res || low_res->resolution() != HIGH_RESOLUTION);
 
   // Only create new low res tilings when the transform is static.  This
   // prevents wastefully creating a paired low res tiling for every new high

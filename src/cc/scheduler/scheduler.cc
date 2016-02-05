@@ -75,10 +75,8 @@ Scheduler::Scheduler(
   TRACE_EVENT1("cc", "Scheduler::Scheduler", "settings", settings_.AsValue());
   DCHECK(client_);
   DCHECK(!state_machine_.BeginFrameNeeded());
-  DCHECK_IMPLIES(settings_.use_external_begin_frame_source,
-                 external_frame_source_);
-  DCHECK_IMPLIES(!settings_.use_external_begin_frame_source,
-                 synthetic_frame_source_);
+  DCHECK(!settings_.use_external_begin_frame_source || external_frame_source_);
+  DCHECK(settings_.use_external_begin_frame_source || synthetic_frame_source_);
   DCHECK(unthrottled_frame_source_);
 
   begin_retro_frame_closure_ =
@@ -131,14 +129,14 @@ void Scheduler::SetEstimatedParentDrawTime(base::TimeDelta draw_time) {
   estimated_parent_draw_time_ = draw_time;
 }
 
-void Scheduler::SetCanStart() {
-  state_machine_.SetCanStart();
-  ProcessScheduledActions();
-}
-
 void Scheduler::SetVisible(bool visible) {
   state_machine_.SetVisible(visible);
   UpdateCompositorTimingHistoryRecordingEnabled();
+  ProcessScheduledActions();
+}
+
+void Scheduler::SetResourcelessSoftareDraw(bool resourceless_draw) {
+  state_machine_.SetResourcelessSoftareDraw(resourceless_draw);
   ProcessScheduledActions();
 }
 
@@ -171,6 +169,11 @@ void Scheduler::SetThrottleFrameProduction(bool throttle) {
 
 void Scheduler::SetNeedsBeginMainFrame() {
   state_machine_.SetNeedsBeginMainFrame();
+  ProcessScheduledActions();
+}
+
+void Scheduler::SetNeedsOneBeginImplFrame() {
+  state_machine_.SetNeedsOneBeginImplFrame();
   ProcessScheduledActions();
 }
 
@@ -260,9 +263,11 @@ void Scheduler::DidCreateAndInitializeOutputSurface() {
   ProcessScheduledActions();
 }
 
-void Scheduler::NotifyBeginMainFrameStarted() {
+void Scheduler::NotifyBeginMainFrameStarted(
+    base::TimeTicks main_thread_start_time) {
   TRACE_EVENT0("cc", "Scheduler::NotifyBeginMainFrameStarted");
   state_machine_.NotifyBeginMainFrameStarted();
+  compositor_timing_history_->BeginMainFrameStarted(main_thread_start_time);
 }
 
 base::TimeTicks Scheduler::LastBeginImplFrameTime() {
@@ -507,6 +512,7 @@ void Scheduler::BeginImplFrame(const BeginFrameArgs& args) {
   DCHECK(state_machine_.HasInitializedOutputSurface());
 
   begin_impl_frame_tracker_.Start(args);
+  begin_main_frame_args_ = args;
   state_machine_.OnBeginImplFrame();
   devtools_instrumentation::DidBeginFrame(layer_tree_host_id_);
   client_->WillBeginImplFrame(begin_impl_frame_tracker_.Current());
@@ -645,9 +651,11 @@ void Scheduler::ProcessScheduledActions() {
         client_->ScheduledActionAnimate();
         break;
       case SchedulerStateMachine::ACTION_SEND_BEGIN_MAIN_FRAME:
-        compositor_timing_history_->WillBeginMainFrame();
+        compositor_timing_history_->WillBeginMainFrame(
+            begin_main_frame_args_.on_critical_path);
         state_machine_.WillSendBeginMainFrame();
-        client_->ScheduledActionSendBeginMainFrame();
+        // TODO(brianderson): Pass begin_main_frame_args_ directly to client.
+        client_->ScheduledActionSendBeginMainFrame(begin_main_frame_args_);
         break;
       case SchedulerStateMachine::ACTION_COMMIT: {
         // TODO(robliao): Remove ScopedTracker below once crbug.com/461509 is
@@ -737,6 +745,13 @@ void Scheduler::AsValueInto(base::trace_event::TracedValue* state) const {
   }
 
   state->BeginDictionary("scheduler_state");
+  state->SetBoolean("external_frame_source_", !!external_frame_source_);
+  state->SetBoolean("throttle_frame_production_", throttle_frame_production_);
+  state->SetDouble("authoritative_vsync_interval_ms",
+                   authoritative_vsync_interval_.InMillisecondsF());
+  state->SetDouble(
+      "last_vsync_timebase_ms",
+      (last_vsync_timebase_ - base::TimeTicks()).InMillisecondsF());
   state->SetDouble("estimated_parent_draw_time_ms",
                    estimated_parent_draw_time_.InMillisecondsF());
   state->SetBoolean("last_set_needs_begin_frame_",

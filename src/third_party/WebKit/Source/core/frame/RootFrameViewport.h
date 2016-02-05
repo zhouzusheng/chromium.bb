@@ -22,7 +22,7 @@ class LayoutRect;
 // the layout viewport. Thus, we could say this class is a decorator on the
 // FrameView scrollable area that adds pinch-zoom semantics to scrolling.
 class CORE_EXPORT RootFrameViewport final : public NoBaseWillBeGarbageCollectedFinalized<RootFrameViewport>, public ScrollableArea {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(RootFrameViewport);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(RootFrameViewport);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RootFrameViewport);
 public:
     static PassOwnPtrWillBeRawPtr<RootFrameViewport> create(ScrollableArea& visualViewport, ScrollableArea& layoutViewport, bool invertScrollOrder = false)
@@ -37,7 +37,8 @@ public:
     LayoutRect scrollIntoView(
         const LayoutRect& rectInContent,
         const ScrollAlignment& alignX,
-        const ScrollAlignment& alignY) override;
+        const ScrollAlignment& alignY,
+        ScrollType = ProgrammaticScroll) override;
     DoubleRect visibleContentRectDouble(IncludeScrollbarsInRect = ExcludeScrollbars) const override;
     IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const override;
     bool shouldUseIntegerScrollOffset() const override;

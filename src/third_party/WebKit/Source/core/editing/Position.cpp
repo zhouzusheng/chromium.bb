@@ -64,7 +64,9 @@ PositionTemplate<Strategy> PositionTemplate<Strategy>::editingPositionOf(PassRef
     if (offset == 0)
         return PositionTemplate<Strategy>(anchorNode, PositionAnchorType::BeforeAnchor);
 
-    ASSERT(offset == Strategy::lastOffsetForEditing(anchorNode.get()));
+    // Note: |offset| can be >= 1, if |anchorNode| have child nodes, e.g.
+    // using Node.appendChild() to add a child node TEXTAREA.
+    ASSERT(offset >= 1);
     return PositionTemplate<Strategy>(anchorNode, PositionAnchorType::AfterAnchor);
 }
 
@@ -287,7 +289,9 @@ int comparePositions(const PositionInComposedTree& positionA, const PositionInCo
     ASSERT(positionA.isNotNull());
     ASSERT(positionB.isNotNull());
 
+    positionA.anchorNode()->updateDistribution();
     Node* containerA = positionA.computeContainerNode();
+    positionB.anchorNode()->updateDistribution();
     Node* containerB = positionB.computeContainerNode();
     int offsetA = positionA.computeOffsetInContainerNode();
     int offsetB = positionB.computeOffsetInContainerNode();

@@ -4,15 +4,15 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#ifndef _JBIG2_SYMBOL_DICT_H_
-#define _JBIG2_SYMBOL_DICT_H_
+#ifndef CORE_SRC_FXCODEC_JBIG2_JBIG2_SYMBOLDICT_H_
+#define CORE_SRC_FXCODEC_JBIG2_JBIG2_SYMBOLDICT_H_
 
 #include <vector>
 
-#include "../../../../third_party/base/nonstd_unique_ptr.h"
-#include "../../../include/fxcrt/fx_basic.h"
 #include "JBig2_ArithDecoder.h"
 #include "JBig2_List.h"
+#include "core/include/fxcrt/fx_basic.h"
+#include "third_party/base/nonstd_unique_ptr.h"
 
 class CJBig2_Image;
 
@@ -45,4 +45,4 @@ class CJBig2_SymbolDict {
   CJBig2_List<CJBig2_Image> m_SDEXSYMS;
 };
 
-#endif
+#endif  // CORE_SRC_FXCODEC_JBIG2_JBIG2_SYMBOLDICT_H_

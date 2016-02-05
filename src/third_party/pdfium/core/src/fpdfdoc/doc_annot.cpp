@@ -4,29 +4,27 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../third_party/base/nonstd_unique_ptr.h"
-#include "../../include/fpdfdoc/fpdf_doc.h"
-#include "../../include/fpdfapi/fpdf_pageobj.h"
+#include "core/include/fpdfapi/fpdf_pageobj.h"
+#include "core/include/fpdfdoc/fpdf_doc.h"
+#include "third_party/base/nonstd_unique_ptr.h"
 
-CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage) {
-  ASSERT(pPage != NULL);
-  m_pPageDict = pPage->m_pFormDict;
-  if (m_pPageDict == NULL) {
+CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
+    : m_pDocument(pPage->m_pDocument) {
+  if (!pPage->m_pFormDict)
     return;
-  }
-  m_pDocument = pPage->m_pDocument;
-  CPDF_Array* pAnnots = m_pPageDict->GetArray("Annots");
-  if (pAnnots == NULL) {
+
+  CPDF_Array* pAnnots = pPage->m_pFormDict->GetArray("Annots");
+  if (!pAnnots)
     return;
-  }
+
   CPDF_Dictionary* pRoot = m_pDocument->GetRoot();
   CPDF_Dictionary* pAcroForm = pRoot->GetDict("AcroForm");
   FX_BOOL bRegenerateAP = pAcroForm && pAcroForm->GetBoolean("NeedAppearances");
   for (FX_DWORD i = 0; i < pAnnots->GetCount(); ++i) {
-    CPDF_Dictionary* pDict = (CPDF_Dictionary*)pAnnots->GetElementValue(i);
-    if (pDict == NULL || pDict->GetType() != PDFOBJ_DICTIONARY) {
+    CPDF_Dictionary* pDict = ToDictionary(pAnnots->GetElementValue(i));
+    if (!pDict)
       continue;
-    }
+
     FX_DWORD dwObjNum = pDict->GetObjNum();
     if (dwObjNum == 0) {
       dwObjNum = m_pDocument->AddIndirectObject(pDict);
@@ -35,24 +33,20 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage) {
       pAnnots->RemoveAt(i + 1);
       pDict = pAnnots->GetDict(i);
     }
-    CPDF_Annot* pAnnot = new CPDF_Annot(pDict, this);
-    m_AnnotList.Add(pAnnot);
+    m_AnnotList.push_back(new CPDF_Annot(pDict, this));
     if (bRegenerateAP &&
-        pDict->GetConstString(FX_BSTRC("Subtype")) == FX_BSTRC("Widget"))
-      if (CPDF_InterForm::UpdatingAPEnabled()) {
-        FPDF_GenerateAP(m_pDocument, pDict);
-      }
+        pDict->GetConstString(FX_BSTRC("Subtype")) == FX_BSTRC("Widget") &&
+        CPDF_InterForm::UpdatingAPEnabled()) {
+      FPDF_GenerateAP(m_pDocument, pDict);
+    }
   }
 }
+
 CPDF_AnnotList::~CPDF_AnnotList() {
-  int i = 0;
-  for (i = 0; i < m_AnnotList.GetSize(); ++i) {
-    delete (CPDF_Annot*)m_AnnotList[i];
-  }
-  for (i = 0; i < m_Borders.GetSize(); ++i) {
-    delete (CPDF_PageObjects*)m_Borders[i];
-  }
+  for (CPDF_Annot* annot : m_AnnotList)
+    delete annot;
 }
+
 void CPDF_AnnotList::DisplayPass(const CPDF_Page* pPage,
                                  CFX_RenderDevice* pDevice,
                                  CPDF_RenderContext* pContext,
@@ -61,34 +55,32 @@ void CPDF_AnnotList::DisplayPass(const CPDF_Page* pPage,
                                  FX_BOOL bWidgetPass,
                                  CPDF_RenderOptions* pOptions,
                                  FX_RECT* clip_rect) {
-  for (int i = 0; i < m_AnnotList.GetSize(); ++i) {
-    CPDF_Annot* pAnnot = (CPDF_Annot*)m_AnnotList[i];
+  for (CPDF_Annot* pAnnot : m_AnnotList) {
     FX_BOOL bWidget = pAnnot->GetSubType() == "Widget";
-    if ((bWidgetPass && !bWidget) || (!bWidgetPass && bWidget)) {
+    if ((bWidgetPass && !bWidget) || (!bWidgetPass && bWidget))
       continue;
-    }
+
     FX_DWORD annot_flags = pAnnot->GetFlags();
-    if (annot_flags & ANNOTFLAG_HIDDEN) {
+    if (annot_flags & ANNOTFLAG_HIDDEN)
       continue;
-    }
-    if (bPrinting && (annot_flags & ANNOTFLAG_PRINT) == 0) {
+
+    if (bPrinting && (annot_flags & ANNOTFLAG_PRINT) == 0)
       continue;
-    }
-    if (!bPrinting && (annot_flags & ANNOTFLAG_NOVIEW)) {
+
+    if (!bPrinting && (annot_flags & ANNOTFLAG_NOVIEW))
       continue;
-    }
-    if (pOptions != NULL) {
+
+    if (pOptions) {
       IPDF_OCContext* pOCContext = pOptions->m_pOCContext;
       CPDF_Dictionary* pAnnotDict = pAnnot->GetAnnotDict();
-      if (pOCContext != NULL && pAnnotDict != NULL &&
+      if (pOCContext && pAnnotDict &&
           !pOCContext->CheckOCGVisible(pAnnotDict->GetDict(FX_BSTRC("OC")))) {
         continue;
       }
     }
     CPDF_Rect annot_rect_f;
     pAnnot->GetRect(annot_rect_f);
-    CFX_Matrix matrix;
-    matrix = *pMatrix;
+    CFX_Matrix matrix = *pMatrix;
     if (clip_rect) {
       annot_rect_f.Transform(&matrix);
       FX_RECT annot_rect = annot_rect_f.GetOutterRect();
@@ -105,20 +97,7 @@ void CPDF_AnnotList::DisplayPass(const CPDF_Page* pPage,
     }
   }
 }
-void CPDF_AnnotList::DisplayAnnots(const CPDF_Page* pPage,
-                                   CFX_RenderDevice* pDevice,
-                                   CFX_AffineMatrix* pUser2Device,
-                                   FX_BOOL bShowWidget,
-                                   CPDF_RenderOptions* pOptions) {
-  FX_RECT clip_rect;
-  if (pDevice) {
-    clip_rect = pDevice->GetClipBox();
-  }
-  FX_BOOL bPrinting = pDevice->GetDeviceClass() == FXDC_PRINTER ||
-                      (pOptions && (pOptions->m_Flags & RENDER_PRINTPREVIEW));
-  DisplayAnnots(pPage, pDevice, NULL, bPrinting, pUser2Device,
-                bShowWidget ? 3 : 1, pOptions, &clip_rect);
-}
+
 void CPDF_AnnotList::DisplayAnnots(const CPDF_Page* pPage,
                                    CFX_RenderDevice* pDevice,
                                    CPDF_RenderContext* pContext,
@@ -136,13 +115,7 @@ void CPDF_AnnotList::DisplayAnnots(const CPDF_Page* pPage,
                 pOptions, pClipRect);
   }
 }
-int CPDF_AnnotList::GetIndex(CPDF_Annot* pAnnot) {
-  for (int i = 0; i < m_AnnotList.GetSize(); ++i)
-    if (m_AnnotList[i] == (void*)pAnnot) {
-      return i;
-    }
-  return -1;
-}
+
 CPDF_Annot::CPDF_Annot(CPDF_Dictionary* pDict, CPDF_AnnotList* pList)
     : m_pAnnotDict(pDict),
       m_pList(pList),
@@ -176,10 +149,6 @@ FX_DWORD CPDF_Annot::GetFlags() const {
   return m_pAnnotDict->GetInteger("F");
 }
 
-CPDF_Dictionary* CPDF_Annot::GetAnnotDict() {
-  return m_pAnnotDict;
-}
-
 CPDF_Stream* FPDFDOC_GetAnnotAP(CPDF_Dictionary* pAnnotDict,
                                 CPDF_Annot::AppearanceMode mode) {
   CPDF_Dictionary* pAP = pAnnotDict->GetDict("AP");
@@ -187,22 +156,20 @@ CPDF_Stream* FPDFDOC_GetAnnotAP(CPDF_Dictionary* pAnnotDict,
     return NULL;
   }
   const FX_CHAR* ap_entry = "N";
-  if (mode == CPDF_Annot::Down) {
+  if (mode == CPDF_Annot::Down)
     ap_entry = "D";
-  } else if (mode == CPDF_Annot::Rollover) {
+  else if (mode == CPDF_Annot::Rollover)
     ap_entry = "R";
-  }
-  if (!pAP->KeyExist(ap_entry)) {
+  if (!pAP->KeyExist(ap_entry))
     ap_entry = "N";
-  }
+
   CPDF_Object* psub = pAP->GetElementValue(ap_entry);
-  if (psub == NULL) {
-    return NULL;
-  }
-  CPDF_Stream* pStream = NULL;
-  if (psub->GetType() == PDFOBJ_STREAM) {
-    pStream = (CPDF_Stream*)psub;
-  } else if (psub->GetType() == PDFOBJ_DICTIONARY) {
+  if (!psub)
+    return nullptr;
+  if (CPDF_Stream* pStream = psub->AsStream())
+    return pStream;
+
+  if (CPDF_Dictionary* pDict = psub->AsDictionary()) {
     CFX_ByteString as = pAnnotDict->GetString("AS");
     if (as.IsEmpty()) {
       CFX_ByteString value = pAnnotDict->GetString(FX_BSTRC("V"));
@@ -210,30 +177,32 @@ CPDF_Stream* FPDFDOC_GetAnnotAP(CPDF_Dictionary* pAnnotDict,
         CPDF_Dictionary* pDict = pAnnotDict->GetDict(FX_BSTRC("Parent"));
         value = pDict ? pDict->GetString(FX_BSTRC("V")) : CFX_ByteString();
       }
-      if (value.IsEmpty() || !((CPDF_Dictionary*)psub)->KeyExist(value)) {
+      if (value.IsEmpty() || !pDict->KeyExist(value))
         as = FX_BSTRC("Off");
-      } else {
+      else
         as = value;
-      }
     }
-    pStream = ((CPDF_Dictionary*)psub)->GetStream(as);
+    return pDict->GetStream(as);
   }
-  return pStream;
+  return nullptr;
 }
+
 CPDF_Form* CPDF_Annot::GetAPForm(const CPDF_Page* pPage, AppearanceMode mode) {
   CPDF_Stream* pStream = FPDFDOC_GetAnnotAP(m_pAnnotDict, mode);
-  if (pStream == NULL) {
-    return NULL;
-  }
-  CPDF_Form* pForm;
-  if (m_APMap.Lookup(pStream, (void*&)pForm)) {
-    return pForm;
-  }
-  pForm = new CPDF_Form(m_pList->m_pDocument, pPage->m_pResources, pStream);
-  pForm->ParseContent(NULL, NULL, NULL, NULL);
-  m_APMap.SetAt(pStream, pForm);
-  return pForm;
+  if (!pStream)
+    return nullptr;
+
+  void* pForm;
+  if (m_APMap.Lookup(pStream, pForm))
+    return static_cast<CPDF_Form*>(pForm);
+
+  CPDF_Form* pNewForm =
+      new CPDF_Form(m_pList->GetDocument(), pPage->m_pResources, pStream);
+  pNewForm->ParseContent(nullptr, nullptr, nullptr, nullptr);
+  m_APMap.SetAt(pStream, pNewForm);
+  return pNewForm;
 }
+
 static CPDF_Form* FPDFDOC_Annot_GetMatrix(const CPDF_Page* pPage,
                                           CPDF_Annot* pAnnot,
                                           CPDF_Annot::AppearanceMode mode,

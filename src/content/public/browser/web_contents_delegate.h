@@ -110,10 +110,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Selects the specified contents, bringing its container to the front.
   virtual void ActivateContents(WebContents* contents) {}
 
-  // Deactivates the specified contents by deactivating its container and
-  // potentialy moving it to the back of the Z order.
-  virtual void DeactivateContents(WebContents* contents) {}
-
   // Notifies the delegate that this contents is starting or is done loading
   // some resource. The delegate should use this notification to represent
   // loading feedback. See WebContents::IsLoading()
@@ -293,8 +289,9 @@ class CONTENT_EXPORT WebContentsDelegate {
   // be destroyed.
   virtual bool ShouldCreateWebContents(
       WebContents* web_contents,
-      int route_id,
-      int main_frame_route_id,
+      int32_t route_id,
+      int32_t main_frame_route_id,
+      int32_t main_frame_widget_route_id,
       WindowContainerType window_container_type,
       const std::string& frame_name,
       const GURL& target_url,

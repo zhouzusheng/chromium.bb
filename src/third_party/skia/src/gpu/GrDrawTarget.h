@@ -20,6 +20,8 @@
 #include "GrVertexBuffer.h"
 #include "GrXferProcessor.h"
 
+#include "batches/GrDrawBatch.h"
+
 #include "SkClipStack.h"
 #include "SkMatrix.h"
 #include "SkPath.h"
@@ -30,11 +32,12 @@
 #include "SkTypes.h"
 #include "SkXfermode.h"
 
+//#define ENABLE_MDB 1
+
 class GrBatch;
 class GrClip;
 class GrCaps;
 class GrPath;
-class GrDrawBatch;
 class GrDrawPathBatchBase;
 class GrPathRangeDraw;
 
@@ -42,9 +45,39 @@ class GrDrawTarget final : public SkRefCnt {
 public:
     // The context may not be fully constructed and should not be used during GrDrawTarget
     // construction.
-    GrDrawTarget(GrGpu* gpu, GrResourceProvider*);
+    GrDrawTarget(GrRenderTarget* rt, GrGpu* gpu, GrResourceProvider*);
 
     ~GrDrawTarget() override;
+
+    void makeClosed() {
+        // We only close drawTargets When MDB is enabled. When MDB is disabled there is only
+        // ever one drawTarget and all calls will be funnelled into it.
+#ifdef ENABLE_MDB
+        this->setFlag(kClosed_Flag);
+#endif
+    }
+    bool isClosed() const { return this->isSetFlag(kClosed_Flag); }
+
+    // TODO: this entry point is only needed in the non-MDB world. Remove when
+    // we make the switch to MDB
+    void clearRT() { fRenderTarget = nullptr; }
+
+    /*
+     * Notify this drawTarget that it relies on the contents of 'dependedOn'
+     */
+    void addDependency(GrSurface* dependedOn);
+
+    /*
+     * Does this drawTarget depend on 'dependedOn'?
+     */
+    bool dependsOn(GrDrawTarget* dependedOn) const {
+        return fDependencies.find(dependedOn) >= 0;
+    }
+
+    /*
+     * Dump out the drawTarget dependency DAG
+     */
+    SkDEBUGCODE(void dump() const;)
 
     /**
      * Empties the draw buffer of any queued up draws.
@@ -52,10 +85,10 @@ public:
     void reset();
 
     /**
-     * This plays any queued up draws to its GrGpu target. It also resets this object (i.e. flushing
-     * is destructive).
+     * Together these two functions flush all queued up draws to the Gpu.
      */
-    void flush();
+    void prepareBatches(GrBatchFlushState* flushState);
+    void drawBatches(GrBatchFlushState* flushState);
 
     /**
      * Gets the capabilities of the draw target.
@@ -89,7 +122,7 @@ public:
      *
      * TODO: Remove this function and construct the batch outside GrDrawTarget.
      *
-     * @param draw            The range, transforms, and indices for the draw.
+     * @param draw            The transforms and indices for the draw.
      *                        This object must only be drawn once. The draw
      *                        may modify its contents.
      * @param fill            Fill type for drawing all the paths
@@ -98,6 +131,7 @@ public:
                             const SkMatrix& viewMatrix,
                             const SkMatrix& localMatrix,
                             GrColor color,
+                            GrPathRange* range,
                             GrPathRangeDraw* draw,
                             GrPathRendering::FillType fill);
 
@@ -170,17 +204,6 @@ public:
                      GrSurface* src,
                      const SkIRect& srcRect,
                      const SkIPoint& dstPoint);
-    /**
-     * Release any resources that are cached but not currently in use. This
-     * is intended to give an application some recourse when resources are low.
-     * TODO: Stop holding on to resources.
-     */
-    virtual void purgeResources() {
-        // The clip mask manager can rebuild all its clip masks so just get rid of them all.
-        fClipMaskManager->purgeResources();
-    };
-
-    bool programUnitTest(GrContext* owner, int maxStages);
 
     /** Provides access to internal functions to GrClipMaskManager without friending all of
         GrDrawTarget to CMM. */
@@ -201,6 +224,51 @@ public:
     const CMMAccess cmmAccess() { return CMMAccess(this); }
 
 private:
+    friend class GrDrawingManager; // for resetFlag & TopoSortTraits
+
+    enum Flags {
+        kClosed_Flag    = 0x01,   //!< This drawTarget can't accept any more batches
+
+        kWasOutput_Flag = 0x02,   //!< Flag for topological sorting
+        kTempMark_Flag  = 0x04,   //!< Flag for topological sorting
+    };
+
+    void setFlag(uint32_t flag) {
+        fFlags |= flag;
+    }
+
+    void resetFlag(uint32_t flag) {
+        fFlags &= ~flag;
+    }
+
+    bool isSetFlag(uint32_t flag) const {
+        return SkToBool(fFlags & flag);
+    }
+
+    struct TopoSortTraits {
+        static void Output(GrDrawTarget* dt, int /* index */) {
+            dt->setFlag(GrDrawTarget::kWasOutput_Flag);
+        }
+        static bool WasOutput(const GrDrawTarget* dt) {
+            return dt->isSetFlag(GrDrawTarget::kWasOutput_Flag);
+        }
+        static void SetTempMark(GrDrawTarget* dt) {
+            dt->setFlag(GrDrawTarget::kTempMark_Flag);
+        }
+        static void ResetTempMark(GrDrawTarget* dt) {
+            dt->resetFlag(GrDrawTarget::kTempMark_Flag);
+        }
+        static bool IsTempMarked(const GrDrawTarget* dt) {
+            return dt->isSetFlag(GrDrawTarget::kTempMark_Flag);
+        }
+        static int NumDependencies(const GrDrawTarget* dt) {
+            return dt->fDependencies.count();
+        }
+        static GrDrawTarget* Dependency(GrDrawTarget* dt, int index) {
+            return dt->fDependencies[index];
+        }
+    };
+
     void recordBatch(GrBatch*);
     bool installPipelineInDrawBatch(const GrPipelineBuilder* pipelineBuilder,
                                     const GrScissorState* scissor,
@@ -227,6 +295,8 @@ private:
                            GrScissorState*,
                            const SkRect* devBounds);
 
+    void addDependency(GrDrawTarget* dependedOn);
+
     // Used only by CMM.
     void clearStencilClip(const SkIRect&, bool insideClip, GrRenderTarget*);
 
@@ -237,7 +307,13 @@ private:
     GrGpu*                                      fGpu;
     GrResourceProvider*                         fResourceProvider;
     bool                                        fFlushing;
-    GrBatchToken                                fLastFlushToken;
+
+    SkDEBUGCODE(int                             fDebugID;)
+    uint32_t                                    fFlags;
+
+    // 'this' drawTarget relies on the output of the drawTargets in 'fDependencies'
+    SkTDArray<GrDrawTarget*>                    fDependencies;
+    GrRenderTarget*                             fRenderTarget;
 
     typedef SkRefCnt INHERITED;
 };

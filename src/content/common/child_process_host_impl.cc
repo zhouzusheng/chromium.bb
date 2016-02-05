@@ -10,7 +10,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/hash.h"
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_math.h"
@@ -25,6 +24,8 @@
 #include "content/public/common/child_process_host_delegate.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
+#include "ipc/attachment_broker.h"
+#include "ipc/attachment_broker_privileged.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/message_filter.h"
@@ -33,36 +34,9 @@
 #include "base/linux_util.h"
 #elif defined(OS_WIN)
 #include "content/common/font_cache_dispatcher_win.h"
-#include "ipc/attachment_broker_privileged_win.h"
 #endif  // OS_LINUX
 
 namespace {
-
-#if USE_ATTACHMENT_BROKER
-// This class is wrapped in a singleton to ensure that its constructor is only
-// called once. The constructor creates an attachment broker and
-// sets it as the global broker.
-class AttachmentBrokerWrapper {
- public:
-  AttachmentBrokerWrapper() {
-    IPC::AttachmentBroker::SetGlobal(&attachment_broker_);
-  }
-
-  IPC::AttachmentBrokerPrivileged* GetAttachmentBroker() {
-    return &attachment_broker_;
-  }
-
- private:
-  IPC::AttachmentBrokerPrivilegedWin attachment_broker_;
-};
-
-base::LazyInstance<AttachmentBrokerWrapper>::Leaky
-    g_attachment_broker_wrapper = LAZY_INSTANCE_INITIALIZER;
-
-IPC::AttachmentBrokerPrivileged* GetAttachmentBroker() {
-  return g_attachment_broker_wrapper.Get().GetAttachmentBroker();
-}
-#endif  // USE_ATTACHMENT_BROKER
 
 // Global atomic to generate child process unique IDs.
 base::StaticAtomicSequenceNumber g_unique_id;
@@ -111,18 +85,25 @@ ChildProcessHostImpl::ChildProcessHostImpl(ChildProcessHostDelegate* delegate)
 #if defined(OS_WIN)
   AddFilter(new FontCacheDispatcher());
 #endif
+
 #if USE_ATTACHMENT_BROKER
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  // On Mac, the privileged AttachmentBroker needs a reference to the Mach port
+  // Provider, which is only available in the chrome/ module. The attachment
+  // broker must already be created.
+  DCHECK(IPC::AttachmentBroker::GetGlobal());
+#else
   // Construct the privileged attachment broker early in the life cycle of a
-  // child process. This ensures that when a test is being run in one of the
-  // single process modes, the global attachment broker is the privileged
-  // attachment broker, rather than an unprivileged attachment broker.
-  GetAttachmentBroker();
-#endif
+  // child process.
+  IPC::AttachmentBrokerPrivileged::CreateBrokerIfNeeded();
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+#endif  // USE_ATTACHMENT_BROKER
 }
 
 ChildProcessHostImpl::~ChildProcessHostImpl() {
 #if USE_ATTACHMENT_BROKER
-  GetAttachmentBroker()->DeregisterCommunicationChannel(channel_.get());
+  IPC::AttachmentBroker::GetGlobal()->DeregisterCommunicationChannel(
+      channel_.get());
 #endif
   for (size_t i = 0; i < filters_.size(); ++i) {
     filters_[i]->OnChannelClosing();
@@ -147,7 +128,8 @@ std::string ChildProcessHostImpl::CreateChannel() {
   if (!channel_->Connect())
     return std::string();
 #if USE_ATTACHMENT_BROKER
-  GetAttachmentBroker()->RegisterCommunicationChannel(channel_.get());
+  IPC::AttachmentBroker::GetGlobal()->RegisterCommunicationChannel(
+      channel_.get());
 #endif
 
   for (size_t i = 0; i < filters_.size(); ++i)
@@ -326,9 +308,8 @@ void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
 
   // AllocateForChildProcess() will check if |width| and |height| are valid
   // and handle failure in a controlled way when not. We just need to make
-  // sure |format| and |usage| are supported here.
-  if (GpuMemoryBufferImplSharedMemory::IsFormatSupported(format) &&
-      GpuMemoryBufferImplSharedMemory::IsUsageSupported(usage)) {
+  // sure |usage| is supported here.
+  if (GpuMemoryBufferImplSharedMemory::IsUsageSupported(usage)) {
     *handle = GpuMemoryBufferImplSharedMemory::AllocateForChildProcess(
         id, gfx::Size(width, height), format, peer_process_.Handle());
   }
@@ -336,7 +317,7 @@ void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
 
 void ChildProcessHostImpl::OnDeletedGpuMemoryBuffer(
     gfx::GpuMemoryBufferId id,
-    uint32 sync_point) {
+    const gpu::SyncToken& sync_token) {
   // Note: Nothing to do here as ownership of shared memory backed
   // GpuMemoryBuffers is passed with IPC.
 }

@@ -6,6 +6,7 @@
 #include "core/inspector/InspectorTraceEvents.h"
 
 #include "bindings/core/v8/ScriptCallStackFactory.h"
+#include "bindings/core/v8/ScriptSourceCode.h"
 #include "core/animation/Animation.h"
 #include "core/animation/KeyframeEffect.h"
 #include "core/css/invalidation/InvalidationSet.h"
@@ -31,6 +32,7 @@
 #include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/Vector.h"
+#include "wtf/text/TextPosition.h"
 #include <inttypes.h>
 #include <v8.h>
 
@@ -48,7 +50,7 @@ void setCallStack(TracedValue* value)
     static const unsigned char* traceCategoryEnabled = 0;
     WTF_ANNOTATE_BENIGN_RACE(&traceCategoryEnabled, "trace_event category");
     if (!traceCategoryEnabled)
-        traceCategoryEnabled = TRACE_EVENT_API_GET_CATEGORY_ENABLED(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"));
+        traceCategoryEnabled = TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"));
     if (!*traceCategoryEnabled)
         return;
     RefPtrWillBeRawPtr<ScriptCallStack> scriptCallStack = currentScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
@@ -245,7 +247,7 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorStyleInvalidatorInvali
     return value.release();
 }
 
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorStyleInvalidatorInvalidateEvent::invalidationList(Element& element, const WillBeHeapVector<RefPtrWillBeMember<InvalidationSet>>& invalidationList)
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorStyleInvalidatorInvalidateEvent::invalidationList(Element& element, const Vector<RefPtr<InvalidationSet>>& invalidationList)
 {
     RefPtr<TracedValue> value = fillCommonPart(element, ElementHasPendingInvalidationList);
     value->beginArray("invalidationList");
@@ -393,54 +395,6 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorScrollInvalidationTrac
     setGeneratingNodeInfo(value.get(), &layoutObject, "nodeId", "nodeName");
     if (RefPtrWillBeRawPtr<ScriptCallStack> stackTrace = currentScriptCallStack(maxInvalidationTrackingCallstackSize))
         stackTrace->toTracedValue(value.get(), "stackTrace");
-    return value.release();
-}
-
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorSendRequestEvent::data(unsigned long identifier, LocalFrame* frame, const ResourceRequest& request)
-{
-    String requestId = IdentifiersFactory::requestId(identifier);
-
-    RefPtr<TracedValue> value = TracedValue::create();
-    value->setString("requestId", requestId);
-    value->setString("frame", toHexString(frame));
-    value->setString("url", request.url().string());
-    value->setString("requestMethod", request.httpMethod());
-    setCallStack(value.get());
-    return value.release();
-}
-
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorReceiveResponseEvent::data(unsigned long identifier, LocalFrame* frame, const ResourceResponse& response)
-{
-    String requestId = IdentifiersFactory::requestId(identifier);
-
-    RefPtr<TracedValue> value = TracedValue::create();
-    value->setString("requestId", requestId);
-    value->setString("frame", toHexString(frame));
-    value->setInteger("statusCode", response.httpStatusCode());
-    value->setString("mimeType", response.mimeType().string().isolatedCopy());
-    return value.release();
-}
-
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorReceiveDataEvent::data(unsigned long identifier, LocalFrame* frame, int encodedDataLength)
-{
-    String requestId = IdentifiersFactory::requestId(identifier);
-
-    RefPtr<TracedValue> value = TracedValue::create();
-    value->setString("requestId", requestId);
-    value->setString("frame", toHexString(frame));
-    value->setInteger("encodedDataLength", encodedDataLength);
-    return value.release();
-}
-
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorResourceFinishEvent::data(unsigned long identifier, double finishTime, bool didFail)
-{
-    String requestId = IdentifiersFactory::requestId(identifier);
-
-    RefPtr<TracedValue> value = TracedValue::create();
-    value->setString("requestId", requestId);
-    value->setBoolean("didFail", didFail);
-    if (finishTime)
-        value->setDouble("networkTime", finishTime);
     return value.release();
 }
 
@@ -645,14 +599,28 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorUpdateLayerTreeEvent::
     return value.release();
 }
 
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorEvaluateScriptEvent::data(LocalFrame* frame, const String& url, int lineNumber)
+namespace {
+PassRefPtr<TracedValue> fillLocation(const String& url, const TextPosition& textPosition)
 {
     RefPtr<TracedValue> value = TracedValue::create();
-    value->setString("frame", toHexString(frame));
     value->setString("url", url);
-    value->setInteger("lineNumber", lineNumber);
+    value->setInteger("lineNumber", textPosition.m_line.oneBasedInt());
+    value->setInteger("columnNumber", textPosition.m_column.oneBasedInt());
+    return value.release();
+}
+}
+
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorEvaluateScriptEvent::data(LocalFrame* frame, const String& url, const TextPosition& textPosition)
+{
+    RefPtr<TracedValue> value = fillLocation(url, textPosition);
+    value->setString("frame", toHexString(frame));
     setCallStack(value.get());
     return value.release();
+}
+
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorCompileScriptEvent::data(const String& url, const TextPosition& textPosition)
+{
+    return fillLocation(url, textPosition);
 }
 
 PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorFunctionCallEvent::data(ExecutionContext* context, int scriptId, const String& scriptName, int scriptLine)

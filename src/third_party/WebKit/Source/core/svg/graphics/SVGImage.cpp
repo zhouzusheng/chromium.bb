@@ -55,6 +55,7 @@
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/ImageObserver.h"
 #include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/CullRect.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
 #include "third_party/skia/include/core/SkPicture.h"
@@ -306,7 +307,7 @@ void SVGImage::draw(SkCanvas* canvas, const SkPaint& paint, const FloatRect& dst
         TransformRecorder transformRecorder(imagePicture.context(), *this, transform);
 
         view->updateAllLifecyclePhases();
-        view->paint(&imagePicture.context(), enclosingIntRect(srcRect));
+        view->paint(&imagePicture.context(), CullRect(enclosingIntRect(srcRect)));
         ASSERT(!view->needsLayout());
     }
 
@@ -433,6 +434,12 @@ bool SVGImage::dataChanged(bool allDataReceived)
         EventDispatchForbiddenScope::AllowUserAgentEvents allowUserAgentEvents;
 
         DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<FrameLoaderClient>, dummyFrameLoaderClient, (EmptyFrameLoaderClient::create()));
+
+        if (m_page) {
+            toLocalFrame(m_page->mainFrame())->loader().load(FrameLoadRequest(0, blankURL(), SubstituteData(data(), AtomicString("image/svg+xml", AtomicString::ConstructFromLiteral),
+                AtomicString("UTF-8", AtomicString::ConstructFromLiteral), KURL(), ForceSynchronousLoad)));
+            return true;
+        }
 
         Page::PageClients pageClients;
         fillWithEmptyClients(pageClients);

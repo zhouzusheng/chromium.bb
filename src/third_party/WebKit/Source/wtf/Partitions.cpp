@@ -32,9 +32,8 @@
 #include "wtf/Partitions.h"
 
 #include "wtf/Alias.h"
-#include "wtf/DefaultAllocator.h"
-#include "wtf/FastMalloc.h"
 #include "wtf/MainThread.h"
+#include "wtf/PartitionAllocator.h"
 
 namespace WTF {
 
@@ -49,7 +48,7 @@ SizeSpecificPartitionAllocator<3328> Partitions::m_nodeAllocator;
 SizeSpecificPartitionAllocator<1024> Partitions::m_layoutAllocator;
 HistogramEnumerationFunction Partitions::m_histogramEnumeration = nullptr;
 
-void Partitions::initialize()
+void Partitions::initialize(HistogramEnumerationFunction histogramEnumeration)
 {
     spinLockLock(&s_initializationLock);
 
@@ -59,16 +58,11 @@ void Partitions::initialize()
         m_bufferAllocator.init();
         m_nodeAllocator.init();
         m_layoutAllocator.init();
+        m_histogramEnumeration = histogramEnumeration;
         s_initialized = true;
     }
 
     spinLockUnlock(&s_initializationLock);
-}
-
-void Partitions::setHistogramEnumeration(HistogramEnumerationFunction histogramEnumeration)
-{
-    ASSERT(!m_histogramEnumeration);
-    m_histogramEnumeration = histogramEnumeration;
 }
 
 void Partitions::shutdown()
@@ -128,6 +122,7 @@ void Partitions::dumpMemoryStats(bool isLightDump, PartitionStatsDumper* partiti
     // accessed only on the main thread.
     ASSERT(isMainThread());
 
+    decommitFreeableMemory();
     partitionDumpStatsGeneric(fastMallocPartition(), "fast_malloc", isLightDump, partitionStatsDumper);
     partitionDumpStatsGeneric(bufferPartition(), "buffer", isLightDump, partitionStatsDumper);
     partitionDumpStats(nodePartition(), "node", isLightDump, partitionStatsDumper);

@@ -80,20 +80,26 @@ const VisibleSelectionInComposedTree& SelectionEditor::visibleSelection<EditingI
     return m_selectionInComposedTree;
 }
 
-void SelectionEditor::setVisibleSelection(const VisibleSelection& newSelection)
+void SelectionEditor::setVisibleSelection(const VisibleSelection& newSelection, FrameSelection::SetSelectionOptions options)
 {
     m_selection = newSelection;
-    adjustVisibleSelectionInCompsoedTree();
+    if (options & FrameSelection::DoNotAdjustInComposedTree) {
+        m_selectionInComposedTree.setWithoutValidation(toPositionInComposedTree(m_selection.base()), toPositionInComposedTree(m_selection.extent()));
+        return;
+    }
+
+    adjustVisibleSelectionInComposedTree();
 }
 
-void SelectionEditor::setVisibleSelection(const VisibleSelectionInComposedTree& newSelection)
+void SelectionEditor::setVisibleSelection(const VisibleSelectionInComposedTree& newSelection, FrameSelection::SetSelectionOptions options)
 {
+    ASSERT(!(options & FrameSelection::DoNotAdjustInComposedTree));
     m_selectionInComposedTree = newSelection;
     adjustVisibleSelectionInDOMTree();
 }
 
 // Updates |m_selectionInComposedTree| to match with |m_selection|.
-void SelectionEditor::adjustVisibleSelectionInCompsoedTree()
+void SelectionEditor::adjustVisibleSelectionInComposedTree()
 {
     if (m_selection.isNone()) {
         m_selectionInComposedTree = VisibleSelectionInComposedTree();
@@ -160,10 +166,10 @@ void SelectionEditor::setIsDirectional(bool isDirectional)
     m_selectionInComposedTree.setIsDirectional(isDirectional);
 }
 
-void SelectionEditor::setWithoutValidation(const Position& start, const Position& end)
+void SelectionEditor::setWithoutValidation(const Position& base, const Position& extent)
 {
-    m_selection.setWithoutValidation(start, end);
-    adjustVisibleSelectionInCompsoedTree();
+    m_selection.setWithoutValidation(base, extent);
+    m_selectionInComposedTree.setWithoutValidation(toPositionInComposedTree(base), toPositionInComposedTree(extent));
 }
 
 TextDirection SelectionEditor::directionOfEnclosingBlock()

@@ -48,7 +48,7 @@ class StreamTextureManagerInProcess;
 
 namespace gpu {
 class SyncPointClient;
-class SyncPointClientState;
+class SyncPointOrderData;
 class SyncPointManager;
 class ValueStateMap;
 
@@ -130,6 +130,13 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   bool IsGpuChannelLost() override;
   CommandBufferNamespace GetNamespaceID() const override;
   uint64_t GetCommandBufferID() const override;
+  uint64_t GenerateFenceSyncRelease() override;
+  bool IsFenceSyncRelease(uint64_t release) override;
+  bool IsFenceSyncFlushed(uint64_t release) override;
+  bool IsFenceSyncFlushReceived(uint64_t release) override;
+  void SignalSyncToken(const SyncToken& sync_token,
+                       const base::Closure& callback) override;
+  bool CanWaitUnverifiedSyncToken(const SyncToken* sync_token) override;
 
   // The serializer interface to the GPU service (i.e. thread).
   class Service {
@@ -212,22 +219,25 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   void QueueTask(const base::Closure& task) { service_->ScheduleTask(task); }
   void CheckSequencedThread();
   void RetireSyncPointOnGpuThread(uint32 sync_point);
-  void SignalSyncPointOnGpuThread(uint32 sync_point,
-                                  const base::Closure& callback);
   bool WaitSyncPointOnGpuThread(uint32 sync_point);
+  void FenceSyncReleaseOnGpuThread(uint64_t release);
+  bool WaitFenceSyncOnGpuThread(gpu::CommandBufferNamespace namespace_id,
+                                uint64_t command_buffer_id,
+                                uint64_t release);
   void SignalQueryOnGpuThread(unsigned query_id, const base::Closure& callback);
   void DestroyTransferBufferOnGpuThread(int32 id);
   void CreateImageOnGpuThread(int32 id,
                               const gfx::GpuMemoryBufferHandle& handle,
                               const gfx::Size& size,
                               gfx::BufferFormat format,
-                              uint32 internalformat);
+                              uint32 internalformat,
+                              uint32_t order_num,
+                              uint64_t fence_sync);
   void DestroyImageOnGpuThread(int32 id);
   void SetGetBufferOnGpuThread(int32 shm_id, base::WaitableEvent* completion);
 
   // Callbacks:
   void OnContextLost();
-  void OnResizeView(gfx::Size size, float scale_factor);
   bool GetBufferChanged(int32 transfer_buffer_id);
   void PumpCommands();
   void PerformDelayedWork();
@@ -242,7 +252,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   scoped_ptr<gles2::GLES2Decoder> decoder_;
   scoped_refptr<gfx::GLContext> context_;
   scoped_refptr<gfx::GLSurface> surface_;
-  scoped_refptr<SyncPointClientState> sync_point_client_state_;
+  scoped_refptr<SyncPointOrderData> sync_point_order_data_;
   scoped_ptr<SyncPointClient> sync_point_client_;
   base::Closure context_lost_callback_;
   bool delayed_work_pending_;  // Used to throttle PerformDelayedWork.
@@ -254,6 +264,8 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   gpu::Capabilities capabilities_;
   GpuMemoryBufferManager* gpu_memory_buffer_manager_;
   base::AtomicSequenceNumber next_image_id_;
+  uint64_t next_fence_sync_release_;
+  uint64_t flushed_fence_sync_release_;
 
   // Accessed on both threads:
   scoped_ptr<CommandBufferServiceBase> command_buffer_;
@@ -263,6 +275,7 @@ class GPU_EXPORT InProcessCommandBuffer : public CommandBuffer,
   State state_after_last_flush_;
   base::Lock state_after_last_flush_lock_;
   scoped_refptr<gfx::GLShareGroup> gl_share_group_;
+  base::WaitableEvent fence_sync_wait_event_;
 
 #if defined(OS_ANDROID)
   scoped_ptr<StreamTextureManagerInProcess> stream_texture_manager_;

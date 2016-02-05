@@ -1,6 +1,4 @@
-
-
-  /**
+/**
    * Use `Polymer.PaperInputBehavior` to implement inputs with `<paper-input-container>`. This
    * behavior is implemented by `<paper-input>`. It exposes a number of properties from
    * `<paper-input-container>` and `<input is="iron-input">` and they should be bound in your
@@ -79,7 +77,7 @@
       },
 
       /**
-       * The datalist of the input (if any). This should match the id of an existing <datalist>. Bind this
+       * The datalist of the input (if any). This should match the id of an existing `<datalist>`. Bind this
        * to the `<input is="iron-input">`'s `list` property.
        */
       list: {
@@ -281,6 +279,20 @@
         type: Number
       },
 
+      /**
+       * Bind this to the `<input is="iron-input">`'s `accept` property, , used with type=file.
+       */
+      accept: {
+        type: String
+      },
+
+      /**
+       * Bind this to the `<input is="iron-input">`'s `multiple` property, , used with type=file.
+       */
+      multiple: {
+        type: Boolean
+      },
+
       _ariaDescribedBy: {
         type: String,
         value: ''
@@ -421,4 +433,3 @@
 
   /** @polymerBehavior */
   Polymer.PaperInputBehavior = [Polymer.IronControlState, Polymer.PaperInputBehaviorImpl];
-

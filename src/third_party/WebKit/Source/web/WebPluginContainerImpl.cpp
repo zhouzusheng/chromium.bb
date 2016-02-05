@@ -55,6 +55,7 @@
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutPart.h"
+#include "core/layout/LayoutView.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
@@ -69,7 +70,8 @@
 #include "platform/exported/WrappedResourceResponse.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayer.h"
-#include "platform/scroll/ScrollAnimator.h"
+#include "platform/graphics/paint/CullRect.h"
+#include "platform/scroll/ScrollAnimatorBase.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
@@ -110,19 +112,19 @@ void WebPluginContainerImpl::layoutIfNeeded()
     m_webPlugin->layoutIfNeeded();
 }
 
-void WebPluginContainerImpl::paint(GraphicsContext* context, const IntRect& rect) const
+void WebPluginContainerImpl::paint(GraphicsContext* context, const CullRect& cullRect) const
 {
     if (!parent())
         return;
 
     // Don't paint anything if the plugin doesn't intersect.
-    if (!frameRect().intersects(rect))
+    if (!cullRect.intersectsCullRect(frameRect()))
         return;
 
     if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, LayoutPoint()))
         return;
 
-    LayoutObjectDrawingRecorder drawingRecorder(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, rect, LayoutPoint());
+    LayoutObjectDrawingRecorder drawingRecorder(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, cullRect.m_rect, LayoutPoint());
     context->save();
 
     ASSERT(parent()->isFrameView());
@@ -135,7 +137,7 @@ void WebPluginContainerImpl::paint(GraphicsContext* context, const IntRect& rect
 
     WebCanvas* canvas = context->canvas();
 
-    IntRect windowRect = view->contentsToRootFrame(rect);
+    IntRect windowRect = view->contentsToRootFrame(cullRect.m_rect);
     m_webPlugin->paint(canvas, windowRect);
 
     context->restore();
@@ -419,7 +421,6 @@ void WebPluginContainerImpl::reportGeometry()
     IntRect windowRect, clipRect, unobscuredRect;
     Vector<IntRect> cutOutRects;
     calculateGeometry(windowRect, clipRect, unobscuredRect, cutOutRects);
-
     m_webPlugin->updateGeometry(windowRect, clipRect, unobscuredRect, cutOutRects, isVisible());
 }
 
@@ -496,9 +497,10 @@ void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, cons
         // FIXME: This is a bit of hack to allow us to observe completion of
         // our frame request.  It would be better to evolve FrameLoader to
         // support a completion callback instead.
-        OwnPtr<WebPluginLoadObserver> observer = adoptPtr(new WebPluginLoadObserver(this, request.url(), notifyData));
-        // FIXME: Calling get here is dangerous! What if observer is freed?
+        OwnPtrWillBeRawPtr<WebPluginLoadObserver> observer = WebPluginLoadObserver::create(this, request.url(), notifyData);
+#if !ENABLE(OILPAN)
         m_pluginLoadObservers.append(observer.get());
+#endif
         WebDataSourceImpl::setNextPluginLoadObserver(observer.release());
     }
 
@@ -678,6 +680,7 @@ bool WebPluginContainerImpl::wantsWheelEvents()
     return m_wantsWheelEvents;
 }
 
+#if !ENABLE(OILPAN)
 void WebPluginContainerImpl::willDestroyPluginLoadObserver(WebPluginLoadObserver* observer)
 {
     size_t pos = m_pluginLoadObservers.find(observer);
@@ -685,6 +688,7 @@ void WebPluginContainerImpl::willDestroyPluginLoadObserver(WebPluginLoadObserver
         return;
     m_pluginLoadObservers.remove(pos);
 }
+#endif
 
 // Private methods -------------------------------------------------------------
 
@@ -721,21 +725,25 @@ void WebPluginContainerImpl::dispose()
     if (m_element && m_touchEventRequestType != TouchEventRequestTypeNone && m_element->document().frameHost())
         m_element->document().frameHost()->eventHandlerRegistry().didRemoveEventHandler(*m_element, EventHandlerRegistry::TouchEvent);
 
-    for (size_t i = 0; i < m_pluginLoadObservers.size(); ++i)
-        m_pluginLoadObservers[i]->clearPluginContainer();
+#if !ENABLE(OILPAN)
+    for (const auto& observer : m_pluginLoadObservers)
+        observer->clearPluginContainer();
+#endif
 
     if (m_webPlugin) {
         RELEASE_ASSERT(!m_webPlugin->container() || m_webPlugin->container() == this);
         m_webPlugin->destroy();
+        m_webPlugin = nullptr;
     }
-    m_webPlugin = nullptr;
 
     if (m_webLayer) {
         GraphicsLayer::unregisterContentsLayer(m_webLayer);
         m_webLayer = nullptr;
     }
 
+#if !ENABLE(OILPAN)
     m_pluginLoadObservers.clear();
+#endif
     m_element = nullptr;
 }
 
@@ -834,9 +842,9 @@ void WebPluginContainerImpl::handleKeyboardEvent(KeyboardEvent* event)
 
     if (webEvent.type == WebInputEvent::KeyDown) {
 #if OS(MACOSX)
-        if (webEvent.modifiers == WebInputEvent::MetaKey
+        if ((webEvent.modifiers & WebInputEvent::InputModifiers) == WebInputEvent::MetaKey
 #else
-        if (webEvent.modifiers == WebInputEvent::ControlKey
+        if ((webEvent.modifiers & WebInputEvent::InputModifiers) == WebInputEvent::ControlKey
 #endif
             && (webEvent.windowsKeyCode == VKEY_C || webEvent.windowsKeyCode == VKEY_INSERT)
             // Only copy if there's a selection, so that we only ever do this
@@ -927,7 +935,7 @@ void WebPluginContainerImpl::focusPlugin()
     if (Page* currentPage = containingFrame.page())
         currentPage->focusController().setFocusedElement(m_element, &containingFrame);
     else
-        containingFrame.document()->setFocusedElement(m_element);
+        containingFrame.document()->setFocusedElement(m_element, FocusParams(SelectionBehaviorOnFocus::None, WebFocusTypeNone, nullptr));
 }
 
 void WebPluginContainerImpl::issuePaintInvalidations()
@@ -943,29 +951,55 @@ void WebPluginContainerImpl::issuePaintInvalidations()
     m_pendingInvalidationRect = IntRect();
 }
 
+void WebPluginContainerImpl::computeClipRectsForPlugin(
+    const HTMLFrameOwnerElement* ownerElement, IntRect& windowRect, IntRect& clippedLocalRect, IntRect& unclippedIntLocalRect) const
+{
+    ASSERT(ownerElement);
+
+    if (!ownerElement->layoutObject()) {
+        clippedLocalRect = IntRect();
+        unclippedIntLocalRect = IntRect();
+        return;
+    }
+
+    LayoutView* rootView = m_element->document().view()->layoutView();
+    while (rootView->frame()->ownerLayoutObject())
+        rootView = rootView->frame()->ownerLayoutObject()->view();
+
+    LayoutBox* box = toLayoutBox(ownerElement->layoutObject());
+
+    // Plugin frameRects are in absolute space within their frame.
+    IntRect frameRectInOwnerElementSpace = box->absoluteToLocalQuad(FloatRect(frameRect()), UseTransforms).enclosingBoundingBox();
+
+    LayoutRect unclippedAbsoluteRect(frameRectInOwnerElementSpace);
+    box->mapRectToPaintInvalidationBacking(rootView, unclippedAbsoluteRect, nullptr);
+
+    // The frameRect is already in absolute space of the local frame to the plugin.
+    windowRect = frameRect();
+    // Map up to the root frame.
+    windowRect = enclosingIntRect(m_element->document().view()->layoutView()->localToAbsoluteQuad(FloatQuad(FloatRect(frameRect())), TraverseDocumentBoundaries).boundingBox());
+    // Finally, adjust for scrolling of the root frame, which the above does not take into account.
+    windowRect.moveBy(roundedIntPoint(-rootView->viewRect().location()));
+
+    clippedLocalRect = enclosingIntRect(unclippedAbsoluteRect);
+    unclippedIntLocalRect = clippedLocalRect;
+    clippedLocalRect.intersect(rootView->frameView()->visibleContentRect());
+
+    // TODO(chrishtr): intentionally ignore transform, because the positioning of frameRect() does also. This is probably wrong.
+    unclippedIntLocalRect = box->absoluteToLocalQuad(FloatRect(unclippedIntLocalRect), TraverseDocumentBoundaries).enclosingBoundingBox();
+    clippedLocalRect = box->absoluteToLocalQuad(FloatRect(clippedLocalRect), TraverseDocumentBoundaries).enclosingBoundingBox();
+}
+
 void WebPluginContainerImpl::calculateGeometry(IntRect& windowRect, IntRect& clipRect, IntRect& unobscuredRect, Vector<IntRect>& cutOutRects)
 {
-    windowRect = toFrameView(parent())->contentsToRootFrame(frameRect());
-
-    // Calculate a clip-rect so that we don't overlap the scrollbars, etc.
-    clipRect = convertToContainingWindow(IntRect(0, 0, width(), height()));
-    unobscuredRect = clipRect;
-
-    // document().layoutView() can be 0 when we receive messages from the
+    // document().layoutView() can be null when we receive messages from the
     // plugins while we are destroying a frame.
     // FIXME: Can we just check m_element->document().isActive() ?
     if (m_element->layoutObject()->document().layoutView()) {
         // Take our element and get the clip rect from the enclosing layer and
         // frame view.
-        IntRect elementUnobscuredRect;
-        IntRect elementWindowClipRect = m_element->document().view()->clipRectsForFrameOwner(m_element, &elementUnobscuredRect);
-        clipRect.intersect(elementWindowClipRect);
-        unobscuredRect.intersect(elementUnobscuredRect);
+        computeClipRectsForPlugin(m_element, windowRect, clipRect, unobscuredRect);
     }
-
-    clipRect.move(-windowRect.x(), -windowRect.y());
-    unobscuredRect.move(-windowRect.x(), -windowRect.y());
-
     getPluginOcclusions(m_element, this->parent(), frameRect(), cutOutRects);
     // Convert to the plugin position.
     for (size_t i = 0; i < cutOutRects.size(); i++)

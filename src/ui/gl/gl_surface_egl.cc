@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "ui/gfx/geometry/rect.h"
@@ -435,6 +436,8 @@ EGLDisplay GLSurfaceEGL::InitializeDisplay() {
                  << " failed with error " << GetLastEGLErrorString()
                  << (is_last ? "" : ", trying next display type");
     } else {
+      UMA_HISTOGRAM_ENUMERATION("GPU.EGLDisplayType", display_type,
+                                DISPLAY_TYPE_MAX);
       g_display = display;
       break;
     }
@@ -672,7 +675,7 @@ gfx::Size NativeViewGLSurfaceEGL::GetSize() {
   return gfx::Size(width, height);
 }
 
-bool NativeViewGLSurfaceEGL::Resize(const gfx::Size& size) {
+bool NativeViewGLSurfaceEGL::Resize(const gfx::Size& size, float scale_factor) {
   if (size == GetSize())
     return true;
 
@@ -815,7 +818,7 @@ gfx::Size PbufferGLSurfaceEGL::GetSize() {
   return size_;
 }
 
-bool PbufferGLSurfaceEGL::Resize(const gfx::Size& size) {
+bool PbufferGLSurfaceEGL::Resize(const gfx::Size& size, float scale_factor) {
   if (size == size_)
     return true;
 
@@ -901,7 +904,7 @@ gfx::Size SurfacelessEGL::GetSize() {
   return size_;
 }
 
-bool SurfacelessEGL::Resize(const gfx::Size& size) {
+bool SurfacelessEGL::Resize(const gfx::Size& size, float scale_factor) {
   size_ = size;
   return true;
 }

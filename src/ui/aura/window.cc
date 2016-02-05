@@ -223,7 +223,7 @@ void Window::Show() {
   // It is not allowed that a window is visible but the layers alpha is fully
   // transparent since the window would still be considered to be active but
   // could not be seen.
-  DCHECK_IMPLIES(visible_, layer()->GetTargetOpacity() > 0.0f);
+  DCHECK(!visible_ || layer()->GetTargetOpacity() > 0.0f);
   SetVisible(true);
 }
 
@@ -758,7 +758,7 @@ Window* Window::GetWindowForPoint(const gfx::Point& local_point,
   // Check if I should claim this event and not pass it to my children because
   // the location is inside my hit test override area.  For details, see
   // set_hit_test_bounds_override_inner().
-  if (for_event_handling && !hit_test_bounds_override_inner_.empty()) {
+  if (for_event_handling && !hit_test_bounds_override_inner_.IsEmpty()) {
     gfx::Rect inset_local_bounds(gfx::Point(), bounds().size());
     inset_local_bounds.Inset(hit_test_bounds_override_inner_);
     // We know we're inside the normal local bounds, so if we're outside the

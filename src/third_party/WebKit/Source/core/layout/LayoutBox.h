@@ -50,7 +50,7 @@ enum ScrollOffsetClamping {
 };
 
 struct LayoutBoxRareData {
-    WTF_MAKE_NONCOPYABLE(LayoutBoxRareData); WTF_MAKE_FAST_ALLOCATED(LayoutBoxRareData);
+    WTF_MAKE_NONCOPYABLE(LayoutBoxRareData); USING_FAST_MALLOC(LayoutBoxRareData);
 public:
     LayoutBoxRareData()
         : m_inlineBoxWrapper(nullptr)
@@ -76,8 +76,99 @@ public:
     LayoutRect m_previousLayoutOverflowRect;
 
     LayoutUnit m_pageLogicalOffset;
+
+    LayoutUnit m_paginationStrut;
 };
 
+// LayoutBox implements the full CSS box model.
+//
+// LayoutBoxModelObject only introduces some abstractions for LayoutInline and
+// LayoutBox. The logic for the model is in LayoutBox, e.g. the storage for the
+// rectangle and offset forming the CSS box (m_frameRect) and the getters for
+// the different boxes.
+//
+// LayoutBox is also the uppermost class to support scrollbars, however the
+// logic is delegated to PaintLayerScrollableArea.
+// Per the CSS specification, scrollbars should "be inserted between the inner
+// border edge and the outer padding edge".
+// (see http://www.w3.org/TR/CSS21/visufx.html#overflow)
+// Also the scrollbar width / height are removed from the content box. Taking
+// the following example:
+//
+// <!DOCTYPE html>
+// <style>
+// ::-webkit-scrollbar {
+//     /* Force non-overlay scrollbars */
+//     width: 10px;
+//     height: 20px;
+// }
+// </style>
+// <div style="overflow:scroll; width: 100px; height: 100px">
+//
+// The <div>'s content box is not 100x100 as specified in the style but 90x80 as
+// we remove the scrollbars from the box.
+//
+// The presence of scrollbars is determined by the 'overflow' property and can
+// be conditioned on having layout overflow (see OverflowModel for more details
+// on how we track overflow).
+//
+// There are 2 types of scrollbars:
+// - non-overlay scrollbars take space from the content box.
+// - overlay scrollbars don't and just overlay hang off from the border box,
+//   potentially overlapping with the padding box's content.
+// For more details on scrollbars, see PaintLayerScrollableArea.
+//
+//
+// ***** THE BOX MODEL *****
+// The CSS box model is based on a series of nested boxes:
+// http://www.w3.org/TR/CSS21/box.html
+//
+//       |----------------------------------------------------|
+//       |                                                    |
+//       |                   margin-top                       |
+//       |                                                    |
+//       |     |-----------------------------------------|    |
+//       |     |                                         |    |
+//       |     |             border-top                  |    |
+//       |     |                                         |    |
+//       |     |    |--------------------------|----|    |    |
+//       |     |    |                          |    |    |    |
+//       |     |    |       padding-top        |####|    |    |
+//       |     |    |                          |####|    |    |
+//       |     |    |    |----------------|    |####|    |    |
+//       |     |    |    |                |    |    |    |    |
+//       | ML  | BL | PL |  content box   | PR | SW | BR | MR |
+//       |     |    |    |                |    |    |    |    |
+//       |     |    |    |----------------|    |    |    |    |
+//       |     |    |                          |    |    |    |
+//       |     |    |      padding-bottom      |    |    |    |
+//       |     |    |--------------------------|----|    |    |
+//       |     |    |                      ####|    |    |    |
+//       |     |    |     scrollbar height ####| SC |    |    |
+//       |     |    |                      ####|    |    |    |
+//       |     |    |-------------------------------|    |    |
+//       |     |                                         |    |
+//       |     |           border-bottom                 |    |
+//       |     |                                         |    |
+//       |     |-----------------------------------------|    |
+//       |                                                    |
+//       |                 margin-bottom                      |
+//       |                                                    |
+//       |----------------------------------------------------|
+//
+// BL = border-left
+// BR = border-right
+// ML = margin-left
+// MR = margin-right
+// PL = padding-left
+// PR = padding-right
+// SC = scroll corner (contains UI for resizing (see the 'resize' property)
+// SW = scrollbar width
+//
+// Those are just the boxes from the CSS model. Extra boxes are tracked by Blink
+// (e.g. the overflows). Thus it is paramount to know which box a function is
+// manipulating. Also of critical importance is the coordinate system used (see
+// the COORDINATE SYSTEMS section in LayoutBoxModelObject).
 class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 public:
     explicit LayoutBox(ContainerNode*);
@@ -306,7 +397,7 @@ public:
 
     // More IE extensions.  clientWidth and clientHeight represent the interior of an object
     // excluding border and scrollbar.  clientLeft/Top are just the borderLeftWidth and borderTopWidth.
-    LayoutUnit clientLeft() const { return borderLeft() + (style()->shouldPlaceBlockDirectionScrollbarOnLogicalLeft() ? verticalScrollbarWidth() : 0); }
+    LayoutUnit clientLeft() const { return borderLeft() + (shouldPlaceBlockDirectionScrollbarOnLogicalLeft() ? verticalScrollbarWidth() : 0); }
     LayoutUnit clientTop() const { return borderTop(); }
     LayoutUnit clientWidth() const;
     LayoutUnit clientHeight() const;
@@ -334,7 +425,9 @@ public:
 
     void scrollToOffset(const DoubleSize&, ScrollBehavior = ScrollBehaviorInstant);
     void scrollByRecursively(const DoubleSize& delta, ScrollOffsetClamping = ScrollOffsetUnclamped);
-    void scrollRectToVisible(const LayoutRect&, const ScrollAlignment& alignX, const ScrollAlignment& alignY);
+    // If makeVisibleInVisualViewport is set, the visual viewport will be scrolled
+    // if required to make the rect visible.
+    void scrollRectToVisible(const LayoutRect&, const ScrollAlignment& alignX, const ScrollAlignment& alignY, ScrollType = ProgrammaticScroll, bool makeVisibleInVisualViewport = true);
 
     LayoutRectOutsets marginBoxOutsets() const override { return m_marginBoxOutsets; }
     LayoutUnit marginTop() const override { return m_marginBoxOutsets.top(); }
@@ -361,6 +454,8 @@ public:
         const ComputedStyle* styleToUse = overrideStyle ? overrideStyle : style();
         return m_marginBoxOutsets.end(styleToUse->writingMode(), styleToUse->direction());
     }
+    LayoutUnit marginOver() const final { return m_marginBoxOutsets.over(style()->writingMode()); }
+    LayoutUnit marginUnder() const final { return m_marginBoxOutsets.under(style()->writingMode()); }
     void setMarginBefore(LayoutUnit value, const ComputedStyle* overrideStyle = nullptr) { m_marginBoxOutsets.setBefore((overrideStyle ? overrideStyle : style())->writingMode(), value); }
     void setMarginAfter(LayoutUnit value, const ComputedStyle* overrideStyle = nullptr) { m_marginBoxOutsets.setAfter((overrideStyle ? overrideStyle : style())->writingMode(), value); }
     void setMarginStart(LayoutUnit value, const ComputedStyle* overrideStyle = nullptr)
@@ -436,7 +531,7 @@ public:
     LayoutUnit adjustContentBoxLogicalHeightForBoxSizing(LayoutUnit height) const;
 
     struct ComputedMarginValues {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
         ComputedMarginValues() { }
 
         LayoutUnit m_before;
@@ -482,6 +577,26 @@ public:
     void setSpannerPlaceholder(LayoutMultiColumnSpannerPlaceholder&);
     void clearSpannerPlaceholder();
     LayoutMultiColumnSpannerPlaceholder* spannerPlaceholder() const final { return m_rareData ? m_rareData->m_spannerPlaceholder : 0; }
+
+    // A pagination strut is the amount of space needed to push an in-flow block-level object (or
+    // float) to the logical top of the next page or column. It will be set both for forced breaks
+    // (e.g. page-break-before:always) and soft breaks (when there's not enough space in the current
+    // page / column for the object). The strut is baked into the logicalTop() of the object, so
+    // that logicalTop() - paginationStrut() == the original position in the previous column before
+    // deciding to break.
+    //
+    // Pagination struts are either set in front of a block-level box (here) or before a line
+    // (RootInlineBox::paginationStrut()).
+    LayoutUnit paginationStrut() const { return m_rareData ? m_rareData->m_paginationStrut : LayoutUnit(); }
+    void setPaginationStrut(LayoutUnit);
+    void resetPaginationStrut()
+    {
+        if (m_rareData)
+            m_rareData->m_paginationStrut = LayoutUnit();
+    }
+
+    bool hasForcedBreakBefore() const;
+    bool hasForcedBreakAfter() const;
 
     LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
     void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
@@ -567,6 +682,7 @@ public:
     bool hasAutoVerticalScrollbar() const { return hasOverflowClip() && (style()->overflowY() == OAUTO || style()->overflowY() == OPAGEDY || style()->overflowY() == OOVERLAY); }
     bool hasAutoHorizontalScrollbar() const { return hasOverflowClip() && (style()->overflowX() == OAUTO || style()->overflowX() == OOVERLAY); }
     bool scrollsOverflow() const { return scrollsOverflowX() || scrollsOverflowY(); }
+    virtual bool shouldPlaceBlockDirectionScrollbarOnLogicalLeft() const { return style()->shouldPlaceBlockDirectionScrollbarOnLogicalLeft(); }
 
     bool hasScrollableOverflowX() const { return scrollsOverflowX() && pixelSnappedScrollWidth() != pixelSnappedClientWidth(); }
     bool hasScrollableOverflowY() const { return scrollsOverflowY() && pixelSnappedScrollHeight() != pixelSnappedClientHeight(); }
@@ -578,7 +694,14 @@ public:
     virtual bool isIntrinsicallyScrollable(ScrollbarOrientation orientation) const { return false; }
 
     bool hasUnsplittableScrollingOverflow() const;
-    bool isUnsplittableForPagination() const;
+
+    // Page / column breakability inside block-level objects.
+    enum PaginationBreakability {
+        AllowAnyBreaks, // No restrictions on breaking. May examine children to find possible break points.
+        ForbidBreaks, // Forbid breaks inside this object. Content cannot be split nicely into smaller pieces.
+        AvoidBreaks // Preferably avoid breaks. If not possible, examine children to find possible break points.
+    };
+    PaginationBreakability paginationBreakability() const;
 
     LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) override;
 
@@ -590,6 +713,7 @@ public:
     virtual void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&) const;
     virtual void paintMask(const PaintInfo&, const LayoutPoint&) const;
     void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
+    ResourcePriority computeResourcePriority() const final;
 
     void logicalExtentAfterUpdatingLogicalWidth(const LayoutUnit& logicalTop, LogicalExtentComputedValues&);
 
@@ -738,7 +862,7 @@ protected:
     void computePositionedLogicalWidth(LogicalExtentComputedValues&) const;
 
     LayoutUnit computeIntrinsicLogicalWidthUsing(const Length& logicalWidthLength, LayoutUnit availableLogicalWidth, LayoutUnit borderAndPadding) const;
-    LayoutUnit computeIntrinsicLogicalContentHeightUsing(const Length& logicalHeightLength, LayoutUnit intrinsicContentHeight, LayoutUnit borderAndPadding) const;
+    virtual LayoutUnit computeIntrinsicLogicalContentHeightUsing(const Length& logicalHeightLength, LayoutUnit intrinsicContentHeight, LayoutUnit borderAndPadding) const;
 
     virtual bool shouldComputeSizeAsReplaced() const { return isReplaced() && !isInlineBlockOrInlineTable(); }
 
@@ -804,9 +928,14 @@ private:
 
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const;
 
-    // This function calculates the minimum and maximum preferred widths for an object.
-    // These values are used in shrink-to-fit layout systems.
-    // These include tables, positioned objects, floats and flexible boxes.
+    // This function calculates the preferred widths for an object.
+    //
+    // This function is only expected to be called if
+    // the boolean preferredLogicalWidthsDirty is true. It also MUST clear the
+    // boolean before returning.
+    //
+    // See INTRINSIC SIZES / PREFERRED LOGICAL WIDTHS in LayoutObject.h for more
+    // details about those widths.
     virtual void computePreferredLogicalWidths() { clearPreferredLogicalWidthsDirty(); }
 
     LayoutBoxRareData& ensureRareData()
@@ -850,15 +979,15 @@ private:
     LayoutRectOutsets m_marginBoxOutsets;
 
 protected:
-    // The preferred logical width of the element if it were to break its lines at every
-    // possible opportunity. CSS 2.1 calls this width the "preferred minimum width" and
-    // "minimum content width".
-    // See https://drafts.csswg.org/css-sizing-3/#intrinsic for more information.
+    // The logical width of the element if it were to break its lines at every
+    // possible opportunity.
+    //
+    // See LayoutObject::minPreferredLogicalWidth() for more details.
     LayoutUnit m_minPreferredLogicalWidth;
 
-    // The preferred logical width of the element if it never breaks any lines at all.
-    // CSS 2.1 calls this width the "preferred width" and "maximum cell width".
-    // See https://drafts.csswg.org/css-sizing-3/#intrinsic for more information.
+    // The logical width of the element if it never breaks any lines at all.
+    //
+    // See LayoutObject::maxPreferredLogicalWidth() for more details.
     LayoutUnit m_maxPreferredLogicalWidth;
 
     // Our overflow information.

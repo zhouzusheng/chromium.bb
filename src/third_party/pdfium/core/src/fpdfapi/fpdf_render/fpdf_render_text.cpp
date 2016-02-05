@@ -4,11 +4,12 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fxge/fx_ge.h"
-#include "../../../include/fpdfapi/fpdf_render.h"
-#include "../../../include/fpdfapi/fpdf_pageobj.h"
-#include "../fpdf_page/pageint.h"
 #include "render_int.h"
+
+#include "../fpdf_page/pageint.h"
+#include "core/include/fpdfapi/fpdf_pageobj.h"
+#include "core/include/fpdfapi/fpdf_render.h"
+#include "core/include/fxge/fx_ge.h"
 
 CPDF_Type3Cache::~CPDF_Type3Cache() {
   for (const auto& pair : m_SizeMap) {
@@ -128,10 +129,10 @@ CFX_GlyphBitmap* CPDF_Type3Cache::RenderGlyph(CPDF_Type3Glyphs* pSize,
                                               const CFX_AffineMatrix* pMatrix,
                                               FX_FLOAT retinaScaleX,
                                               FX_FLOAT retinaScaleY) {
-  CPDF_Type3Char* pChar = m_pFont->LoadChar(charcode);
-  if (pChar == NULL || pChar->m_pBitmap == NULL) {
-    return NULL;
-  }
+  const CPDF_Type3Char* pChar = m_pFont->LoadChar(charcode);
+  if (!pChar || !pChar->m_pBitmap)
+    return nullptr;
+
   CFX_DIBitmap* pBitmap = pChar->m_pBitmap;
   CFX_AffineMatrix image_matrix, text_matrix;
   image_matrix = pChar->m_ImageMatrix;
@@ -525,7 +526,7 @@ class CPDF_CharPosList {
   FXTEXT_CHARPOS* m_pCharPos;
   FX_DWORD m_nChars;
 };
-FX_FLOAT _CIDTransformToFloat(uint8_t ch);
+
 CPDF_CharPosList::CPDF_CharPosList() {
   m_pCharPos = NULL;
 }
@@ -578,12 +579,14 @@ void CPDF_CharPosList::Load(int nChars,
     }
     const uint8_t* pTransform = pCIDFont->GetCIDTransform(CID);
     if (pTransform && !bVert) {
-      charpos.m_AdjustMatrix[0] = _CIDTransformToFloat(pTransform[0]);
-      charpos.m_AdjustMatrix[2] = _CIDTransformToFloat(pTransform[2]);
-      charpos.m_AdjustMatrix[1] = _CIDTransformToFloat(pTransform[1]);
-      charpos.m_AdjustMatrix[3] = _CIDTransformToFloat(pTransform[3]);
-      charpos.m_OriginX += _CIDTransformToFloat(pTransform[4]) * FontSize;
-      charpos.m_OriginY += _CIDTransformToFloat(pTransform[5]) * FontSize;
+      charpos.m_AdjustMatrix[0] = pCIDFont->CIDTransformToFloat(pTransform[0]);
+      charpos.m_AdjustMatrix[2] = pCIDFont->CIDTransformToFloat(pTransform[2]);
+      charpos.m_AdjustMatrix[1] = pCIDFont->CIDTransformToFloat(pTransform[1]);
+      charpos.m_AdjustMatrix[3] = pCIDFont->CIDTransformToFloat(pTransform[3]);
+      charpos.m_OriginX +=
+          pCIDFont->CIDTransformToFloat(pTransform[4]) * FontSize;
+      charpos.m_OriginY +=
+          pCIDFont->CIDTransformToFloat(pTransform[5]) * FontSize;
       charpos.m_bGlyphAdjust = TRUE;
     }
   }

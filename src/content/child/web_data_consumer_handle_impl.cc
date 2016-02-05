@@ -7,7 +7,7 @@
 #include <limits>
 #include "base/bind.h"
 #include "base/logging.h"
-#include "third_party/mojo/src/mojo/public/c/system/types.h"
+#include "mojo/public/c/system/types.h"
 
 namespace content {
 
@@ -31,7 +31,7 @@ class WebDataConsumerHandleImpl::Context
 WebDataConsumerHandleImpl::ReaderImpl::ReaderImpl(
     scoped_refptr<Context> context,
     Client* client)
-    : context_(context), handle_watcher_(14), client_(client) {
+    : context_(context), client_(client) {
   if (client_)
     StartWatching();
 }

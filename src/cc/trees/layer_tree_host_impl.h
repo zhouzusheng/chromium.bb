@@ -38,7 +38,7 @@
 #include "cc/tiles/tile_manager.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "cc/trees/mutator_host_client.h"
-#include "cc/trees/proxy.h"
+#include "cc/trees/task_runner_provider.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/rect.h"
@@ -96,6 +96,8 @@ class LayerTreeHostImplClient {
   virtual void SetMaxSwapsPendingOnImplThread(int max) = 0;
   virtual void DidSwapBuffersOnImplThread() = 0;
   virtual void DidSwapBuffersCompleteOnImplThread() = 0;
+  virtual void OnResourcelessSoftareDrawStateChanged(
+      bool resourceless_draw) = 0;
   virtual void OnCanDrawStateChanged(bool can_draw) = 0;
   virtual void NotifyReadyToActivate() = 0;
   virtual void NotifyReadyToDraw() = 0;
@@ -148,7 +150,7 @@ class CC_EXPORT LayerTreeHostImpl
   static scoped_ptr<LayerTreeHostImpl> Create(
       const LayerTreeSettings& settings,
       LayerTreeHostImplClient* client,
-      Proxy* proxy,
+      TaskRunnerProvider* task_runner_provider,
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
       SharedBitmapManager* shared_bitmap_manager,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
@@ -215,7 +217,6 @@ class CC_EXPORT LayerTreeHostImpl
     std::vector<gfx::Rect> non_occluding_screen_space_rects;
     std::vector<FrameTimingTracker::FrameAndRectIds> composite_events;
     RenderPassList render_passes;
-    RenderPassIdHashMap render_passes_by_id;
     const LayerImplList* render_surface_layer_list;
     LayerImplList will_draw_layers;
     bool has_no_damage;
@@ -227,9 +228,10 @@ class CC_EXPORT LayerTreeHostImpl
   virtual void BeginMainFrameAborted(CommitEarlyOutReason reason);
   virtual void BeginCommit();
   virtual void CommitComplete();
-  virtual void Animate();
   virtual void UpdateAnimationState(bool start_ready_animations);
   void ActivateAnimations();
+  void Animate();
+  void AnimatePendingTreeAfterCommit();
   void MainThreadHasStoppedFlinging();
   void DidAnimateScrollOffset();
   void SetViewportDamage(const gfx::Rect& damage_rect);
@@ -253,6 +255,7 @@ class CC_EXPORT LayerTreeHostImpl
   // LayerTreeMutatorsClient implementation.
   bool IsLayerInTree(int layer_id, LayerTreeType tree_type) const override;
   void SetMutatorsNeedCommit() override;
+  void SetMutatorsNeedRebuildPropertyTrees() override;
   void SetLayerFilterMutated(int layer_id,
                              LayerTreeType tree_type,
                              const FilterOperations& filters) override;
@@ -298,6 +301,11 @@ class CC_EXPORT LayerTreeHostImpl
 
   size_t SourceAnimationFrameNumberForTesting() const;
 
+  void RegisterScrollbarAnimationController(int scroll_layer_id);
+  void UnregisterScrollbarAnimationController(int scroll_layer_id);
+  ScrollbarAnimationController* ScrollbarAnimationControllerForId(
+      int scroll_layer_id) const;
+
   DrawMode GetDrawMode() const;
 
   // Viewport size in draw space: this size is in physical pixels and is used
@@ -323,13 +331,11 @@ class CC_EXPORT LayerTreeHostImpl
   void SetIsLikelyToRequireADraw(bool is_likely_to_require_a_draw) override;
 
   // ScrollbarAnimationControllerClient implementation.
-  void StartAnimatingScrollbarAnimationController(
-      ScrollbarAnimationController* controller) override;
-  void StopAnimatingScrollbarAnimationController(
-      ScrollbarAnimationController* controller) override;
   void PostDelayedScrollbarAnimationTask(const base::Closure& task,
                                          base::TimeDelta delay) override;
+  void SetNeedsAnimateForScrollbarAnimation() override;
   void SetNeedsRedrawForScrollbarAnimation() override;
+  ScrollbarSet ScrollbarsFor(int scroll_layer_id) const override;
 
   // VideoBeginFrameSource implementation.
   void AddVideoFrameController(VideoFrameController* controller) override;
@@ -409,7 +415,7 @@ class CC_EXPORT LayerTreeHostImpl
   // Returns the tree LTH synchronizes with.
   LayerTreeImpl* sync_tree() {
     // TODO(enne): This is bogus.  It should return based on the value of
-    // Proxy::CommitToActiveTree and not whether the pending tree exists.
+    // CommitToActiveTree() and not whether the pending tree exists.
     return pending_tree_ ? pending_tree_.get() : active_tree_.get();
   }
   virtual void CreatePendingTree();
@@ -473,7 +479,9 @@ class CC_EXPORT LayerTreeHostImpl
     return global_tile_state_;
   }
 
-  Proxy* proxy() const { return proxy_; }
+  TaskRunnerProvider* task_runner_provider() const {
+    return task_runner_provider_;
+  }
 
   AnimationRegistrar* animation_registrar() const {
     return animation_registrar_.get();
@@ -549,6 +557,9 @@ class CC_EXPORT LayerTreeHostImpl
   // Only valid for synchronous (non-scheduled) single-threaded case.
   void SynchronouslyInitializeAllTiles();
 
+  bool SupportsImplScrolling() const;
+  bool CommitToActiveTree() const;
+
   virtual void CreateResourceAndTileTaskWorkerPool(
       scoped_ptr<TileTaskWorkerPool>* tile_task_worker_pool,
       scoped_ptr<ResourcePool>* resource_pool);
@@ -582,11 +593,18 @@ class CC_EXPORT LayerTreeHostImpl
       scoped_ptr<FrameTimingTracker::CompositeTimingSet> composite_events,
       scoped_ptr<FrameTimingTracker::MainFrameTimingSet> main_frame_events);
 
+  base::SingleThreadTaskRunner* GetTaskRunner() const {
+    DCHECK(task_runner_provider_);
+    return task_runner_provider_->HasImplThread()
+               ? task_runner_provider_->ImplThreadTaskRunner()
+               : task_runner_provider_->MainThreadTaskRunner();
+  }
+
  protected:
   LayerTreeHostImpl(
       const LayerTreeSettings& settings,
       LayerTreeHostImplClient* client,
-      Proxy* proxy,
+      TaskRunnerProvider* task_runner_provider,
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
       SharedBitmapManager* shared_bitmap_manager,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
@@ -594,7 +612,7 @@ class CC_EXPORT LayerTreeHostImpl
       int id);
 
   // Virtual for testing.
-  virtual void AnimateLayers(base::TimeTicks monotonic_time);
+  virtual bool AnimateLayers(base::TimeTicks monotonic_time);
 
   bool is_likely_to_require_a_draw() const {
     return is_likely_to_require_a_draw_;
@@ -604,7 +622,7 @@ class CC_EXPORT LayerTreeHostImpl
   static void RemoveRenderPasses(FrameData* frame);
 
   LayerTreeHostImplClient* client_;
-  Proxy* proxy_;
+  TaskRunnerProvider* task_runner_provider_;
 
   BeginFrameTracker current_begin_frame_tracker_;
 
@@ -619,6 +637,8 @@ class CC_EXPORT LayerTreeHostImpl
   void CreateTileManagerResources();
   void ReleaseTreeResources();
   void RecreateTreeResources();
+
+  void AnimateInternal(bool active_tree);
 
   void UpdateGpuRasterizationStatus();
 
@@ -635,9 +655,9 @@ class CC_EXPORT LayerTreeHostImpl
       LayerImpl* scrolling_layer_impl,
       InputHandler::ScrollInputType type);
 
-  void AnimatePageScale(base::TimeTicks monotonic_time);
-  void AnimateScrollbars(base::TimeTicks monotonic_time);
-  void AnimateTopControls(base::TimeTicks monotonic_time);
+  bool AnimatePageScale(base::TimeTicks monotonic_time);
+  bool AnimateScrollbars(base::TimeTicks monotonic_time);
+  bool AnimateTopControls(base::TimeTicks monotonic_time);
 
   void TrackDamageForAllSurfaces(
       LayerImpl* root_draw_layer,
@@ -652,8 +672,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   void ClearCurrentlyScrollingLayer();
 
-  bool HandleMouseOverScrollbar(LayerImpl* layer_impl,
-                                const gfx::PointF& device_viewport_point);
+  void HandleMouseOverScrollbar(LayerImpl* layer_impl);
 
   LayerImpl* FindScrollLayerForDeviceViewportPoint(
       const gfx::PointF& device_viewport_point,
@@ -678,12 +697,6 @@ class CC_EXPORT LayerTreeHostImpl
                              const gfx::ScrollOffset& current_offset);
   bool ScrollAnimationUpdateTarget(LayerImpl* layer_impl,
                                    const gfx::Vector2dF& scroll_delta);
-
-  base::SingleThreadTaskRunner* GetTaskRunner() const {
-    DCHECK(proxy_);
-    return proxy_->HasImplThread() ? proxy_->ImplThreadTaskRunner()
-                                   : proxy_->MainThreadTaskRunner();
-  }
 
   typedef base::hash_map<UIResourceId, UIResourceData>
       UIResourceMap;
@@ -783,8 +796,12 @@ class CC_EXPORT LayerTreeHostImpl
 
   scoped_ptr<AnimationRegistrar> animation_registrar_;
   scoped_ptr<AnimationHost> animation_host_;
-  std::set<ScrollbarAnimationController*> scrollbar_animation_controllers_;
   std::set<VideoFrameController*> video_frame_controllers_;
+
+  // Map from scroll layer ID to scrollbar animation controller.
+  // There is one animation controller per pair of overlay scrollbars.
+  base::ScopedPtrHashMap<int, scoped_ptr<ScrollbarAnimationController>>
+      scrollbar_animation_controllers_;
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
   MicroBenchmarkControllerImpl micro_benchmark_controller_;

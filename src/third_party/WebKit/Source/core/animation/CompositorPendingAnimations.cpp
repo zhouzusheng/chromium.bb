@@ -52,7 +52,7 @@ void CompositorPendingAnimations::add(Animation* animation)
 
     bool visible = document->page() && document->page()->visibilityState() == PageVisibilityStateVisible;
     if (!visible && !m_timer.isActive()) {
-        m_timer.startOneShot(0, FROM_HERE);
+        m_timer.startOneShot(0, BLINK_FROM_HERE);
     }
 }
 
@@ -81,7 +81,7 @@ bool CompositorPendingAnimations::update(bool startOnCompositor)
                 startedSynchronizedOnCompositor = true;
             }
 
-            if (animation->playing() && !animation->hasStartTime()) {
+            if (animation->playing() && !animation->hasStartTime() && animation->timeline() && animation->timeline()->isActive()) {
                 waitingForStartTime.append(animation.get());
             }
         } else {
@@ -142,7 +142,7 @@ void CompositorPendingAnimations::notifyCompositorAnimationStarted(double monoto
     animations.swap(m_waitingForCompositorAnimationStart);
 
     for (auto animation : animations) {
-        if (animation->hasStartTime() || animation->playStateInternal() != Animation::Pending) {
+        if (animation->hasStartTime() || animation->playStateInternal() != Animation::Pending || !animation->timeline() || !animation->timeline()->isActive()) {
             // Already started or no longer relevant.
             continue;
         }

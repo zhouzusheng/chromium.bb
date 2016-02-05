@@ -60,6 +60,8 @@ bool PartitionRootBase::gInitialized = false;
 PartitionPage PartitionRootBase::gSeedPage;
 PartitionBucket PartitionRootBase::gPagedBucket;
 void (*PartitionRootBase::gOomHandlingFunction)() = nullptr;
+PartitionAllocHooks::AllocationHook* PartitionAllocHooks::m_allocationHook = nullptr;
+PartitionAllocHooks::FreeHook* PartitionAllocHooks::m_freeHook = nullptr;
 
 static uint16_t partitionBucketNumSystemPages(size_t size)
 {
@@ -291,7 +293,6 @@ bool partitionAllocShutdown(PartitionRoot* root)
 
 bool partitionAllocGenericShutdown(PartitionRootGeneric* root)
 {
-    spinLockLock(&root->lock);
     bool foundLeak = false;
     size_t i;
     for (i = 0; i < kGenericNumBuckets; ++i) {
@@ -299,7 +300,6 @@ bool partitionAllocGenericShutdown(PartitionRootGeneric* root)
         foundLeak |= partitionAllocShutdownBucket(bucket);
     }
     foundLeak |= partitionAllocBaseShutdown(root);
-    spinLockUnlock(&root->lock);
     return !foundLeak;
 }
 
@@ -1064,8 +1064,10 @@ void* partitionReallocGeneric(PartitionRootGeneric* root, void* ptr, size_t newS
         // We may be able to perform the realloc in place by changing the
         // accessibility of memory pages and, if reducing the size, decommitting
         // them.
-        if (partitionReallocDirectMappedInPlace(root, page, newSize))
+        if (partitionReallocDirectMappedInPlace(root, page, newSize)) {
+            PartitionAllocHooks::reallocHookIfEnabled(ptr, ptr, newSize);
             return ptr;
+        }
     }
 
     size_t actualNewSize = partitionAllocActualSize(root, newSize);

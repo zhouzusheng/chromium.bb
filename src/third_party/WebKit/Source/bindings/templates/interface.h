@@ -46,6 +46,9 @@ public:
     {% else %}
     static v8::Local<v8::Object> findInstanceInPrototypeChain(v8::Local<v8::Value>, v8::Isolate*);
     {{exported}}static v8::Local<v8::FunctionTemplate> domTemplate(v8::Isolate*);
+    {% if has_named_properties_object %}
+    {{exported}}static v8::Local<v8::FunctionTemplate> domTemplateForNamedPropertiesObject(v8::Isolate*);
+    {% endif %}
     static {{cpp_class}}* toImpl(v8::Local<v8::Object> object)
     {
         return toScriptWrappable(object)->toImpl<{{cpp_class}}>();
@@ -161,8 +164,7 @@ public:
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + {{custom_internal_field_counter}};
     {# End custom internal fields #}
     {% if interface_name == 'Window' %}
-    static bool namedSecurityCheckCustom(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8::AccessType, v8::Local<v8::Value> data);
-    static bool indexedSecurityCheckCustom(v8::Local<v8::Object> host, uint32_t index, v8::AccessType, v8::Local<v8::Value> data);
+    static bool securityCheckCustom(v8::Local<v8::Context> accessingContext, v8::Local<v8::Object> accessedObject);
     {% endif %}
     static void installConditionallyEnabledProperties(v8::Local<v8::Object>, v8::Isolate*){% if has_conditional_attributes %};
     {% else %} { }

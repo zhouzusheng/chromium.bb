@@ -29,6 +29,7 @@
 #include "core/CoreExport.h"
 #include "core/fetch/ClientHintsPreferences.h"
 #include "core/fetch/FetchInitiatorInfo.h"
+#include "core/fetch/IntegrityMetadata.h"
 #include "core/fetch/ResourceLoaderOptions.h"
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/network/ResourceRequest.h"
@@ -45,7 +46,7 @@ public:
     enum OriginRestriction { UseDefaultOriginRestrictionForType, RestrictToSameOrigin, NoOriginRestriction };
 
     struct ResourceWidth {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
         float width;
         bool isSet;
 
@@ -85,14 +86,17 @@ public:
     bool forPreload() const { return m_forPreload; }
     void setForPreload(bool forPreload) { m_forPreload = forPreload; }
 
+    bool avoidBlockingOnLoad() { return m_avoidBlockingOnLoad; }
+    void setAvoidBlockingOnLoad(bool doNotBlock) { m_avoidBlockingOnLoad = doNotBlock; }
+
     void setContentSecurityCheck(ContentSecurityPolicyDisposition contentSecurityPolicyOption) { m_options.contentSecurityPolicyOption = contentSecurityPolicyOption; }
     void setCrossOriginAccessControl(SecurityOrigin*, StoredCredentials, CredentialRequest);
     void setCrossOriginAccessControl(SecurityOrigin*, StoredCredentials);
     void setCrossOriginAccessControl(SecurityOrigin*, const AtomicString& crossOriginMode);
     OriginRestriction originRestriction() const { return m_originRestriction; }
     void setOriginRestriction(OriginRestriction restriction) { m_originRestriction = restriction; }
-    String integrityMetadata() const { return m_integrityMetadata; }
-    void setIntegrityMetadata(const String& metadata) { m_integrityMetadata = metadata; }
+    const IntegrityMetadataSet& integrityMetadata() const { return m_integrityMetadata; }
+    void setIntegrityMetadata(const IntegrityMetadataSet& metadata) { m_integrityMetadata = metadata; }
 
 private:
     ResourceRequest m_resourceRequest;
@@ -100,11 +104,12 @@ private:
     ResourceLoaderOptions m_options;
     ResourceLoadPriority m_priority;
     bool m_forPreload;
+    bool m_avoidBlockingOnLoad;
     DeferOption m_defer;
     OriginRestriction m_originRestriction;
     ResourceWidth m_resourceWidth;
     ClientHintsPreferences m_clientHintPreferences;
-    String m_integrityMetadata;
+    IntegrityMetadataSet m_integrityMetadata;
 };
 
 } // namespace blink

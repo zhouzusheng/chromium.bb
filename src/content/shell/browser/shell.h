@@ -150,7 +150,6 @@ class Shell : public WebContentsDelegate,
                            const base::string16& source_id) override;
   void RendererUnresponsive(WebContents* source) override;
   void ActivateContents(WebContents* contents) override;
-  void DeactivateContents(WebContents* contents) override;
   bool HandleContextMenu(const content::ContextMenuParams& params) override;
 
   static gfx::Size GetShellDefaultSize();
@@ -226,7 +225,9 @@ class Shell : public WebContentsDelegate,
   bool is_fullscreen_;
 
   gfx::NativeWindow window_;
-  gfx::NativeEditView url_edit_view_;
+#if defined(OS_MACOSX)
+  NSTextField* url_edit_view_;
+#endif
 
   gfx::Size content_size_;
 

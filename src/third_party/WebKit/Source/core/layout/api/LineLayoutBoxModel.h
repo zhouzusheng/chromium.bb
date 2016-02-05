@@ -78,6 +78,16 @@ public:
         return toBoxModel()->marginAfter(otherStyle);
     }
 
+    LayoutUnit marginOver() const
+    {
+        return toBoxModel()->marginOver();
+    }
+
+    LayoutUnit marginUnder() const
+    {
+        return toBoxModel()->marginUnder();
+    }
+
     LayoutUnit paddingTop() const
     {
         return toBoxModel()->paddingTop();
@@ -148,6 +158,16 @@ public:
         return toBoxModel()->hasInlineDirectionBordersOrPadding();
     }
 
+    LayoutUnit borderAndPaddingOver() const
+    {
+        return toBoxModel()->borderAndPaddingOver();
+    }
+
+    LayoutUnit borderAndPaddingUnder() const
+    {
+        return toBoxModel()->borderAndPaddingUnder();
+    }
+
     LayoutUnit borderAndPaddingLogicalHeight() const
     {
         return toBoxModel()->borderAndPaddingLogicalHeight();
@@ -156,6 +176,11 @@ public:
     bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance bleedAvoidance, const InlineFlowBox* inlineFlowBox = nullptr) const
     {
         return toBoxModel()->boxShadowShouldBeAppliedToBackground(bleedAvoidance, inlineFlowBox);
+    }
+
+    LayoutSize offsetForInFlowPosition() const
+    {
+        return toBoxModel()->offsetForInFlowPosition();
     }
 
 private:

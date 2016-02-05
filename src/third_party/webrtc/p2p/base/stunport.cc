@@ -13,6 +13,7 @@
 #include "webrtc/p2p/base/common.h"
 #include "webrtc/p2p/base/portallocator.h"
 #include "webrtc/p2p/base/stun.h"
+#include "webrtc/base/checks.h"
 #include "webrtc/base/common.h"
 #include "webrtc/base/helpers.h"
 #include "webrtc/base/ipaddress.h"
@@ -106,7 +107,7 @@ class StunBindingRequest : public StunRequest {
   UDPPort* port_;
   bool keep_alive_;
   const rtc::SocketAddress server_addr_;
-  uint32 start_time_;
+  uint32_t start_time_;
 };
 
 UDPPort::AddressResolver::AddressResolver(
@@ -116,7 +117,10 @@ UDPPort::AddressResolver::AddressResolver(
 UDPPort::AddressResolver::~AddressResolver() {
   for (ResolverMap::iterator it = resolvers_.begin();
        it != resolvers_.end(); ++it) {
-    it->second->Destroy(true);
+    // TODO(guoweis): Change to asynchronous DNS resolution to prevent the hang
+    // when passing true to the Destroy() which is a safer way to avoid the code
+    // unloaded before the thread exits. Please see webrtc bug 5139.
+    it->second->Destroy(false);
   }
 }
 
@@ -166,15 +170,19 @@ UDPPort::UDPPort(rtc::Thread* thread,
                  const std::string& username,
                  const std::string& password,
                  const std::string& origin,
-                 bool emit_localhost_for_anyaddress)
-    : Port(thread, factory, network, socket->GetLocalAddress().ipaddr(),
-           username, password),
+                 bool emit_local_for_anyaddress)
+    : Port(thread,
+           factory,
+           network,
+           socket->GetLocalAddress().ipaddr(),
+           username,
+           password),
       requests_(thread),
       socket_(socket),
       error_(0),
       ready_(false),
       stun_keepalive_delay_(KEEPALIVE_DELAY),
-      emit_localhost_for_anyaddress_(emit_localhost_for_anyaddress) {
+      emit_local_for_anyaddress_(emit_local_for_anyaddress) {
   requests_.set_origin(origin);
 }
 
@@ -182,20 +190,27 @@ UDPPort::UDPPort(rtc::Thread* thread,
                  rtc::PacketSocketFactory* factory,
                  rtc::Network* network,
                  const rtc::IPAddress& ip,
-                 uint16 min_port,
-                 uint16 max_port,
+                 uint16_t min_port,
+                 uint16_t max_port,
                  const std::string& username,
                  const std::string& password,
                  const std::string& origin,
-                 bool emit_localhost_for_anyaddress)
-    : Port(thread, LOCAL_PORT_TYPE, factory, network, ip, min_port, max_port,
-           username, password),
+                 bool emit_local_for_anyaddress)
+    : Port(thread,
+           LOCAL_PORT_TYPE,
+           factory,
+           network,
+           ip,
+           min_port,
+           max_port,
+           username,
+           password),
       requests_(thread),
       socket_(NULL),
       error_(0),
       ready_(false),
       stun_keepalive_delay_(KEEPALIVE_DELAY),
-      emit_localhost_for_anyaddress_(emit_localhost_for_anyaddress) {
+      emit_local_for_anyaddress_(emit_local_for_anyaddress) {
   requests_.set_origin(origin);
 }
 
@@ -210,6 +225,7 @@ bool UDPPort::Init() {
     }
     socket_->SignalReadPacket.connect(this, &UDPPort::OnReadPacket);
   }
+  socket_->SignalSentPacket.connect(this, &UDPPort::OnSentPacket);
   socket_->SignalReadyToSend.connect(this, &UDPPort::OnReadyToSend);
   socket_->SignalAddressReady.connect(this, &UDPPort::OnLocalAddressReady);
   requests_.SignalSendPacket.connect(this, &UDPPort::OnSendPacket);
@@ -286,25 +302,27 @@ int UDPPort::GetError() {
 void UDPPort::OnLocalAddressReady(rtc::AsyncPacketSocket* socket,
                                   const rtc::SocketAddress& address) {
   // When adapter enumeration is disabled and binding to the any address, the
-  // loopback address will be issued as a candidate instead if
-  // |emit_localhost_for_anyaddress| is true. This is to allow connectivity on
-  // demo pages without STUN/TURN to work.
+  // default local address will be issued as a candidate instead if
+  // |emit_local_for_anyaddress| is true. This is to allow connectivity for
+  // applications which absolutely requires a HOST candidate.
   rtc::SocketAddress addr = address;
-  if (addr.IsAnyIP() && emit_localhost_for_anyaddress_) {
-    addr.SetIP(rtc::GetLoopbackIP(addr.family()));
-  }
+
+  // If MaybeSetDefaultLocalAddress fails, we keep the "any" IP so that at
+  // least the port is listening.
+  MaybeSetDefaultLocalAddress(&addr);
 
   AddAddress(addr, addr, rtc::SocketAddress(), UDP_PROTOCOL_NAME, "", "",
              LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST, 0, false);
   MaybePrepareStunCandidate();
 }
 
-void UDPPort::OnReadPacket(
-  rtc::AsyncPacketSocket* socket, const char* data, size_t size,
-  const rtc::SocketAddress& remote_addr,
-  const rtc::PacketTime& packet_time) {
+void UDPPort::OnReadPacket(rtc::AsyncPacketSocket* socket,
+                           const char* data,
+                           size_t size,
+                           const rtc::SocketAddress& remote_addr,
+                           const rtc::PacketTime& packet_time) {
   ASSERT(socket == socket_);
-  ASSERT(!remote_addr.IsUnresolved());
+  ASSERT(!remote_addr.IsUnresolvedIP());
 
   // Look for a response from the STUN server.
   // Even if the response doesn't match one of our outstanding requests, we
@@ -320,6 +338,11 @@ void UDPPort::OnReadPacket(
   } else {
     Port::OnReadPacket(data, size, remote_addr, PROTO_UDP);
   }
+}
+
+void UDPPort::OnSentPacket(rtc::AsyncPacketSocket* socket,
+                           const rtc::SentPacket& sent_packet) {
+  Port::OnSentPacket(sent_packet);
 }
 
 void UDPPort::OnReadyToSend(rtc::AsyncPacketSocket* socket) {
@@ -367,9 +390,8 @@ void UDPPort::OnResolveResult(const rtc::SocketAddress& input,
   }
 }
 
-void UDPPort::SendStunBindingRequest(
-    const rtc::SocketAddress& stun_addr) {
-  if (stun_addr.IsUnresolved()) {
+void UDPPort::SendStunBindingRequest(const rtc::SocketAddress& stun_addr) {
+  if (stun_addr.IsUnresolvedIP()) {
     ResolveStunAddress(stun_addr);
 
   } else if (socket_->GetState() == rtc::AsyncPacketSocket::STATE_BOUND) {
@@ -383,6 +405,23 @@ void UDPPort::SendStunBindingRequest(
       OnStunBindingOrResolveRequestFailed(stun_addr);
     }
   }
+}
+
+bool UDPPort::MaybeSetDefaultLocalAddress(rtc::SocketAddress* addr) const {
+  if (!addr->IsAnyIP() || !emit_local_for_anyaddress_ ||
+      !Network()->default_local_address_provider()) {
+    return true;
+  }
+  rtc::IPAddress default_address;
+  bool result =
+      Network()->default_local_address_provider()->GetDefaultLocalAddress(
+          addr->family(), &default_address);
+  if (!result || default_address.IsNil()) {
+    return false;
+  }
+
+  addr->SetIP(default_address);
+  return true;
 }
 
 void UDPPort::OnStunBindingRequestSucceeded(
@@ -402,7 +441,9 @@ void UDPPort::OnStunBindingRequestSucceeded(
       !HasCandidateWithAddress(stun_reflected_addr)) {
 
     rtc::SocketAddress related_address = socket_->GetLocalAddress();
-    if (!(candidate_filter() & CF_HOST)) {
+    // If we can't stamp the related address correctly, empty it to avoid leak.
+    if (!MaybeSetDefaultLocalAddress(&related_address) ||
+        !(candidate_filter() & CF_HOST)) {
       // If candidate filter doesn't have CF_HOST specified, empty raddr to
       // avoid local address leakage.
       related_address = rtc::EmptySocketAddressWithFamily(

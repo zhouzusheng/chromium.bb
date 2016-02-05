@@ -45,22 +45,10 @@ class CC_EXPORT ThreadProxy : public Proxy,
  public:
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+      TaskRunnerProvider* task_runner_provider,
       scoped_ptr<BeginFrameSource> external_begin_frame_source);
 
   ~ThreadProxy() override;
-
-  struct BeginMainFrameAndCommitState {
-    BeginMainFrameAndCommitState();
-    ~BeginMainFrameAndCommitState();
-
-    unsigned int begin_frame_id;
-    BeginFrameArgs begin_frame_args;
-    scoped_ptr<ScrollAndScaleSet> scroll_info;
-    size_t memory_allocation_limit_bytes;
-    bool evicted_ui_resources;
-  };
 
   // Commits between the main and impl threads are processed through a pipeline
   // with the following stages. For efficiency we can early out at any stage if
@@ -73,10 +61,12 @@ class CC_EXPORT ThreadProxy : public Proxy,
   };
 
   struct MainThreadOnly {
-    MainThreadOnly(ThreadProxy* proxy, int layer_tree_host_id);
+    MainThreadOnly(ThreadProxy* proxy, LayerTreeHost* layer_tree_host);
     ~MainThreadOnly();
 
     const int layer_tree_host_id;
+
+    LayerTreeHost* layer_tree_host;
 
     // The furthest pipeline stage which has been requested for the next
     // commit.
@@ -87,6 +77,8 @@ class CC_EXPORT ThreadProxy : public Proxy,
     // will stop. Only valid while we are executing the pipeline (i.e.,
     // |current_pipeline_stage| is set to a pipeline stage).
     CommitPipelineStage final_pipeline_stage;
+
+    bool commit_waits_for_activation;
 
     bool started;
     bool prepare_tiles_pending;
@@ -101,14 +93,11 @@ class CC_EXPORT ThreadProxy : public Proxy,
     base::WeakPtrFactory<ThreadProxy> weak_factory;
   };
 
-  // Accessed on the main thread, or when main thread is blocked.
-  struct MainThreadOrBlockedMainThread {
-    explicit MainThreadOrBlockedMainThread(LayerTreeHost* host);
-    ~MainThreadOrBlockedMainThread();
-
+  // Accessed on the impl thread when the main thread is blocked for a commit.
+  struct BlockedMainCommitOnly {
+    BlockedMainCommitOnly();
+    ~BlockedMainCommitOnly();
     LayerTreeHost* layer_tree_host;
-    bool commit_waits_for_activation;
-    bool main_thread_inside_commit;
   };
 
   struct CompositorThreadOnly {
@@ -123,15 +112,12 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
     scoped_ptr<Scheduler> scheduler;
 
-    // Set when the main thread is waiting on a
-    // ScheduledActionSendBeginMainFrame to be issued.
-    CompletionEvent* begin_main_frame_sent_completion_event;
-
-    // Set when the main thread is waiting on a commit to complete.
-    CompletionEvent* commit_completion_event;
-
     // Set when the main thread is waiting on a pending tree activation.
-    CompletionEvent* completion_event_for_commit_held_on_tree_activation;
+    bool next_commit_waits_for_activation;
+
+    // Set when the main thread is waiting on a commit to complete or on a
+    // pending tree activation.
+    CompletionEvent* commit_completion_event;
 
     // Set when the next draw should post DidCommitAndDrawFrame to the main
     // thread.
@@ -163,15 +149,14 @@ class CC_EXPORT ThreadProxy : public Proxy,
   };
 
   const MainThreadOnly& main() const;
-  const MainThreadOrBlockedMainThread& blocked_main() const;
   const CompositorThreadOnly& impl() const;
+  TaskRunnerProvider* task_runner_provider() { return task_runner_provider_; }
 
   // Proxy implementation
   void FinishAllRendering() override;
   bool IsStarted() const override;
   bool CommitToActiveTree() const override;
   void SetOutputSurface(OutputSurface* output_surface) override;
-  void SetLayerTreeHostClientReady() override;
   void SetVisible(bool visible) override;
   void SetThrottleFrameProduction(bool throttle) override;
   const RendererCapabilities& GetRendererCapabilities() const override;
@@ -192,6 +177,9 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void SetChildrenNeedBeginFrames(bool children_need_begin_frames) override;
   void SetAuthoritativeVSyncInterval(const base::TimeDelta& interval) override;
   void ReleaseOutputSurface() override;
+  void UpdateTopControlsState(TopControlsState constraints,
+                              TopControlsState current,
+                              bool animate) override;
 
   // LayerTreeHostImplClient implementation
   void UpdateRendererCapabilitiesOnImplThread() override;
@@ -202,6 +190,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void SetMaxSwapsPendingOnImplThread(int max) override;
   void DidSwapBuffersOnImplThread() override;
   void DidSwapBuffersCompleteOnImplThread() override;
+  void OnResourcelessSoftareDrawStateChanged(bool resourceless_draw) override;
   void OnCanDrawStateChanged(bool can_draw) override;
   void NotifyReadyToActivate() override;
   void NotifyReadyToDraw() override;
@@ -234,7 +223,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   // SchedulerClient implementation
   void WillBeginImplFrame(const BeginFrameArgs& args) override;
   void DidFinishImplFrame() override;
-  void ScheduledActionSendBeginMainFrame() override;
+  void ScheduledActionSendBeginMainFrame(const BeginFrameArgs& args) override;
   DrawResult ScheduledActionDrawAndSwapIfPossible() override;
   DrawResult ScheduledActionDrawAndSwapForced() override;
   void ScheduledActionAnimate() override;
@@ -247,78 +236,86 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void SendBeginMainFrameNotExpectedSoon() override;
 
   // ProxyMain implementation
-  base::WeakPtr<ProxyMain> GetMainWeakPtr() override;
   void SetChannel(scoped_ptr<ThreadedChannel> threaded_channel) override;
+
+ protected:
+  ThreadProxy(LayerTreeHost* layer_tree_host,
+              TaskRunnerProvider* task_runner_provider,
+              scoped_ptr<BeginFrameSource> external_begin_frame_source);
+
+ private:
+  friend class ThreadProxyForTest;
+
+  // ProxyMain implementation.
+  base::WeakPtr<ProxyMain> GetMainWeakPtr() override;
   void DidCompleteSwapBuffers() override;
+  void SetRendererCapabilitiesMainCopy(
+      const RendererCapabilities& capabilities) override;
+  void BeginMainFrameNotExpectedSoon() override;
+  void DidCommitAndDrawFrame() override;
+  void SetAnimationEvents(scoped_ptr<AnimationEventsVector> queue) override;
+  void DidLoseOutputSurface() override;
+  void RequestNewOutputSurface() override;
+  void DidInitializeOutputSurface(
+      bool success,
+      const RendererCapabilities& capabilities) override;
+  void DidCompletePageScaleAnimation() override;
+  void PostFrameTimingEventsOnMain(
+      scoped_ptr<FrameTimingTracker::CompositeTimingSet> composite_events,
+      scoped_ptr<FrameTimingTracker::MainFrameTimingSet> main_frame_events)
+      override;
+  void BeginMainFrame(
+      scoped_ptr<BeginMainFrameAndCommitState> begin_main_frame_state) override;
 
   // ProxyImpl implementation
   base::WeakPtr<ProxyImpl> GetImplWeakPtr() override;
   void SetThrottleFrameProductionOnImpl(bool throttle) override;
-  void SetLayerTreeHostClientReadyOnImpl() override;
+  void UpdateTopControlsStateOnImpl(TopControlsState constraints,
+                                    TopControlsState current,
+                                    bool animate) override;
+  void InitializeOutputSurfaceOnImpl(OutputSurface* output_surface) override;
+  void MainThreadHasStoppedFlingingOnImpl() override;
+  void SetInputThrottledUntilCommitOnImpl(bool is_throttled) override;
+  void SetDeferCommitsOnImpl(bool defer_commits) const override;
+  void FinishAllRenderingOnImpl(CompletionEvent* completion) override;
+  void SetVisibleOnImpl(bool visible) override;
+  void ReleaseOutputSurfaceOnImpl(CompletionEvent* completion) override;
+  void FinishGLOnImpl(CompletionEvent* completion) override;
+  void MainFrameWillHappenOnImplForTesting(
+      CompletionEvent* completion,
+      bool* main_frame_will_happen) override;
+  void SetNeedsCommitOnImpl() override;
+  void SetNeedsRedrawOnImpl(const gfx::Rect& damage_rect) override;
+  void BeginMainFrameAbortedOnImpl(
+      CommitEarlyOutReason reason,
+      base::TimeTicks main_thread_start_time) override;
+  void StartCommitOnImpl(CompletionEvent* completion,
+                         LayerTreeHost* layer_tree_host,
+                         base::TimeTicks main_thread_start_time,
+                         bool hold_commit_for_activation) override;
+  void InitializeImplOnImpl(CompletionEvent* completion,
+                            LayerTreeHost* layer_tree_host) override;
+  void LayerTreeHostClosedOnImpl(CompletionEvent* completion) override;
 
- protected:
-  ThreadProxy(
-      LayerTreeHost* layer_tree_host,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
-      scoped_ptr<BeginFrameSource> external_begin_frame_source);
-
- private:
-  // Called on main thread.
-  void SetRendererCapabilitiesMainThreadCopy(
-      const RendererCapabilities& capabilities);
-  void BeginMainFrame(
-      scoped_ptr<BeginMainFrameAndCommitState> begin_main_frame_state);
-  void BeginMainFrameNotExpectedSoon();
-  void DidCommitAndDrawFrame();
-  void SetAnimationEvents(scoped_ptr<AnimationEventsVector> queue);
-  void DidLoseOutputSurface();
-  void RequestNewOutputSurface();
-  void DidInitializeOutputSurface(bool success,
-                                  const RendererCapabilities& capabilities);
   // Returns |true| if the request was actually sent, |false| if one was
   // already outstanding.
   bool SendCommitRequestToImplThreadIfNeeded(
       CommitPipelineStage required_stage);
-  void DidCompletePageScaleAnimation();
 
   // Called on impl thread.
   struct SchedulerStateRequest;
 
-  void StartCommitOnImplThread(CompletionEvent* completion);
-  void BeginMainFrameAbortedOnImplThread(CommitEarlyOutReason reason);
-  void FinishAllRenderingOnImplThread(CompletionEvent* completion);
-  void InitializeImplOnImplThread(CompletionEvent* completion);
-  void SetVisibleOnImplThread(CompletionEvent* completion, bool visible);
-  void HasInitializedOutputSurfaceOnImplThread(
-      CompletionEvent* completion,
-      bool* has_initialized_output_surface);
-  void DeleteContentsTexturesOnImplThread(CompletionEvent* completion);
-  void InitializeOutputSurfaceOnImplThread(OutputSurface* output_surface);
-  void ReleaseOutputSurfaceOnImplThread(CompletionEvent* completion);
-  void FinishGLOnImplThread(CompletionEvent* completion);
-  void LayerTreeHostClosedOnImplThread(CompletionEvent* completion);
   DrawResult DrawSwapInternal(bool forced_draw);
-  void MainFrameWillHappenOnImplThreadForTesting(CompletionEvent* completion,
-                                                 bool* main_frame_will_happen);
-  void SetSwapUsedIncompleteTileOnImplThread(bool used_incomplete_tile);
-  void MainThreadHasStoppedFlingingOnImplThread();
-  void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);
-  void SetDeferCommitsOnImplThread(bool defer_commits) const;
-  void PostFrameTimingEvents(
-      scoped_ptr<FrameTimingTracker::CompositeTimingSet> composite_events,
-      scoped_ptr<FrameTimingTracker::MainFrameTimingSet> main_frame_events);
 
-  LayerTreeHost* layer_tree_host();
-  const LayerTreeHost* layer_tree_host() const;
+  TaskRunnerProvider* task_runner_provider_;
 
   // Use accessors instead of this variable directly.
   MainThreadOnly main_thread_only_vars_unsafe_;
   MainThreadOnly& main();
 
   // Use accessors instead of this variable directly.
-  MainThreadOrBlockedMainThread main_thread_or_blocked_vars_unsafe_;
-  MainThreadOrBlockedMainThread& blocked_main();
+  BlockedMainCommitOnly main_thread_blocked_commit_vars_unsafe_;
+  BlockedMainCommitOnly& blocked_main_commit();
 
   // Use accessors instead of this variable directly.
   CompositorThreadOnly compositor_thread_vars_unsafe_;

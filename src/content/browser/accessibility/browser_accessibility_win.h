@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "content/browser/accessibility/browser_accessibility.h"
 #include "content/common/content_export.h"
 #include "third_party/iaccessible2/ia2_api_all.h"
@@ -752,6 +753,14 @@ BrowserAccessibilityWin
       ui::AXStringAttribute attribute,
       BSTR* value_bstr);
 
+  // Escapes characters in string attributes as required by the IA2 Spec.
+  // It's okay for input to be the same as output.
+  CONTENT_EXPORT static void SanitizeStringAttributeForIA2(
+      const base::string16& input,
+      base::string16* output);
+  FRIEND_TEST_ALL_PREFIXES(BrowserAccessibilityTest,
+                           TestSanitizeStringAttributeForIA2);
+
   // If the string attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
   void StringAttributeToIA2(ui::AXStringAttribute attribute,
@@ -785,6 +794,17 @@ BrowserAccessibilityWin
   int32 GetHypertextOffsetFromDescendant(
       const BrowserAccessibilityWin& descendant) const;
 
+  // If the selection endpoint is either equal to or an ancestor of this object,
+  // returns endpoint_offset.
+  // If the selection endpoint is a descendant of this object, returns its
+  // offset. Otherwise, returns either 0 or the length of the hypertext
+  // depending on the direction of the selection.
+  // Returns -1 in case of unexpected failure, e.g. the selection endpoint
+  // cannot be found in the accessibility tree.
+  int GetHypertextOffsetFromEndpoint(
+      const BrowserAccessibilityWin& endpoint_object,
+      int endpoint_offset) const;
+
   //
   // Selection helper functions.
   //
@@ -798,7 +818,7 @@ BrowserAccessibilityWin
   // selection_start and selection_end are -1 when there is no selection active
   // on this object.
   // The greatest of the two offsets is one past the last character of the
-  // selection.
+  // selection.)
   void GetSelectionOffsets(int* selection_start, int* selection_end) const;
 
   // Append the accessible name from this node and its children.
@@ -807,10 +827,6 @@ BrowserAccessibilityWin
   // Get the value text, which might come from the floating-point
   // value for some roles.
   base::string16 GetValueText();
-
-  // Get the text of this node for the purposes of IAccessibleText - it may
-  // be the name, it may be the value, etc. depending on the role.
-  base::string16 TextForIAccessibleText();
 
   bool IsSameHypertextCharacter(size_t old_char_index, size_t new_char_index);
   void ComputeHypertextRemovedAndInserted(
@@ -838,6 +854,9 @@ BrowserAccessibilityWin
   // Returns true if this is a list box option with a parent of type list box,
   // or a menu list option with a parent of type menu list popup.
   bool IsListBoxOptionOrMenuListOption();
+
+  // Updates object attributes of IA2 with html attributes.
+  void UpdateRequiredAttributes();
 
   // Windows-specific unique ID (unique within the browser process),
   // used for get_accChild, NotifyWinEvent, and as the unique ID for
@@ -871,7 +890,6 @@ BrowserAccessibilityWin
 
     // Maps the |hypertext_| embedded character offset to an index in
     // |hyperlinks_|.
-    // TODO(nektar): Replace map with vector of offsets.
     std::map<int32, int32> hyperlink_offset_to_index;
 
     // The id of a BrowserAccessibilityWin for each hyperlink.

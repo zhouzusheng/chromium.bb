@@ -99,7 +99,8 @@ using namespace HTMLNames;
 
 struct SameSizeAsNode : NODE_BASE_CLASSES {
     uint32_t m_nodeFlags;
-    void* m_pointer[5];
+    RawPtrWillBeMember<void*> m_willbeMember[4];
+    void* m_pointer;
 };
 
 static_assert(sizeof(Node) <= sizeof(SameSizeAsNode), "Node should stay small");
@@ -1162,7 +1163,7 @@ bool Node::isDefaultNamespace(const AtomicString& namespaceURIMaybeEmpty) const
 const AtomicString& Node::lookupPrefix(const AtomicString& namespaceURI) const
 {
     // Implemented according to
-    // http://dom.spec.whatwg.org/#dom-node-lookupprefix
+    // https://dom.spec.whatwg.org/#dom-node-lookupprefix
 
     if (namespaceURI.isEmpty() || namespaceURI.isNull())
         return nullAtom;
@@ -1294,7 +1295,7 @@ void Node::setTextContent(const String& text)
 
         ChildListMutationScope mutation(*this);
         // Note: This API will not insert empty text nodes:
-        // http://dom.spec.whatwg.org/#dom-node-textcontent
+        // https://dom.spec.whatwg.org/#dom-node-textcontent
         if (text.isEmpty()) {
             container->removeChildren(DispatchSubtreeModifiedEvent);
         } else {
@@ -1335,8 +1336,8 @@ unsigned short Node::compareDocumentPosition(const Node* otherNode, ShadowTreesT
         return DOCUMENT_POSITION_DISCONNECTED | DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC | direction;
     }
 
-    Vector<const Node*, 16> chain1;
-    Vector<const Node*, 16> chain2;
+    WillBeHeapVector<RawPtrWillBeMember<const Node>, 16> chain1;
+    WillBeHeapVector<RawPtrWillBeMember<const Node>, 16> chain2;
     if (attr1)
         chain1.append(attr1);
     if (attr2)
@@ -1439,8 +1440,7 @@ unsigned short Node::compareDocumentPosition(const Node* otherNode, ShadowTreesT
 String Node::debugName() const
 {
     StringBuilder name;
-    name.append(nodeName());
-
+    name.append(debugNodeName());
     if (isElementNode()) {
         const Element& thisElement = toElement(*this);
         if (thisElement.hasID()) {
@@ -1459,8 +1459,12 @@ String Node::debugName() const
             name.append('\'');
         }
     }
-
     return name.toString();
+}
+
+String Node::debugNodeName() const
+{
+    return nodeName();
 }
 
 #ifndef NDEBUG
@@ -1510,7 +1514,7 @@ void Node::showTreeForThisInComposedTree() const
 
 void Node::showNodePathForThis() const
 {
-    Vector<const Node*, 16> chain;
+    WillBeHeapVector<RawPtrWillBeMember<const Node>, 16> chain;
     const Node* node = this;
     while (node->parentOrShadowHostNode()) {
         chain.append(node);
@@ -1754,41 +1758,29 @@ void Node::didMoveToNewDocument(Document& oldDocument)
     }
 }
 
-static inline bool tryAddEventListener(Node* targetNode, const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool Node::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
-    if (!targetNode->EventTarget::addEventListener(eventType, listener, useCapture))
+    if (!EventTarget::addEventListenerInternal(eventType, listener, options))
         return false;
 
-    Document& document = targetNode->document();
-    document.addListenerTypeIfNeeded(eventType);
-    if (document.frameHost())
-        document.frameHost()->eventHandlerRegistry().didAddEventHandler(*targetNode, eventType);
+    document().addListenerTypeIfNeeded(eventType);
+    if (FrameHost* frameHost = document().frameHost())
+        frameHost->eventHandlerRegistry().didAddEventHandler(*this, eventType);
 
     return true;
 }
 
-bool Node::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool Node::removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
-    return tryAddEventListener(this, eventType, listener, useCapture);
-}
-
-static inline bool tryRemoveEventListener(Node* targetNode, const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
-{
-    if (!targetNode->EventTarget::removeEventListener(eventType, listener, useCapture))
+    if (!EventTarget::removeEventListenerInternal(eventType, listener, options))
         return false;
 
     // FIXME: Notify Document that the listener has vanished. We need to keep track of a number of
     // listeners for each type, not just a bool - see https://bugs.webkit.org/show_bug.cgi?id=33861
-    Document& document = targetNode->document();
-    if (document.frameHost())
-        document.frameHost()->eventHandlerRegistry().didRemoveEventHandler(*targetNode, eventType);
+    if (FrameHost* frameHost = document().frameHost())
+        frameHost->eventHandlerRegistry().didRemoveEventHandler(*this, eventType);
 
     return true;
-}
-
-bool Node::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
-{
-    return tryRemoveEventListener(this, eventType, listener, useCapture);
 }
 
 void Node::removeAllEventListeners()
@@ -2315,9 +2307,8 @@ unsigned Node::lengthOfContents() const
     case Node::TEXT_NODE:
     case Node::CDATA_SECTION_NODE:
     case Node::COMMENT_NODE:
-        return toCharacterData(this)->length();
     case Node::PROCESSING_INSTRUCTION_NODE:
-        return toProcessingInstruction(this)->data().length();
+        return toCharacterData(this)->length();
     case Node::ELEMENT_NODE:
     case Node::DOCUMENT_NODE:
     case Node::DOCUMENT_FRAGMENT_NODE:

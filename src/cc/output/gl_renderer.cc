@@ -488,13 +488,13 @@ void GLRenderer::BeginDrawingFrame(DrawingFrame* frame) {
   }
   resource_provider_->SetReadLockFence(read_lock_fence.get());
 
-  // Insert WaitSyncPointCHROMIUM on quad resources prior to drawing the frame,
+  // Insert WaitSyncTokenCHROMIUM on quad resources prior to drawing the frame,
   // so that drawing can proceed without GL context switching interruptions.
   ResourceProvider* resource_provider = resource_provider_;
   for (const auto& pass : *frame->render_passes_in_draw_order) {
     for (const auto& quad : pass->quad_list) {
       for (ResourceId resource_id : quad->resources)
-        resource_provider->WaitSyncPointIfNeeded(resource_id);
+        resource_provider->WaitSyncTokenIfNeeded(resource_id);
     }
   }
 
@@ -838,12 +838,12 @@ scoped_ptr<ScopedResource> GLRenderer::GetBackdropTexture(
       ScopedResource::Create(resource_provider_);
   // CopyTexImage2D fails when called on a texture having immutable storage.
   device_background_texture->Allocate(
-      bounding_rect.size(), ResourceProvider::TEXTURE_HINT_DEFAULT, RGBA_8888);
+      bounding_rect.size(), ResourceProvider::TEXTURE_HINT_DEFAULT,
+      resource_provider_->best_texture_format());
   {
     ResourceProvider::ScopedWriteLockGL lock(resource_provider_,
                                              device_background_texture->id());
-    GetFramebufferTexture(
-        lock.texture_id(), device_background_texture->format(), bounding_rect);
+    GetFramebufferTexture(lock.texture_id(), RGBA_8888, bounding_rect);
   }
   return device_background_texture.Pass();
 }
@@ -1878,10 +1878,10 @@ void GLRenderer::DrawContentQuadNoAA(const DrawingFrame* frame,
   // does, then vertices will match the texture mapping in the vertex buffer.
   // The method SetShaderQuadF() changes the order of vertices and so it's
   // not used here.
-  gfx::QuadF tile_quad(gfx::RectF(quad->visible_rect));
+  auto tile_quad = gfx::QuadF(gfx::RectF(quad->visible_rect));
   float width = quad->visible_rect.width();
   float height = quad->visible_rect.height();
-  gfx::PointF top_left = quad->visible_rect.origin();
+  auto top_left = gfx::PointF(quad->visible_rect.origin());
   if (clip_region) {
     tile_quad = *clip_region;
     float gl_uv[8] = {
@@ -2314,12 +2314,13 @@ void GLRenderer::EnqueueTextureQuad(const DrawingFrame* frame,
 
   int resource_id = quad->resource_id();
 
+  size_t max_quads = StaticGeometryBinding::NUM_QUADS;
   if (draw_cache_.program_id != binding.program_id ||
       draw_cache_.resource_id != resource_id ||
       draw_cache_.needs_blending != quad->ShouldDrawWithBlending() ||
       draw_cache_.nearest_neighbor != quad->nearest_neighbor ||
       draw_cache_.background_color != quad->background_color ||
-      draw_cache_.matrix_data.size() >= 8) {
+      draw_cache_.matrix_data.size() >= max_quads) {
     FlushTextureQuadCache(SHARED_BINDING);
     draw_cache_.program_id = binding.program_id;
     draw_cache_.resource_id = resource_id;
@@ -2335,12 +2336,18 @@ void GLRenderer::EnqueueTextureQuad(const DrawingFrame* frame,
   }
 
   // Generate the uv-transform
-  if (!clip_region) {
-    draw_cache_.uv_xform_data.push_back(UVTransform(quad));
-  } else {
-    Float4 uv_transform = {{0.0f, 0.0f, 1.0f, 1.0f}};
-    draw_cache_.uv_xform_data.push_back(uv_transform);
+  Float4 uv_transform = {{0.0f, 0.0f, 1.0f, 1.0f}};
+  if (!clip_region)
+    uv_transform = UVTransform(quad);
+  if (sampler == SAMPLER_TYPE_2D_RECT) {
+    // Un-normalize the texture coordiantes for rectangle targets.
+    gfx::Size texture_size = lock.texture_size();
+    uv_transform.data[0] *= texture_size.width();
+    uv_transform.data[2] *= texture_size.width();
+    uv_transform.data[1] *= texture_size.height();
+    uv_transform.data[3] *= texture_size.height();
   }
+  draw_cache_.uv_xform_data.push_back(uv_transform);
 
   // Generate the vertex opacity
   const float opacity = quad->shared_quad_state->opacity;
@@ -2617,15 +2624,11 @@ void GLRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
   }
   output_surface_->SwapBuffers(&compositor_frame);
 
-  // Release previously used overlay resources and hold onto the pending ones
-  // until the next swap buffers. On some platforms, hold onto resources for
-  // an extra frame.
-  if (settings_->delay_releasing_overlay_resources) {
-    previous_swap_overlay_resources_.clear();
-    previous_swap_overlay_resources_.swap(in_use_overlay_resources_);
-  } else {
-    in_use_overlay_resources_.clear();
-  }
+  // We always hold onto resources for an extra frame, to make sure we don't
+  // update the buffer while it's being scanned out.
+  previous_swap_overlay_resources_.clear();
+  previous_swap_overlay_resources_.swap(in_use_overlay_resources_);
+
   in_use_overlay_resources_.swap(pending_overlay_resources_);
 
   swap_buffer_rect_ = gfx::Rect();
@@ -2698,17 +2701,18 @@ void GLRenderer::GetFramebufferPixelsAsync(
       DCHECK_EQ(static_cast<unsigned>(GL_TEXTURE_2D),
                 request->texture_mailbox().target());
       DCHECK(!mailbox.IsZero());
-      unsigned incoming_sync_point = request->texture_mailbox().sync_point();
-      if (incoming_sync_point)
-        gl_->WaitSyncPointCHROMIUM(incoming_sync_point);
+      const gpu::SyncToken& incoming_sync_token =
+          request->texture_mailbox().sync_token();
+      if (incoming_sync_token.HasData())
+        gl_->WaitSyncTokenCHROMIUM(incoming_sync_token.GetConstData());
 
       texture_id =
           gl_->CreateAndConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
     }
     GetFramebufferTexture(texture_id, RGBA_8888, window_rect);
 
-    unsigned sync_point = gl_->InsertSyncPointCHROMIUM();
-    TextureMailbox texture_mailbox(mailbox, GL_TEXTURE_2D, sync_point);
+    gpu::SyncToken sync_token(gl_->InsertSyncPointCHROMIUM());
+    TextureMailbox texture_mailbox(mailbox, sync_token, GL_TEXTURE_2D);
 
     scoped_ptr<SingleReleaseCallback> release_callback;
     if (own_mailbox) {
@@ -2816,9 +2820,18 @@ void GLRenderer::FinishedReadback(unsigned source_buffer,
     gl_->DeleteQueriesEXT(1, &query);
   }
 
-  PendingAsyncReadPixels* current_read = pending_async_read_pixels_.back();
-  // Make sure we service the readbacks in order.
-  DCHECK_EQ(source_buffer, current_read->buffer);
+  // Make sure we are servicing the right readback. There is no guarantee that
+  // callbacks to this function are in the same order as we post the copy
+  // requests.
+  // Nevertheless, it is very likely that the order is preserved, and thus
+  // start searching from back to the front.
+  auto iter = pending_async_read_pixels_.rbegin();
+  const auto& reverse_end = pending_async_read_pixels_.rend();
+  while (iter != reverse_end && (*iter)->buffer != source_buffer)
+    ++iter;
+
+  DCHECK(iter != reverse_end);
+  PendingAsyncReadPixels* current_read = *iter;
 
   uint8* src_pixels = NULL;
   scoped_ptr<SkBitmap> bitmap;
@@ -2861,7 +2874,12 @@ void GLRenderer::FinishedReadback(unsigned source_buffer,
 
   if (bitmap)
     current_read->copy_request->SendBitmapResult(bitmap.Pass());
-  pending_async_read_pixels_.pop_back();
+
+  // Conversion from reverse iterator to iterator:
+  // Iterator |iter.base() - 1| points to the same element with reverse iterator
+  // |iter|. The difference |-1| is due to the fact of correspondence of end()
+  // with rbegin().
+  pending_async_read_pixels_.erase(iter.base() - 1);
 }
 
 void GLRenderer::GetFramebufferTexture(unsigned texture_id,
@@ -3383,8 +3401,6 @@ const GLRenderer::VideoYUVAProgram* GLRenderer::GetVideoYUVAProgram(
 
 const GLRenderer::VideoStreamTextureProgram*
 GLRenderer::GetVideoStreamTextureProgram(TexCoordPrecision precision) {
-  if (!Capabilities().using_egl_image)
-    return NULL;
   DCHECK_GE(precision, 0);
   DCHECK_LE(precision, LAST_TEX_COORD_PRECISION);
   VideoStreamTextureProgram* program =
@@ -3512,13 +3528,12 @@ void GLRenderer::ScheduleOverlays(DrawingFrame* frame) {
   if (!frame->overlay_list.size())
     return;
 
-  ResourceProvider::ResourceIdArray resources;
   OverlayCandidateList& overlays = frame->overlay_list;
   for (const OverlayCandidate& overlay : overlays) {
     unsigned texture_id = 0;
     if (overlay.use_output_surface_for_resource) {
       texture_id = output_surface_->GetOverlayTextureId();
-      DCHECK(texture_id);
+      DCHECK(texture_id || IsContextLost());
     } else {
       pending_overlay_resources_.push_back(
           make_scoped_ptr(new ResourceProvider::ScopedReadLockGL(

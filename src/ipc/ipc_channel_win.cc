@@ -103,13 +103,12 @@ bool ChannelWin::Send(Message* message) {
 
 bool ChannelWin::ProcessMessageForDelivery(Message* message) {
   // Sending a brokerable attachment requires a call to Channel::Send(), so
-  // both Send() and ProcessMessageForDelivery() may be re-entrant. Brokered
-  // attachments must be sent before the Message itself.
+  // both Send() and ProcessMessageForDelivery() may be re-entrant.
   if (message->HasBrokerableAttachments()) {
     DCHECK(GetAttachmentBroker());
     DCHECK(peer_pid_ != base::kNullProcessId);
-    for (const BrokerableAttachment* attachment :
-         message->attachment_set()->PeekBrokerableAttachments()) {
+    for (const scoped_refptr<IPC::BrokerableAttachment>& attachment :
+         message->attachment_set()->GetBrokerableAttachments()) {
       if (!GetAttachmentBroker()->SendAttachmentToProcess(attachment,
                                                           peer_pid_)) {
         delete message;
@@ -161,7 +160,17 @@ void ChannelWin::FlushPrelimQueue() {
 
   while (!prelim_queue.empty()) {
     Message* m = prelim_queue.front();
-    ProcessMessageForDelivery(m);
+    bool success = ProcessMessageForDelivery(m);
+    prelim_queue.pop();
+
+    if (!success)
+      break;
+  }
+
+  // Delete any unprocessed messages.
+  while (!prelim_queue.empty()) {
+    Message* m = prelim_queue.front();
+    delete m;
     prelim_queue.pop();
   }
 }
@@ -254,9 +263,9 @@ void ChannelWin::HandleInternalMessage(const Message& msg) {
   // Validation completed.
   validate_client_ = false;
 
-  FlushPrelimQueue();
-
   listener()->OnChannelConnected(claimed_pid);
+
+  FlushPrelimQueue();
 }
 
 base::ProcessId ChannelWin::GetSenderPID() {

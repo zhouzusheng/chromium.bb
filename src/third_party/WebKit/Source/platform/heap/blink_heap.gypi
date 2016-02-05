@@ -31,12 +31,16 @@
 {
   'variables': {
     'platform_heap_files': [
+      'BlinkGC.h',
+      'BlinkGCInterruptor.cpp',
+      'BlinkGCInterruptor.h',
       'BlinkGCMemoryDumpProvider.cpp',
       'BlinkGCMemoryDumpProvider.h',
       'CallbackStack.cpp',
       'CallbackStack.h',
       'GCInfo.cpp',
       'GCInfo.h',
+      'GCTaskRunner.h',
       'GarbageCollected.h',
       'Handle.h',
       'Heap.cpp',

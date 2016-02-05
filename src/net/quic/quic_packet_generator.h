@@ -55,7 +55,6 @@
 
 #include <list>
 
-#include "net/quic/quic_ack_notifier.h"
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_types.h"
@@ -122,15 +121,15 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // |delegate| (if not nullptr) will be informed once all packets sent as a
   // result of this call are ACKed by the peer.
   QuicConsumedData ConsumeData(QuicStreamId id,
-                               const QuicIOVector& iov,
+                               QuicIOVector iov,
                                QuicStreamOffset offset,
                                bool fin,
                                FecProtection fec_protection,
-                               QuicAckNotifier::DelegateInterface* delegate);
+                               QuicAckListenerInterface* listener);
 
   // Generates an MTU discovery packet of specified size.
   void GenerateMtuDiscoveryPacket(QuicByteCount target_mtu,
-                                  QuicAckNotifier::DelegateInterface* delegate);
+                                  QuicAckListenerInterface* listener);
 
   // Indicates whether batch mode is currently enabled.
   bool InBatchMode();
@@ -258,9 +257,10 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   bool CanSendWithNextPendingFrameAddition() const;
   // Add exactly one pending frame, preferring ack frames over control frames.
   bool AddNextPendingFrame();
-  // Adds a frame and takes ownership of the underlying buffer if the addition
-  // was successful.
-  bool AddFrame(const QuicFrame& frame, char* buffer, bool needs_padding);
+  // Adds a frame and takes ownership of the underlying buffer.
+  bool AddFrame(const QuicFrame& frame,
+                UniqueStreamBuffer buffer,
+                bool needs_padding);
 
   void SerializeAndSendPacket();
 
@@ -302,8 +302,8 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   bool ack_queued_;
   bool stop_waiting_queued_;
 
-  // Stores notifiers that should be attached to the next serialized packet.
-  std::list<QuicAckNotifier*> ack_notifiers_;
+  // Stores ack listeners that should be attached to the next packet.
+  std::list<AckListenerWrapper> ack_listeners_;
 
   // Stores the maximum packet size we are allowed to send.  This might not be
   // the maximum size we are actually using now, if we are in the middle of the

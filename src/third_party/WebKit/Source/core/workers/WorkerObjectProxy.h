@@ -34,6 +34,7 @@
 #include "core/CoreExport.h"
 #include "core/dom/MessagePort.h"
 #include "core/workers/WorkerReportingProxy.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 
@@ -51,7 +52,7 @@ class WorkerMessagingProxy;
 //
 // Used only by in-process workers (DedicatedWorker and CompositorWorker.)
 class CORE_EXPORT WorkerObjectProxy : public WorkerReportingProxy {
-    WTF_MAKE_FAST_ALLOCATED(WorkerObjectProxy);
+    USING_FAST_MALLOC(WorkerObjectProxy);
     WTF_MAKE_NONCOPYABLE(WorkerObjectProxy);
 public:
     static PassOwnPtr<WorkerObjectProxy> create(ExecutionContext*, WorkerMessagingProxy*);
@@ -78,6 +79,7 @@ protected:
 
 private:
     // These objects always outlive this proxy.
+    GC_PLUGIN_IGNORE("553613")
     ExecutionContext* m_executionContext;
     WorkerMessagingProxy* m_messagingProxy;
 };

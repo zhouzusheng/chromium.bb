@@ -62,11 +62,11 @@
             '<(SHARED_INTERMEDIATE_DIR)/net/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT)-inc.cc',
           ],
           'inputs': [
-            'tools/tld_cleanup/make_dafsa.py',
+            'tools/dafsa/make_dafsa.py',
           ],
           'action': [
             'python',
-            'tools/tld_cleanup/make_dafsa.py',
+            'tools/dafsa/make_dafsa.py',
             '<(RULE_INPUT_PATH)',
             '<(SHARED_INTERMEDIATE_DIR)/net/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT)-inc.cc',
           ],
@@ -360,6 +360,8 @@
                 'action_name': 'copy_test_data',
                 'variables': {
                   'test_data_files': [
+                    'data/certificate_policies_unittest/',
+                    'data/name_constraints_unittest/',
                     'data/ssl/certificates/',
                     'data/test.html',
                     'data/url_request_unittest/',
@@ -556,6 +558,8 @@
         'test/channel_id_test_util.h',
         'test/ct_test_util.cc',
         'test/ct_test_util.h',
+        'test/embedded_test_server/default_handlers.cc',
+        'test/embedded_test_server/default_handlers.h',
         'test/embedded_test_server/embedded_test_server.cc',
         'test/embedded_test_server/embedded_test_server.h',
         'test/embedded_test_server/http_connection.cc',
@@ -564,10 +568,8 @@
         'test/embedded_test_server/http_request.h',
         'test/embedded_test_server/http_response.cc',
         'test/embedded_test_server/http_response.h',
-        'test/embedded_test_server/stream_listen_socket.cc',
-        'test/embedded_test_server/stream_listen_socket.h',
-        'test/embedded_test_server/tcp_listen_socket.cc',
-        'test/embedded_test_server/tcp_listen_socket.h',
+        'test/embedded_test_server/request_handler_util.cc',
+        'test/embedded_test_server/request_handler_util.h',
         'test/event_waiter.h',
         'test/net_test_suite.cc',
         'test/net_test_suite.h',
@@ -687,6 +689,7 @@
         {
           'action_name': 'net_resources',
           'variables': {
+            'grit_whitelist': '',
             'grit_grd_file': 'base/net_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
@@ -1199,7 +1202,6 @@
             'tools/flip_server/flip_config.h',
             'tools/flip_server/http_interface.cc',
             'tools/flip_server/http_interface.h',
-            'tools/flip_server/loadtime_measurement.h',
             'tools/flip_server/mem_cache.cc',
             'tools/flip_server/mem_cache.h',
             'tools/flip_server/output_ordering.cc',
@@ -1389,6 +1391,7 @@
             'cert_verify_status_android_java',
             'certificate_mime_types_java',
             'network_change_notifier_types_java',
+            'network_change_notifier_android_types_java',
             'net_errors_java',
             'private_key_types_java',
             'remote_android_keystore_aidl',
@@ -1445,6 +1448,7 @@
             '../base/base.gyp:base',
             '../base/base.gyp:base_java_test_support',
             'net_java',
+            'net_java_test_support',
           ],
           'includes': [ '../build/java.gypi' ],
         },
@@ -1485,6 +1489,14 @@
           'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
+          'target_name': 'network_change_notifier_android_types_java',
+          'type': 'none',
+          'variables': {
+            'source_file': 'android/network_change_notifier_android.cc',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
+        },
+        {
           'target_name': 'private_key_types_java',
           'type': 'none',
           'variables': {
@@ -1514,15 +1526,19 @@
               'dependencies': [
                 '../v8/tools/gyp/v8.gyp:v8_external_snapshot',
               ],
-              'copies': [
-                {
-                'destination': '<(asset_location)',
-                  'files': [
-                    '<(PRODUCT_DIR)/natives_blob.bin',
-                    '<(PRODUCT_DIR)/snapshot_blob.bin',
-                  ],
-                },
-              ],
+              'variables': {
+                'dest_path': '<(asset_location)',
+                'renaming_sources': [
+                  '<(PRODUCT_DIR)/natives_blob.bin',
+                  '<(PRODUCT_DIR)/snapshot_blob.bin',
+                ],
+                'renaming_destinations': [
+                  'natives_blob_<(arch_suffix).bin',
+                  'snapshot_blob_<(arch_suffix).bin',
+                ],
+                'clear': 1,
+              },
+              'includes': ['../build/android/copy_ex.gypi'],
             }],
           ],
           'variables': {
@@ -1534,13 +1550,16 @@
               ['v8_use_external_startup_data==1', {
                 'asset_location': '<(PRODUCT_DIR)/net_unittests_apk/assets',
                 'additional_input_paths': [
-                  '<(PRODUCT_DIR)/net_unittests_apk/assets/natives_blob.bin',
-                  '<(PRODUCT_DIR)/net_unittests_apk/assets/snapshot_blob.bin',
+                  '<(PRODUCT_DIR)/net_unittests_apk/assets/natives_blob_<(arch_suffix).bin',
+                  '<(PRODUCT_DIR)/net_unittests_apk/assets/snapshot_blob_<(arch_suffix).bin',
                 ],
               }],
             ],
           },
-          'includes': [ '../build/apk_test.gypi' ],
+          'includes': [
+            '../build/apk_test.gypi',
+            '../build/android/v8_external_startup_data_arch_suffix.gypi',
+          ],
         },
         {
           'target_name': 'net_junit_tests',
@@ -1562,7 +1581,27 @@
             '../build/host_jar.gypi',
           ],
         },
-  
+      ],
+      'conditions': [
+        ['test_isolation_mode != "noop"',
+          {
+            'targets': [
+              {
+                'target_name': 'net_unittests_apk_run',
+                'type': 'none',
+                'dependencies': [
+                  'net_unittests_apk',
+                ],
+                'includes': [
+                  '../build/isolate.gypi',
+                ],
+                'sources': [
+                  'net_unittests_apk.isolate',
+                ],
+              },
+            ]
+          }
+        ],
       ],
     }],
     ['OS == "android" or OS == "linux"', {

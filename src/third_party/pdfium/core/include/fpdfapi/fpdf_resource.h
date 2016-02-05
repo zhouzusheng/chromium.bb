@@ -7,6 +7,8 @@
 #ifndef CORE_INCLUDE_FPDFAPI_FPDF_RESOURCE_H_
 #define CORE_INCLUDE_FPDFAPI_FPDF_RESOURCE_H_
 
+#include <map>
+
 #include "../fxcrt/fx_system.h"
 #include "../fxge/fx_font.h"
 #include "fpdf_parser.h"
@@ -360,28 +362,23 @@ class CPDF_TrueTypeFont : public CPDF_SimpleFont {
   virtual FX_BOOL _Load();
   virtual void LoadGlyphMap();
 };
+
 class CPDF_Type3Char {
  public:
-  CPDF_Type3Char();
-
+  // Takes ownership of |pForm|.
+  explicit CPDF_Type3Char(CPDF_Form* pForm);
   ~CPDF_Type3Char();
 
   FX_BOOL LoadBitmap(CPDF_RenderContext* pContext);
 
-  FX_BOOL m_bColored;
-
-  FX_BOOL m_bPageRequired;
-
   CPDF_Form* m_pForm;
-
-  CFX_AffineMatrix m_ImageMatrix;
-
   CFX_DIBitmap* m_pBitmap;
-
+  FX_BOOL m_bColored;
   int m_Width;
-
+  CFX_AffineMatrix m_ImageMatrix;
   FX_RECT m_BBox;
 };
+
 class CPDF_Type3Font : public CPDF_SimpleFont {
  public:
   CPDF_Type3Font();
@@ -410,23 +407,26 @@ class CPDF_Type3Font : public CPDF_SimpleFont {
   CPDF_Dictionary* m_pCharProcs;
   CPDF_Dictionary* m_pPageResources;
   CPDF_Dictionary* m_pFontResources;
-  CFX_MapPtrToPtr m_CacheMap;
-  CFX_MapPtrToPtr m_DeletedMap;
+  std::map<FX_DWORD, CPDF_Type3Char*> m_CacheMap;
 };
 
-#define CIDSET_UNKNOWN 0
-#define CIDSET_GB1 1
-#define CIDSET_CNS1 2
-#define CIDSET_JAPAN1 3
-#define CIDSET_KOREA1 4
-#define CIDSET_UNICODE 5
-#define NUMBER_OF_CIDSETS 6
+enum CIDSet {
+  CIDSET_UNKNOWN,
+  CIDSET_GB1,
+  CIDSET_CNS1,
+  CIDSET_JAPAN1,
+  CIDSET_KOREA1,
+  CIDSET_UNICODE,
+  CIDSET_NUM_SETS
+};
 
 class CPDF_CIDFont : public CPDF_Font {
  public:
   CPDF_CIDFont();
 
   ~CPDF_CIDFont() override;
+
+  static FX_FLOAT CIDTransformToFloat(uint8_t ch);
 
   FX_BOOL LoadGB2312();
   int GlyphFromCharCode(FX_DWORD charcode, FX_BOOL* pVertGlyph = NULL) override;
@@ -442,9 +442,6 @@ class CPDF_CIDFont : public CPDF_Font {
   int CountChar(const FX_CHAR* pString, int size) const override;
   int AppendChar(FX_CHAR* str, FX_DWORD charcode) const override;
   int GetCharSize(FX_DWORD charcode) const override;
-
-  int GetCharset() const { return m_Charset; }
-
   const uint8_t* GetCIDTransform(FX_WORD CID) const;
   FX_BOOL IsVertWriting() const override;
   short GetVertWidth(FX_WORD CID) const;
@@ -467,7 +464,7 @@ class CPDF_CIDFont : public CPDF_Font {
   CPDF_CMap* m_pCMap;
   CPDF_CMap* m_pAllocatedCMap;
   CPDF_CID2UnicodeMap* m_pCID2UnicodeMap;
-  int m_Charset;
+  CIDSet m_Charset;
   FX_BOOL m_bType1;
   CPDF_StreamAcc* m_pCIDToGIDMap;
   FX_BOOL m_bCIDIsGID;
@@ -678,6 +675,19 @@ class CPDF_TilingPattern : public CPDF_Pattern {
 
   CPDF_Form* m_pForm;
 };
+
+typedef enum {
+  kInvalidShading = 0,
+  kFunctionBasedShading = 1,
+  kAxialShading = 2,
+  kRadialShading = 3,
+  kFreeFormGouraudTriangleMeshShading = 4,
+  kLatticeFormGouraudTriangleMeshShading = 5,
+  kCoonsPatchMeshShading = 6,
+  kTensorProductPatchMeshShading = 7,
+  kMaxShading = 8
+} ShadingType;
+
 class CPDF_ShadingPattern : public CPDF_Pattern {
  public:
   CPDF_ShadingPattern(CPDF_Document* pDoc,
@@ -687,6 +697,13 @@ class CPDF_ShadingPattern : public CPDF_Pattern {
 
   ~CPDF_ShadingPattern() override;
 
+  bool IsMeshShading() const {
+    return m_ShadingType == kFreeFormGouraudTriangleMeshShading ||
+           m_ShadingType == kLatticeFormGouraudTriangleMeshShading ||
+           m_ShadingType == kCoonsPatchMeshShading ||
+           m_ShadingType == kTensorProductPatchMeshShading;
+  }
+
   CPDF_Object* m_pShadingObj;
 
   FX_BOOL m_bShadingObj;
@@ -695,7 +712,7 @@ class CPDF_ShadingPattern : public CPDF_Pattern {
 
   FX_BOOL Reload();
 
-  int m_ShadingType;
+  ShadingType m_ShadingType;
 
   CPDF_ColorSpace* m_pCS;  // Still keep m_pCS as some CPDF_ColorSpace (name
                            // object) are not managed as counted objects. Refer

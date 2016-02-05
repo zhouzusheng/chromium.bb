@@ -20,12 +20,12 @@ namespace scheduler {
 class SCHEDULER_EXPORT TaskCostEstimator
     : public base::MessageLoop::TaskObserver {
  public:
-  TaskCostEstimator(int sample_count, double estimation_percentile);
+  TaskCostEstimator(base::TickClock* time_source,
+                    int sample_count,
+                    double estimation_percentile);
   ~TaskCostEstimator() override;
 
-  base::TimeDelta expected_task_duration() const {
-    return expected_task_duration_;
-  }
+  base::TimeDelta expected_task_duration() const;
 
   // TaskObserver implementation:
   void WillProcessTask(const base::PendingTask& pending_task) override;
@@ -33,11 +33,9 @@ class SCHEDULER_EXPORT TaskCostEstimator
 
   void Clear();
 
-  void SetTimeSourceForTesting(scoped_ptr<base::TickClock> time_source);
-
  private:
   cc::RollingTimeDeltaHistory rolling_time_delta_history_;
-  scoped_ptr<base::TickClock> time_source_;
+  base::TickClock* time_source_;  // NOT OWNED
   int outstanding_task_count_;
   double estimation_percentile_;
   base::TimeTicks task_start_time_;

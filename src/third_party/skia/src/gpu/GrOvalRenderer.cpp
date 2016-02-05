@@ -21,9 +21,12 @@
 #include "SkTLazy.h"
 #include "batches/GrVertexBatch.h"
 #include "effects/GrRRectEffect.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLUtil.h"
 #include "gl/GrGLGeometryProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLVertexShaderBuilder.h"
 
 // TODO(joshualitt) - Break this file up during GrBatch post implementation cleanup
 
@@ -94,13 +97,13 @@ public:
 
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override{
             const CircleEdgeEffect& ce = args.fGP.cast<CircleEdgeEffect>();
-            GrGLGPBuilder* pb = args.fPB;
-            GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+            GrGLSLGPBuilder* pb = args.fPB;
+            GrGLSLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
 
             // emit attributes
             vsBuilder->emitAttributes(ce);
 
-            GrGLVertToFrag v(kVec4f_GrSLType);
+            GrGLSLVertToFrag v(kVec4f_GrSLType);
             args.fPB->addVarying("CircleEdge", &v);
             vsBuilder->codeAppendf("%s = %s;", v.vsOut(), ce.inCircleEdge()->fName);
 
@@ -116,7 +119,7 @@ public:
             this->emitTransforms(args.fPB, gpArgs->fPositionVar, ce.inPosition()->fName,
                                  ce.localMatrix(), args.fTransformsIn, args.fTransformsOut);
 
-            GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
+            GrGLSLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
             fsBuilder->codeAppendf("float d = length(%s.xy);", v.fsIn());
             fsBuilder->codeAppendf("float edgeAlpha = clamp(%s.z * (1.0 - d), 0.0, 1.0);", v.fsIn());
             if (ce.isStroked()) {
@@ -138,10 +141,11 @@ public:
             b->add32(key);
         }
 
-        void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
+        void setData(const GrGLSLProgramDataManager& pdman,
+                     const GrPrimitiveProcessor& gp) override {
             const CircleEdgeEffect& ce = gp.cast<CircleEdgeEffect>();
             if (ce.color() != fColor) {
-                GrGLfloat c[4];
+                float c[4];
                 GrColorToRGBAFloat(ce.color(), c);
                 pdman.set4fv(fColorUniform, 1, c);
                 fColor = ce.color();
@@ -149,7 +153,7 @@ public:
         }
 
         void setTransformData(const GrPrimitiveProcessor& primProc,
-                              const GrGLProgramDataManager& pdman,
+                              const GrGLSLProgramDataManager& pdman,
                               int index,
                               const SkTArray<const GrCoordTransform*, true>& transforms) override {
             this->setTransformDataHelper<CircleEdgeEffect>(primProc, pdman, index, transforms);
@@ -241,18 +245,18 @@ public:
 
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override{
             const EllipseEdgeEffect& ee = args.fGP.cast<EllipseEdgeEffect>();
-            GrGLGPBuilder* pb = args.fPB;
-            GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+            GrGLSLGPBuilder* pb = args.fPB;
+            GrGLSLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
 
             // emit attributes
             vsBuilder->emitAttributes(ee);
 
-            GrGLVertToFrag ellipseOffsets(kVec2f_GrSLType);
+            GrGLSLVertToFrag ellipseOffsets(kVec2f_GrSLType);
             args.fPB->addVarying("EllipseOffsets", &ellipseOffsets);
             vsBuilder->codeAppendf("%s = %s;", ellipseOffsets.vsOut(),
                                    ee.inEllipseOffset()->fName);
 
-            GrGLVertToFrag ellipseRadii(kVec4f_GrSLType);
+            GrGLSLVertToFrag ellipseRadii(kVec4f_GrSLType);
             args.fPB->addVarying("EllipseRadii", &ellipseRadii);
             vsBuilder->codeAppendf("%s = %s;", ellipseRadii.vsOut(),
                                    ee.inEllipseRadii()->fName);
@@ -270,7 +274,7 @@ public:
                                  ee.localMatrix(), args.fTransformsIn, args.fTransformsOut);
 
             // for outer curve
-            GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
+            GrGLSLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
             fsBuilder->codeAppendf("vec2 scaledOffset = %s*%s.xy;", ellipseOffsets.fsIn(),
                                    ellipseRadii.fsIn());
             fsBuilder->codeAppend("float test = dot(scaledOffset, scaledOffset) - 1.0;");
@@ -306,10 +310,10 @@ public:
             b->add32(key);
         }
 
-        void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
+        void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
             const EllipseEdgeEffect& ee = gp.cast<EllipseEdgeEffect>();
             if (ee.color() != fColor) {
-                GrGLfloat c[4];
+                float c[4];
                 GrColorToRGBAFloat(ee.color(), c);
                 pdman.set4fv(fColorUniform, 1, c);
                 fColor = ee.color();
@@ -317,7 +321,7 @@ public:
         }
 
         void setTransformData(const GrPrimitiveProcessor& primProc,
-                              const GrGLProgramDataManager& pdman,
+                              const GrGLSLProgramDataManager& pdman,
                               int index,
                               const SkTArray<const GrCoordTransform*, true>& transforms) override {
             this->setTransformDataHelper<EllipseEdgeEffect>(primProc, pdman, index, transforms);
@@ -416,18 +420,18 @@ public:
 
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
             const DIEllipseEdgeEffect& ee = args.fGP.cast<DIEllipseEdgeEffect>();
-            GrGLGPBuilder* pb = args.fPB;
-            GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+            GrGLSLGPBuilder* pb = args.fPB;
+            GrGLSLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
 
             // emit attributes
             vsBuilder->emitAttributes(ee);
 
-            GrGLVertToFrag offsets0(kVec2f_GrSLType);
+            GrGLSLVertToFrag offsets0(kVec2f_GrSLType);
             args.fPB->addVarying("EllipseOffsets0", &offsets0);
             vsBuilder->codeAppendf("%s = %s;", offsets0.vsOut(),
                                    ee.inEllipseOffsets0()->fName);
 
-            GrGLVertToFrag offsets1(kVec2f_GrSLType);
+            GrGLSLVertToFrag offsets1(kVec2f_GrSLType);
             args.fPB->addVarying("EllipseOffsets1", &offsets1);
             vsBuilder->codeAppendf("%s = %s;", offsets1.vsOut(),
                                    ee.inEllipseOffsets1()->fName);
@@ -445,9 +449,9 @@ public:
             this->emitTransforms(args.fPB, gpArgs->fPositionVar, ee.inPosition()->fName,
                                  args.fTransformsIn, args.fTransformsOut);
 
-            GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
+            GrGLSLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
             SkAssertResult(fsBuilder->enableFeature(
-                    GrGLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
+                    GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
             // for outer curve
             fsBuilder->codeAppendf("vec2 scaledOffset = %s.xy;", offsets0.fsIn());
             fsBuilder->codeAppend("float test = dot(scaledOffset, scaledOffset) - 1.0;");
@@ -496,18 +500,19 @@ public:
             b->add32(key);
         }
 
-        void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
+        void setData(const GrGLSLProgramDataManager& pdman,
+                     const GrPrimitiveProcessor& gp) override {
             const DIEllipseEdgeEffect& dee = gp.cast<DIEllipseEdgeEffect>();
 
             if (!dee.viewMatrix().isIdentity() && !fViewMatrix.cheapEqualTo(dee.viewMatrix())) {
                 fViewMatrix = dee.viewMatrix();
-                GrGLfloat viewMatrix[3 * 3];
+                float viewMatrix[3 * 3];
                 GrGLGetMatrix<3>(viewMatrix, fViewMatrix);
                 pdman.setMatrix3f(fViewMatrixUniform, viewMatrix);
             }
 
             if (dee.color() != fColor) {
-                GrGLfloat c[4];
+                float c[4];
                 GrColorToRGBAFloat(dee.color(), c);
                 pdman.set4fv(fColorUniform, 1, c);
                 fColor = dee.color();

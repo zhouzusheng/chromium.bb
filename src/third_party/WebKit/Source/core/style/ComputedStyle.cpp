@@ -1269,6 +1269,32 @@ const Vector<AppliedTextDecoration>& ComputedStyle::appliedTextDecorations() con
     return rareInheritedData->appliedTextDecorations->vector();
 }
 
+StyleVariableData* ComputedStyle::variables() const
+{
+    ASSERT(RuntimeEnabledFeatures::cssVariablesEnabled());
+    return rareInheritedData->variables.get();
+}
+
+void ComputedStyle::setVariable(const AtomicString& name, PassRefPtr<CSSVariableData> value)
+{
+    RefPtr<StyleVariableData>& variables = rareInheritedData.access()->variables;
+    if (!variables)
+        variables = StyleVariableData::create();
+    else if (!variables->hasOneRef())
+        variables = variables->copy();
+    variables->setVariable(name, value);
+}
+
+void ComputedStyle::removeVariable(const AtomicString& name)
+{
+    RefPtr<StyleVariableData>& variables = rareInheritedData.access()->variables;
+    if (!variables)
+        return;
+    if (!variables->hasOneRef())
+        variables = variables->copy();
+    variables->removeVariable(name);
+}
+
 float ComputedStyle::wordSpacing() const { return fontDescription().wordSpacing(); }
 float ComputedStyle::letterSpacing() const { return fontDescription().letterSpacing(); }
 
@@ -1307,8 +1333,9 @@ int ComputedStyle::computedLineHeight() const
 {
     const Length& lh = lineHeight();
 
-    // Negative value means the line height is not set. Use the font's built-in spacing.
-    if (lh.isNegative())
+    // Negative value means the line height is not set. Use the font's built-in
+    // spacing, if avalible.
+    if (lh.isNegative() && font().primaryFont())
         return fontMetrics().lineSpacing();
 
     if (lh.hasPercent())
@@ -1532,8 +1559,6 @@ const BorderValue& ComputedStyle::borderBefore() const
     switch (writingMode()) {
     case TopToBottomWritingMode:
         return borderTop();
-    case BottomToTopWritingMode:
-        return borderBottom();
     case LeftToRightWritingMode:
         return borderLeft();
     case RightToLeftWritingMode:
@@ -1548,8 +1573,6 @@ const BorderValue& ComputedStyle::borderAfter() const
     switch (writingMode()) {
     case TopToBottomWritingMode:
         return borderBottom();
-    case BottomToTopWritingMode:
-        return borderTop();
     case LeftToRightWritingMode:
         return borderRight();
     case RightToLeftWritingMode:
@@ -1578,8 +1601,6 @@ int ComputedStyle::borderBeforeWidth() const
     switch (writingMode()) {
     case TopToBottomWritingMode:
         return borderTopWidth();
-    case BottomToTopWritingMode:
-        return borderBottomWidth();
     case LeftToRightWritingMode:
         return borderLeftWidth();
     case RightToLeftWritingMode:
@@ -1594,8 +1615,6 @@ int ComputedStyle::borderAfterWidth() const
     switch (writingMode()) {
     case TopToBottomWritingMode:
         return borderBottomWidth();
-    case BottomToTopWritingMode:
-        return borderTopWidth();
     case LeftToRightWritingMode:
         return borderRightWidth();
     case RightToLeftWritingMode:
@@ -1617,6 +1636,16 @@ int ComputedStyle::borderEndWidth() const
     if (isHorizontalWritingMode())
         return isLeftToRightDirection() ? borderRightWidth() : borderLeftWidth();
     return isLeftToRightDirection() ? borderBottomWidth() : borderTopWidth();
+}
+
+int ComputedStyle::borderOverWidth() const
+{
+    return isHorizontalWritingMode() ? borderTopWidth() : borderRightWidth();
+}
+
+int ComputedStyle::borderUnderWidth() const
+{
+    return isHorizontalWritingMode() ? borderBottomWidth() : borderLeftWidth();
 }
 
 void ComputedStyle::setMarginStart(const Length& margin)

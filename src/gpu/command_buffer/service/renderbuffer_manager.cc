@@ -49,7 +49,7 @@ RenderbufferManager::RenderbufferManager(MemoryTracker* memory_tracker,
                                          GLint max_samples,
                                          FeatureInfo* feature_info)
     : memory_type_tracker_(
-          new MemoryTypeTracker(memory_tracker, MemoryTracker::kUnmanaged)),
+          new MemoryTypeTracker(memory_tracker)),
       memory_tracker_(memory_tracker),
       max_renderbuffer_size_(max_renderbuffer_size),
       max_samples_(max_samples),
@@ -61,7 +61,7 @@ RenderbufferManager::RenderbufferManager(MemoryTracker* memory_tracker,
   // so don't register a dump provider.
   if (memory_tracker_) {
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        this, base::ThreadTaskRunnerHandle::Get());
+        this, "gpu::RenderbufferManager", base::ThreadTaskRunnerHandle::Get());
   }
 }
 

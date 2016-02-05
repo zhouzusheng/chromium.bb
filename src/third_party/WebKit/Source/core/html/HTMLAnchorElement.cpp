@@ -362,13 +362,15 @@ void HTMLAnchorElement::handleClick(Event* event)
         bool isSameOrigin = completedURL.protocolIsData() || document().securityOrigin()->canRequest(completedURL);
         const AtomicString& suggestedName = (isSameOrigin ? fastGetAttribute(downloadAttr) : nullAtom);
 
-        frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, suggestedName);
+        frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, suggestedName, false);
     } else {
         request.setRequestContext(WebURLRequest::RequestContextHyperlink);
         FrameLoadRequest frameRequest(&document(), request, getAttribute(targetAttr));
         frameRequest.setTriggeringEvent(event);
-        if (hasRel(RelationNoReferrer))
+        if (hasRel(RelationNoReferrer)) {
             frameRequest.setShouldSendReferrer(NeverSendReferrer);
+            frameRequest.setShouldSetOpener(NeverSetOpener);
+        }
         frame->loader().load(frameRequest);
     }
 }

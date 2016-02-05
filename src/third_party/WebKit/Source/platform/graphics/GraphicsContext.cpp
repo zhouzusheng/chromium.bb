@@ -32,7 +32,7 @@
 #include "platform/graphics/ColorSpace.h"
 #include "platform/graphics/Gradient.h"
 #include "platform/graphics/ImageBuffer.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/weborigin/KURL.h"
 #include "skia/ext/platform_device.h"
 #include "third_party/skia/include/core/SkAnnotation.h"
@@ -50,10 +50,10 @@
 
 namespace blink {
 
-GraphicsContext::GraphicsContext(DisplayItemList* displayItemList, DisabledMode disableContextOrPainting, SkMetaData* metaData)
+GraphicsContext::GraphicsContext(PaintController& paintController, DisabledMode disableContextOrPainting, SkMetaData* metaData)
     : m_canvas(nullptr)
     , m_originalCanvas(nullptr)
-    , m_displayItemList(displayItemList)
+    , m_paintController(paintController)
     , m_paintStateStack()
     , m_paintStateIndex(0)
 #if ENABLE(ASSERT)
@@ -66,9 +66,6 @@ GraphicsContext::GraphicsContext(DisplayItemList* displayItemList, DisabledMode 
     , m_printing(false)
     , m_hasMetaData(!!metaData)
 {
-    // TODO(chrishtr): switch the type of the parameter to DisplayItemList&.
-    ASSERT(displayItemList);
-
     if (metaData)
         m_metaData = *metaData;
 
@@ -317,11 +314,6 @@ PassRefPtr<const SkPicture> GraphicsContext::endRecording()
     return picture.release();
 }
 
-bool GraphicsContext::isRecording() const
-{
-    return m_canvas != m_originalCanvas;
-}
-
 void GraphicsContext::drawPicture(const SkPicture* picture)
 {
     if (contextDisabled() || !picture || picture->cullRect().isEmpty())
@@ -345,7 +337,7 @@ void GraphicsContext::compositePicture(SkPicture* picture, const FloatRect& dest
     SkMatrix pictureTransform;
     pictureTransform.setRectToRect(sourceBounds, skBounds, SkMatrix::kFill_ScaleToFit);
     m_canvas->concat(pictureTransform);
-    RefPtr<SkPictureImageFilter> pictureFilter = adoptRef(SkPictureImageFilter::CreateForLocalSpace(picture, sourceBounds, static_cast<SkFilterQuality>(imageInterpolationQuality())));
+    RefPtr<SkImageFilter> pictureFilter = adoptRef(SkPictureImageFilter::CreateForLocalSpace(picture, sourceBounds, static_cast<SkFilterQuality>(imageInterpolationQuality())));
     picturePaint.setImageFilter(pictureFilter.get());
     m_canvas->saveLayer(&sourceBounds, &picturePaint);
     m_canvas->restore();
@@ -734,7 +726,7 @@ void GraphicsContext::drawText(const Font& font, const TextRunPaintInfo& runInfo
         return;
 
     if (font.drawText(m_canvas, runInfo, point, m_deviceScaleFactor, paint))
-        m_displayItemList->setTextPainted();
+        m_paintController.setTextPainted();
 }
 
 template<typename DrawTextFunc>
@@ -762,7 +754,7 @@ void GraphicsContext::drawText(const Font& font, const TextRunPaintInfo& runInfo
 
     drawTextPasses([&font, &runInfo, &point, this](const SkPaint& paint) {
         if (font.drawText(m_canvas, runInfo, point, m_deviceScaleFactor, paint))
-            m_displayItemList->setTextPainted();
+            m_paintController.setTextPainted();
     });
 }
 
@@ -783,7 +775,7 @@ void GraphicsContext::drawBidiText(const Font& font, const TextRunPaintInfo& run
 
     drawTextPasses([&font, &runInfo, &point, customFontNotReadyAction, this](const SkPaint& paint) {
         if (font.drawBidiText(m_canvas, runInfo, point, customFontNotReadyAction, m_deviceScaleFactor, paint))
-            m_displayItemList->setTextPainted();
+            m_paintController.setTextPainted();
     });
 }
 
@@ -813,6 +805,7 @@ void GraphicsContext::drawImage(Image* image, const FloatRect& dest, const Float
     imagePaint.setFilterQuality(computeFilterQuality(image, dest, src));
     imagePaint.setAntiAlias(shouldAntialias());
     image->draw(m_canvas, imagePaint, dest, src, shouldRespectImageOrientation, Image::ClampImageToSourceRect);
+    m_paintController.setImagePainted();
 }
 
 SkFilterQuality GraphicsContext::computeFilterQuality(Image* image, const FloatRect& dest, const FloatRect& src) const
@@ -1032,11 +1025,6 @@ void GraphicsContext::strokePath(const Path& pathToStroke)
     drawPath(pathToStroke.skPath(), immutableState()->strokePaint());
 }
 
-void GraphicsContext::strokeRect(const FloatRect& rect)
-{
-    strokeRect(rect, strokeThickness());
-}
-
 void GraphicsContext::strokeRect(const FloatRect& rect, float lineWidth)
 {
     if (contextDisabled())
@@ -1195,6 +1183,16 @@ void GraphicsContext::setURLFragmentForRect(const String& destName, const IntRec
     SkAnnotateLinkToDestination(m_canvas, rect, skDestName.get());
 }
 
+void GraphicsContext::setURLDestinationLocation(const String& name, const IntPoint& location)
+{
+    if (contextDisabled())
+        return;
+    ASSERT(m_canvas);
+
+    SkAutoDataUnref skName(SkData::NewWithCString(name.utf8().data()));
+    SkAnnotateNamedDestination(m_canvas, SkPoint::Make(location.x(), location.y()), skName);
+}
+
 void GraphicsContext::concatCTM(const AffineTransform& affine)
 {
     concat(affineTransformToSkMatrix(affine));
@@ -1208,16 +1206,6 @@ void GraphicsContext::fillRectWithRoundedHole(const FloatRect& rect, const Float
     SkPaint paint(immutableState()->fillPaint());
     paint.setColor(color.rgb());
     m_canvas->drawDRRect(SkRRect::MakeRect(rect), roundedHoleRect, paint);
-}
-
-void GraphicsContext::clearRect(const FloatRect& rect)
-{
-    if (contextDisabled())
-        return;
-
-    SkPaint paint(immutableState()->fillPaint());
-    paint.setXfermodeMode(SkXfermode::kClear_Mode);
-    drawRect(rect, paint);
 }
 
 void GraphicsContext::adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2, float strokeWidth, StrokeStyle penStyle)

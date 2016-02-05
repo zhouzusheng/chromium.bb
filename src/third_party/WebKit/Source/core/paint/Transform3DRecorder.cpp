@@ -6,7 +6,7 @@
 #include "core/paint/Transform3DRecorder.h"
 
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/graphics/paint/Transform3DDisplayItem.h"
 
 namespace blink {
@@ -27,10 +27,7 @@ Transform3DRecorder::Transform3DRecorder(
     if (m_skipRecordingForIdentityTransform)
         return;
 
-    ASSERT(m_context.displayItemList());
-    if (m_context.displayItemList()->displayItemConstructionIsDisabled())
-        return;
-    m_context.displayItemList()->createAndAppend<BeginTransform3DDisplayItem>(m_client, m_type, transform, transformOrigin);
+    m_context.paintController().createAndAppend<BeginTransform3DDisplayItem>(m_client, m_type, transform, transformOrigin);
 }
 
 Transform3DRecorder::~Transform3DRecorder()
@@ -38,13 +35,7 @@ Transform3DRecorder::~Transform3DRecorder()
     if (m_skipRecordingForIdentityTransform)
         return;
 
-    ASSERT(m_context.displayItemList());
-    if (!m_context.displayItemList()->displayItemConstructionIsDisabled()) {
-        if (m_context.displayItemList()->lastDisplayItemIsNoopBegin())
-            m_context.displayItemList()->removeLastDisplayItem();
-        else
-            m_context.displayItemList()->createAndAppend<EndTransform3DDisplayItem>(m_client, DisplayItem::transform3DTypeToEndTransform3DType(m_type));
-    }
+    m_context.paintController().endItem<EndTransform3DDisplayItem>(m_client, DisplayItem::transform3DTypeToEndTransform3DType(m_type));
 }
 
 } // namespace blink

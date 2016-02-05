@@ -315,7 +315,7 @@ bool LayoutPart::updateWidgetGeometry()
         contentBox.setLocation(absoluteContentBox.location());
         return setWidgetGeometry(contentBox);
     }
-
+    // TODO(chrishtr): why are these widgets using an absolute rect for their frameRect?
     return setWidgetGeometry(absoluteContentBox);
 }
 
@@ -355,6 +355,14 @@ void LayoutPart::invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& paint
     }
 
     LayoutReplaced::invalidatePaintOfSubtreesIfNeeded(paintInvalidationState);
+}
+
+bool LayoutPart::isThrottledFrameView() const
+{
+    if (!widget() || !widget()->isFrameView())
+        return false;
+    const FrameView* frameView = toFrameView(widget());
+    return frameView->shouldThrottleRendering();
 }
 
 }

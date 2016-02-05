@@ -42,7 +42,6 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/CrossOriginPreflightResultCache.h"
 #include "core/loader/DocumentThreadableLoaderClient.h"
 #include "core/loader/FrameLoader.h"
@@ -69,7 +68,7 @@ private:
     public:
         explicit EmptyDataReader(WebDataConsumerHandle::Client* client) : m_factory(this)
         {
-            Platform::current()->currentThread()->taskRunner()->postTask(FROM_HERE, new Task(bind(&EmptyDataReader::notify, m_factory.createWeakPtr(), client)));
+            Platform::current()->currentThread()->taskRunner()->postTask(BLINK_FROM_HERE, new Task(bind(&EmptyDataReader::notify, m_factory.createWeakPtr(), client)));
         }
     private:
         Result read(void*, size_t, WebDataConsumerHandle::Flags, size_t *readSize) override
@@ -301,7 +300,7 @@ void DocumentThreadableLoader::overrideTimeout(unsigned long timeoutMilliseconds
         double elapsedTime = monotonicallyIncreasingTime() - m_requestStartedSeconds;
         double nextFire = timeoutMilliseconds / 1000.0;
         double resolvedTime = std::max(nextFire - elapsedTime, 0.0);
-        m_timeoutTimer.startOneShot(resolvedTime, FROM_HERE);
+        m_timeoutTimer.startOneShot(resolvedTime, BLINK_FROM_HERE);
     }
 }
 
@@ -562,7 +561,6 @@ void DocumentThreadableLoader::handlePreflightResponse(const ResourceResponse& r
 void DocumentThreadableLoader::reportResponseReceived(unsigned long identifier, const ResourceResponse& response)
 {
     DocumentLoader* loader = m_document.frame()->loader().documentLoader();
-    TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceReceiveResponse", TRACE_EVENT_SCOPE_THREAD, "data", InspectorReceiveResponseEvent::data(identifier, m_document.frame(), response));
     LocalFrame* frame = m_document.frame();
     InspectorInstrumentation::didReceiveResourceResponse(frame, identifier, loader, response, resource() ? resource()->loader() : 0);
     frame->console().reportResourceResponseReceived(loader, identifier, response);
@@ -780,7 +778,7 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Resou
             resourceLoaderOptions.dataBufferingPolicy = BufferData;
 
         if (m_options.timeoutMilliseconds > 0)
-            m_timeoutTimer.startOneShot(m_options.timeoutMilliseconds / 1000.0, FROM_HERE);
+            m_timeoutTimer.startOneShot(m_options.timeoutMilliseconds / 1000.0, BLINK_FROM_HERE);
 
         FetchRequest newRequest(request, m_options.initiator, resourceLoaderOptions);
         if (m_options.crossOriginRequestPolicy == AllowCrossOriginRequests)

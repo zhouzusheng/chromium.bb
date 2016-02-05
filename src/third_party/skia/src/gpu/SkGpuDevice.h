@@ -22,6 +22,7 @@ struct SkDrawProcs;
 struct GrSkDrawProcs;
 
 class GrAccelData;
+class GrTextureAdjuster;
 struct GrCachedLayer;
 
 /**
@@ -135,6 +136,8 @@ public:
                        const SkImageFilter::Context&,
                        SkBitmap* result, SkIPoint* offset);
 
+    static SkImageFilter::Cache* NewImageFilterCache();
+
 protected:
     bool onReadPixels(const SkImageInfo&, void*, size_t, int, int) override;
     bool onWritePixels(const SkImageInfo&, const void*, size_t, int, int) override;
@@ -222,6 +225,7 @@ private:
                             SkCanvas::SrcRectConstraint,
                             bool bicubic,
                             bool needsTextureDomain);
+
     void drawTiledBitmap(const SkBitmap& bitmap,
                          const SkMatrix& viewMatrix,
                          const SkRect& srcRect,
@@ -231,6 +235,25 @@ private:
                          SkCanvas::SrcRectConstraint,
                          int tileSize,
                          bool bicubic);
+
+    void drawTextureAdjuster(GrTextureAdjuster* adjuster,
+                             bool alphaOnly,
+                             const SkRect* srcRect,
+                             const SkRect* dstRect,
+                             SkCanvas::SrcRectConstraint constraint,
+                             const SkMatrix& viewMatrix,
+                             const GrClip& clip,
+                             const SkPaint& paint);
+
+    void drawTextureAdjusterImpl(GrTextureAdjuster*,
+                                 bool alphaOnly,
+                                 const SkRect& clippedSrcRect,
+                                 const SkRect& clippedDstRect,
+                                 SkCanvas::SrcRectConstraint constraint,
+                                 const SkMatrix& viewMatrix,
+                                 const SkMatrix& srcToDstMatrix,
+                                 const GrClip& clip,
+                                 const SkPaint& paint);
 
     bool drawDashLine(const SkPoint pts[2], const SkPaint& paint);
 

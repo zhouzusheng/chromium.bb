@@ -9,7 +9,6 @@
   'target_defaults' : {
     'include_dirs': [
       '..',
-      '../third_party/mojo/src',
     ],
     'direct_dependent_settings': {
       'include_dirs': [
@@ -37,7 +36,6 @@
       ],
       'sources': [
         'edk/embedder/configuration.h',
-        'edk/embedder/channel_info_forward.h',
         'edk/embedder/embedder.cc',
         'edk/embedder/embedder.h',
         'edk/embedder/embedder_internal.h',

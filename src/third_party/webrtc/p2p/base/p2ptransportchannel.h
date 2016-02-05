@@ -34,6 +34,8 @@
 
 namespace cricket {
 
+extern const uint32_t WEAK_PING_DELAY;
+
 // Adds the port on which the candidate originated.
 class RemoteCandidate : public Candidate {
  public:
@@ -62,7 +64,7 @@ class P2PTransportChannel : public TransportChannelImpl,
   TransportChannelState GetState() const override;
   void SetIceRole(IceRole role) override;
   IceRole GetIceRole() const override { return ice_role_; }
-  void SetIceTiebreaker(uint64 tiebreaker) override;
+  void SetIceTiebreaker(uint64_t tiebreaker) override;
   void SetIceCredentials(const std::string& ice_ufrag,
                          const std::string& ice_pwd) override;
   void SetRemoteIceCredentials(const std::string& ice_ufrag,
@@ -114,7 +116,7 @@ class P2PTransportChannel : public TransportChannelImpl,
   bool GetSrtpCryptoSuite(std::string* cipher) override { return false; }
 
   // Find out which DTLS cipher was negotiated.
-  bool GetSslCipherSuite(uint16_t* cipher) override { return false; }
+  bool GetSslCipherSuite(int* cipher) override { return false; }
 
   // Returns null because the channel is not encrypted by default.
   rtc::scoped_refptr<rtc::RTCCertificate> GetLocalCertificate() const override {
@@ -127,10 +129,10 @@ class P2PTransportChannel : public TransportChannelImpl,
 
   // Allows key material to be extracted for external encryption.
   bool ExportKeyingMaterial(const std::string& label,
-                            const uint8* context,
+                            const uint8_t* context,
                             size_t context_len,
                             bool use_context,
-                            uint8* result,
+                            uint8_t* result,
                             size_t result_len) override {
     return false;
   }
@@ -142,7 +144,7 @@ class P2PTransportChannel : public TransportChannelImpl,
 
   // Set DTLS Remote fingerprint. Must be after local identity set.
   bool SetRemoteFingerprint(const std::string& digest_alg,
-                            const uint8* digest,
+                            const uint8_t* digest,
                             size_t digest_len) override {
     return false;
   }
@@ -156,11 +158,17 @@ class P2PTransportChannel : public TransportChannelImpl,
   // Public for unit tests.
   Connection* FindNextPingableConnection();
 
- private:
-  rtc::Thread* thread() { return worker_thread_; }
+  // Public for unit tests.
+  const std::vector<Connection*>& connections() const { return connections_; }
+
+  // Public for unit tests.
   PortAllocatorSession* allocator_session() {
     return allocator_sessions_.back();
   }
+
+ private:
+  rtc::Thread* thread() { return worker_thread_; }
+  bool IsGettingPorts() { return allocator_session()->IsGettingPorts(); }
 
   // A transport channel is weak if the current best connection is either
   // not receiving or not writable, or if there is no best connection at all.
@@ -170,9 +178,8 @@ class P2PTransportChannel : public TransportChannelImpl,
   void SortConnections();
   void SwitchBestConnectionTo(Connection* conn);
   void UpdateChannelState();
-  void HandleWritable();
-  void HandleNotWritable();
   void HandleAllTimedOut();
+  void MaybeStopPortAllocatorSessions();
 
   Connection* GetBestConnectionOnNetwork(rtc::Network* network) const;
   bool CreateConnections(const Candidate& remote_candidate,
@@ -182,7 +189,7 @@ class P2PTransportChannel : public TransportChannelImpl,
                         PortInterface* origin_port);
   bool FindConnection(cricket::Connection* connection) const;
 
-  uint32 GetRemoteCandidateGeneration(const Candidate& candidate);
+  uint32_t GetRemoteCandidateGeneration(const Candidate& candidate);
   bool IsDuplicateRemoteCandidate(const Candidate& candidate);
   void RememberRemoteCandidate(const Candidate& remote_candidate,
                                PortInterface* origin_port);
@@ -207,6 +214,7 @@ class P2PTransportChannel : public TransportChannelImpl,
   void OnConnectionStateChange(Connection* connection);
   void OnReadPacket(Connection *connection, const char *data, size_t len,
                     const rtc::PacketTime& packet_time);
+  void OnSentPacket(PortInterface* port, const rtc::SentPacket& sent_packet);
   void OnReadyToSend(Connection* connection);
   void OnConnectionDestroyed(Connection *connection);
 
@@ -233,7 +241,6 @@ class P2PTransportChannel : public TransportChannelImpl,
   Connection* pending_best_connection_;
   std::vector<RemoteCandidate> remote_candidates_;
   bool sort_dirty_;  // indicates whether another sort is needed right now
-  bool was_writable_;
   bool had_connection_ = false;  // if connections_ has ever been nonempty
   typedef std::map<rtc::Socket::Option, int> OptionMap;
   OptionMap options_;
@@ -243,14 +250,15 @@ class P2PTransportChannel : public TransportChannelImpl,
   std::string remote_ice_pwd_;
   IceMode remote_ice_mode_;
   IceRole ice_role_;
-  uint64 tiebreaker_;
-  uint32 remote_candidate_generation_;
+  uint64_t tiebreaker_;
+  uint32_t remote_candidate_generation_;
   IceGatheringState gathering_state_;
 
   int check_receiving_delay_;
   int receiving_timeout_;
-  uint32 last_ping_sent_ms_ = 0;
+  uint32_t last_ping_sent_ms_ = 0;
   bool gather_continually_ = false;
+  int weak_ping_delay_ = WEAK_PING_DELAY;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(P2PTransportChannel);
 };

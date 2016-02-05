@@ -438,8 +438,6 @@ public:
     }
 
     bool hasFilterOutsets() const { return hasFilter() && filter().hasOutsets(); }
-    FilterOutsets filterOutsets() const { return hasFilter() ? filter().outsets() : FilterOutsets(); }
-
     Order rtlOrdering() const { return static_cast<Order>(inherited_flags.m_rtlOrdering); }
     void setRTLOrdering(Order o) { inherited_flags.m_rtlOrdering = o; }
 
@@ -531,6 +529,8 @@ public:
     int borderAfterWidth() const;
     int borderStartWidth() const;
     int borderEndWidth() const;
+    int borderOverWidth() const;
+    int borderUnderWidth() const;
 
     int outlineWidth() const
     {
@@ -593,6 +593,10 @@ public:
     TextDecorationStyle textDecorationStyle() const { return static_cast<TextDecorationStyle>(rareNonInheritedData->m_textDecorationStyle); }
     float wordSpacing() const;
     float letterSpacing() const;
+    StyleVariableData* variables() const;
+
+    void setVariable(const AtomicString&, PassRefPtr<CSSVariableData>);
+    void removeVariable(const AtomicString&);
 
     float zoom() const { return visual->m_zoom; }
     float effectiveZoom() const { return rareInheritedData->m_effectiveZoom; }
@@ -694,6 +698,8 @@ public:
     const Length& marginAfter() const { return surround->margin.after(writingMode()); }
     const Length& marginStart() const { return surround->margin.start(writingMode(), direction()); }
     const Length& marginEnd() const { return surround->margin.end(writingMode(), direction()); }
+    const Length& marginOver() const { return surround->margin.over(writingMode()); }
+    const Length& marginUnder() const { return surround->margin.under(writingMode()); }
     const Length& marginStartUsing(const ComputedStyle* otherStyle) const { return surround->margin.start(otherStyle->writingMode(), otherStyle->direction()); }
     const Length& marginEndUsing(const ComputedStyle* otherStyle) const { return surround->margin.end(otherStyle->writingMode(), otherStyle->direction()); }
     const Length& marginBeforeUsing(const ComputedStyle* otherStyle) const { return surround->margin.before(otherStyle->writingMode()); }
@@ -708,6 +714,8 @@ public:
     const Length& paddingAfter() const { return surround->padding.after(writingMode()); }
     const Length& paddingStart() const { return surround->padding.start(writingMode(), direction()); }
     const Length& paddingEnd() const { return surround->padding.end(writingMode(), direction()); }
+    const Length& paddingOver() const { return surround->padding.over(writingMode()); }
+    const Length& paddingUnder() const { return surround->padding.under(writingMode()); }
 
     ECursor cursor() const { return static_cast<ECursor>(inherited_flags._cursor_style); }
     CursorList* cursors() const { return rareInheritedData->cursorData.get(); }
@@ -794,6 +802,8 @@ public:
     bool isGridAutoFlowAlgorithmDense() const { return (rareNonInheritedData->m_grid->m_gridAutoFlow & InternalAutoFlowAlgorithmDense) == InternalAutoFlowAlgorithmDense; }
     const GridTrackSize& gridAutoColumns() const { return rareNonInheritedData->m_grid->m_gridAutoColumns; }
     const GridTrackSize& gridAutoRows() const { return rareNonInheritedData->m_grid->m_gridAutoRows; }
+    const Length& gridColumnGap() const { return rareNonInheritedData->m_grid->m_gridColumnGap; }
+    const Length& gridRowGap() const { return rareNonInheritedData->m_grid->m_gridRowGap; }
 
     const GridPosition& gridColumnStart() const { return rareNonInheritedData->m_gridItem->m_gridColumnStart; }
     const GridPosition& gridColumnEnd() const { return rareNonInheritedData->m_gridItem->m_gridColumnEnd; }
@@ -1339,6 +1349,8 @@ public:
     void setGridColumnEnd(const GridPosition& columnEndPosition) { SET_VAR(rareNonInheritedData.access()->m_gridItem, m_gridColumnEnd, columnEndPosition); }
     void setGridRowStart(const GridPosition& rowStartPosition) { SET_VAR(rareNonInheritedData.access()->m_gridItem, m_gridRowStart, rowStartPosition); }
     void setGridRowEnd(const GridPosition& rowEndPosition) { SET_VAR(rareNonInheritedData.access()->m_gridItem, m_gridRowEnd, rowEndPosition); }
+    void setGridColumnGap(const Length& v) { SET_VAR(rareNonInheritedData.access()->m_grid, m_gridColumnGap, v); }
+    void setGridRowGap(const Length& v) { SET_VAR(rareNonInheritedData.access()->m_grid, m_gridRowGap, v); }
 
     void setUserModify(EUserModify u) { SET_VAR(rareInheritedData, userModify, u); }
     void setUserDrag(EUserDrag d) { SET_VAR(rareNonInheritedData, userDrag, d); }
@@ -1614,7 +1626,7 @@ public:
     static TextDirection initialDirection() { return LTR; }
     static WritingMode initialWritingMode() { return TopToBottomWritingMode; }
     static TextCombine initialTextCombine() { return TextCombineNone; }
-    static TextOrientation initialTextOrientation() { return TextOrientationVerticalRight; }
+    static TextOrientation initialTextOrientation() { return TextOrientationMixed; }
     static ObjectFit initialObjectFit() { return ObjectFitFill; }
     static LengthPoint initialObjectPosition() { return LengthPoint(Length(50.0, Percent), Length(50.0, Percent)); }
     static EDisplay initialDisplay() { return INLINE; }
@@ -1738,6 +1750,7 @@ public:
     static TouchAction initialTouchAction() { return TouchActionAuto; }
     static ShadowList* initialBoxShadow() { return 0; }
     static ShadowList* initialTextShadow() { return 0; }
+    static StyleVariableData* initialVariables() { return nullptr; }
     static ScrollBehavior initialScrollBehavior() { return ScrollBehaviorAuto; }
     static ScrollSnapType initialScrollSnapType() { return ScrollSnapTypeNone; }
     static ScrollSnapPoints initialScrollSnapPointsX() { return ScrollSnapPoints(); }
@@ -1762,6 +1775,9 @@ public:
 
     static NamedGridAreaMap initialNamedGridArea() { return NamedGridAreaMap(); }
     static size_t initialNamedGridAreaCount() { return 0; }
+
+    static Length initialGridColumnGap() { return Length(Fixed); }
+    static Length initialGridRowGap() { return Length(Fixed); }
 
     // 'auto' is the default.
     static GridPosition initialGridColumnStart() { return GridPosition(); }

@@ -13,6 +13,7 @@
 #include "content/public/common/security_style.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -206,16 +207,6 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // ---------------------------------------------------------------------------
 
-  // This method is invoked after the WebContents decides which RenderFrameHost
-  // to use for the next browser-initiated navigation, but before the navigation
-  // starts.  It is not called for most renderer-initiated navigations, and it
-  // does not guarantee that the navigation will commit (e.g., 204s, downloads).
-  //
-  // DEPRECATED.  This method is difficult to use correctly and should be
-  // removed.  TODO(creis): Remove in http://crbug.com/424641.
-  virtual void AboutToNavigateRenderFrame(RenderFrameHost* old_host,
-                                          RenderFrameHost* new_host) {}
-
   // This method is invoked after the browser process starts a navigation to a
   // pending NavigationEntry. It is not called for renderer-initiated
   // navigations unless they are sent to the browser process via OpenURL. It may
@@ -323,7 +314,22 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   virtual void NavigationStopped() {}
 
   // This indicates that the next navigation was triggered by a user gesture.
+  // TODO(dominickn): remove this method in favor of DidGetUserInteraction,
+  // with the appropriate filtering by input event type.
   virtual void DidGetUserGesture() {}
+
+  // Called when there has been direct user interaction with the WebContents.
+  // The type argument specifies the kind of interaction. Direct user input
+  // signalled through this callback includes:
+  // 1) any mouse down event (blink::WebInputEvent::MouseDown);
+  // 2) the start of a mouse wheel scroll (blink::WebInputEvent::MouseWheel);
+  // 3) any raw key down event (blink::WebInputEvent::RawKeyDown); and
+  // 4) any gesture tap event (blink::WebInputEvent::GestureTapDown).
+  // The start of a mouse wheel scroll is heuristically detected: a mouse
+  // wheel event fired at least 0.1 seconds after any other wheel event is
+  // regarded as the beginning of a scroll. This matches the interval used by
+  // the Blink EventHandler to detect the end of scrolls.
+  virtual void DidGetUserInteraction(const blink::WebInputEvent::Type type) {}
 
   // This method is invoked when a RenderViewHost of this WebContents was
   // configured to ignore UI events, and an UI event took place.
@@ -427,6 +433,9 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // Invoked when media session has changed its state.
   virtual void MediaSessionStateChanged(bool is_controllable,
                                         bool is_suspended) {}
+
+  // Invoked when the renderer process changes the page scale factor.
+  virtual void OnPageScaleFactorChanged(float page_scale_factor) {}
 
   // Invoked if an IPC message is coming from a specific RenderFrameHost.
   virtual bool OnMessageReceived(const IPC::Message& message,

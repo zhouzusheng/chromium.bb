@@ -11,8 +11,8 @@
 #include "webrtc/modules/video_coding/main/interface/video_coding.h"
 #include "webrtc/modules/video_coding/main/source/generic_decoder.h"
 #include "webrtc/modules/video_coding/main/source/internal_defines.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/logging.h"
 
 namespace webrtc {
 
@@ -47,6 +47,11 @@ VCMReceiveCallback* VCMDecodedFrameCallback::UserReceiveCallback()
 }
 
 int32_t VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage) {
+  return Decoded(decodedImage, -1);
+}
+
+int32_t VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
+                                         int64_t decode_time_ms) {
     // TODO(holmer): We should improve this so that we can handle multiple
     // callbacks from one call to Decode().
     VCMFrameInformation* frameInfo;
@@ -63,10 +68,15 @@ int32_t VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage) {
       return WEBRTC_VIDEO_CODEC_OK;
     }
 
+    const int64_t now_ms = _clock->TimeInMilliseconds();
+    if (decode_time_ms < 0) {
+      decode_time_ms =
+          static_cast<int32_t>(now_ms - frameInfo->decodeStartTimeMs);
+    }
     _timing.StopDecodeTimer(
         decodedImage.timestamp(),
-        frameInfo->decodeStartTimeMs,
-        _clock->TimeInMilliseconds(),
+        decode_time_ms,
+        now_ms,
         frameInfo->renderTimeMs);
 
     if (callback != NULL)

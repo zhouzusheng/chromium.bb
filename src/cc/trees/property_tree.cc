@@ -23,7 +23,11 @@ template <typename T>
 PropertyTree<T>::~PropertyTree() {
 }
 
-TransformTree::TransformTree() : source_to_parent_updates_allowed_(true) {}
+TransformTree::TransformTree()
+    : source_to_parent_updates_allowed_(true),
+      page_scale_factor_(1.f),
+      device_scale_factor_(1.f),
+      device_transform_scale_factor_(1.f) {}
 
 TransformTree::~TransformTree() {
 }
@@ -70,7 +74,7 @@ TransformNodeData::TransformNodeData()
       affected_by_inner_viewport_bounds_delta_y(false),
       affected_by_outer_viewport_bounds_delta_x(false),
       affected_by_outer_viewport_bounds_delta_y(false),
-      layer_scale_factor(1.0f),
+      in_subtree_of_page_scale_layer(false),
       post_local_scale_factor(1.0f),
       local_maximum_animation_target_scale(0.f),
       local_starting_animation_scale(0.f),
@@ -101,11 +105,12 @@ void TransformNodeData::update_post_local_transform(
 ClipNodeData::ClipNodeData()
     : transform_id(-1),
       target_id(-1),
-      use_only_parent_clip(false),
+      applies_local_clip(true),
       layer_clipping_uses_only_local_clip(false),
-      layer_visibility_uses_only_local_clip(false),
-      render_surface_is_clipped(false),
-      layers_are_clipped(false) {}
+      target_is_clipped(false),
+      layers_are_clipped(false),
+      layers_are_clipped_when_surfaces_disabled(false),
+      resets_clip(false) {}
 
 EffectNodeData::EffectNodeData()
     : opacity(1.f),
@@ -386,11 +391,17 @@ void TransformTree::UpdateScreenSpaceTransform(TransformNode* node,
 
 void TransformTree::UpdateSublayerScale(TransformNode* node) {
   // The sublayer scale depends on the screen space transform, so update it too.
-  node->data.sublayer_scale =
-      node->data.needs_sublayer_scale
-          ? MathUtil::ComputeTransform2dScaleComponents(
-                node->data.to_screen, node->data.layer_scale_factor)
-          : gfx::Vector2dF(1.0f, 1.0f);
+  if (!node->data.needs_sublayer_scale) {
+    node->data.sublayer_scale = gfx::Vector2dF(1.0f, 1.0f);
+    return;
+  }
+
+  float layer_scale_factor =
+      device_scale_factor_ * device_transform_scale_factor_;
+  if (node->data.in_subtree_of_page_scale_layer)
+    layer_scale_factor *= page_scale_factor_;
+  node->data.sublayer_scale = MathUtil::ComputeTransform2dScaleComponents(
+      node->data.to_screen, layer_scale_factor);
 }
 
 void TransformTree::UpdateTargetSpaceTransform(TransformNode* node,
@@ -543,6 +554,32 @@ void TransformTree::UpdateSnapping(TransformNode* node) {
   node->data.scroll_snap = translation;
 }
 
+void TransformTree::SetDeviceTransform(const gfx::Transform& transform,
+                                       gfx::PointF root_position) {
+  gfx::Transform root_post_local = transform;
+  TransformNode* node = Node(1);
+  root_post_local.Scale(node->data.post_local_scale_factor,
+                        node->data.post_local_scale_factor);
+  root_post_local.Translate(root_position.x(), root_position.y());
+  if (node->data.post_local == root_post_local)
+    return;
+
+  node->data.post_local = root_post_local;
+  node->data.needs_local_transform_update = true;
+  set_needs_update(true);
+}
+
+void TransformTree::SetDeviceTransformScaleFactor(
+    const gfx::Transform& transform) {
+  gfx::Vector2dF device_transform_scale_components =
+      MathUtil::ComputeTransform2dScaleComponents(transform, 1.f);
+
+  // Not handling the rare case of different x and y device scale.
+  device_transform_scale_factor_ =
+      std::max(device_transform_scale_components.x(),
+               device_transform_scale_components.y());
+}
+
 void TransformTree::SetInnerViewportBoundsDelta(gfx::Vector2dF bounds_delta) {
   if (inner_viewport_bounds_delta_ == bounds_delta)
     return;
@@ -623,7 +660,9 @@ gfx::RectF ClipTree::ViewportClip() {
   return Node(1)->data.clip;
 }
 
-PropertyTrees::PropertyTrees() : needs_rebuild(true), sequence_number(0) {
-}
+PropertyTrees::PropertyTrees()
+    : needs_rebuild(true),
+      non_root_surfaces_enabled(true),
+      sequence_number(0) {}
 
 }  // namespace cc

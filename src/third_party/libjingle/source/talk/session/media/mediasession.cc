@@ -45,7 +45,7 @@
 #ifdef HAVE_SCTP
 #include "talk/media/sctp/sctpdataengine.h"
 #else
-static const uint32 kMaxSctpSid = 1023;
+static const uint32_t kMaxSctpSid = 1023;
 #endif
 
 namespace {
@@ -250,9 +250,9 @@ static bool GenerateCname(const StreamParamsVec& params_vec,
 // |num_ssrcs| is the number of the SSRC will be generated.
 static void GenerateSsrcs(const StreamParamsVec& params_vec,
                           int num_ssrcs,
-                          std::vector<uint32>* ssrcs) {
+                          std::vector<uint32_t>* ssrcs) {
   for (int i = 0; i < num_ssrcs; i++) {
-    uint32 candidate;
+    uint32_t candidate;
     do {
       candidate = rtc::CreateRandomNonZeroId();
     } while (GetStreamBySsrc(params_vec, candidate) ||
@@ -262,15 +262,14 @@ static void GenerateSsrcs(const StreamParamsVec& params_vec,
 }
 
 // Returns false if we exhaust the range of SIDs.
-static bool GenerateSctpSid(const StreamParamsVec& params_vec,
-                            uint32* sid) {
+static bool GenerateSctpSid(const StreamParamsVec& params_vec, uint32_t* sid) {
   if (params_vec.size() > kMaxSctpSid) {
     LOG(LS_WARNING) <<
         "Could not generate an SCTP SID: too many SCTP streams.";
     return false;
   }
   while (true) {
-    uint32 candidate = rtc::CreateRandomNonZeroId() % kMaxSctpSid;
+    uint32_t candidate = rtc::CreateRandomNonZeroId() % kMaxSctpSid;
     if (!GetStreamBySsrc(params_vec, candidate)) {
       *sid = candidate;
       return true;
@@ -279,8 +278,8 @@ static bool GenerateSctpSid(const StreamParamsVec& params_vec,
 }
 
 static bool GenerateSctpSids(const StreamParamsVec& params_vec,
-                             std::vector<uint32>* sids) {
-  uint32 sid;
+                             std::vector<uint32_t>* sids) {
+  uint32_t sid;
   if (!GenerateSctpSid(params_vec, &sid)) {
     LOG(LS_WARNING) << "Could not generated an SCTP SID.";
     return false;
@@ -441,7 +440,7 @@ static bool AddStreamParams(
 
   if (streams.empty() && add_legacy_stream) {
     // TODO(perkj): Remove this legacy stream when all apps use StreamParams.
-    std::vector<uint32> ssrcs;
+    std::vector<uint32_t> ssrcs;
     if (IsSctp(content_description)) {
       GenerateSctpSids(*current_streams, &ssrcs);
     } else {
@@ -476,7 +475,7 @@ static bool AddStreamParams(
         return false;
       }
 
-      std::vector<uint32> ssrcs;
+      std::vector<uint32_t> ssrcs;
       if (IsSctp(content_description)) {
         GenerateSctpSids(*current_streams, &ssrcs);
       } else {
@@ -495,7 +494,7 @@ static bool AddStreamParams(
       // Generate extra ssrcs for include_rtx_streams case.
       if (include_rtx_streams) {
         // Generate an RTX ssrc for every ssrc in the group.
-        std::vector<uint32> rtx_ssrcs;
+        std::vector<uint32_t> rtx_ssrcs;
         GenerateSsrcs(*current_streams, static_cast<int>(ssrcs.size()),
                       &rtx_ssrcs);
         for (size_t i = 0; i < ssrcs.size(); ++i) {
@@ -1037,12 +1036,15 @@ static bool CreateMediaContentAnswer(
       answer->set_direction(MD_RECVONLY);
       break;
     case MD_RECVONLY:
-      answer->set_direction(MD_SENDONLY);
+      answer->set_direction(answer->streams().empty() ? MD_INACTIVE
+                                                      : MD_SENDONLY);
       break;
     case MD_SENDRECV:
-      answer->set_direction(MD_SENDRECV);
+      answer->set_direction(answer->streams().empty() ? MD_RECVONLY
+                                                      : MD_SENDRECV);
       break;
     default:
+      RTC_DCHECK(false && "MediaContentDescription has unexpected direction.");
       break;
   }
 
@@ -1530,8 +1532,18 @@ bool MediaSessionDescriptionFactory::AddAudioContentForOffer(
   bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
   SetMediaProtocol(secure_transport, audio.get());
 
-  if (!options.recv_audio) {
-    audio->set_direction(MD_SENDONLY);
+  if (!audio->streams().empty()) {
+    if (options.recv_audio) {
+      audio->set_direction(MD_SENDRECV);
+    } else {
+      audio->set_direction(MD_SENDONLY);
+    }
+  } else {
+    if (options.recv_audio) {
+      audio->set_direction(MD_RECVONLY);
+    } else {
+      audio->set_direction(MD_INACTIVE);
+    }
   }
 
   desc->AddContent(CN_AUDIO, NS_JINGLE_RTP, audio.release());
@@ -1575,8 +1587,18 @@ bool MediaSessionDescriptionFactory::AddVideoContentForOffer(
   bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
   SetMediaProtocol(secure_transport, video.get());
 
-  if (!options.recv_video) {
-    video->set_direction(MD_SENDONLY);
+  if (!video->streams().empty()) {
+    if (options.recv_video) {
+      video->set_direction(MD_SENDRECV);
+    } else {
+      video->set_direction(MD_SENDONLY);
+    }
+  } else {
+    if (options.recv_video) {
+      video->set_direction(MD_RECVONLY);
+    } else {
+      video->set_direction(MD_INACTIVE);
+    }
   }
 
   desc->AddContent(CN_VIDEO, NS_JINGLE_RTP, video.release());

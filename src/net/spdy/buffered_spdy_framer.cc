@@ -8,6 +8,13 @@
 
 namespace net {
 
+namespace {
+
+// GOAWAY frame debug data is only buffered up to this many bytes.
+size_t kGoAwayDebugDataMaxSize = 1024;
+
+}  // namespace
+
 SpdyMajorVersion NextProtoToSpdyMajorVersion(NextProto next_proto) {
   switch (next_proto) {
     case kProtoDeprecatedSPDY2:
@@ -120,11 +127,8 @@ bool BufferedSpdyFramer::OnControlFrameHeaderData(SpdyStreamId stream_id,
     CHECK(header_buffer_valid_);
 
     SpdyHeaderBlock headers;
-    size_t parsed_len = spdy_framer_.ParseHeaderBlockInBuffer(
-        header_buffer_, header_buffer_used_, &headers);
-    // TODO(rch): this really should be checking parsed_len != len,
-    // but a bunch of tests fail.  Need to figure out why.
-    if (parsed_len == 0) {
+    if (!spdy_framer_.ParseHeaderBlockInBuffer(header_buffer_,
+                                               header_buffer_used_, &headers)) {
       visitor_->OnStreamError(
           stream_id, "Could not parse Spdy Control Frame Header.");
       return false;
@@ -198,6 +202,16 @@ void BufferedSpdyFramer::OnStreamPadding(SpdyStreamId stream_id, size_t len) {
   visitor_->OnStreamPadding(stream_id, len);
 }
 
+SpdyHeadersHandlerInterface* BufferedSpdyFramer::OnHeaderFrameStart(
+    SpdyStreamId stream_id) {
+  return visitor_->OnHeaderFrameStart(stream_id);
+}
+
+void BufferedSpdyFramer::OnHeaderFrameEnd(SpdyStreamId stream_id,
+                                          bool end_headers) {
+  visitor_->OnHeaderFrameEnd(stream_id, end_headers);
+}
+
 void BufferedSpdyFramer::OnSettings(bool clear_persisted) {
   visitor_->OnSettings(clear_persisted);
 }
@@ -226,7 +240,26 @@ void BufferedSpdyFramer::OnRstStream(SpdyStreamId stream_id,
 }
 void BufferedSpdyFramer::OnGoAway(SpdyStreamId last_accepted_stream_id,
                                   SpdyGoAwayStatus status) {
-  visitor_->OnGoAway(last_accepted_stream_id, status);
+  DCHECK(!goaway_fields_);
+  goaway_fields_.reset(new GoAwayFields());
+  goaway_fields_->last_accepted_stream_id = last_accepted_stream_id;
+  goaway_fields_->status = status;
+}
+
+bool BufferedSpdyFramer::OnGoAwayFrameData(const char* goaway_data,
+                                           size_t len) {
+  if (len > 0) {
+    if (goaway_fields_->debug_data.size() < kGoAwayDebugDataMaxSize) {
+      goaway_fields_->debug_data.append(
+          goaway_data, std::min(len, kGoAwayDebugDataMaxSize -
+                                         goaway_fields_->debug_data.size()));
+    }
+    return true;
+  }
+  visitor_->OnGoAway(goaway_fields_->last_accepted_stream_id,
+                     goaway_fields_->status, goaway_fields_->debug_data);
+  goaway_fields_.reset();
+  return true;
 }
 
 void BufferedSpdyFramer::OnWindowUpdate(SpdyStreamId stream_id,
@@ -320,9 +353,7 @@ SpdyFrame* BufferedSpdyFramer::CreateSynReply(
 SpdyFrame* BufferedSpdyFramer::CreateRstStream(
     SpdyStreamId stream_id,
     SpdyRstStreamStatus status) const {
-  // RST_STREAM payloads are not part of any SPDY spec.
-  // SpdyFramer will accept them, but don't create them.
-  SpdyRstStreamIR rst_ir(stream_id, status, "");
+  SpdyRstStreamIR rst_ir(stream_id, status);
   return spdy_framer_.SerializeRstStream(rst_ir);
 }
 
@@ -354,8 +385,9 @@ SpdyFrame* BufferedSpdyFramer::CreatePingFrame(SpdyPingId unique_id,
 // TODO(jgraettinger): Eliminate uses of this method (prefer SpdyGoAwayIR).
 SpdyFrame* BufferedSpdyFramer::CreateGoAway(
     SpdyStreamId last_accepted_stream_id,
-    SpdyGoAwayStatus status) const {
-  SpdyGoAwayIR go_ir(last_accepted_stream_id, status, "");
+    SpdyGoAwayStatus status,
+    base::StringPiece debug_data) const {
+  SpdyGoAwayIR go_ir(last_accepted_stream_id, status, debug_data);
   return spdy_framer_.SerializeGoAway(go_ir);
 }
 

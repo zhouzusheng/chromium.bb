@@ -161,6 +161,7 @@
     -webkit-user-select: text;
     border-bottom: 1px solid #eee;
     position: relative;
+    overflow: hidden;
 }
 
 .styles-section:last-child {
@@ -207,6 +208,10 @@
     -webkit-user-select: none;
     cursor: default;
     z-index: 1;
+}
+
+.styles-section .sidebar-pane-closing-brace {
+    clear: both;
 }
 
 .styles-section-title {
@@ -299,6 +304,7 @@
 
 .styles-section .style-properties > li {
     padding-left: 38px;
+    clear: both;
 }
 
 .styles-section .style-properties > li .webkit-css-property {
@@ -674,6 +680,13 @@ li.editing .enabled-button {
     line-height: 16px;
 }
 
+.sidebar-separator > span.monospace {
+    background: rgb(255, 255, 255);
+    padding: 0px 3px;
+    border-radius: 2px;
+    border: 1px solid #C1C1C1;
+}
+
 .swatch-inner {
     width: 100%;
     height: 100%;
@@ -731,4 +744,16 @@ li.editing .enabled-button {
 
 .properties-widget-section {
     padding: 2px 0px 2px 5px;
+}
+
+.sidebar-pane-section-toolbar {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    visibility: hidden;
+    background-color: rgba(255, 255, 255, 0.9);
+}
+
+.styles-pane:not(.is-editing-style) .styles-section.matched-styles:not(.read-only):hover .sidebar-pane-section-toolbar {
+    visibility: visible;
 }

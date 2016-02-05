@@ -148,6 +148,8 @@
         'null_event_targeter.h',
         'ozone/events_ozone.cc',
         'win/events_win.cc',
+        'win/system_event_state_lookup.cc',
+        'win/system_event_state_lookup.h',
         'x/events_x.cc',
       ],
       'conditions': [
@@ -170,9 +172,14 @@
             'gestures/motion_event_aura.h',
           ],
         }],
+        ['use_ozone==1 or (OS=="android" and use_aura==1)', {
+          'sources': [
+            'events_default.cc',
+          ],
+        }],
         # We explicitly enumerate the platforms we _do_ provide native cracking
         # for here.
-        ['OS=="win" or OS=="mac" or use_x11==1 or use_ozone==1', {
+        ['OS=="win" or OS=="mac" or use_x11==1 or use_ozone==1 or (OS=="android" and use_aura==1)', {
           'sources!': [
             'events_stub.cc',
           ],
@@ -188,6 +195,17 @@
         ['use_ozone==1', {
           'dependencies': [
             'ozone/events_ozone.gyp:events_ozone_layout',
+          ],
+        }],
+        ['OS=="android"', {
+          'sources': [
+            'android/events_jni_registrar.cc',
+            'android/events_jni_registrar.h',
+            'android/motion_event_android.cc',
+            'android/motion_event_android.h',
+          ],
+          'dependencies': [
+            'motionevent_jni_headers',
           ],
         }],
       ],
@@ -449,6 +467,7 @@
         }],
         ['use_xkbcommon==1', {
           'sources': [
+            'ozone/layout/keyboard_layout_engine_unittest.cc',
             'ozone/layout/xkb/xkb_keyboard_layout_engine_unittest.cc',
           ]
         }],
@@ -471,6 +490,9 @@
           ],
         }],
         ['OS == "android"', {
+          'sources': [
+            'android/motion_event_android_unittest.cc',
+          ],
           'dependencies': [
             '../../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -481,6 +503,15 @@
   'conditions': [
     ['OS == "android"', {
       'targets': [
+        {
+          'target_name': 'motionevent_jni_headers',
+          'type': 'none',
+          'variables': {
+            'jni_gen_package': 'ui',
+            'input_java_class': 'android/view/MotionEvent.class',
+          },
+          'includes': [ '../../build/jar_file_jni_generator.gypi' ],
+        },
         {
           'target_name': 'events_unittests_apk',
           'type': 'none',

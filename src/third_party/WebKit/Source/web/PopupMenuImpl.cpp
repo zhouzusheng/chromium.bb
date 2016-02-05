@@ -254,6 +254,7 @@ PopupMenuImpl::~PopupMenuImpl()
 
 DEFINE_TRACE(PopupMenuImpl)
 {
+    visitor->trace(m_chromeClient);
     visitor->trace(m_ownerElement);
     PopupMenu::trace(visitor);
 }
@@ -356,7 +357,7 @@ void PopupMenuImpl::addOption(ItemIterationContext& context, HTMLOptionElement& 
 {
     SharedBuffer* data = context.m_buffer;
     PagePopupClient::addString("{", data);
-    addProperty("label", element.text(), data);
+    addProperty("label", element.displayLabel(), data);
     addProperty("value", context.m_listIndex, data);
     if (!element.title().isEmpty())
         addProperty("title", element.title(), data);
@@ -487,7 +488,7 @@ void PopupMenuImpl::updateFromElement()
     if (m_needsUpdate)
         return;
     m_needsUpdate = true;
-    ownerElement().document().postTask(FROM_HERE, createSameThreadTask(&PopupMenuImpl::update, PassRefPtrWillBeRawPtr<PopupMenuImpl>(this)));
+    ownerElement().document().postTask(BLINK_FROM_HERE, createSameThreadTask(&PopupMenuImpl::update, PassRefPtrWillBeRawPtr<PopupMenuImpl>(this)));
 }
 
 void PopupMenuImpl::update()

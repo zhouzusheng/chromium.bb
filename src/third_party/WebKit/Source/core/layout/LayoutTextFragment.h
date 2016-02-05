@@ -44,7 +44,7 @@ public:
     bool canBeSelectionLeaf() const override { return node() && node()->hasEditableStyle(); }
 
     unsigned start() const { return m_start; }
-    unsigned end() const { return m_end; }
+    unsigned fragmentLength() const { return m_fragmentLength; }
 
     unsigned textStartOffset() const override { return start(); }
 
@@ -83,7 +83,7 @@ private:
     void updateHitTestResult(HitTestResult&, const LayoutPoint&) override;
 
     unsigned m_start;
-    unsigned m_end;
+    unsigned m_fragmentLength;
     bool m_isRemainingTextLayoutObject;
     RefPtr<StringImpl> m_contentString;
     // Reference back to FirstLetterPseudoElement; cleared by FirstLetterPseudoElement::detach() if

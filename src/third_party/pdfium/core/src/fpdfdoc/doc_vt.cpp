@@ -4,9 +4,10 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../include/fpdfdoc/fpdf_doc.h"
-#include "../../include/fpdfdoc/fpdf_vt.h"
+#include "core/include/fpdfdoc/fpdf_doc.h"
+#include "core/include/fpdfdoc/fpdf_vt.h"
 #include "pdf_vt.h"
+
 const uint8_t gFontSizeSteps[] = {4,  6,  8,   9,   10,  12,  14, 18, 20,
                                   25, 30, 35,  40,  45,  50,  55, 60, 70,
                                   80, 90, 100, 110, 120, 130, 144};
@@ -430,7 +431,7 @@ static FX_BOOL IsLatin(FX_WORD word) {
   return FALSE;
 }
 static FX_BOOL IsDigit(FX_DWORD word) {
-  return (word >= 0x0030 && word <= 0x0039) ? TRUE : FALSE;
+  return word >= 0x0030 && word <= 0x0039;
 }
 static FX_BOOL IsCJK(FX_DWORD word) {
   if ((word >= 0x1100 && word <= 0x11FF) ||
@@ -542,7 +543,7 @@ static FX_BOOL IsPrefixSymbol(FX_WORD word) {
   return FALSE;
 }
 static FX_BOOL IsSpace(FX_WORD word) {
-  return (word == 0x0020 || word == 0x3000) ? TRUE : FALSE;
+  return word == 0x0020 || word == 0x3000;
 }
 static FX_BOOL NeedDivision(FX_WORD prevWord, FX_WORD curWord) {
   if ((IsLatin(prevWord) || IsDigit(prevWord)) &&

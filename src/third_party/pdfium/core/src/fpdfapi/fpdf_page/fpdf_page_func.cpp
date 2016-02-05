@@ -4,15 +4,17 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#include "pageint.h"
+
 #include <limits.h>
+
 #include <vector>
 
-#include "../../../../third_party/base/nonstd_unique_ptr.h"
-#include "../../../../third_party/base/numerics/safe_conversions_impl.h"
-#include "../../../include/fpdfapi/fpdf_module.h"
-#include "../../../include/fpdfapi/fpdf_page.h"
-#include "../../../include/fxcrt/fx_safe_types.h"
-#include "pageint.h"
+#include "core/include/fpdfapi/fpdf_module.h"
+#include "core/include/fpdfapi/fpdf_page.h"
+#include "core/include/fxcrt/fx_safe_types.h"
+#include "third_party/base/nonstd_unique_ptr.h"
+#include "third_party/base/numerics/safe_conversions_impl.h"
 
 class CPDF_PSEngine;
 typedef enum {
@@ -493,10 +495,10 @@ CPDF_SampledFunc::~CPDF_SampledFunc() {
   FX_Free(m_pDecodeInfo);
 }
 FX_BOOL CPDF_SampledFunc::v_Init(CPDF_Object* pObj) {
-  if (pObj->GetType() != PDFOBJ_STREAM) {
-    return FALSE;
-  }
-  CPDF_Stream* pStream = (CPDF_Stream*)pObj;
+  CPDF_Stream* pStream = pObj->AsStream();
+  if (!pStream)
+    return false;
+
   CPDF_Dictionary* pDict = pStream->GetDict();
   CPDF_Array* pSize = pDict->GetArray(FX_BSTRC("Size"));
   CPDF_Array* pEncode = pDict->GetArray(FX_BSTRC("Encode"));
@@ -634,7 +636,7 @@ class CPDF_PSFunc : public CPDF_Function {
 };
 
 FX_BOOL CPDF_PSFunc::v_Init(CPDF_Object* pObj) {
-  CPDF_Stream* pStream = (CPDF_Stream*)pObj;
+  CPDF_Stream* pStream = pObj->AsStream();
   CPDF_StreamAcc acc;
   acc.LoadAllData(pStream, FALSE);
   return m_PS.Parse((const FX_CHAR*)acc.GetData(), acc.GetSize());
@@ -826,12 +828,10 @@ CPDF_Function* CPDF_Function::Load(CPDF_Object* pFuncObj) {
   }
   CPDF_Function* pFunc = NULL;
   int type;
-  if (pFuncObj->GetType() == PDFOBJ_STREAM) {
-    type = ((CPDF_Stream*)pFuncObj)
-               ->GetDict()
-               ->GetInteger(FX_BSTRC("FunctionType"));
-  } else if (pFuncObj->GetType() == PDFOBJ_DICTIONARY) {
-    type = ((CPDF_Dictionary*)pFuncObj)->GetInteger(FX_BSTRC("FunctionType"));
+  if (CPDF_Stream* pStream = pFuncObj->AsStream()) {
+    type = pStream->GetDict()->GetInteger(FX_BSTRC("FunctionType"));
+  } else if (CPDF_Dictionary* pDict = pFuncObj->AsDictionary()) {
+    type = pDict->GetInteger(FX_BSTRC("FunctionType"));
   } else {
     return NULL;
   }
@@ -861,20 +861,17 @@ CPDF_Function::~CPDF_Function() {
   FX_Free(m_pRanges);
 }
 FX_BOOL CPDF_Function::Init(CPDF_Object* pObj) {
-  CPDF_Dictionary* pDict;
-  if (pObj->GetType() == PDFOBJ_STREAM) {
-    pDict = ((CPDF_Stream*)pObj)->GetDict();
-  } else {
-    pDict = (CPDF_Dictionary*)pObj;
-  }
+  CPDF_Stream* pStream = pObj->AsStream();
+  CPDF_Dictionary* pDict = pStream ? pStream->GetDict() : pObj->AsDictionary();
+
   CPDF_Array* pDomains = pDict->GetArray(FX_BSTRC("Domain"));
-  if (pDomains == NULL) {
+  if (!pDomains)
     return FALSE;
-  }
+
   m_nInputs = pDomains->GetCount() / 2;
-  if (m_nInputs == 0) {
+  if (m_nInputs == 0)
     return FALSE;
-  }
+
   m_pDomains = FX_Alloc2D(FX_FLOAT, m_nInputs, 2);
   for (int i = 0; i < m_nInputs * 2; i++) {
     m_pDomains[i] = pDomains->GetFloat(i);

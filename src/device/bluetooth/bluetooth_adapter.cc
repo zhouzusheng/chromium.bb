@@ -19,7 +19,7 @@ BluetoothAdapter::ServiceOptions::~ServiceOptions() {
 }
 
 #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && !defined(OS_MACOSX) && \
-    !defined(OS_WIN)
+    !defined(OS_WIN) && !defined(OS_LINUX)
 // static
 base::WeakPtr<BluetoothAdapter> BluetoothAdapter::CreateAdapter(
     const InitCallback& init_callback) {
@@ -31,7 +31,7 @@ base::WeakPtr<BluetoothAdapter> BluetoothAdapter::GetWeakPtrForTesting() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_LINUX)
 void BluetoothAdapter::Shutdown() {
   NOTIMPLEMENTED();
 }
@@ -156,7 +156,6 @@ BluetoothAdapter::BluetoothAdapter() : weak_ptr_factory_(this) {
 }
 
 BluetoothAdapter::~BluetoothAdapter() {
-  STLDeleteValues(&devices_);
 }
 
 void BluetoothAdapter::OnStartDiscoverySession(
@@ -201,11 +200,7 @@ void BluetoothAdapter::DiscoverySessionBecameInactive(
 }
 
 void BluetoothAdapter::DeleteDeviceForTesting(const std::string& address) {
-  std::map<const std::string, BluetoothDevice*>::iterator device_iterator =
-      devices_.find(address);
-  BluetoothDevice* device = device_iterator->second;
-  devices_.erase(device_iterator);
-  delete device;
+  devices_.erase(address);
 }
 
 scoped_ptr<BluetoothDiscoveryFilter>

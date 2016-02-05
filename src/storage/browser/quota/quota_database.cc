@@ -21,11 +21,12 @@ namespace {
 
 // Definitions for database schema.
 
-const int kCurrentVersion = 4;
+const int kCurrentVersion = 5;
 const int kCompatibleVersion = 2;
 
 const char kHostQuotaTable[] = "HostQuotaTable";
 const char kOriginInfoTable[] = "OriginInfoTable";
+const char kEvictionInfoTable[] = "EvictionInfoTable";
 const char kIsOriginTableBootstrapped[] = "IsOriginTableBootstrapped";
 
 bool VerifyValidQuotaConfig(const char* key) {
@@ -62,19 +63,23 @@ const char QuotaDatabase::kTemporaryQuotaOverrideKey[] =
     "TemporaryQuotaOverride";
 
 const QuotaDatabase::TableSchema QuotaDatabase::kTables[] = {
-  { kHostQuotaTable,
-    "(host TEXT NOT NULL,"
-    " type INTEGER NOT NULL,"
-    " quota INTEGER DEFAULT 0,"
-    " UNIQUE(host, type))" },
-  { kOriginInfoTable,
-    "(origin TEXT NOT NULL,"
-    " type INTEGER NOT NULL,"
-    " used_count INTEGER DEFAULT 0,"
-    " last_access_time INTEGER DEFAULT 0,"
-    " last_modified_time INTEGER DEFAULT 0,"
-    " UNIQUE(origin, type))" },
-};
+    {kHostQuotaTable,
+     "(host TEXT NOT NULL,"
+     " type INTEGER NOT NULL,"
+     " quota INTEGER DEFAULT 0,"
+     " UNIQUE(host, type))"},
+    {kOriginInfoTable,
+     "(origin TEXT NOT NULL,"
+     " type INTEGER NOT NULL,"
+     " used_count INTEGER DEFAULT 0,"
+     " last_access_time INTEGER DEFAULT 0,"
+     " last_modified_time INTEGER DEFAULT 0,"
+     " UNIQUE(origin, type))"},
+    {kEvictionInfoTable,
+     "(origin TEXT NOT NULL,"
+     " type INTEGER NOT NULL,"
+     " last_eviction_time INTEGER DEFAULT 0,"
+     " UNIQUE(origin, type))"}};
 
 // static
 const QuotaDatabase::IndexSchema QuotaDatabase::kIndexes[] = {
@@ -182,19 +187,8 @@ bool QuotaDatabase::SetHostQuota(
   DCHECK_GE(quota, 0);
   if (!LazyOpen(true))
     return false;
-
-  const char* kSql =
-      "INSERT OR REPLACE INTO HostQuotaTable"
-      " (quota, host, type)"
-      " VALUES (?, ?, ?)";
-  sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
-  statement.BindInt64(0, quota);
-  statement.BindString(1, host);
-  statement.BindInt(2, static_cast<int>(type));
-
-  if (!statement.Run())
+  if (!InsertOrReplaceHostQuota(host, type, quota))
     return false;
-
   ScheduleCommit();
   return true;
 }
@@ -264,6 +258,71 @@ bool QuotaDatabase::SetOriginLastModifiedTime(
   return true;
 }
 
+bool QuotaDatabase::GetOriginLastEvictionTime(const GURL& origin,
+                                              StorageType type,
+                                              base::Time* last_modified_time) {
+  DCHECK(last_modified_time);
+  if (!LazyOpen(false))
+    return false;
+
+  const char kSql[] =
+      "SELECT last_eviction_time"
+      " FROM EvictionInfoTable"
+      " WHERE origin = ? AND type = ?";
+
+  sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
+  statement.BindString(0, origin.spec());
+  statement.BindInt(1, static_cast<int>(type));
+
+  if (!statement.Step())
+    return false;
+
+  *last_modified_time = base::Time::FromInternalValue(statement.ColumnInt64(0));
+  return true;
+}
+
+bool QuotaDatabase::SetOriginLastEvictionTime(const GURL& origin,
+                                              StorageType type,
+                                              base::Time last_modified_time) {
+  if (!LazyOpen(true))
+    return false;
+
+  const char kSql[] =
+      "INSERT OR REPLACE INTO EvictionInfoTable"
+      " (last_eviction_time, origin, type)"
+      " VALUES (?, ?, ?)";
+  sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
+  statement.BindInt64(0, last_modified_time.ToInternalValue());
+  statement.BindString(1, origin.spec());
+  statement.BindInt(2, static_cast<int>(type));
+
+  if (!statement.Run())
+    return false;
+
+  ScheduleCommit();
+  return true;
+}
+
+bool QuotaDatabase::DeleteOriginLastEvictionTime(const GURL& origin,
+                                                 StorageType type) {
+  if (!LazyOpen(false))
+    return false;
+
+  const char kSql[] =
+      "DELETE FROM EvictionInfoTable"
+      " WHERE origin = ? AND type = ?";
+
+  sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
+  statement.BindString(0, origin.spec());
+  statement.BindInt(1, static_cast<int>(type));
+
+  if (!statement.Run())
+    return false;
+
+  ScheduleCommit();
+  return true;
+}
+
 bool QuotaDatabase::RegisterInitialOriginInfo(
     const std::set<GURL>& origins, StorageType type) {
   if (!LazyOpen(true))
@@ -284,6 +343,31 @@ bool QuotaDatabase::RegisterInitialOriginInfo(
   }
 
   ScheduleCommit();
+  return true;
+}
+
+bool QuotaDatabase::GetOriginInfo(const GURL& origin,
+                                  StorageType type,
+                                  QuotaDatabase::OriginInfoTableEntry* entry) {
+  if (!LazyOpen(false))
+    return false;
+
+  const char* kSql =
+      "SELECT * FROM OriginInfoTable"
+      " WHERE origin = ? AND type = ?";
+  sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
+  statement.BindString(0, origin.spec());
+  statement.BindInt(1, static_cast<int>(type));
+
+  if (!statement.Step())
+    return false;
+
+  *entry = OriginInfoTableEntry(
+      GURL(statement.ColumnString(0)),
+      static_cast<StorageType>(statement.ColumnInt(1)), statement.ColumnInt(2),
+      base::Time::FromInternalValue(statement.ColumnInt64(3)),
+      base::Time::FromInternalValue(statement.ColumnInt64(4)));
+
   return true;
 }
 
@@ -427,8 +511,11 @@ void QuotaDatabase::Commit() {
   if (timer_.IsRunning())
     timer_.Stop();
 
+  DCHECK_EQ(1, db_->transaction_nesting());
   db_->CommitTransaction();
+  DCHECK_EQ(0, db_->transaction_nesting());
   db_->BeginTransaction();
+  DCHECK_EQ(1, db_->transaction_nesting());
 }
 
 void QuotaDatabase::ScheduleCommit() {
@@ -586,6 +673,7 @@ bool QuotaDatabase::CreateSchema(
 bool QuotaDatabase::ResetSchema() {
   DCHECK(!db_file_path_.empty());
   DCHECK(base::PathExists(db_file_path_));
+  DCHECK(!db_ || !db_->transaction_nesting());
   VLOG(1) << "Deleting existing quota data and starting over.";
 
   db_.reset();
@@ -603,6 +691,8 @@ bool QuotaDatabase::ResetSchema() {
 }
 
 bool QuotaDatabase::UpgradeSchema(int current_version) {
+  DCHECK_EQ(0, db_->transaction_nesting());
+
   if (current_version == 2) {
     QuotaTableImporter importer;
     typedef std::vector<QuotaTableEntry> QuotaTableEntries;
@@ -611,15 +701,50 @@ bool QuotaDatabase::UpgradeSchema(int current_version) {
       return false;
     }
     ResetSchema();
+
+    sql::Transaction transaction(db_.get());
+    if (!transaction.Begin())
+      return false;
     for (QuotaTableEntries::const_iterator iter = importer.entries.begin();
          iter != importer.entries.end(); ++iter) {
-      if (!SetHostQuota(iter->host, iter->type, iter->quota))
+      if (!InsertOrReplaceHostQuota(iter->host, iter->type, iter->quota))
         return false;
     }
-    Commit();
-    return true;
+    return transaction.Commit();
+  } else if (current_version < 5) {
+    sql::Transaction transaction(db_.get());
+    if (!transaction.Begin())
+      return false;
+
+    const QuotaDatabase::TableSchema& eviction_table_schema = kTables[2];
+    DCHECK_EQ(strcmp(kEvictionInfoTable, eviction_table_schema.table_name), 0);
+
+    std::string sql("CREATE TABLE ");
+    sql += eviction_table_schema.table_name;
+    sql += eviction_table_schema.columns;
+    if (!db_->Execute(sql.c_str())) {
+      VLOG(1) << "Failed to execute " << sql;
+      return false;
+    }
+
+    meta_table_->SetVersionNumber(5);
+    return transaction.Commit();
   }
   return false;
+}
+
+bool QuotaDatabase::InsertOrReplaceHostQuota(
+    const std::string& host, StorageType type, int64 quota) {
+  DCHECK(db_.get());
+  const char* kSql =
+      "INSERT OR REPLACE INTO HostQuotaTable"
+      " (quota, host, type)"
+      " VALUES (?, ?, ?)";
+  sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
+  statement.BindInt64(0, quota);
+  statement.BindString(1, host);
+  statement.BindInt(2, static_cast<int>(type));
+  return statement.Run();
 }
 
 bool QuotaDatabase::DumpQuotaTable(const QuotaTableCallback& callback) {

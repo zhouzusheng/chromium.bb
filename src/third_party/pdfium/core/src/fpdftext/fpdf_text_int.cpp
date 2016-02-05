@@ -7,15 +7,15 @@
 #include <ctype.h>
 #include <algorithm>
 
-#include "../../../third_party/base/nonstd_unique_ptr.h"
-#include "../../include/fpdfapi/fpdf_module.h"
-#include "../../include/fpdfapi/fpdf_page.h"
-#include "../../include/fpdfapi/fpdf_pageobj.h"
-#include "../../include/fpdfapi/fpdf_resource.h"
-#include "../../include/fpdftext/fpdf_text.h"
-#include "../../include/fxcrt/fx_bidi.h"
-#include "../../include/fxcrt/fx_ucd.h"
+#include "core/include/fpdfapi/fpdf_module.h"
+#include "core/include/fpdfapi/fpdf_page.h"
+#include "core/include/fpdfapi/fpdf_pageobj.h"
+#include "core/include/fpdfapi/fpdf_resource.h"
+#include "core/include/fpdftext/fpdf_text.h"
+#include "core/include/fxcrt/fx_bidi.h"
+#include "core/include/fxcrt/fx_ucd.h"
 #include "text_int.h"
+#include "third_party/base/nonstd_unique_ptr.h"
 
 namespace {
 
@@ -1286,10 +1286,9 @@ int32_t CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
   for (n = 0; n < nContentMark; n++) {
     CPDF_ContentMarkItem& item = pMarkData->GetItem(n);
     CFX_ByteString tagStr = (CFX_ByteString)item.GetName();
-    pDict = (CPDF_Dictionary*)item.GetParam();
+    pDict = ToDictionary(static_cast<CPDF_Object*>(item.GetParam()));
     CPDF_String* temp =
-        (CPDF_String*)(pDict ? pDict->GetElement(FX_BSTRC("ActualText"))
-                             : NULL);
+        ToString(pDict ? pDict->GetElement(FX_BSTRC("ActualText")) : nullptr);
     if (temp) {
       bExist = TRUE;
       actText = temp->GetUnicodeText();
@@ -1357,10 +1356,9 @@ void CPDF_TextPage::ProcessMarkedContent(PDFTEXT_Obj Obj) {
   for (n = 0; n < nContentMark; n++) {
     CPDF_ContentMarkItem& item = pMarkData->GetItem(n);
     CFX_ByteString tagStr = (CFX_ByteString)item.GetName();
-    pDict = (CPDF_Dictionary*)item.GetParam();
+    pDict = ToDictionary(static_cast<CPDF_Object*>(item.GetParam()));
     CPDF_String* temp =
-        (CPDF_String*)(pDict ? pDict->GetElement(FX_BSTRC("ActualText"))
-                             : NULL);
+        ToString(pDict ? pDict->GetElement(FX_BSTRC("ActualText")) : nullptr);
     if (temp) {
       actText = temp->GetUnicodeText();
     }

@@ -56,7 +56,7 @@ LayerTreeSettings::LayerTreeSettings()
       max_memory_for_prepaint_percentage(100),
       strict_layer_property_change_checking(false),
       use_zero_copy(false),
-      use_persistent_map_for_gpu_memory_buffers(false),
+      use_partial_raster(false),
       enable_elastic_overscroll(false),
       use_image_texture_targets(
           static_cast<size_t>(gfx::BufferFormat::LAST) + 1,
@@ -66,10 +66,14 @@ LayerTreeSettings::LayerTreeSettings()
       use_occlusion_for_tile_prioritization(false),
       record_full_layer(false),
       verify_property_trees(false),
+      use_property_trees(false),
       image_decode_tasks_enabled(false),
       use_compositor_animation_timelines(false),
       wait_for_beginframe_interval(true),
-      max_staging_buffer_usage_in_bytes(32 * 1024 * 1024) {}
+      max_staging_buffer_usage_in_bytes(32 * 1024 * 1024),
+      memory_policy_(64 * 1024 * 1024,
+                     gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
+                     ManagedMemoryPolicy::kDefaultNumResourcesLimit) {}
 
 LayerTreeSettings::~LayerTreeSettings() {}
 

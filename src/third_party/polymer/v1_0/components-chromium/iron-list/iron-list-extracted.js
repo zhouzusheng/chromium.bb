@@ -1,5 +1,3 @@
-
-
 (function() {
 
   var IOS = navigator.userAgent.match(/iP(?:hone|ad;(?: U;)? CPU) OS (\d+)/);
@@ -32,8 +30,7 @@
 
       /**
        * The name of the variable to add to the binding scope with the index
-       * for the row.  If `sort` is provided, the index will reflect the
-       * sorted order (rather than the original array order).
+       * for the row.
        */
       indexAs: {
         type: String,
@@ -231,6 +228,13 @@
     },
 
     /**
+     * The bottom of the scroll.
+     */
+    get _scrollBottom() {
+      return this._scrollPosition + this._viewportSize;
+    },
+
+    /**
      * The n-th item rendered in the last physical item.
      */
     get _virtualEnd() {
@@ -246,8 +250,7 @@
      * The largest n-th value for an item such that it can be rendered in `_physicalStart`.
      */
     get _maxVirtualStart() {
-      return this._virtualCount < this._physicalCount ?
-          this._virtualCount : this._virtualCount - this._physicalCount;
+      return Math.max(0, this._virtualCount - this._physicalCount);
     },
 
     /**
@@ -300,9 +303,9 @@
     },
 
     /**
-     * Gets the first visible item in the viewport.
+     * Gets the index of the first visible item in the viewport.
      *
-     * @property firstVisibleIndex
+     * @type {number}
      */
     get firstVisibleIndex() {
       var physicalOffset;
@@ -386,19 +389,13 @@
      * items in the viewport and recycle tiles as needed.
      */
     _refresh: function() {
-      var SCROLL_DIRECTION_UP = -1;
-      var SCROLL_DIRECTION_DOWN = 1;
-      var SCROLL_DIRECTION_NONE = 0;
-
       // clamp the `scrollTop` value
       // IE 10|11 scrollTop may go above `_maxScrollTop`
       // iOS `scrollTop` may go below 0 and above `_maxScrollTop`
       var scrollTop = Math.max(0, Math.min(this._maxScrollTop, this._scroller.scrollTop));
-
-      var tileHeight, kth, recycledTileSet;
+      var tileHeight, tileTop, kth, recycledTileSet, scrollBottom;
       var ratio = this._ratio;
       var delta = scrollTop - this._scrollPosition;
-      var direction = SCROLL_DIRECTION_NONE;
       var recycledTiles = 0;
       var hiddenContentSize = this._hiddenContentSize;
       var currentRatio = ratio;
@@ -410,18 +407,19 @@
       // clear cached visible index
       this._firstVisibleIndexVal = null;
 
+      scrollBottom = this._scrollBottom;
+
       // random access
       if (Math.abs(delta) > this._physicalSize) {
         this._physicalTop += delta;
-        direction = SCROLL_DIRECTION_NONE;
         recycledTiles =  Math.round(delta / this._physicalAverage);
       }
       // scroll up
       else if (delta < 0) {
         var topSpace = scrollTop - this._physicalTop;
         var virtualStart = this._virtualStart;
+        var physicalBottom = this._physicalBottom;
 
-        direction = SCROLL_DIRECTION_UP;
         recycledTileSet = [];
 
         kth = this._physicalEnd;
@@ -434,12 +432,14 @@
             // recycle less physical items than the total
             recycledTiles < this._physicalCount &&
             // ensure that these recycled tiles are needed
-            virtualStart - recycledTiles > 0
+            virtualStart - recycledTiles > 0 &&
+            // ensure that the tile is not visible
+            physicalBottom - this._physicalSizes[kth] > scrollBottom
         ) {
 
-          tileHeight = this._physicalSizes[kth] || this._physicalAverage;
+          tileHeight = this._physicalSizes[kth];
           currentRatio += tileHeight / hiddenContentSize;
-
+          physicalBottom -= tileHeight;
           recycledTileSet.push(kth);
           recycledTiles++;
           kth = (kth === 0) ? this._physicalCount - 1 : kth - 1;
@@ -447,15 +447,13 @@
 
         movingUp = recycledTileSet;
         recycledTiles = -recycledTiles;
-
       }
       // scroll down
       else if (delta > 0) {
-        var bottomSpace = this._physicalBottom - (scrollTop + this._viewportSize);
+        var bottomSpace = this._physicalBottom - scrollBottom;
         var virtualEnd = this._virtualEnd;
         var lastVirtualItemIndex = this._virtualCount-1;
 
-        direction = SCROLL_DIRECTION_DOWN;
         recycledTileSet = [];
 
         kth = this._physicalStart;
@@ -468,10 +466,12 @@
             // recycle less physical items than the total
             recycledTiles < this._physicalCount &&
             // ensure that these recycled tiles are needed
-            virtualEnd + recycledTiles < lastVirtualItemIndex
+            virtualEnd + recycledTiles < lastVirtualItemIndex &&
+            // ensure that the tile is not visible
+            this._physicalTop + this._physicalSizes[kth] < scrollTop
           ) {
 
-          tileHeight = this._physicalSizes[kth] || this._physicalAverage;
+          tileHeight = this._physicalSizes[kth];
           currentRatio += tileHeight / hiddenContentSize;
 
           this._physicalTop += tileHeight;
@@ -481,7 +481,15 @@
         }
       }
 
-      if (recycledTiles !== 0) {
+      if (recycledTiles === 0) {
+        // If the list ever reach this case, the physical average is not significant enough
+        // to create all the items needed to cover the entire viewport.
+        // e.g. A few items have a height that differs from the average by serveral order of magnitude.
+        if (this._increasePoolIfNeeded()) {
+          // yield and set models to the new items
+          this.async(this._update);
+        }
+      } else {
         this._virtualStart = this._virtualStart + recycledTiles;
         this._update(recycledTileSet, movingUp);
       }
@@ -497,8 +505,7 @@
       this._assignModels(itemSet);
 
       // measure heights
-      // TODO(blasten) pass `recycledTileSet`
-      this._updateMetrics();
+      this._updateMetrics(itemSet);
 
       // adjust offset after measuring
       if (movingUp) {
@@ -506,7 +513,6 @@
           this._physicalTop -= this._physicalSizes[movingUp.pop()];
         }
       }
-
       // update the position of the items
       this._positionItems();
 
@@ -515,7 +521,7 @@
 
       // increase the pool of physical items if needed
       if (this._increasePoolIfNeeded()) {
-        // set models to the new items
+        // yield set models to the new items
         this.async(this._update);
       }
     },
@@ -541,7 +547,7 @@
     },
 
     /**
-     * Increases the pool size. That is, the physical items in the DOM.
+     * Increases the pool of physical items only if needed.
      * This function will allocate additional physical items
      * (limited by `MAX_PHYSICAL_COUNT`) if the content size is shorter than
      * `_optPhysicalSize`
@@ -549,16 +555,22 @@
      * @return boolean
      */
     _increasePoolIfNeeded: function() {
-      if (this._physicalSize >= this._optPhysicalSize || this._physicalAverage === 0) {
+      if (this._physicalAverage === 0) {
         return false;
       }
+      if (this._physicalBottom < this._scrollBottom || this._physicalTop > this._scrollPosition) {
+        return this._increasePool(1);
+      }
+      if (this._physicalSize < this._optPhysicalSize) {
+        return this._increasePool(Math.round((this._optPhysicalSize - this._physicalSize) * 1.2 / this._physicalAverage));
+      }
+      return false;
+    },
 
-      // the estimated number of physical items that we will need to reach
-      // the cap established by `_optPhysicalSize`.
-      var missingItems = Math.round(
-          (this._optPhysicalSize - this._physicalSize) * 1.2 / this._physicalAverage
-        );
-
+    /**
+     * Increases the pool size.
+     */
+    _increasePool: function(missingItems) {
       // limit the size
       var nextPhysicalCount = Math.min(
           this._physicalCount + missingItems,
@@ -573,14 +585,11 @@
         return false;
       }
 
-      var newPhysicalItems = this._createPool(delta);
-      var emptyArray = new Array(delta);
-
-      [].push.apply(this._physicalItems, newPhysicalItems);
-      [].push.apply(this._physicalSizes, emptyArray);
+      [].push.apply(this._physicalItems, this._createPool(delta));
+      [].push.apply(this._physicalSizes, new Array(delta));
 
       this._physicalCount = prevPhysicalCount + delta;
- 
+
       return true;
     },
 
@@ -761,7 +770,7 @@
     /**
      * Executes a provided function per every physical index in `itemSet`
      * `itemSet` default value is equivalent to the entire set of physical indexes.
-     * 
+     *
      * @param {!function(number, number)} fn
      * @param {!Array<number>=} itemSet
      */
@@ -828,28 +837,32 @@
 
     /**
      * Updates the height for a given set of items.
+     *
+     * @param {!Array<number>=} itemSet
      */
-    _updateMetrics: function() {
-      var total = 0;
+     _updateMetrics: function(itemSet) {
+      var newPhysicalSize = 0;
+      var oldPhysicalSize = 0;
       var prevAvgCount = this._physicalAverageCount;
       var prevPhysicalAvg = this._physicalAverage;
-
       // Make sure we distributed all the physical items
       // so we can measure them
       Polymer.dom.flush();
 
-      for (var i = 0; i < this._physicalCount; i++) {
-        this._physicalSizes[i] = this._physicalItems[i].offsetHeight;
-        total += this._physicalSizes[i];
-        this._physicalAverageCount += this._physicalSizes[i] ? 1 : 0;
-      }
+      this._iterateItems(function(pidx, vidx) {
+        oldPhysicalSize += this._physicalSizes[pidx] || 0;
+        this._physicalSizes[pidx] = this._physicalItems[pidx].offsetHeight;
+        newPhysicalSize += this._physicalSizes[pidx];
+        this._physicalAverageCount += this._physicalSizes[pidx] ? 1 : 0;
+      }, itemSet);
 
-      this._physicalSize = total;
+      this._physicalSize = this._physicalSize + newPhysicalSize - oldPhysicalSize;
       this._viewportSize = this._scroller.offsetHeight;
 
+      // update the average if we measured something
       if (this._physicalAverageCount !== prevAvgCount) {
         this._physicalAverage = Math.round(
-            ((prevPhysicalAvg * prevAvgCount) + total) /
+            ((prevPhysicalAvg * prevAvgCount) + newPhysicalSize) /
             this._physicalAverageCount);
       }
     },
@@ -899,6 +912,8 @@
 
     /**
      * Sets the scroll height, that's the height of the content,
+     *
+     * @param {boolean=} forceUpdate If true, updates the height no matter what.
      */
     _updateScrollerSize: function(forceUpdate) {
       this._estScrollHeight = (this._physicalBottom +
@@ -966,10 +981,9 @@
 
       // increase the pool of physical items if needed
       if (this._increasePoolIfNeeded()) {
-        // set models to the new items
+        // yield set models to the new items
         this.async(this._update);
       }
-
       // clear cached visible index
       this._firstVisibleIndexVal = null;
     },
@@ -983,7 +997,7 @@
     },
 
     /**
-     * A handler for the `resize` event triggered by `IronResizableBehavior`
+     * A handler for the `iron-resize` event triggered by `IronResizableBehavior`
      * when the element is resized.
      */
     _resizeHandler: function() {
@@ -1008,23 +1022,30 @@
     },
 
     /**
-     * Select the list item at the given index.
+     * Gets a valid item instance from its index or the object value.
      *
-     * @method selectItem
-     * @param {(Object|number)} item the item object or its index
+     * @param {(Object|number)} item The item object or its index
      */
-    selectItem: function(item) {
+    _getNormalizedItem: function(item) {
       if (typeof item === 'number') {
         item = this.items[item];
         if (!item) {
           throw new RangeError('<item> not found');
         }
-      } else {
-        if (this._collection.getKey(item) === undefined) {
-          throw new TypeError('<item> should be a valid item');
-        }
+      } else if (this._collection.getKey(item) === undefined) {
+        throw new TypeError('<item> should be a valid item');
       }
+      return item;
+    },
 
+    /**
+     * Select the list item at the given index.
+     *
+     * @method selectItem
+     * @param {(Object|number)} item The item object or its index
+     */
+    selectItem: function(item) {
+      item = this._getNormalizedItem(item);
       var model = this._getModelFromItem(item);
 
       if (!this.multiSelection && this.selectedItem) {
@@ -1039,21 +1060,12 @@
     /**
      * Deselects the given item list if it is already selected.
      *
+
      * @method deselect
-     * @param {(Object|number)} item the item object or its index
+     * @param {(Object|number)} item The item object or its index
      */
     deselectItem: function(item) {
-      if (typeof item === 'number') {
-        item = this.items[item];
-        if (!item) {
-          throw new RangeError('<item> not found');
-        }
-      } else {
-        if (this._collection.getKey(item) === undefined) {
-          throw new TypeError('<item> should be a valid item');
-        }
-      }
-
+      item = this._getNormalizedItem(item);
       var model = this._getModelFromItem(item);
 
       if (model) {
@@ -1067,10 +1079,10 @@
      * has already been selected.
      *
      * @method toggleSelectionForItem
-     * @param {(Object|number)} item the item object or its index
+     * @param {(Object|number)} item The item object or its index
      */
     toggleSelectionForItem: function(item) {
-      item = typeof item === 'number' ? this.items[item] : item;
+      item = this._getNormalizedItem(item);
       if (/** @type {!ArraySelectorElement} */ (this.$.selector).isSelected(item)) {
         this.deselectItem(item);
       } else {
@@ -1118,9 +1130,8 @@
      * Select an item from an event object.
      */
     _selectionHandler: function(e) {
-      var ENTER_KEY = 13, model;
-      if (e.type !== 'keypress' || e.keyCode === ENTER_KEY) {
-        model = this.modelForElement(e.target);
+      if (e.type !== 'keypress' || e.keyCode === 13) {
+        var model = this.modelForElement(e.target);
         if (model) {
           this.toggleSelectionForItem(model[this.as]);
         }
@@ -1130,8 +1141,24 @@
     _multiSelectionChanged: function(multiSelection) {
       this.clearSelection();
       this.$.selector.multi = multiSelection;
+    },
+
+    /**
+     * Updates the size of an item.
+     *
+     * @method updateSizeForItem
+     * @param {(Object|number)} item The item object or its index
+     */
+    updateSizeForItem: function(item) {
+      item = this._getNormalizedItem(item);
+      var key = this._collection.getKey(item);
+      var pidx = this._physicalIndexForKey[key];
+
+      if (pidx !== undefined) {
+        this._updateMetrics([pidx]);
+        this._positionItems();
+      }
     }
   });
 
 })();
-

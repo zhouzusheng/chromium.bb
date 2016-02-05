@@ -65,6 +65,10 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
  public:
   typedef error::Error Error;
   typedef base::Callback<bool(uint32 id)> WaitSyncPointCallback;
+  typedef base::Callback<void(uint64_t release)> FenceSyncReleaseCallback;
+  typedef base::Callback<bool(gpu::CommandBufferNamespace namespace_id,
+                              uint64_t command_buffer_id,
+                              uint64_t release)> WaitFenceSyncCallback;
 
   // The default stencil mask, which has all bits set.  This really should be a
   // GLuint, but we can't #include gl_bindings.h in this file without causing
@@ -174,6 +178,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   virtual void RestoreAllAttributes() const = 0;
 
   virtual void SetIgnoreCachedStateForTest(bool ignore) = 0;
+  virtual void SetForceShaderNameHashingForTest(bool force) = 0;
 
   // Gets the QueryManager for this context.
   virtual QueryManager* GetQueryManager() = 0;
@@ -198,11 +203,6 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
 
   // Perform any idle work that needs to be made.
   virtual void PerformIdleWork() = 0;
-
-  // Sets a callback which is called when a glResizeCHROMIUM command
-  // is processed.
-  virtual void SetResizeCallback(
-      const base::Callback<void(gfx::Size, float)>& callback) = 0;
 
   // Get the service texture ID corresponding to a client texture ID.
   // If no such record is found then return false.
@@ -233,6 +233,13 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // scheduling status (i.e. true if the channel is still scheduled).
   virtual void SetWaitSyncPointCallback(
       const WaitSyncPointCallback& callback) = 0;
+
+  // Sets the callback for fence sync release and wait calls. The wait call
+  // returns true if the channel is still scheduled.
+  virtual void SetFenceSyncReleaseCallback(
+      const FenceSyncReleaseCallback& callback) = 0;
+  virtual void SetWaitFenceSyncCallback(
+      const WaitFenceSyncCallback& callback) = 0;
 
   virtual void WaitForReadPixels(base::Closure callback) = 0;
   virtual uint32 GetTextureUploadCount() = 0;
@@ -265,7 +272,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   bool debug_;
   bool log_commands_;
   bool unsafe_es3_apis_enabled_;
-
+  bool force_shader_name_hashing_for_test_;
   DISALLOW_COPY_AND_ASSIGN(GLES2Decoder);
 };
 

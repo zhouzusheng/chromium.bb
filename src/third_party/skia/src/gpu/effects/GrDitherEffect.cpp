@@ -10,15 +10,15 @@
 #include "GrInvariantOutput.h"
 #include "SkRect.h"
 #include "gl/GrGLFragmentProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
 
 //////////////////////////////////////////////////////////////////////////////
 
 class DitherEffect : public GrFragmentProcessor {
 public:
     static GrFragmentProcessor* Create() {
-        static DitherEffect gDitherEffect;
-        return SkRef(&gDitherEffect);
+        return new DitherEffect;
     }
 
     virtual ~DitherEffect() {};
@@ -73,7 +73,7 @@ GLDitherEffect::GLDitherEffect(const GrProcessor&) {
 }
 
 void GLDitherEffect::emitCode(EmitArgs& args) {
-    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+    GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
     // Generate a random number based on the fragment position. For this
     // random number generator, we use the "GLSL rand" function
     // that seems to be floating around on the internet. It works under
@@ -93,7 +93,7 @@ void GLDitherEffect::emitCode(EmitArgs& args) {
 //////////////////////////////////////////////////////////////////////////////
 
 void DitherEffect::onGetGLProcessorKey(const GrGLSLCaps& caps,
-                                     GrProcessorKeyBuilder* b) const {
+                                       GrProcessorKeyBuilder* b) const {
     GLDitherEffect::GenKey(*this, caps, b);
 }
 

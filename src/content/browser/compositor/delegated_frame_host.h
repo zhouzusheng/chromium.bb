@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_DELEGATED_FRAME_HOST_H_
 #define CONTENT_BROWSER_COMPOSITOR_DELEGATED_FRAME_HOST_H_
 
+#include <vector>
+
 #include "base/gtest_prod_util.h"
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
@@ -22,6 +24,7 @@
 #include "ui/compositor/compositor_vsync_manager.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_owner_delegate.h"
+#include "ui/events/event.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 
 namespace base {
@@ -116,6 +119,8 @@ class CONTENT_EXPORT DelegatedFrameHost
 
   // cc::SurfaceFactoryClient implementation.
   void ReturnResources(const cc::ReturnedResourceArray& resources) override;
+  void SetBeginFrameSource(cc::SurfaceId surface_id,
+                           cc::BeginFrameSource* begin_frame_source) override;
 
   bool CanCopyToBitmap() const;
 
@@ -147,7 +152,7 @@ class CONTENT_EXPORT DelegatedFrameHost
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback);
+      const base::Callback<void(const gfx::Rect&, bool)>& callback);
   bool CanCopyToVideoFrame() const;
   void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
@@ -227,7 +232,7 @@ class CONTENT_EXPORT DelegatedFrameHost
       base::WeakPtr<DelegatedFrameHost> rwhva,
       scoped_refptr<OwnedMailbox> subscriber_texture,
       scoped_refptr<media::VideoFrame> video_frame,
-      const base::Callback<void(bool)>& callback,
+      const base::Callback<void(const gfx::Rect&, bool)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void CopyFromCompositingSurfaceFinishedForVideo(
       base::WeakPtr<DelegatedFrameHost> rwhva,
@@ -238,7 +243,7 @@ class CONTENT_EXPORT DelegatedFrameHost
   static void ReturnSubscriberTexture(
       base::WeakPtr<DelegatedFrameHost> rwhva,
       scoped_refptr<OwnedMailbox> subscriber_texture,
-      uint32 sync_point);
+      const gpu::SyncToken& sync_token);
 
   void SendDelegatedFrameAck(uint32 output_surface_id);
   void SurfaceDrawn(uint32 output_surface_id, cc::SurfaceDrawStatus drawn);

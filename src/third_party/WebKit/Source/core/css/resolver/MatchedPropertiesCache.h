@@ -37,7 +37,7 @@ class ComputedStyle;
 class StyleResolverState;
 
 class CachedMatchedProperties final : public NoBaseWillBeGarbageCollectedFinalized<CachedMatchedProperties> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CachedMatchedProperties);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(CachedMatchedProperties);
 public:
     WillBeHeapVector<MatchedProperties> matchedProperties;
     RefPtr<ComputedStyle> computedStyle;
@@ -90,7 +90,7 @@ struct CachedMatchedPropertiesHashTraits : HashTraits<Member<CachedMatchedProper
 #endif
 
 class MatchedPropertiesCache {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     WTF_MAKE_NONCOPYABLE(MatchedPropertiesCache);
 public:
     MatchedPropertiesCache();

@@ -1342,6 +1342,11 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
   if (!site_instance)
     site_instance = SiteInstance::Create(params.browser_context);
 
+  // If we have affinity to a particular render process, then get the process
+  // now, or forever hold your peace.
+  if (params.render_process_affinity != SiteInstance::kNoProcessAffinity)
+    site_instance->GetProcess(params.render_process_affinity);
+
   // A main RenderFrameHost always has a RenderWidgetHost, since it is always a
   // local root by definition.
   // TODO(avi): Once RenderViewHostImpl has-a RenderWidgetHostImpl, it will no

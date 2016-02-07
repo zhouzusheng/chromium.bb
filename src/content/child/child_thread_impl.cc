@@ -395,7 +395,7 @@ void ChildThreadImpl::Init(const Options& options) {
 #if USE_ATTACHMENT_BROKER
   // The only reason a global would already exist is if the thread is being run
   // in the browser process because of a command line switch.
-  if (!IPC::AttachmentBroker::GetGlobal()) {
+  if (!IsInBrowserProcess()) {
     attachment_broker_.reset(
         IPC::AttachmentBrokerUnprivileged::CreateBroker().release());
   }

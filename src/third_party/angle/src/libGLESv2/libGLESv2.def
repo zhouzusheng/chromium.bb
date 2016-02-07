@@ -1,4 +1,3 @@
-LIBRARY libGLESv2
 EXPORTS
     glActiveTexture                 @1
     glAttachShader                  @2

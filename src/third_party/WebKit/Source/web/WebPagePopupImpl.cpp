@@ -103,7 +103,7 @@ private:
         return rectInScreen;
     }
 
-    void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String&, const String&) override
+    void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String& message, unsigned lineNumber, unsigned columnNumber, const String&, const String&) override
     {
 #ifndef NDEBUG
         fprintf(stderr, "CONSOLE MESSSAGE:%u: %s\n", lineNumber, message.utf8().data());

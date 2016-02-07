@@ -587,7 +587,8 @@ bool InputMethodWin::IsWindowFocused(const TextInputClient* client) const {
   // even when the |attached_window_handle| becomes active but has not received
   // WM_FOCUS yet.
   return toplevel_window_handle_ &&
-      GetActiveWindow() == toplevel_window_handle_;
+      (::GetActiveWindow() == toplevel_window_handle_ ||
+       ::GetFocus() == toplevel_window_handle_);
 }
 
 void InputMethodWin::DispatchFabricatedKeyEvent(ui::KeyEvent* event) {

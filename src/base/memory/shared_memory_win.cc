@@ -111,6 +111,8 @@ SharedMemoryHandle SharedMemory::DuplicateHandle(
                         FALSE, DUPLICATE_SAME_ACCESS);
   if (success)
     return SharedMemoryHandle(duped_handle, GetCurrentProcId());
+  PLOG(ERROR) << "DuplicateHandle failed"
+              << ", handle = " << handle.GetHandle();
   return SharedMemoryHandle();
 }
 
@@ -160,8 +162,12 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
   mapped_file_ = CreateFileMapping(INVALID_HANDLE_VALUE, &sa,
       PAGE_READWRITE, 0, static_cast<DWORD>(rounded_size),
       name_.empty() ? nullptr : name_.c_str());
-  if (!mapped_file_)
+  if (!mapped_file_) {
+    PLOG(ERROR) << "CreateFileMapping failed"
+                << ", name = " << name_
+                << ", rounded_size = " << rounded_size;
     return false;
+  }
 
   requested_size_ = options.size;
 
@@ -196,6 +202,8 @@ bool SharedMemory::Open(const std::string& name, bool read_only) {
     // Note: size_ is not set in this case.
     return true;
   }
+  PLOG(ERROR) << "OpenFileMapping failed"
+              << ", name = " << name;
   return false;
 }
 
@@ -221,6 +229,10 @@ bool SharedMemory::MapAt(off_t offset, size_t bytes) {
     mapped_size_ = GetMemorySectionSize(memory_);
     return true;
   }
+  PLOG(ERROR) << "MapViewOfFile failed"
+              << ", offset = " << offset
+              << ", bytes = " << bytes
+              << ", requested_size_ = " << requested_size_;
   return false;
 }
 
@@ -258,6 +270,11 @@ bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
 
   if (!::DuplicateHandle(GetCurrentProcess(), mapped_file, process, &result,
                          access, FALSE, options)) {
+    PLOG(ERROR) << "DuplicateHandle failed"
+                << ", mapped_file = " << mapped_file
+                << ", process = " << process
+                << ", access = " << access
+                << ", options = " << options;
     return false;
   }
   *new_handle = SharedMemoryHandle(result, base::GetProcId(process));

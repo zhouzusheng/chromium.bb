@@ -256,6 +256,14 @@ void TooltipController::OnWindowDestroyed(aura::Window* window) {
   }
 }
 
+void TooltipController::OnWindowVisibilityChanged(aura::Window* window, bool visible) {
+  if (!visible && tooltip_window_ == window) {
+    tooltip_->Hide();
+    tooltip_shown_timeout_map_.erase(tooltip_window_);
+    SetTooltipWindow(NULL);
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // TooltipController private:
 

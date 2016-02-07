@@ -284,6 +284,7 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
   void WasShown(const ui::LatencyInfo& latency_info) override;
   bool OnMessageReceived(const IPC::Message& msg) override;
   void GotFocus() override;
+  void LostFocus() override;
   void SetIsLoading(bool is_loading) override;
   void ForwardMouseEvent(const blink::WebMouseEvent& mouse_event) override;
   void ForwardKeyboardEvent(const NativeWebKeyboardEvent& key_event) override;

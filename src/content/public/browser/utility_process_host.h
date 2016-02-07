@@ -45,6 +45,9 @@ class UtilityProcessHost : public IPC::Sender {
       const scoped_refptr<UtilityProcessHostClient>& client,
       const scoped_refptr<base::SequencedTaskRunner>& client_task_runner);
 
+  static bool run_utility_in_process();
+  static void SetRunUtilityInProcess(bool value);
+
   ~UtilityProcessHost() override {}
 
   virtual base::WeakPtr<UtilityProcessHost> AsWeakPtr() = 0;

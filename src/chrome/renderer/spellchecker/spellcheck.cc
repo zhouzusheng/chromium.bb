@@ -59,6 +59,21 @@ bool UpdateSpellcheckEnabled::Visit(content::RenderView* render_view) {
   return true;
 }
 
+class RequestSpellcheckForView : public content::RenderViewVisitor {
+ public:
+  RequestSpellcheckForView() {}
+  bool Visit(content::RenderView* render_view) override;
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RequestSpellcheckForView);
+};
+
+bool RequestSpellcheckForView::Visit(content::RenderView* render_view) {
+  SpellCheckProvider* provider = SpellCheckProvider::Get(render_view);
+  DCHECK(provider);
+  provider->RequestSpellcheck();
+  return true;
+}
+
 class DocumentMarkersCollector : public content::RenderViewVisitor {
  public:
   DocumentMarkersCollector() {}
@@ -245,10 +260,10 @@ void SpellCheck::OnCustomDictionaryChanged(
     const std::set<std::string>& words_added,
     const std::set<std::string>& words_removed) {
   custom_dictionary_.OnCustomDictionaryChanged(words_added, words_removed);
-  if (words_added.empty())
-    return;
-  DocumentMarkersRemover markersRemover(words_added);
-  content::RenderView::ForEach(&markersRemover);
+  if (spellcheck_enabled_) {
+    RequestSpellcheckForView requestor;
+    content::RenderView::ForEach(&requestor);
+  }
 }
 
 void SpellCheck::OnEnableAutoSpellCorrect(bool enable) {
@@ -283,6 +298,7 @@ bool SpellCheck::SpellCheckWord(
     int tag,
     int* misspelling_start,
     int* misspelling_len,
+    bool checkForContractions,
     std::vector<base::string16>* optional_suggestions) {
   DCHECK(text_length >= position_in_text);
   DCHECK(misspelling_start && misspelling_len) << "Out vars must be given.";
@@ -324,6 +340,7 @@ bool SpellCheck::SpellCheckWord(
           (*language)->SpellCheckWord(
               text_begin, position_in_text, text_length, tag,
               &possible_misspelling_start, &possible_misspelling_len,
+              checkForContractions,
               optional_suggestions ? &language_suggestions : nullptr);
 
       switch (result) {
@@ -401,6 +418,7 @@ bool SpellCheck::SpellCheckParagraph(
                        kNoTag,
                        &misspelling_start,
                        &misspelling_length,
+                       true,
                        NULL)) {
       results->assign(textcheck_results);
       return true;
@@ -461,7 +479,7 @@ base::string16 SpellCheck::GetAutoCorrectionWord(const base::string16& word,
     // Check spelling.
     misspelling_start = misspelling_len = 0;
     SpellCheckWord(misspelled_word, kNoOffset, word_length, tag,
-                   &misspelling_start, &misspelling_len, NULL);
+                   &misspelling_start, &misspelling_len, false, NULL);
 
     // Make decision: if only one swap produced a valid word, then we want to
     // return it. If we found two or more, we don't do autocorrection.
@@ -585,7 +603,7 @@ void SpellCheck::CreateTextCheckingResults(
           SpellCheckWord(misspelled_word.c_str(), kNoOffset,
                          misspelled_word.length(), kNoTag,
                          &unused_misspelling_start, &unused_misspelling_length,
-                         nullptr)) {
+                         true, nullptr)) {
         decoration = SpellCheckResult::GRAMMAR;
       }
     }

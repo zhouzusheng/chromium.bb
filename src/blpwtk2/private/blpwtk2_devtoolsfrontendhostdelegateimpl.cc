@@ -182,10 +182,12 @@ void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontend(
     dict->GetInteger("id", &request_id);
     dict->GetList("params", &params);
 
-    std::string browser_message;
-    if (method == "sendMessageToBrowser" && params &&
-        params->GetSize() == 1 && params->GetString(0, &browser_message)) {
-        d_agentHost->DispatchProtocolMessage(browser_message);
+    if (method == "dispatchProtocolMessage" && params && params->GetSize() == 1) {
+        std::string protocol_message;
+        if (!params->GetString(0, &protocol_message))
+            return;
+        if (d_agentHost)
+            d_agentHost->DispatchProtocolMessage(protocol_message);
     }
     else if (method == "loadCompleted") {
         web_contents()->GetMainFrame()->ExecuteJavaScriptForTests(

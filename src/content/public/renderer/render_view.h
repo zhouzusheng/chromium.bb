@@ -74,9 +74,6 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // Resize the RenderView to the specified 'new_size'.
   virtual void SetSize(const gfx::Size& new_size) = 0;
 
-  // Set or unset the focused state.
-  virtual void SetFocus(bool focused) = 0;
-
   // Gets WebKit related preferences associated with this view.
   virtual WebPreferences& GetWebkitPreferences() = 0;
 

@@ -30,6 +30,7 @@
         '../pdf/pdf.gyp:pdf',
         '../net/net.gyp:net_derived_sources',
         '../printing/printing.gyp:printing',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
         '../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources'
       ],
       'conditions': [

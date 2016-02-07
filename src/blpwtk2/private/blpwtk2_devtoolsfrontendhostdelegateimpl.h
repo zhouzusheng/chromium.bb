@@ -43,7 +43,6 @@ namespace blpwtk2 {
 // TODO: document this
 class DevToolsFrontendHostDelegateImpl
     : public content::WebContentsObserver,
-      public content::DevToolsFrontendHost::Delegate,
       public content::DevToolsAgentHostClient,
       public net::URLFetcherDelegate {
   public:
@@ -66,10 +65,9 @@ class DevToolsFrontendHostDelegateImpl
     void WebContentsDestroyed() override;
 
 
-    // ======== DevToolsFrontendHost::Delegate overrides ===========
+    // ======== DevToolsFrontendHost message callback ===========
 
-    void HandleMessageFromDevToolsFrontend(const std::string& message) override;
-    void HandleMessageFromDevToolsFrontendToBackend(const std::string& message) override;
+    void HandleMessageFromDevToolsFrontend(const std::string& message);
 
 
     // ========= DevToolsAgentHostClient overrides =========

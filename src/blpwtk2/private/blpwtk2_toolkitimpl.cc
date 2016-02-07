@@ -52,7 +52,7 @@
 #include <chrome/common/chrome_paths.h>
 #include <content/public/app/content_main.h>
 #include <content/public/app/content_main_runner.h>
-#include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
+#include <content/public/app/sandbox_helper_win.h>  // for InitializeSandboxInfo
 #include <content/public/browser/browser_thread.h>
 #include <content/public/browser/render_process_host.h>
 #include <content/public/common/content_switches.h>

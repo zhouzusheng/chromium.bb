@@ -29,7 +29,7 @@
 #include <third_party/WebKit/public/web/WebPlugin.h>
 
 namespace blink {
-class WebDOMCustomEvent;
+class WebDOMEvent;
 class WebLocalFrame;
 }  // close namespace blink
 
@@ -44,7 +44,7 @@ class JsWidget : public blink::WebPlugin {
     explicit JsWidget(blink::WebLocalFrame* frame);
     virtual ~JsWidget();
 
-    void dispatchEvent(const blink::WebDOMCustomEvent& event);
+    void dispatchEvent(const blink::WebDOMEvent& event);
 
     // blink::WebPlugin overrides
     bool initialize(blink::WebPluginContainer*) override;

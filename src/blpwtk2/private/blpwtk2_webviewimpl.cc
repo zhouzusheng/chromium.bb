@@ -45,8 +45,9 @@
 #include <content/public/browser/host_zoom_map.h>
 #include <content/public/browser/media_capture_devices.h>
 #include <content/public/browser/render_frame_host.h>
-#include <content/public/browser/render_view_host.h>
 #include <content/public/browser/render_process_host.h>
+#include <content/public/browser/render_view_host.h>
+#include <content/public/browser/render_widget_host.h>
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/site_instance.h>
 #include <content/public/common/file_chooser_file_info.h>
@@ -278,7 +279,7 @@ void WebViewImpl::loadUrl(const StringRef& url)
         ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR),
         std::string());
 
-    d_webContents->GetRenderViewHost()->GetView()->SetBackgroundColor(d_properties.isTransparent? SK_ColorTRANSPARENT : SK_ColorBLACK);
+    d_webContents->GetRenderViewHost()->GetWidget()->GetView()->SetBackgroundColor(d_properties.isTransparent? SK_ColorTRANSPARENT : SK_ColorBLACK);
 }
 
 void WebViewImpl::find(const StringRef& text, bool matchCase, bool forward)

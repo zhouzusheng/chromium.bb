@@ -23,7 +23,7 @@
 #include <windows.h>  // NOLINT
 #include <blpwtk2_products.h>
 #include <base/environment.h>
-#include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
+#include <content/public/app/sandbox_helper_win.h>  // for InitializeSandboxInfo
 #include <sandbox/win/src/sandbox_types.h>  // for SandboxInterfaceInfo
 
 std::string getSubProcessModuleName()

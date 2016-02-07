@@ -1113,7 +1113,7 @@ void RenderWidget::SetInputHandlingTimeThrottlingThresholdMicroseconds(int us) {
 void RenderWidget::bbHandleInputEvent(const blink::WebInputEvent& event) {
   ui::LatencyInfo latency_info;
   bb_OnHandleInputEvent_no_ack_ = true;
-  OnHandleInputEvent(&event, latency_info, false);
+  OnHandleInputEvent(&event, latency_info);
   bb_OnHandleInputEvent_no_ack_ = false;
 }
 

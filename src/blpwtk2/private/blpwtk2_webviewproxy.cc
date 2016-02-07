@@ -504,7 +504,7 @@ void WebViewProxy::setLogicalFocus(bool focused)
     if (d_gotRenderViewInfo) {
         // If we have the renderer in-process, then set the logical focus
         // immediately so that handleInputEvents will work as expected.
-        content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
+        content::RenderViewImpl* rv = content::RenderViewImpl::FromRoutingID(d_renderViewRoutingId);
         DCHECK(rv);
         rv->SetFocus(focused);
     }

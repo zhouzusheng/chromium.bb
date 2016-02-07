@@ -37,6 +37,7 @@
 namespace blink {
 
 class Event;
+class WebSerializedScriptValue;
 
 class WebDOMEvent {
 public:
@@ -50,6 +51,7 @@ public:
         return *this;
     }
 
+    BLINK_EXPORT static WebDOMEvent createCustomEvent(const char* name, bool canBubble, bool cancelable, const WebSerializedScriptValue& detail);
     BLINK_EXPORT void reset();
     BLINK_EXPORT void assign(const WebDOMEvent&);
 

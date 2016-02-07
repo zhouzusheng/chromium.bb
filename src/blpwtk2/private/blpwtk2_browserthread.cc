@@ -47,7 +47,7 @@ BrowserThread::BrowserThread(sandbox::SandboxInterfaceInfo* sandboxInfo)
 
 BrowserThread::~BrowserThread()
 {
-    messageLoop()->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
+    messageLoop()->PostTask(FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
     base::PlatformThread::Join(d_threadHandle);
 }
 

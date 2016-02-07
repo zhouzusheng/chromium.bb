@@ -185,9 +185,9 @@ void ContentMainRunner::DisablePeekMessageHack() {
 // static
 void ContentMainRunner::SetCRTErrorHandlerFunctions(_invalid_parameter_handler ivph, _purecall_handler pch) {
   if (ivph)
-    SetInvalidParamHandler(ivph);
+    base::win::SetInvalidParamHandler(ivph);
   if (pch)
-    SetPurecallHandler(pch);
+    base::win::SetPurecallHandler(pch);
 }
 
 void CommonSubprocessInit(const std::string& process_type) {

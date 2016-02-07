@@ -2205,10 +2205,6 @@ void RenderViewImpl::SetSize(const gfx::Size& new_size) {
          resizer_rect_, is_fullscreen_granted_, display_mode_, NO_RESIZE_ACK);
 }
 
-void RenderViewImpl::SetFocus(bool focused) {
-  OnSetFocus(focused);
-}
-
 WebPreferences& RenderViewImpl::GetWebkitPreferences() {
   return webkit_preferences_;
 }

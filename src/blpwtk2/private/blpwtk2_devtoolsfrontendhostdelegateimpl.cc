@@ -138,7 +138,9 @@ void DevToolsFrontendHostDelegateImpl::RenderViewCreated(
     content::RenderViewHost* renderViewHost)
 {
     if (!d_frontendHost) {
-        d_frontendHost.reset(content::DevToolsFrontendHost::Create(web_contents()->GetMainFrame(), this));
+        d_frontendHost.reset(content::DevToolsFrontendHost::Create(web_contents()->GetMainFrame(),
+                                                                   base::Bind(&DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontend,
+                                                                              base::Unretained(this))));
     }
 }
 
@@ -248,15 +250,6 @@ void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontend(
 
     if (request_id)
         SendMessageAck(request_id, nullptr);
-}
-
-void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontendToBackend(
-    const std::string& message)
-{
-    // This implementation was copied from shell_devtools_frontend.cc
-
-    if (d_agentHost)
-        d_agentHost->DispatchProtocolMessage(message);
 }
 
 void DevToolsFrontendHostDelegateImpl::DispatchProtocolMessage(

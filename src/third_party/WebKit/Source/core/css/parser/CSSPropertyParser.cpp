@@ -1864,6 +1864,7 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSPropertyParser::parseSingleValue(CSSProperty
     case CSSPropertyWebkitBorderAfterColor:
     case CSSPropertyWebkitTextStrokeColor:
         return consumeColor(m_range, m_context);
+    case CSSPropertyWebkitCaretColor:
     case CSSPropertyColor:
         return consumeColor(m_range, m_context, inQuirksMode());
     case CSSPropertyWebkitBorderStartWidth:

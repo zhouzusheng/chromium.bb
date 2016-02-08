@@ -78,6 +78,8 @@ private:
     // Returns true if we re-attached and updated the location of the marker.
     bool updateMarkerLocation();
 
+    virtual LayoutUnit additionalMarginStart() const override;
+
     void positionListMarker();
 
     void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;

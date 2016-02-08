@@ -139,11 +139,21 @@ static FontDescription::GenericFamilyType convertGenericFamily(CSSValueID valueI
 }
 
 static bool convertFontFamilyName(StyleResolverState& state, CSSValue& value,
-    FontDescription::GenericFamilyType& genericFamily, AtomicString& familyName)
+    FontDescription::GenericFamilyType& genericFamily, AtomicString& familyName,
+    bool& boldOverride, bool& italicOverride)
 {
     if (value.isCustomIdentValue()) {
         genericFamily = FontDescription::NoFamily;
-        familyName = AtomicString(toCSSCustomIdentValue(value).value());
+        WTF::String wtfFace = toCSSCustomIdentValue(value).value();
+        if (wtfFace.endsWith(" Italic")) {
+            italicOverride = true;
+            wtfFace = wtfFace.substring(0, wtfFace.length() - 7);
+        }
+        if (wtfFace.endsWith(" Bold")) {
+            boldOverride = true;
+            wtfFace = wtfFace.substring(0, wtfFace.length() - 5);
+        }
+        familyName = AtomicString(wtfFace);
     } else if (state.document().settings()) {
         genericFamily = convertGenericFamily(toCSSPrimitiveValue(value).getValueID());
         familyName = state.fontBuilder().genericFontFamilyName(genericFamily);
@@ -163,7 +173,7 @@ FontDescription::FamilyDescription StyleBuilderConverter::convertFontFamily(Styl
         FontDescription::GenericFamilyType genericFamily = FontDescription::NoFamily;
         AtomicString familyName;
 
-        if (!convertFontFamilyName(state, *family, genericFamily, familyName))
+        if (!convertFontFamilyName(state, *family, genericFamily, familyName, desc.boldOverride, desc.italicOverride))
             continue;
 
         if (!currFamily) {

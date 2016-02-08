@@ -43,7 +43,6 @@ enum TextIteratorBehavior {
     TextIteratorForSelectionToString = 1 << 10,
     TextIteratorForWindowFind = 1 << 11,
     TextIteratorExcludeAutofilledValue = 1 << 12,
-    TextIteratorDoesNotEmitOverflowHiddenText = 1 << 13,
 };
 typedef unsigned TextIteratorBehaviorFlags;
 

@@ -138,7 +138,7 @@ void LayoutListMarker::layout()
     if (isImage()) {
         updateMarginsAndContent();
         LayoutSize imageSize(imageBulletSize());
-        setWidth(imageSize.width());
+        setWidth(minPreferredLogicalWidth());
         setHeight(imageSize.height());
     } else {
         setLogicalWidth(minPreferredLogicalWidth());
@@ -165,7 +165,7 @@ void LayoutListMarker::imageChanged(WrappedImagePtr o, const IntRect*)
         return;
 
     LayoutSize imageSize = isImage() ? LayoutSize(imageBulletSize()) : LayoutSize();
-    if (size() != imageSize || m_image->errorOccurred())
+    if (size() != imageSize + LayoutSize(cMarkerPaddingPx, 0) || m_image->errorOccurred())
         setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::ImageChanged);
     else
         setShouldDoFullPaintInvalidation();
@@ -209,8 +209,8 @@ LayoutUnit LayoutListMarker::getWidthOfTextWithSuffix() const
     LayoutUnit itemWidth = font.width(m_text);
     // TODO(wkorman): Look into constructing a text run for both text and suffix
     // and painting them together.
-    UChar suffix[2] = { ListMarkerText::suffix(style()->listStyleType(), m_listItem->value()), ' ' };
-    TextRun run = constructTextRun(font, suffix, 2, styleRef(), style()->direction());
+    UChar suffix[1] = { ListMarkerText::suffix(style()->listStyleType(), m_listItem->value()) };
+    TextRun run = constructTextRun(font, suffix, 1, styleRef(), style()->direction());
     LayoutUnit suffixSpaceWidth = font.width(run);
     return itemWidth + suffixSpaceWidth;
 }
@@ -223,6 +223,8 @@ void LayoutListMarker::computePreferredLogicalWidths()
     if (isImage()) {
         LayoutSize imageSize(imageBulletSize());
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = style()->isHorizontalWritingMode() ? imageSize.width() : imageSize.height();
+        m_minPreferredLogicalWidth += cMarkerPaddingPx;
+        m_maxPreferredLogicalWidth += cMarkerPaddingPx;
         clearPreferredLogicalWidthsDirty();
         updateMargins();
         return;
@@ -236,9 +238,13 @@ void LayoutListMarker::computePreferredLogicalWidths()
         break;
     case ListStyleCategory::Symbol:
         logicalWidth = (font.fontMetrics().ascent() * 2 / 3 + 1) / 2 + 2;
+        logicalWidth += cMarkerPaddingPx;
         break;
     case ListStyleCategory::Language:
         logicalWidth = getWidthOfTextWithSuffix();
+        if (!m_text.isEmpty()) {
+            logicalWidth += cMarkerPaddingPx;
+        }
         break;
     }
 
@@ -252,59 +258,11 @@ void LayoutListMarker::computePreferredLogicalWidths()
 
 void LayoutListMarker::updateMargins()
 {
-    const FontMetrics& fontMetrics = style()->fontMetrics();
-
     LayoutUnit marginStart = 0;
     LayoutUnit marginEnd = 0;
 
-    if (isInside()) {
-        if (isImage()) {
-            marginEnd = cMarkerPaddingPx;
-        } else {
-            switch (listStyleCategory()) {
-            case ListStyleCategory::Symbol:
-                marginStart = -1;
-                marginEnd = fontMetrics.ascent() - minPreferredLogicalWidth() + 1;
-                break;
-            default:
-                break;
-            }
-        }
-    } else {
-        if (style()->isLeftToRightDirection()) {
-            if (isImage()) {
-                marginStart = -minPreferredLogicalWidth() - cMarkerPaddingPx;
-            } else {
-                int offset = fontMetrics.ascent() * 2 / 3;
-                switch (listStyleCategory()) {
-                case ListStyleCategory::None:
-                    break;
-                case ListStyleCategory::Symbol:
-                    marginStart = -offset - cMarkerPaddingPx - 1;
-                    break;
-                default:
-                    marginStart = m_text.isEmpty() ? LayoutUnit() : -minPreferredLogicalWidth();
-                }
-            }
-            marginEnd = -marginStart - minPreferredLogicalWidth();
-        } else {
-            if (isImage()) {
-                marginEnd = cMarkerPaddingPx;
-            } else {
-                int offset = fontMetrics.ascent() * 2 / 3;
-                switch (listStyleCategory()) {
-                case ListStyleCategory::None:
-                    break;
-                case ListStyleCategory::Symbol:
-                    marginEnd = offset + cMarkerPaddingPx + 1 - minPreferredLogicalWidth();
-                    break;
-                default:
-                    marginEnd = 0;
-                }
-            }
-            marginStart = -marginEnd - minPreferredLogicalWidth();
-        }
-
+    if (!isInside()) {
+        marginStart = -minPreferredLogicalWidth();
     }
 
     mutableStyleRef().setMarginStart(Length(marginStart, Fixed));
@@ -401,12 +359,17 @@ bool LayoutListMarker::isInside() const
 
 IntRect LayoutListMarker::getRelativeMarkerRect() const
 {
+    IntRect relativeRect;
+
     if (isImage()) {
         IntSize imageSize = imageBulletSize();
-        return IntRect(0, 0, imageSize.width(), imageSize.height());
+        relativeRect = IntRect(0, 0, imageSize.width(), imageSize.height());
+        if (!style()->isLeftToRightDirection()) {
+            relativeRect.move(cMarkerPaddingPx, 0);
+        }
+        return relativeRect;
     }
 
-    IntRect relativeRect;
     switch (listStyleCategory()) {
     case ListStyleCategory::None:
         return IntRect();
@@ -422,6 +385,10 @@ IntRect LayoutListMarker::getRelativeMarkerRect() const
     case ListStyleCategory::Language:
         relativeRect = IntRect(0, 0, getWidthOfTextWithSuffix(), style()->font().fontMetrics().height());
         break;
+    }
+
+    if (!style()->isLeftToRightDirection()) {
+        relativeRect.move(cMarkerPaddingPx, 0);
     }
 
     if (!style()->isHorizontalWritingMode()) {

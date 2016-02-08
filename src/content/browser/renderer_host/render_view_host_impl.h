@@ -184,6 +184,7 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
   WebPreferences GetWebkitPreferences() override;
   void UpdateWebkitPreferences(const WebPreferences& prefs) override;
   void OnWebkitPreferencesChanged() override;
+  void EnableAltDragRubberbanding(bool enable) override;
   void SelectWordAroundCaret() override;
 
 #if defined(OS_ANDROID)

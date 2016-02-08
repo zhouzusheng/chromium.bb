@@ -293,6 +293,7 @@ PlatformKeyboardEventBuilder::PlatformKeyboardEventBuilder(const WebKeyboardEven
     m_keyIdentifier = String(e.keyIdentifier);
     m_nativeVirtualKeyCode = e.nativeKeyCode;
     m_isSystemKey = e.isSystemKey;
+    m_bbIsNumLock = e.bbIsNumLock;
     // TODO: BUG482880 Fix this initialization to lazy initialization.
     m_code = Platform::current()->domCodeStringFromEnum(e.domCode);
     m_key = Platform::current()->domKeyStringFromEnum(e.domKey);

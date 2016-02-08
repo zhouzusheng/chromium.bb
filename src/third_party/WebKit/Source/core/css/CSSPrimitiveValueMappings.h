@@ -2496,6 +2496,9 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EWhiteSpace e)
     case PRE_WRAP:
         m_value.valueID = CSSValuePreWrap;
         break;
+    case BB_PRE_WRAP_TEXT:
+        m_value.valueID = CSSValueBbPreWrapText;
+        break;
     case PRE_LINE:
         m_value.valueID = CSSValuePreLine;
         break;
@@ -2520,6 +2523,8 @@ template<> inline EWhiteSpace CSSPrimitiveValue::convertTo() const
         return PRE;
     case CSSValuePreWrap:
         return PRE_WRAP;
+    case CSSValueBbPreWrapText:
+        return BB_PRE_WRAP_TEXT;
     case CSSValuePreLine:
         return PRE_LINE;
     case CSSValueNormal:
@@ -2549,6 +2554,9 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EWordBreak e)
     case KeepAllWordBreak:
         m_value.valueID = CSSValueKeepAll;
         break;
+    case KeepAllIfKoreanWordBreak:
+        m_value.valueID = CSSValueBbKeepAllIfKorean;
+        break;
     }
 }
 
@@ -2564,6 +2572,8 @@ template<> inline EWordBreak CSSPrimitiveValue::convertTo() const
         return NormalWordBreak;
     case CSSValueKeepAll:
         return KeepAllWordBreak;
+    case CSSValueBbKeepAllIfKorean:
+        return KeepAllIfKoreanWordBreak;
     default:
         break;
     }

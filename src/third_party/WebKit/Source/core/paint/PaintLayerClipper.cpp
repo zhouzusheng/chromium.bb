@@ -179,17 +179,7 @@ LayoutRect PaintLayerClipper::childrenClipRect() const
     // Need to use uncached clip rects, because the value of 'dontClipToOverflow' may be different from the painting path (<rdar://problem/11844909>).
     ClipRectsContext context(clippingRootLayer, UncachedClipRects);
     calculateRects(context, LayoutRect(m_layoutObject.view()->unscaledDocumentRect()), layerBounds, backgroundRect, foregroundRect);
-
-    // Since we don't know if the transform will grow or shrink the unscaled
-    // document rect, we compute the union of the two and use it as the clip
-    // rect
-    LayoutRect withoutTransform(clippingRootLayer->layoutObject()->localToContainerQuad(FloatQuad(FloatRect(foregroundRect.rect())), 0, 0, 0, false).enclosingBoundingBox());
-    LayoutRect withTransform(clippingRootLayer->layoutObject()->localToContainerQuad(FloatQuad(FloatRect(foregroundRect.rect())), 0, 0, 0, true).enclosingBoundingBox());
-
-    LayoutRect unionRect = withoutTransform;
-    unionRect.unite(withTransform);
-
-    return unionRect;
+    return LayoutRect(clippingRootLayer->layoutObject()->localToAbsoluteQuad(FloatQuad(FloatRect(foregroundRect.rect()))).enclosingBoundingBox());
 }
 
 LayoutRect PaintLayerClipper::localClipRect() const

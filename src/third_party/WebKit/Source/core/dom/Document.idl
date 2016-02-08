@@ -91,6 +91,12 @@ interface Document : Node {
     [PutForwards=href, Unforgeable] readonly attribute Location? location;
     [RaisesException=Setter] attribute DOMString domain;
     readonly attribute DOMString referrer;
+
+    // Bloomberg-specific extensions
+    attribute DOMString bbHeaderText;
+    attribute DOMString bbFooterText;
+    attribute boolean bbPrintPageNumbers;
+
     // FIXME: cookie should not have [TreatNullAs=NullString].
     [TreatNullAs=NullString, RaisesException] attribute DOMString cookie;
     readonly attribute DOMString lastModified;

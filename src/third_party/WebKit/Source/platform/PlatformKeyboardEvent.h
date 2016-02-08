@@ -41,6 +41,7 @@ public:
         , m_windowsVirtualKeyCode(0)
         , m_nativeVirtualKeyCode(0)
         , m_isSystemKey(false)
+        , m_bbIsNumLock(false)
     {
     }
 
@@ -54,6 +55,7 @@ public:
         , m_windowsVirtualKeyCode(windowsVirtualKeyCode)
         , m_nativeVirtualKeyCode(nativeVirtualKeyCode)
         , m_isSystemKey(isSystemKey)
+        , m_bbIsNumLock(false)
     {
     }
 
@@ -86,6 +88,7 @@ public:
     bool isAutoRepeat() const { return modifiers() & IsAutoRepeat; }
     bool isKeypad() const { return modifiers() & IsKeyPad; }
     bool isSystemKey() const { return m_isSystemKey; }
+    bool bbIsNumLock() const { return m_bbIsNumLock; }
 
     PLATFORM_EXPORT static bool currentCapsLockState();
     PLATFORM_EXPORT static Modifiers getCurrentModifierState();
@@ -99,6 +102,7 @@ protected:
     int m_windowsVirtualKeyCode;
     int m_nativeVirtualKeyCode;
     bool m_isSystemKey;
+    bool m_bbIsNumLock;
 
 private:
     friend class Internals;

@@ -5,6 +5,7 @@
 #ifndef CHROME_RENDERER_SPELLCHECKER_SPELLCHECK_H_
 #define CHROME_RENDERER_SPELLCHECKER_SPELLCHECK_H_
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -16,6 +17,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
+#include "chrome/common/spellcheck_common.h"
 #include "chrome/renderer/spellchecker/custom_dictionary_engine.h"
 #include "content/public/renderer/render_process_observer.h"
 
@@ -78,6 +80,7 @@ class SpellCheck : public content::RenderProcessObserver,
                       int tag,
                       int* misspelling_start,
                       int* misspelling_len,
+                      bool checkForContractions,
                       std::vector<base::string16>* optional_suggestions);
 
   // SpellCheck a paragraph.

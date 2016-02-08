@@ -109,11 +109,13 @@ FrameTree::FrameTree(Navigator* navigator,
                      RenderFrameHostDelegate* render_frame_delegate,
                      RenderViewHostDelegate* render_view_delegate,
                      RenderWidgetHostDelegate* render_widget_delegate,
-                     RenderFrameHostManager::Delegate* manager_delegate)
+                     RenderFrameHostManager::Delegate* manager_delegate,
+                     int render_process_affinity)
     : render_frame_delegate_(render_frame_delegate),
       render_view_delegate_(render_view_delegate),
       render_widget_delegate_(render_widget_delegate),
       manager_delegate_(manager_delegate),
+      render_process_affinity_(render_process_affinity),
       root_(new FrameTreeNode(this,
                               navigator,
                               render_frame_delegate,
@@ -123,6 +125,7 @@ FrameTree::FrameTree(Navigator* navigator,
                               // The top-level frame must always be in a
                               // document scope.
                               blink::WebTreeScopeType::Document,
+                              render_process_affinity,
                               std::string(),
                               blink::WebSandboxFlags::None,
                               blink::WebFrameOwnerProperties())),
@@ -213,7 +216,7 @@ RenderFrameHostImpl* FrameTree::AddFrame(
 
   scoped_ptr<FrameTreeNode> node(new FrameTreeNode(
       this, parent->navigator(), render_frame_delegate_, render_view_delegate_,
-      render_widget_delegate_, manager_delegate_, scope, frame_name,
+      render_widget_delegate_, manager_delegate_, scope, render_process_affinity_, frame_name,
       sandbox_flags, frame_owner_properties));
   FrameTreeNode* node_ptr = node.get();
   // AddChild is what creates the RenderFrameHost.

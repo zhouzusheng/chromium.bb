@@ -56,6 +56,7 @@ class CONTENT_EXPORT FrameTreeNode {
                 RenderWidgetHostDelegate* render_widget_delegate,
                 RenderFrameHostManager::Delegate* manager_delegate,
                 blink::WebTreeScopeType scope,
+                int render_process_affinity,
                 const std::string& name,
                 blink::WebSandboxFlags sandbox_flags,
                 const blink::WebFrameOwnerProperties& frame_owner_properties);

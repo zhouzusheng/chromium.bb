@@ -1144,6 +1144,15 @@ class V8_EXPORT ScriptCompiler {
       BufferOwned
     };
 
+    // SHEZ: These static functions need to be defined within V8 because we use
+    // SHEZ: a separate heap for V8 and Blink.
+    static CachedData* create();
+    static CachedData* create(const uint8_t* data, int length,
+                              BufferPolicy buffer_policy = BufferNotOwned);
+    static void dispose(CachedData* cd);
+
+    // SHEZ: These are made private to prevent their usage outside V8.
+  private:
     CachedData()
         : data(NULL),
           length(0),
@@ -1159,6 +1168,8 @@ class V8_EXPORT ScriptCompiler {
     ~CachedData();
     // TODO(marja): Async compilation; add constructors which take a callback
     // which will be called when V8 no longer needs the data.
+
+  public:
     const uint8_t* data;
     int length;
     bool rejected;
@@ -1221,7 +1232,7 @@ class V8_EXPORT ScriptCompiler {
      * function will be called on a background thread, so it's OK to block and
      * wait for the data, if the embedder doesn't have data yet. Returns the
      * length of the data returned. When the data ends, GetMoreData should
-     * return 0. Caller takes ownership of the data.
+     * return 0. Caller will release the data by calling |ReleaseData|.
      *
      * When streaming UTF-8 data, V8 handles multi-byte characters split between
      * two data chunks, but doesn't handle multi-byte characters split between
@@ -1234,6 +1245,11 @@ class V8_EXPORT ScriptCompiler {
      * V8 has parsed the data it received so far.
      */
     virtual size_t GetMoreData(const uint8_t** src) = 0;
+
+    /**
+     * Release data that was previously obtained from |GetMoreData|.
+     */
+    virtual void ReleaseData(const uint8_t* src) = 0;
 
     /**
      * V8 calls this method to set a 'bookmark' at the current position in
@@ -6351,6 +6367,15 @@ class V8_EXPORT V8 {
   static bool InitializeICU(const char* icu_data_file = NULL);
 
   /**
+   * Initialize the ICU library bundled with V8 using the specified icu data.
+  */
+  static bool InitializeICUWithData(const void* icu_data);
+
+  // Return the handle handle to the Win32 heap used by the v8 module's C
+  // runtime system.
+  static intptr_t GetHeapHandle();
+
+  /**
    * Initialize the external startup data. The embedder only needs to
    * invoke this method when external startup data was enabled in a build.
    *
@@ -7697,7 +7722,7 @@ ScriptCompiler::Source::Source(Local<String> string,
 
 
 ScriptCompiler::Source::~Source() {
-  delete cached_data;
+  CachedData::dispose(cached_data);
 }
 
 

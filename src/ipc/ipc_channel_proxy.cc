@@ -134,6 +134,7 @@ void ChannelProxy::Context::OnChannelOpened() {
   AddRef();
 
   if (!channel_->Connect()) {
+    LOG(WARNING) << "ChannelProxy::Context::OnChannelOpened(): Calling OnChannelError()";
     OnChannelError();
     return;
   }
@@ -187,8 +188,10 @@ void ChannelProxy::Context::OnSendMessage(scoped_ptr<Message> message) {
     return;
   }
 
-  if (!channel_->Send(message.release()))
+  if (!channel_->Send(message.release())) {
+    LOG(WARNING) << "ChannelProxy::Context::OnSendMessage(): Calling OnChannelError()";
     OnChannelError();
+  }
 }
 
 // Called on the IPC::Channel thread
@@ -416,8 +419,10 @@ void ChannelProxy::Init(scoped_ptr<ChannelFactory> factory,
     // low-level pipe so that the client can connect.  Without creating
     // the pipe immediately, it is possible for a listener to attempt
     // to connect and get an error since the pipe doesn't exist yet.
+    LOG(INFO) << "Invoking CreateChannel for " << factory->GetName();
     context_->CreateChannel(factory.Pass());
   } else {
+    LOG(INFO) << "Posting CreateChannel for " << factory->GetName();
     context_->ipc_task_runner()->PostTask(
         FROM_HERE, base::Bind(&Context::CreateChannel,
                               context_.get(), Passed(factory.Pass())));

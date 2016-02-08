@@ -52,6 +52,7 @@ class VIEWS_EXPORT TooltipController : public aura::client::TooltipClient,
 
   // Overridden from aura::WindowObserver.
   void OnWindowDestroyed(aura::Window* window) override;
+  void OnWindowVisibilityChanged(aura::Window* window, bool visible) override;
 
   const gfx::Point& mouse_location() const { return curr_mouse_loc_; }
 

@@ -425,6 +425,7 @@ class CONTENT_EXPORT RenderViewImpl
   RenderFrameImpl* GetMainRenderFrame() override;
   int GetRoutingID() const override;
   gfx::Size GetSize() const override;
+  void SetSize(const gfx::Size& new_size) override;
   WebPreferences& GetWebkitPreferences() override;
   void SetWebkitPreferences(const WebPreferences& preferences) override;
   blink::WebView* GetWebView() override;

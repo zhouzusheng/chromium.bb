@@ -75,6 +75,7 @@ FrameTreeNode::FrameTreeNode(
     RenderWidgetHostDelegate* render_widget_delegate,
     RenderFrameHostManager::Delegate* manager_delegate,
     blink::WebTreeScopeType scope,
+    int render_process_affinity,
     const std::string& name,
     blink::WebSandboxFlags sandbox_flags,
     const blink::WebFrameOwnerProperties& frame_owner_properties)
@@ -84,7 +85,8 @@ FrameTreeNode::FrameTreeNode(
                       render_frame_delegate,
                       render_view_delegate,
                       render_widget_delegate,
-                      manager_delegate),
+                      manager_delegate,
+                      render_process_affinity),
       frame_tree_node_id_(next_frame_tree_node_id_++),
       parent_(NULL),
       opener_(nullptr),

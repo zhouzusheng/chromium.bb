@@ -380,6 +380,7 @@ void ChildThreadImpl::ConnectChannel(bool use_mojo_channel) {
 
 void ChildThreadImpl::Init(const Options& options) {
   channel_name_ = options.channel_name;
+  use_mojo_channel_ = options.use_mojo_channel;
 
   g_lazy_tls.Pointer()->Set(this);
   on_channel_error_called_ = false;
@@ -394,7 +395,7 @@ void ChildThreadImpl::Init(const Options& options) {
 #if USE_ATTACHMENT_BROKER
   // The only reason a global would already exist is if the thread is being run
   // in the browser process because of a command line switch.
-  if (!IPC::AttachmentBroker::GetGlobal()) {
+  if (!IsInBrowserProcess()) {
     attachment_broker_.reset(
         IPC::AttachmentBrokerUnprivileged::CreateBroker().release());
   }
@@ -482,7 +483,14 @@ void ChildThreadImpl::Init(const Options& options) {
     channel_->AddFilter(startup_filter);
   }
 
-  ConnectChannel(options.use_mojo_channel);
+  if (!channel_name_.empty())
+    InitChannel();
+
+  InitManagers();
+}
+
+void ChildThreadImpl::InitChannel() {
+  ConnectChannel(use_mojo_channel_);
   if (attachment_broker_)
     attachment_broker_->DesignateBrokerCommunicationChannel(channel_.get());
 
@@ -510,7 +518,9 @@ void ChildThreadImpl::Init(const Options& options) {
       message_loop_->task_runner(), ::HeapProfilerWithPseudoStackStart,
       ::HeapProfilerStop, ::GetHeapProfile));
 #endif
+}
 
+void ChildThreadImpl::InitManagers() {
   shared_bitmap_manager_.reset(
       new ChildSharedBitmapManager(thread_safe_sender()));
 
@@ -564,6 +574,8 @@ void ChildThreadImpl::OnChannelError() {
 
 bool ChildThreadImpl::Send(IPC::Message* msg) {
   DCHECK(base::MessageLoop::current() == message_loop());
+  DCHECK(!channel_name_.empty());  // Trying to send a message before setting
+                                   // the channel name is a very bad thing.
   if (!channel_) {
     delete msg;
     return false;
@@ -581,6 +593,13 @@ void ChildThreadImpl::ReleaseCachedFonts() {
   Send(new ChildProcessHostMsg_ReleaseCachedFonts());
 }
 #endif
+
+void ChildThreadImpl::SetChannelName(const std::string& channel_name) {
+  DCHECK(!channel_name.empty());
+  DCHECK(channel_name_.empty());
+  channel_name_ = channel_name;
+  InitChannel();
+}
 
 MessageRouter* ChildThreadImpl::GetRouter() {
   DCHECK(base::MessageLoop::current() == message_loop());

@@ -66,6 +66,9 @@ class NET_EXPORT_PRIVATE ProxyList {
   // Returns all proxy servers in the list.
   const std::vector<ProxyServer>& GetAll() const;
 
+  // This non-const reference is provided to simplify IPC serialization.
+  std::vector<ProxyServer>& GetAll() { return proxies_; }
+
   // Sets the list by parsing the pac result |pac_string|.
   // Some examples for |pac_string|:
   //   "DIRECT"

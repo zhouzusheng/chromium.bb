@@ -104,7 +104,7 @@ class ExternalStreamingStream : public BufferedUtf16CharacterStream {
         bookmark_utf8_split_char_buffer_length_(0) {}
 
   ~ExternalStreamingStream() override {
-    delete[] current_data_;
+    source_stream_->ReleaseData(current_data_);
     bookmark_buffer_.Dispose();
     bookmark_data_.Dispose();
   }

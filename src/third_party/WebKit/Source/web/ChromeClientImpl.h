@@ -79,7 +79,7 @@ public:
     bool shouldReportDetailedMessageForSource(LocalFrame&, const String&) override;
     void addMessageToConsole(
         LocalFrame*, MessageSource, MessageLevel,
-        const String& message, unsigned lineNumber,
+        const String& message, unsigned lineNumber, unsigned columnNumber,
         const String& sourceID, const String& stackTrace) override;
     bool canOpenBeforeUnloadConfirmPanel() override;
     bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, const String&, bool isReload) override;

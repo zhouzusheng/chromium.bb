@@ -764,7 +764,7 @@
           ],
           'dependencies': [
             '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatform',
+            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatformimpl',
           ],
           'sources': [
             'fpdfsdk/src/jsapi/fxjs_v8_embeddertest.cpp',
@@ -792,7 +792,7 @@
           ],
           'dependencies': [
             '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatform',
+            '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatformimpl',
           ],
         }],
       ],

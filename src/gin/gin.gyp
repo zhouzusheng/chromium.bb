@@ -13,6 +13,7 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
+        '../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../v8/tools/gyp/v8.gyp:v8',
       ],
@@ -85,11 +86,7 @@
       'conditions': [
         ['v8_use_external_startup_data==1 and OS=="win"', {
           'dependencies': [
-            'gin_v8_snapshot_fingerprint',
             '../crypto/crypto.gyp:crypto',
-          ],
-          'sources': [
-            '<(gin_gen_path)/v8_snapshot_fingerprint.cc',
           ],
           'defines': [
             'V8_VERIFY_EXTERNAL_STARTUP_DATA',
@@ -101,8 +98,8 @@
       'target_name': 'gin_v8_snapshot_fingerprint',
       'type': 'none',
       'variables': {
-        'snapshot_file': '<(PRODUCT_DIR)/snapshot_blob.bin',
-        'natives_file': '<(PRODUCT_DIR)/natives_blob.bin',
+        'snapshot_file': '<(PRODUCT_DIR)/snapshot_blob<(bb_version_suffix).bin',
+        'natives_file': '<(PRODUCT_DIR)/natives_blob<(bb_version_suffix).bin',
         'output_file': '<(gin_gen_path)/v8_snapshot_fingerprint.cc',
       },
       'includes': [ '../gin/fingerprint/fingerprint_v8_snapshot.gypi' ],

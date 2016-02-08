@@ -187,6 +187,10 @@
       'include_dirs': [
         '../..',
       ],
+      'defines': [
+        'SANDBOX_DLL',
+        'SANDBOX_EXPORTS',
+      ],
       'target_conditions': [
         ['target_arch=="ia32"', {
           'copies': [

@@ -121,6 +121,8 @@ static WebAXEvent toWebAXEvent(AXObjectCache::AXNotification notification)
 
 ChromeClientImpl::ChromeClientImpl(WebViewImpl* webView)
     : m_webView(webView)
+    , m_lastMouseOverNode(0)
+    , m_lastTooltipHadText(false)
     , m_cursorOverridden(false)
     , m_didRequestNonEmptyToolTip(false)
 {
@@ -573,6 +575,16 @@ void ChromeClientImpl::showMouseOverURL(const HitTestResult& result)
     }
 
     m_webView->client()->setMouseOverURL(url);
+
+    // If we displayed a tooltip earlier, and we move over a new node, make
+    // sure we unset the tooltip. If the new node has a tooltip, then
+    // setToolTip will be called later with the new text.
+    if (m_lastTooltipHadText && m_lastMouseOverNode != result.innerNodeOrImageMapImage()) {
+        m_webView->client()->setToolTipText(String(), WebTextDirectionLeftToRight);
+        m_lastTooltipHadText = false;
+    }
+
+    m_lastMouseOverNode = result.innerNodeOrImageMapImage();
 }
 
 void ChromeClientImpl::setToolTip(const String& tooltipText, TextDirection dir)
@@ -588,6 +600,7 @@ void ChromeClientImpl::setToolTip(const String& tooltipText, TextDirection dir)
         m_webView->client()->setToolTipText(tooltipText, toWebTextDirection(dir));
         m_didRequestNonEmptyToolTip = false;
     }
+    m_lastTooltipHadText = !tooltipText.isEmpty();
 }
 
 void ChromeClientImpl::dispatchViewportPropertiesDidChange(const ViewportDescription& description) const

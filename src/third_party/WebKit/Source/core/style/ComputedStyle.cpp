@@ -1492,6 +1492,9 @@ Color ComputedStyle::colorIncludingFallback(int colorProperty, bool visitedLink)
     case CSSPropertyOutlineColor:
         result = visitedLink ? visitedLinkOutlineColor() : outlineColor();
         break;
+    case CSSPropertyWebkitCaretColor:
+        result = !caretColor().isCurrentColor() ? caretColor() : visitedLink ? visitedLinkColor() : color();
+        break;
     case CSSPropertyWebkitColumnRuleColor:
         result = visitedLink ? visitedLinkColumnRuleColor() : columnRuleColor();
         break;

@@ -1486,10 +1486,13 @@ void LayoutFlexibleBox::alignChildren(const Vector<LineContext>& lineContexts)
 
 void LayoutFlexibleBox::applyStretchAlignmentToChild(LayoutBox& child, LayoutUnit lineCrossAxisExtent)
 {
-    if (!hasOrthogonalFlow(child) && child.style()->logicalHeight().isAuto()) {
+    if (!hasOrthogonalFlow(child) && (child.style()->logicalHeight().isAuto() || child.style()->logicalHeight().hasPercent())) {
         LayoutUnit heightBeforeStretching = needToStretchChildLogicalHeight(child) ? constrainedChildIntrinsicContentLogicalHeight(child) : child.logicalHeight();
         LayoutUnit stretchedLogicalHeight = std::max(child.borderAndPaddingLogicalHeight(), heightBeforeStretching + availableAlignmentSpaceForChildBeforeStretching(lineCrossAxisExtent, child));
         ASSERT(!child.needsLayout());
+        if (child.style()->logicalHeight().hasPercent()) {
+            stretchedLogicalHeight = valueForLength(child.style()->logicalHeight(), stretchedLogicalHeight);
+        }
         LayoutUnit desiredLogicalHeight = child.constrainLogicalHeightByMinMax(stretchedLogicalHeight, heightBeforeStretching - child.borderAndPaddingLogicalHeight());
 
         // FIXME: Can avoid laying out here in some cases. See https://webkit.org/b/87905.

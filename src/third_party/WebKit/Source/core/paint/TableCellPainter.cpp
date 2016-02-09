@@ -160,7 +160,9 @@ void TableCellPainter::paintBackgroundsBehindCell(const PaintInfo& paintInfo, co
         ASSERT(paintRect.location() == paintOffset);
     }
 
-    Color c = backgroundObject->resolveColor(CSSPropertyBackgroundColor);
+    Color c = m_layoutTableCell.isFullySelected()
+        ? m_layoutTableCell.selectionBackgroundColor()
+        : backgroundObject->resolveColor(CSSPropertyBackgroundColor);
     const FillLayer& bgLayer = backgroundObject->style()->backgroundLayers();
     if (bgLayer.hasImage() || c.alpha()) {
         // We have to clip here because the background would paint
@@ -186,7 +188,7 @@ void TableCellPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, 
         return;
 
     bool needsToPaintBorder = m_layoutTableCell.styleRef().hasBorderDecoration() && !table->collapseBorders();
-    if (!m_layoutTableCell.hasBackground() && !m_layoutTableCell.styleRef().boxShadow() && !needsToPaintBorder)
+    if (!m_layoutTableCell.hasBackground() && !m_layoutTableCell.styleRef().boxShadow() && !needsToPaintBorder && !m_layoutTableCell.isFullySelected())
         return;
 
     if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground, paintOffset))

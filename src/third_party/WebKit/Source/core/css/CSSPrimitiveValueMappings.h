@@ -2397,7 +2397,7 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ERubberbandable e)
     }
 }
 
-template<> inline CSSPrimitiveValue::operator ERubberbandable() const
+template<> inline ERubberbandable CSSPrimitiveValue::convertTo() const
 {
     ASSERT(isValueID());
     switch (m_value.valueID) {

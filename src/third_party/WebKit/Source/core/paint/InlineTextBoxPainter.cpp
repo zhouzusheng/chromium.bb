@@ -453,10 +453,10 @@ void InlineTextBoxPainter::paintDocumentMarker(GraphicsContext* pt, const Layout
             }
 
             if (colorAttr != nullAtom) {
-                RGBA32 rgba;
+                Color parsedColor;
                 String colorStr = colorAttr.string();
-                if (CSSParser::parseColor(rgba, colorStr, false)) {
-                    markerColor.setRGB(rgba);
+                if (CSSParser::parseColor(parsedColor, colorStr, false)) {
+                    markerColor = parsedColor;
                 }
             }
         }

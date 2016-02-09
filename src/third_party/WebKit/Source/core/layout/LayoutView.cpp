@@ -38,6 +38,7 @@
 #include "core/layout/LayoutPart.h"
 #include "core/layout/LayoutQuote.h"
 #include "core/layout/LayoutScrollbarPart.h"
+#include "core/layout/LayoutTableCell.h"
 #include "core/layout/compositing/PaintLayerCompositor.h"
 #include "core/page/Page.h"
 #include "core/paint/PaintLayer.h"
@@ -645,6 +646,18 @@ void LayoutView::setSelection(LayoutObject* start, int startPos, LayoutObject* e
                     SelectedBlockMap::AddResult result = oldSelectedBlocks.add(cb, cb->selectionState());
                     if (!result.isNewEntry)
                         break;
+                    cb = cb->containingBlock();
+                }
+            }
+            else {
+                // Include the fully-selected table cells.
+                LayoutBlock* cb = os->containingBlock();
+                while (cb && !cb->isLayoutView()) {
+                    if (cb->isTableCell() && toLayoutTableCell(cb)->isFullySelected()) {
+                        SelectedBlockMap::AddResult result = oldSelectedBlocks.add(cb, cb->selectionState());
+                        if (!result.isNewEntry)
+                            break;
+                    }
                     cb = cb->containingBlock();
                 }
             }

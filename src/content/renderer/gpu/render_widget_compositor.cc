@@ -41,6 +41,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/renderer/input/input_handler_manager.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "third_party/WebKit/public/platform/WebCompositeAndReadbackAsyncCallback.h"
 #include "third_party/WebKit/public/platform/WebLayoutAndPaintAsyncCallback.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
@@ -65,7 +66,6 @@ namespace cc {
 class Layer;
 }
 
-using blink::WebBeginFrameArgs;
 using blink::WebFloatPoint;
 using blink::WebRect;
 using blink::WebSelection;
@@ -213,6 +213,7 @@ RenderWidgetCompositor::RenderWidgetCompositor(
     : num_failed_recreate_attempts_(0),
       widget_(widget),
       compositor_deps_(compositor_deps),
+      never_visible_(false),
       layout_and_paint_async_callback_(nullptr),
       weak_factory_(this) {
 }
@@ -296,10 +297,11 @@ void RenderWidgetCompositor::Initialize() {
   settings.use_distance_field_text =
       compositor_deps_->IsDistanceFieldTextEnabled();
   settings.use_zero_copy = compositor_deps_->IsZeroCopyEnabled();
-  settings.use_persistent_map_for_gpu_memory_buffers =
-      compositor_deps_->IsPersistentGpuMemoryBufferEnabled();
+  settings.use_partial_raster = compositor_deps_->IsPartialRasterEnabled();
   settings.enable_elastic_overscroll =
       compositor_deps_->IsElasticOverscrollEnabled();
+  settings.renderer_settings.use_gpu_memory_buffer_resources =
+      compositor_deps_->IsGpuMemoryBufferCompositorResourcesEnabled();
   settings.use_image_texture_targets =
       compositor_deps_->GetImageTextureTargets();
   settings.image_decode_tasks_enabled =
@@ -325,6 +327,8 @@ void RenderWidgetCompositor::Initialize() {
 
   settings.verify_property_trees =
       cmd->HasSwitch(cc::switches::kEnablePropertyTreeVerification);
+  settings.use_property_trees =
+      cmd->HasSwitch(cc::switches::kEnableCompositorPropertyTrees);
   settings.renderer_settings.allow_antialiasing &=
       !cmd->HasSwitch(cc::switches::kDisableCompositedAntialiasing);
   // The means the renderer compositor has 2 possible modes:
@@ -370,17 +374,19 @@ void RenderWidgetCompositor::Initialize() {
       cmd->HasSwitch(cc::switches::kStrictLayerPropertyChangeChecking);
 
 #if defined(OS_ANDROID)
-  SynchronousCompositorFactory* synchronous_compositor_factory =
-      SynchronousCompositorFactory::GetInstance();
+  DCHECK(!SynchronousCompositorFactory::GetInstance() ||
+         !cmd->HasSwitch(switches::kIPCSyncCompositing));
+  bool using_synchronous_compositor =
+      SynchronousCompositorFactory::GetInstance() ||
+      cmd->HasSwitch(switches::kIPCSyncCompositing);
 
   // We can't use GPU rasterization on low-end devices, because the Ganesh
   // cache would consume too much memory.
   if (base::SysInfo::IsLowEndDevice())
     settings.gpu_rasterization_enabled = false;
-  settings.using_synchronous_renderer_compositor =
-      synchronous_compositor_factory;
+  settings.using_synchronous_renderer_compositor = using_synchronous_compositor;
   settings.record_full_layer = widget_->DoesRecordFullLayer();
-  if (synchronous_compositor_factory) {
+  if (using_synchronous_compositor) {
     // Android WebView uses system scrollbars, so make ours invisible.
     settings.scrollbar_animator = cc::LayerTreeSettings::NO_ANIMATOR;
     settings.solid_color_scrollbar_color = SK_ColorTRANSPARENT;
@@ -393,12 +399,11 @@ void RenderWidgetCompositor::Initialize() {
   }
   settings.renderer_settings.highp_threshold_min = 2048;
   // Android WebView handles root layer flings itself.
-  settings.ignore_root_layer_flings =
-      synchronous_compositor_factory;
+  settings.ignore_root_layer_flings = using_synchronous_compositor;
   // Memory policy on Android WebView does not depend on whether device is
   // low end, so always use default policy.
   bool use_low_memory_policy =
-      base::SysInfo::IsLowEndDevice() && !synchronous_compositor_factory;
+      base::SysInfo::IsLowEndDevice() && !using_synchronous_compositor;
   // RGBA_4444 textures are only enabled by default for low end devices
   // and are disabled for Android WebView as it doesn't support the format.
   settings.renderer_settings.use_rgba_4444_textures = use_low_memory_policy;
@@ -415,7 +420,7 @@ void RenderWidgetCompositor::Initialize() {
   }
   // Webview does not own the surface so should not clear it.
   settings.renderer_settings.should_clear_root_render_pass =
-      !synchronous_compositor_factory;
+      !using_synchronous_compositor;
 
   // TODO(danakj): Only do this on low end devices.
   settings.create_low_res_tiling = true;
@@ -458,6 +463,9 @@ void RenderWidgetCompositor::Initialize() {
   if (base::SysInfo::IsLowEndDevice())
     settings.max_staging_buffer_usage_in_bytes /= 4;
 
+  cc::ManagedMemoryPolicy current = settings.memory_policy_;
+  settings.memory_policy_ = GetGpuMemoryPolicy(current);
+
   scoped_refptr<base::SingleThreadTaskRunner> compositor_thread_task_runner =
       compositor_deps_->GetCompositorImplThreadTaskRunner();
   scoped_refptr<base::SingleThreadTaskRunner>
@@ -494,6 +502,11 @@ void RenderWidgetCompositor::Initialize() {
 }
 
 RenderWidgetCompositor::~RenderWidgetCompositor() {}
+
+void RenderWidgetCompositor::SetNeverVisible() {
+  DCHECK(!layer_tree_host_->visible());
+  never_visible_ = true;
+}
 
 const base::WeakPtr<cc::InputHandler>&
 RenderWidgetCompositor::GetInputHandler() {
@@ -569,10 +582,6 @@ bool RenderWidgetCompositor::SendMessageToMicroBenchmark(
   return layer_tree_host_->SendMessageToMicroBenchmark(id, value.Pass());
 }
 
-void RenderWidgetCompositor::StartCompositor() {
-  layer_tree_host_->SetLayerTreeHostClientReady();
-}
-
 void RenderWidgetCompositor::setRootLayer(const blink::WebLayer& layer) {
   layer_tree_host_->SetRootLayer(
       static_cast<const cc_blink::WebLayerImpl*>(&layer)->layer());
@@ -601,12 +610,6 @@ void RenderWidgetCompositor::detachCompositorAnimationTimeline(
 }
 
 void RenderWidgetCompositor::setViewportSize(
-    const WebSize&,
-    const WebSize& device_viewport_size) {
-  layer_tree_host_->SetViewportSize(device_viewport_size);
-}
-
-void RenderWidgetCompositor::setViewportSize(
     const WebSize& device_viewport_size) {
   layer_tree_host_->SetViewportSize(device_viewport_size);
 }
@@ -620,10 +623,6 @@ void RenderWidgetCompositor::setDeviceScaleFactor(float device_scale) {
   layer_tree_host_->SetDeviceScaleFactor(device_scale);
 }
 
-float RenderWidgetCompositor::deviceScaleFactor() const {
-  return layer_tree_host_->device_scale_factor();
-}
-
 void RenderWidgetCompositor::setBackgroundColor(blink::WebColor color) {
   layer_tree_host_->set_background_color(color);
 }
@@ -633,6 +632,9 @@ void RenderWidgetCompositor::setHasTransparentBackground(bool transparent) {
 }
 
 void RenderWidgetCompositor::setVisible(bool visible) {
+  if (never_visible_)
+    return;
+
   layer_tree_host_->SetVisible(visible);
 }
 
@@ -690,7 +692,7 @@ void RenderWidgetCompositor::registerViewportLayers(
     const blink::WebLayer* outerViewportScrollLayer) {
   layer_tree_host_->RegisterViewportLayers(
       // TODO(bokan): This check can probably be removed now, but it looks
-      // like overscroll elasticity may still be NULL until PinchViewport
+      // like overscroll elasticity may still be NULL until VisualViewport
       // registers its layers.
       // The scroll elasticity layer will only exist when using pinch virtual
       // viewports.
@@ -702,7 +704,7 @@ void RenderWidgetCompositor::registerViewportLayers(
       static_cast<const cc_blink::WebLayerImpl*>(innerViewportScrollLayer)
           ->layer(),
       // TODO(bokan): This check can probably be removed now, but it looks
-      // like overscroll elasticity may still be NULL until PinchViewport
+      // like overscroll elasticity may still be NULL until VisualViewport
       // registers its layers.
       // The outer viewport layer will only exist when using pinch virtual
       // viewports.
@@ -846,10 +848,6 @@ void RenderWidgetCompositor::setTopControlsShownRatio(float ratio) {
   layer_tree_host_->SetTopControlsShownRatio(ratio);
 }
 
-void RenderWidgetCompositor::setHidePinchScrollbarsNearMinScale(bool hide) {
-  layer_tree_host_->set_hide_pinch_scrollbars_near_min_scale(hide);
-}
-
 void RenderWidgetCompositor::WillBeginMainFrame() {
   widget_->WillBeginCompositorFrame();
 }
@@ -858,21 +856,17 @@ void RenderWidgetCompositor::DidBeginMainFrame() {
 }
 
 void RenderWidgetCompositor::BeginMainFrame(const cc::BeginFrameArgs& args) {
-  double frame_time_sec = (args.frame_time - base::TimeTicks()).InSecondsF();
-  double deadline_sec = (args.deadline - base::TimeTicks()).InSecondsF();
-  double interval_sec = args.interval.InSecondsF();
-  WebBeginFrameArgs web_begin_frame_args =
-      WebBeginFrameArgs(frame_time_sec, deadline_sec, interval_sec);
   compositor_deps_->GetRendererScheduler()->WillBeginFrame(args);
-  widget_->webwidget()->beginFrame(web_begin_frame_args);
+  double frame_time_sec = (args.frame_time - base::TimeTicks()).InSecondsF();
+  widget_->webwidget()->beginFrame(frame_time_sec);
 }
 
 void RenderWidgetCompositor::BeginMainFrameNotExpectedSoon() {
   compositor_deps_->GetRendererScheduler()->BeginFrameNotExpectedSoon();
 }
 
-void RenderWidgetCompositor::Layout() {
-  widget_->webwidget()->layout();
+void RenderWidgetCompositor::UpdateLayerTreeHost() {
+  widget_->webwidget()->updateAllLifecyclePhases();
 
   if (temporary_copy_output_request_) {
     // For WebViewImpl, this will always have a root layer.  For other widgets,
@@ -1009,6 +1003,91 @@ void RenderWidgetCompositor::RecordFrameTimingEvents(
 void RenderWidgetCompositor::SetSurfaceIdNamespace(
     uint32_t surface_id_namespace) {
   layer_tree_host_->set_surface_id_namespace(surface_id_namespace);
+}
+
+cc::ManagedMemoryPolicy RenderWidgetCompositor::GetGpuMemoryPolicy(
+    const cc::ManagedMemoryPolicy& policy) {
+  cc::ManagedMemoryPolicy actual = policy;
+  actual.bytes_limit_when_visible = 0;
+
+  // If the value was overridden on the command line, use the specified value.
+  static bool client_hard_limit_bytes_overridden =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kForceGpuMemAvailableMb);
+  if (client_hard_limit_bytes_overridden) {
+    if (base::StringToSizeT(
+            base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                switches::kForceGpuMemAvailableMb),
+            &actual.bytes_limit_when_visible))
+      actual.bytes_limit_when_visible *= 1024 * 1024;
+    return actual;
+  }
+
+#if defined(OS_ANDROID)
+  // We can't query available GPU memory from the system on Android.
+  // Physical memory is also mis-reported sometimes (eg. Nexus 10 reports
+  // 1262MB when it actually has 2GB, while Razr M has 1GB but only reports
+  // 128MB java heap size). First we estimate physical memory using both.
+  size_t dalvik_mb = base::SysInfo::DalvikHeapSizeMB();
+  size_t physical_mb = base::SysInfo::AmountOfPhysicalMemoryMB();
+  size_t physical_memory_mb = 0;
+  if (dalvik_mb >= 256)
+    physical_memory_mb = dalvik_mb * 4;
+  else
+    physical_memory_mb = std::max(dalvik_mb * 4, (physical_mb * 4) / 3);
+
+  // Now we take a default of 1/8th of memory on high-memory devices,
+  // and gradually scale that back for low-memory devices (to be nicer
+  // to other apps so they don't get killed). Examples:
+  // Nexus 4/10(2GB)    256MB (normally 128MB)
+  // Droid Razr M(1GB)  114MB (normally 57MB)
+  // Galaxy Nexus(1GB)  100MB (normally 50MB)
+  // Xoom(1GB)          100MB (normally 50MB)
+  // Nexus S(low-end)   8MB (normally 8MB)
+  // Note that the compositor now uses only some of this memory for
+  // pre-painting and uses the rest only for 'emergencies'.
+  if (actual.bytes_limit_when_visible == 0) {
+    // NOTE: Non-low-end devices use only 50% of these limits,
+    // except during 'emergencies' where 100% can be used.
+    if (!base::SysInfo::IsLowEndDevice()) {
+      if (physical_memory_mb >= 1536)
+        actual.bytes_limit_when_visible = physical_memory_mb / 8;  // >192MB
+      else if (physical_memory_mb >= 1152)
+        actual.bytes_limit_when_visible = physical_memory_mb / 8;  // >144MB
+      else if (physical_memory_mb >= 768)
+        actual.bytes_limit_when_visible = physical_memory_mb / 10;  // >76MB
+      else
+        actual.bytes_limit_when_visible = physical_memory_mb / 12;  // <64MB
+    } else {
+      // Low-end devices have 512MB or less memory by definition
+      // so we hard code the limit rather than relying on the heuristics
+      // above. Low-end devices use 4444 textures so we can use a lower limit.
+      actual.bytes_limit_when_visible = 8;
+    }
+    actual.bytes_limit_when_visible =
+        actual.bytes_limit_when_visible * 1024 * 1024;
+    // Clamp the observed value to a specific range on Android.
+    actual.bytes_limit_when_visible = std::max(
+        actual.bytes_limit_when_visible, static_cast<size_t>(8 * 1024 * 1024));
+    actual.bytes_limit_when_visible =
+        std::min(actual.bytes_limit_when_visible,
+                 static_cast<size_t>(256 * 1024 * 1024));
+  }
+  actual.priority_cutoff_when_visible =
+      gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING;
+#else
+  // Ignore what the system said and give all clients the same maximum
+  // allocation on desktop platforms.
+  actual.bytes_limit_when_visible = 512 * 1024 * 1024;
+  actual.priority_cutoff_when_visible =
+      gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE;
+#endif
+  return actual;
+}
+
+void RenderWidgetCompositor::SetPaintedDeviceScaleFactor(
+    float device_scale) {
+  layer_tree_host_->SetPaintedDeviceScaleFactor(device_scale);
 }
 
 }  // namespace content

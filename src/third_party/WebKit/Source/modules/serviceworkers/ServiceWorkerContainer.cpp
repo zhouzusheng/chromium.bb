@@ -42,6 +42,7 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessagePort.h"
 #include "core/frame/LocalDOMWindow.h"
+#include "core/frame/UseCounter.h"
 #include "modules/EventTargetModules.h"
 #include "modules/serviceworkers/ServiceWorker.h"
 #include "modules/serviceworkers/ServiceWorkerContainerClient.h"
@@ -353,34 +354,25 @@ ScriptPromise ServiceWorkerContainer::ready(ScriptState* callerState)
     return m_ready->promise(callerState->world());
 }
 
-// If the WebServiceWorker is up for adoption (does not have a
-// WebServiceWorkerProxy owner), rejects the adoption by deleting the
-// WebServiceWorker.
-static void deleteIfNoExistingOwner(WebServiceWorker* serviceWorker)
+void ServiceWorkerContainer::setController(WebPassOwnPtr<WebServiceWorker::Handle> handle, bool shouldNotifyControllerChange)
 {
-    if (serviceWorker && !serviceWorker->proxy())
-        delete serviceWorker;
-}
-
-void ServiceWorkerContainer::setController(WebServiceWorker* serviceWorker, bool shouldNotifyControllerChange)
-{
-    if (!executionContext()) {
-        deleteIfNoExistingOwner(serviceWorker);
+    if (!executionContext())
         return;
-    }
-    m_controller = ServiceWorker::from(executionContext(), serviceWorker);
+    m_controller = ServiceWorker::from(executionContext(), handle.release());
+    if (m_controller)
+        UseCounter::count(executionContext(), UseCounter::ServiceWorkerControlledPage);
     if (shouldNotifyControllerChange)
         dispatchEvent(Event::create(EventTypeNames::controllerchange));
 }
 
-void ServiceWorkerContainer::dispatchMessageEvent(WebServiceWorker* serviceWorker, const WebString& message, const WebMessagePortChannelArray& webChannels)
+void ServiceWorkerContainer::dispatchMessageEvent(WebPassOwnPtr<WebServiceWorker::Handle> handle, const WebString& message, const WebMessagePortChannelArray& webChannels)
 {
     if (!executionContext() || !executionContext()->executingWindow())
         return;
 
     MessagePortArray* ports = MessagePort::toMessagePortArray(executionContext(), webChannels);
     RefPtr<SerializedScriptValue> value = SerializedScriptValueFactory::instance().createFromWire(message);
-    ServiceWorker* source = ServiceWorker::from(executionContext(), serviceWorker);
+    ServiceWorker* source = ServiceWorker::from(executionContext(), handle.release());
     dispatchEvent(ServiceWorkerMessageEvent::create(ports, value, source, executionContext()->securityOrigin()->toString()));
 }
 

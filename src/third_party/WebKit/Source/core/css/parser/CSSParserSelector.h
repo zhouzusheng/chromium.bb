@@ -21,12 +21,13 @@
 #ifndef CSSParserSelector_h
 #define CSSParserSelector_h
 
+#include "core/CoreExport.h"
 #include "core/css/CSSSelector.h"
 
 namespace blink {
 
-class CSSParserSelector {
-    WTF_MAKE_NONCOPYABLE(CSSParserSelector); WTF_MAKE_FAST_ALLOCATED(CSSParserSelector);
+class CORE_EXPORT CSSParserSelector {
+    WTF_MAKE_NONCOPYABLE(CSSParserSelector); USING_FAST_MALLOC(CSSParserSelector);
 public:
     CSSParserSelector();
     explicit CSSParserSelector(const QualifiedName&, bool isImplicit = false);

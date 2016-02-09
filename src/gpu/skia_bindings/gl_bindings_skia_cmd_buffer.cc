@@ -7,6 +7,7 @@
 #ifndef GL_GLEXT_PROTOTYPES
 #define GL_GLEXT_PROTOTYPES
 #endif
+#include "base/logging.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
@@ -14,8 +15,7 @@
 
 namespace skia_bindings {
 
-GrGLInterface* CreateCommandBufferSkiaGLBinding() {
-  GrGLInterface* interface = new GrGLInterface;
+void InitCommandBufferSkiaGLBinding(GrGLInterface* interface) {
   interface->fStandard = kGLES_GrGLStandard;
   interface->fExtensions.init(kGLES_GrGLStandard,
                               glGetString,
@@ -166,9 +166,19 @@ GrGLInterface* CreateCommandBufferSkiaGLBinding() {
     functions->fStencilThenCoverFillPath = glStencilThenCoverFillPathCHROMIUM;
     functions->fStencilThenCoverStrokePath =
         glStencilThenCoverStrokePathCHROMIUM;
+    functions->fStencilFillPathInstanced = glStencilFillPathInstancedCHROMIUM;
+    functions->fStencilStrokePathInstanced =
+        glStencilStrokePathInstancedCHROMIUM;
+    functions->fCoverFillPathInstanced = glCoverFillPathInstancedCHROMIUM;
+    functions->fCoverStrokePathInstanced = glCoverStrokePathInstancedCHROMIUM;
+    functions->fStencilThenCoverFillPathInstanced =
+        glStencilThenCoverFillPathInstancedCHROMIUM;
+    functions->fStencilThenCoverStrokePathInstanced =
+        glStencilThenCoverStrokePathInstancedCHROMIUM;
+    functions->fProgramPathFragmentInputGen =
+        glProgramPathFragmentInputGenCHROMIUM;
+    functions->fBindFragmentInputLocation = glBindFragmentInputLocationCHROMIUM;
   }
-
-  return interface;
 }
 
 }  // namespace skia

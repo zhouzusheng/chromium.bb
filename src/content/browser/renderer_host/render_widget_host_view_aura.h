@@ -55,6 +55,7 @@ class DelegatedFrameData;
 namespace gfx {
 class Canvas;
 class Display;
+class Rect;
 }
 
 namespace gpu {
@@ -155,7 +156,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback) override;
+      const base::Callback<void(const gfx::Rect&, bool)>& callback) override;
   bool CanCopyToVideoFrame() const override;
   void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
@@ -188,6 +189,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void ClearCompositorFrame() override;
   void DidStopFlinging() override;
   void OnDidNavigateMainFrameToNewPage() override;
+  void LockCompositingSurface() override;
+  void UnlockCompositingSurface() override;
   uint32_t GetSurfaceIdNamespace() override;
   uint32_t SurfaceIdNamespaceAtPoint(const gfx::Point& point,
                                      gfx::Point* transformed_point) override;
@@ -205,7 +208,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void ConfirmCompositionText() override;
   void ClearCompositionText() override;
   void InsertText(const base::string16& text) override;
-  void InsertChar(base::char16 ch, int flags) override;
+  void InsertChar(const ui::KeyEvent& event) override;
   ui::TextInputType GetTextInputType() const override;
   ui::TextInputMode GetTextInputMode() const override;
   int GetTextInputFlags() const override;
@@ -675,6 +678,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // This flag when set ensures that we send over a notification to blink that
   // the current view has focus. Defaults to false.
   bool set_focus_on_mouse_down_;
+
+  float device_scale_factor_;
 
   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_;
 

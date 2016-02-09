@@ -129,7 +129,7 @@
         }],
       ],
       'sources': [
-        '../content/app/startup_helper_win.cc',
+        '../content/app/sandbox_helper_win.cc',
         '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/content/app/resources/content_resources.rc',
@@ -352,7 +352,7 @@
         '..',
       ],
       'sources': [
-        '../content/app/startup_helper_win.cc',
+        '../content/app/sandbox_helper_win.cc',
         'subprocess/main.cc',
         'subprocess/resources.rc',
       ],

@@ -65,8 +65,10 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCursorInfo.h"
+#include "public/platform/WebFrameScheduler.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/platform/WebViewScheduler.h"
 #include "public/web/WebAXObject.h"
 #include "public/web/WebAutofillClient.h"
 #include "public/web/WebColorChooser.h"
@@ -122,6 +124,7 @@ ChromeClientImpl::ChromeClientImpl(WebViewImpl* webView)
     , m_lastMouseOverNode(0)
     , m_lastTooltipHadText(false)
     , m_cursorOverridden(false)
+    , m_didRequestNonEmptyToolTip(false)
 {
 }
 
@@ -306,7 +309,7 @@ WebNavigationPolicy effectiveNavigationPolicy(NavigationPolicy navigationPolicy,
 } // namespace
 
 Page* ChromeClientImpl::createWindow(LocalFrame* frame, const FrameLoadRequest& r, const WindowFeatures& features,
-    NavigationPolicy navigationPolicy, ShouldSendReferrer shouldSendReferrer)
+    NavigationPolicy navigationPolicy, ShouldSetOpener shouldSetOpener)
 {
     if (!m_webView->client())
         return nullptr;
@@ -316,7 +319,7 @@ Page* ChromeClientImpl::createWindow(LocalFrame* frame, const FrameLoadRequest& 
     Fullscreen::fullyExitFullscreen(*frame->document());
 
     WebViewImpl* newView = toWebViewImpl(
-        m_webView->client()->createView(WebLocalFrameImpl::fromFrame(frame), WrappedResourceRequest(r.resourceRequest()), features, r.frameName(), policy, shouldSendReferrer == NeverSendReferrer));
+        m_webView->client()->createView(WebLocalFrameImpl::fromFrame(frame), WrappedResourceRequest(r.resourceRequest()), features, r.frameName(), policy, shouldSetOpener == NeverSetOpener));
     if (!newView)
         return nullptr;
     return newView->page();
@@ -407,17 +410,11 @@ bool ChromeClientImpl::canOpenBeforeUnloadConfirmPanel()
     return !!m_webView->client();
 }
 
-bool ChromeClientImpl::openBeforeUnloadConfirmPanelDelegate(LocalFrame* frame, const String& message)
+bool ChromeClientImpl::openBeforeUnloadConfirmPanelDelegate(LocalFrame* frame, const String& message, bool isReload)
 {
     notifyPopupOpeningObservers();
     WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
-
-    WebDataSource* ds = webframe->provisionalDataSource();
-    bool isReload = ds && (ds->navigationType() == WebNavigationTypeReload);
-
-    if (webframe->client())
-        return webframe->client()->runModalBeforeUnloadDialog(isReload, message);
-    return false;
+    return webframe->client() && webframe->client()->runModalBeforeUnloadDialog(isReload, message);
 }
 
 void ChromeClientImpl::closeWindowSoon()
@@ -594,8 +591,17 @@ void ChromeClientImpl::showMouseOverURL(const HitTestResult& result)
 
 void ChromeClientImpl::setToolTip(const String& tooltipText, TextDirection dir)
 {
-    if (m_webView->client())
+    if (!m_webView->client())
+        return;
+    if (!tooltipText.isEmpty()) {
         m_webView->client()->setToolTipText(tooltipText, toWebTextDirection(dir));
+        m_didRequestNonEmptyToolTip = true;
+    } else if (m_didRequestNonEmptyToolTip) {
+        // WebViewClient::setToolTipText will send an IPC message.  We'd like to
+        // reduce the number of setToolTipText calls.
+        m_webView->client()->setToolTipText(tooltipText, toWebTextDirection(dir));
+        m_didRequestNonEmptyToolTip = false;
+    }
     m_lastTooltipHadText = !tooltipText.isEmpty();
 }
 
@@ -622,7 +628,7 @@ PassOwnPtrWillBeRawPtr<ColorChooser> ChromeClientImpl::openColorChooser(LocalFra
     return controller.release();
 }
 
-PassRefPtr<DateTimeChooser> ChromeClientImpl::openDateTimeChooser(DateTimeChooserClient* pickerClient, const DateTimeChooserParameters& parameters)
+PassRefPtrWillBeRawPtr<DateTimeChooser> ChromeClientImpl::openDateTimeChooser(DateTimeChooserClient* pickerClient, const DateTimeChooserParameters& parameters)
 {
     notifyPopupOpeningObservers();
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
@@ -678,13 +684,13 @@ Cursor ChromeClientImpl::lastSetCursorForTesting() const
     return m_lastSetMouseCursorForTesting;
 }
 
-void ChromeClientImpl::setCursor(const Cursor& cursor)
+void ChromeClientImpl::setCursor(const Cursor& cursor, LocalFrame* localRoot)
 {
     m_lastSetMouseCursorForTesting = cursor;
-    setCursor(WebCursorInfo(cursor));
+    setCursor(WebCursorInfo(cursor), localRoot);
 }
 
-void ChromeClientImpl::setCursor(const WebCursorInfo& cursor)
+void ChromeClientImpl::setCursor(const WebCursorInfo& cursor, LocalFrame* localRoot)
 {
     if (m_cursorOverridden)
         return;
@@ -695,13 +701,25 @@ void ChromeClientImpl::setCursor(const WebCursorInfo& cursor)
     if (m_webView->hasOpenedPopup())
         return;
 #endif
-    if (m_webView->client())
+    if (!m_webView->client())
+        return;
+    // TODO(kenrb, dcheng): For top-level frames we still use the WebView as
+    // a WebWidget. This special case will be removed when top-level frames
+    // get WebFrameWidgets.
+    if (localRoot->isMainFrame()) {
         m_webView->client()->didChangeCursor(cursor);
+    } else {
+        WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(localRoot);
+        ASSERT(webFrame);
+        ASSERT(webFrame->frameWidget());
+        if (toWebFrameWidgetImpl(webFrame->frameWidget())->client())
+            toWebFrameWidgetImpl(webFrame->frameWidget())->client()->didChangeCursor(cursor);
+    }
 }
 
 void ChromeClientImpl::setCursorForPlugin(const WebCursorInfo& cursor)
 {
-    setCursor(cursor);
+    setCursor(cursor, m_webView->page()->deprecatedLocalMainFrame());
 }
 
 void ChromeClientImpl::setCursorOverridden(bool overridden)
@@ -748,18 +766,6 @@ void ChromeClientImpl::attachRootGraphicsLayer(GraphicsLayer* rootLayer, LocalFr
         ASSERT(webFrame->frameWidget());
         toWebFrameWidgetImpl(webFrame->frameWidget())->setRootGraphicsLayer(rootLayer);
     }
-}
-
-void ChromeClientImpl::setCompositedDisplayList(PassOwnPtr<CompositedDisplayList> compositedDisplayList)
-{
-    m_webView->setCompositedDisplayList(compositedDisplayList);
-}
-
-CompositedDisplayList* ChromeClientImpl::compositedDisplayListForTesting()
-{
-    if (WebCompositedDisplayList* compositedDisplayList = m_webView->compositedDisplayList())
-        return compositedDisplayList->compositedDisplayListForTesting();
-    return nullptr;
 }
 
 void ChromeClientImpl::attachCompositorAnimationTimeline(WebCompositorAnimationTimeline* compositorTimeline, LocalFrame* localRoot)
@@ -1027,6 +1033,11 @@ void ChromeClientImpl::didObserveNonGetFetchFromScript() const
 {
     if (m_webView->pageImportanceSignals())
         m_webView->pageImportanceSignals()->setIssuedNonGetFetchFromScript();
+}
+
+PassOwnPtr<WebFrameScheduler> ChromeClientImpl::createFrameScheduler()
+{
+    return m_webView->scheduler()->createFrameScheduler().release();
 }
 
 } // namespace blink

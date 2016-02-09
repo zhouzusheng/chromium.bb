@@ -24,16 +24,22 @@ const char kCookieKey[] = "cookie";
 
 HpackDecoder::HpackDecoder(const HpackHuffmanTable& table)
     : max_string_literal_size_(kDefaultMaxStringLiteralSize),
+      huffman_table_(table),
+      handler_(nullptr),
       regular_header_seen_(false),
-      huffman_table_(table) {}
+      header_block_started_(false) {}
 
 HpackDecoder::~HpackDecoder() {}
 
-bool HpackDecoder::HandleControlFrameHeadersData(SpdyStreamId id,
-                                                 const char* headers_data,
+bool HpackDecoder::HandleControlFrameHeadersData(const char* headers_data,
                                                  size_t headers_data_length) {
   decoded_block_.clear();
-
+  if (!header_block_started_) {
+    header_block_started_ = true;
+    if (handler_ != nullptr) {
+      handler_->OnHeaderBlockStart();
+    }
+  }
   size_t new_size = headers_block_buffer_.size() + headers_data_length;
   if (new_size > kMaxDecodeBufferSize) {
     return false;
@@ -43,8 +49,7 @@ bool HpackDecoder::HandleControlFrameHeadersData(SpdyStreamId id,
   return true;
 }
 
-bool HpackDecoder::HandleControlFrameHeadersComplete(SpdyStreamId id,
-                                                     size_t* compressed_len) {
+bool HpackDecoder::HandleControlFrameHeadersComplete(size_t* compressed_len) {
   HpackInputStream input_stream(max_string_literal_size_,
                                 headers_block_buffer_);
   regular_header_seen_ = false;
@@ -57,8 +62,12 @@ bool HpackDecoder::HandleControlFrameHeadersComplete(SpdyStreamId id,
       return false;
     }
   }
+  if (handler_ != nullptr) {
+    handler_->OnHeaderBlockEnd(headers_block_buffer_.size());
+  }
   headers_block_buffer_.clear();
-
+  header_block_started_ = false;
+  handler_ = nullptr;
   return true;
 }
 
@@ -75,16 +84,21 @@ bool HpackDecoder::HandleHeaderRepresentation(StringPiece name,
     }
   }
 
-  auto it = decoded_block_.find(name);
-  if (it == decoded_block_.end()) {
-    // This is a new key.
-    decoded_block_[name] = value;
+  if (handler_ == nullptr) {
+    auto it = decoded_block_.find(name);
+    if (it == decoded_block_.end()) {
+      // This is a new key.
+      decoded_block_[name] = value;
+    } else {
+      // The key already exists, append |value| with appropriate delimiter.
+      string new_value = it->second.as_string();
+      new_value.append((name == kCookieKey) ? "; " : string(1, '\0'));
+      value.AppendToString(&new_value);
+      decoded_block_.ReplaceOrAppendHeader(name, new_value);
+    }
   } else {
-    // The key already exists, append |value| with appropriate delimiter.
-    string new_value = it->second.as_string();
-    new_value.append((name == kCookieKey) ? "; " : string(1, '\0'));
-    value.AppendToString(&new_value);
-    decoded_block_.ReplaceOrAppendHeader(name, new_value);
+    DCHECK(decoded_block_.empty());
+    handler_->OnHeader(name, value);
   }
   return true;
 }

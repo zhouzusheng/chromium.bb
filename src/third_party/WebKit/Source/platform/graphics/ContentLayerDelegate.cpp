@@ -32,7 +32,8 @@
 #include "platform/TracedValue.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintArtifactToSkCanvas.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/transforms/AffineTransform.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebDisplayItemList.h"
@@ -40,7 +41,6 @@
 #include "public/platform/WebRect.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPicture.h"
-#include "third_party/skia/include/core/SkPictureRecorder.h"
 
 namespace blink {
 
@@ -65,14 +65,20 @@ PassRefPtr<TracedValue> toTracedValue(const WebRect& clip)
     return tracedValue;
 }
 
-void ContentLayerDelegate::paintContents(
-    SkCanvas* canvas, const WebRect& clip,
-    WebContentLayerClient::PaintingControlSetting paintingControl)
+static void paintArtifactToWebDisplayItemList(WebDisplayItemList* list, const PaintArtifact& artifact, const WebRect& bounds)
 {
-    TRACE_EVENT1("blink,benchmark", "ContentLayerDelegate::paintContents", "clip_rect", toTracedValue(clip));
-
-    // TODO(pdr): Remove this function.
-    ASSERT_NOT_REACHED();
+    if (RuntimeEnabledFeatures::slimmingPaintV2Enabled()) {
+        // This is a temporary path to paint the artifact using the paint chunk
+        // properties. Ultimately, we should instead split the artifact into
+        // separate layers and send those to the compositor, instead of sending
+        // one big flat SkPicture.
+        SkRect skBounds = SkRect::MakeXYWH(bounds.x, bounds.y, bounds.width, bounds.height);
+        RefPtr<SkPicture> picture = paintArtifactToSkPicture(artifact, skBounds);
+        // TODO(wkorman): Pass actual visual rect with the drawing item.
+        list->appendDrawingItem(IntRect(), picture.get());
+        return;
+    }
+    artifact.appendToWebDisplayItemList(list);
 }
 
 void ContentLayerDelegate::paintContents(
@@ -85,34 +91,36 @@ void ContentLayerDelegate::paintContents(
     // here so the browser is usable during development and does not crash due
     // to committing the new display items twice.
     if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled()) {
-        m_painter->displayItemList()->appendToWebDisplayItemList(webDisplayItemList);
+        paintArtifactToWebDisplayItemList(webDisplayItemList, m_painter->paintController()->paintArtifact(), clip);
         return;
     }
 
-    DisplayItemList* displayItemList = m_painter->displayItemList();
-    ASSERT(displayItemList);
-    displayItemList->setDisplayItemConstructionIsDisabled(
+    PaintController* paintController = m_painter->paintController();
+    ASSERT(paintController);
+    paintController->setDisplayItemConstructionIsDisabled(
         paintingControl == WebContentLayerClient::DisplayListConstructionDisabled);
 
     // We also disable caching when Painting or Construction are disabled. In both cases we would like
     // to compare assuming the full cost of recording, not the cost of re-using cached content.
     if (paintingControl != WebContentLayerClient::PaintDefaultBehavior)
-        displayItemList->invalidateAll();
+        paintController->invalidateAll();
 
     GraphicsContext::DisabledMode disabledMode = GraphicsContext::NothingDisabled;
     if (paintingControl == WebContentLayerClient::DisplayListPaintingDisabled
         || paintingControl == WebContentLayerClient::DisplayListConstructionDisabled)
         disabledMode = GraphicsContext::FullyDisabled;
-    GraphicsContext context(displayItemList, disabledMode);
+    GraphicsContext context(*paintController, disabledMode);
 
-    m_painter->paint(context, clip);
+    IntRect interestRect = clip;
+    m_painter->paint(context, &interestRect);
 
-    displayItemList->commitNewDisplayItemsAndAppendToWebDisplayItemList(webDisplayItemList);
+    paintController->commitNewDisplayItems();
+    paintArtifactToWebDisplayItemList(webDisplayItemList, paintController->paintArtifact(), clip);
 }
 
 size_t ContentLayerDelegate::approximateUnsharedMemoryUsage() const
 {
-    return m_painter->displayItemList()->approximateUnsharedMemoryUsage();
+    return m_painter->paintController()->approximateUnsharedMemoryUsage();
 }
 
 } // namespace blink

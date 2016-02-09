@@ -97,7 +97,7 @@
 // for best performance when tracing is disabled.
 // const unsigned char*
 //     TRACE_EVENT_API_GET_CATEGORY_ENABLED(const char* category_name)
-#define TRACE_EVENT_API_GET_CATEGORY_ENABLED \
+#define TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED \
     blink::EventTracer::getTraceCategoryEnabledFlag
 
 // Add a trace event to the platform tracing system.
@@ -141,7 +141,7 @@
                              "trace_event category"); \
     if (!INTERNALTRACEEVENTUID(categoryGroupEnabled)) { \
         INTERNALTRACEEVENTUID(categoryGroupEnabled) = \
-            TRACE_EVENT_API_GET_CATEGORY_ENABLED(category); \
+            TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(category); \
     }
 
 // Implementation detail: internal macro to create static category and add
@@ -566,7 +566,7 @@ private:
 // the sampling state having recorded.
 template<size_t BucketNumber>
 class SamplingStateScope {
-    WTF_MAKE_FAST_ALLOCATED(SamplingStateScope);
+    USING_FAST_MALLOC(SamplingStateScope);
 public:
     SamplingStateScope(const char* categoryAndName)
     {

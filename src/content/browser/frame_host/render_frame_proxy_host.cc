@@ -57,9 +57,9 @@ RenderFrameProxyHost::RenderFrameProxyHost(SiteInstance* site_instance,
       std::make_pair(
           RenderFrameProxyHostID(GetProcess()->GetID(), routing_id_),
           this)).second);
-  CHECK_IMPLIES(!render_view_host,
-                frame_tree_node_->render_manager()->ForInnerDelegate() &&
-                    frame_tree_node_->IsMainFrame());
+  CHECK(render_view_host ||
+        (frame_tree_node_->render_manager()->ForInnerDelegate() &&
+         frame_tree_node_->IsMainFrame()));
   if (render_view_host)
     frame_tree_node_->frame_tree()->AddRenderViewHostRef(render_view_host_);
 
@@ -216,6 +216,10 @@ void RenderFrameProxyHost::UpdateOpener() {
   int opener_routing_id =
       frame_tree_node_->render_manager()->GetOpenerRoutingID(GetSiteInstance());
   Send(new FrameMsg_UpdateOpener(GetRoutingID(), opener_routing_id));
+}
+
+void RenderFrameProxyHost::SetFocusedFrame() {
+  Send(new FrameMsg_SetFocusedFrame(routing_id_));
 }
 
 void RenderFrameProxyHost::OnDetach() {

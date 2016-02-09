@@ -36,6 +36,7 @@ void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
 {
     RefPtrWillBeRawPtr<PageAnimator> protector(this);
     TemporaryChange<bool> servicing(m_servicingAnimations, true);
+    clock().updateTime(monotonicAnimationStartTime);
 
     WillBeHeapVector<RefPtrWillBeMember<Document>> documents;
     for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
@@ -44,19 +45,22 @@ void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
     }
 
     for (auto& document : documents) {
+        DocumentAnimations::updateAnimationTimingForAnimationFrame(*document);
         if (document->view()) {
+            if (document->view()->shouldThrottleRendering())
+                continue;
             document->view()->scrollableArea()->serviceScrollAnimations(monotonicAnimationStartTime);
 
             if (const FrameView::ScrollableAreaSet* animatingScrollableAreas = document->view()->animatingScrollableAreas()) {
                 // Iterate over a copy, since ScrollableAreas may deregister
                 // themselves during the iteration.
-                Vector<ScrollableArea*> animatingScrollableAreasCopy;
+                WillBeHeapVector<RawPtrWillBeMember<ScrollableArea>> animatingScrollableAreasCopy;
                 copyToVector(*animatingScrollableAreas, animatingScrollableAreasCopy);
                 for (ScrollableArea* scrollableArea : animatingScrollableAreasCopy)
                     scrollableArea->serviceScrollAnimations(monotonicAnimationStartTime);
             }
         }
-        DocumentAnimations::updateAnimationTimingForAnimationFrame(*document, monotonicAnimationStartTime);
+        // TODO(skyostil): These functions should not run for documents without views.
         SVGDocumentExtensions::serviceOnAnimationFrame(*document, monotonicAnimationStartTime);
         document->serviceScriptedAnimations(monotonicAnimationStartTime);
     }
@@ -83,14 +87,17 @@ void PageAnimator::scheduleVisualUpdate(LocalFrame* frame)
     }
 }
 
-void PageAnimator::updateLayoutAndStyleForPainting(LocalFrame* rootFrame)
+void PageAnimator::updateLifecycleToCompositingCleanPlusScrolling(LocalFrame& rootFrame)
 {
-    RefPtrWillBeRawPtr<FrameView> view = rootFrame->view();
-
+    RefPtrWillBeRawPtr<FrameView> view = rootFrame.view();
     TemporaryChange<bool> servicing(m_updatingLayoutAndStyleForPainting, true);
+    view->updateLifecycleToCompositingCleanPlusScrolling();
+}
 
-    // setFrameRect may have the side-effect of causing existing page layout to
-    // be invalidated, so layout needs to be called last.
+void PageAnimator::updateAllLifecyclePhases(LocalFrame& rootFrame)
+{
+    RefPtrWillBeRawPtr<FrameView> view = rootFrame.view();
+    TemporaryChange<bool> servicing(m_updatingLayoutAndStyleForPainting, true);
     view->updateAllLifecyclePhases();
 }
 

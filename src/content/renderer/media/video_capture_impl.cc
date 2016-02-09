@@ -27,12 +27,13 @@ namespace {
 
 // This is called on an unknown thread when the VideoFrame destructor executes.
 // As of this writing, this callback mechanism is the only interface in
-// VideoFrame to provide the final value for |release_sync_point|.
+// VideoFrame to provide the final value for |release_sync_token|.
 // VideoCaptureImpl::DidFinishConsumingFrame() will read the value saved here,
 // and pass it back to the IO thread to pass back to the host via the
 // BufferReady IPC.
-void SaveReleaseSyncPoint(uint32* storage, uint32 release_sync_point) {
-  *storage = release_sync_point;
+void SaveReleaseSyncToken(gpu::SyncToken* sync_token_storage,
+                          const gpu::SyncToken& release_sync_token) {
+  *sync_token_storage = release_sync_token;
 }
 
 }  // namespace
@@ -69,19 +70,18 @@ class VideoCaptureImpl::ClientBuffer2
       : handles_(client_handles),
         size_(size) {
     const media::VideoPixelFormat format = media::PIXEL_FORMAT_I420;
+    DCHECK_EQ(handles_.size(), media::VideoFrame::NumPlanes(format));
     for (size_t i = 0; i < handles_.size(); ++i) {
       const size_t width = media::VideoFrame::Columns(i, format, size_.width());
       const size_t height = media::VideoFrame::Rows(i, format, size_.height());
       buffers_.push_back(GpuMemoryBufferImpl::CreateFromHandle(
-          handles_[i],
-          gfx::Size(width, height),
-          gfx::BufferFormat::R_8,
-          gfx::BufferUsage::MAP,
+          handles_[i], gfx::Size(width, height), gfx::BufferFormat::R_8,
+          gfx::BufferUsage::GPU_READ_CPU_READ_WRITE,
           base::Bind(&ClientBuffer2::DestroyGpuMemoryBuffer,
                      base::Unretained(this))));
-      void* data_ptr = nullptr;
-      buffers_[i]->Map(&data_ptr);
-      data_[i] = reinterpret_cast<uint8*>(data_ptr);
+      bool rv = buffers_[i]->Map();
+      DCHECK(rv);
+      data_[i] = reinterpret_cast<uint8*>(buffers_[i]->memory(0u));
       strides_[i] = width;
     }
   }
@@ -100,7 +100,7 @@ class VideoCaptureImpl::ClientBuffer2
       buffer->Unmap();
   }
 
-  void DestroyGpuMemoryBuffer(uint32 sync_point) {}
+  void DestroyGpuMemoryBuffer(const gpu::SyncToken& sync_token) {}
 
   const std::vector<gfx::GpuMemoryBufferHandle> handles_;
   const gfx::Size size_;
@@ -313,10 +313,11 @@ void VideoCaptureImpl::OnBufferReceived(
     media::VideoFrame::StorageType storage_type,
     const gfx::Size& coded_size,
     const gfx::Rect& visible_rect,
-    const std::vector<gpu::MailboxHolder>& mailbox_holders) {
+    const gpu::MailboxHolder& mailbox_holder) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
   if (state_ != VIDEO_CAPTURE_STATE_STARTED || suspended_) {
-    Send(new VideoCaptureHostMsg_BufferReady(device_id_, buffer_id, 0, -1.0));
+    Send(new VideoCaptureHostMsg_BufferReady(device_id_, buffer_id,
+                                             gpu::SyncToken(), -1.0));
     return;
   }
   if (first_frame_timestamp_.is_null())
@@ -329,70 +330,76 @@ void VideoCaptureImpl::OnBufferReceived(
                        (timestamp - first_frame_timestamp_).ToInternalValue());
 
   scoped_refptr<media::VideoFrame> frame;
-  base::Callback<void(uint32, double)> buffer_finished_callback;
-  uint32* release_sync_point_storage = new uint32(0);
-  if (mailbox_holders.empty()) {
+  BufferFinishedCallback buffer_finished_callback;
+  scoped_ptr<gpu::SyncToken> release_sync_token(new gpu::SyncToken);
+  if (storage_type == media::VideoFrame::STORAGE_GPU_MEMORY_BUFFERS) {
     DCHECK_EQ(media::PIXEL_FORMAT_I420, pixel_format);
-    const auto& iter = client_buffers_.find(buffer_id);
-    DCHECK(iter != client_buffers_.end());
-    const scoped_refptr<ClientBuffer> buffer = iter->second;
-    frame = media::VideoFrame::WrapExternalSharedMemory(
-        pixel_format,
+    const auto& iter = client_buffer2s_.find(buffer_id);
+    DCHECK(iter != client_buffer2s_.end());
+    scoped_refptr<ClientBuffer2> buffer = iter->second;
+    const auto& handles = buffer->gpu_memory_buffer_handles();
+    frame = media::VideoFrame::WrapExternalYuvGpuMemoryBuffers(
+        media::PIXEL_FORMAT_I420,
         coded_size,
-        visible_rect,
-        gfx::Size(visible_rect.width(), visible_rect.height()),
-        reinterpret_cast<uint8*>(buffer->buffer()->memory()),
-        buffer->buffer_size(),
-        buffer->buffer()->handle(),
-        0 /* shared_memory_offset */,
+        gfx::Rect(coded_size),
+        coded_size,
+        buffer->stride(media::VideoFrame::kYPlane),
+        buffer->stride(media::VideoFrame::kUPlane),
+        buffer->stride(media::VideoFrame::kVPlane),
+        buffer->data(media::VideoFrame::kYPlane),
+        buffer->data(media::VideoFrame::kUPlane),
+        buffer->data(media::VideoFrame::kVPlane),
+        handles[media::VideoFrame::kYPlane],
+        handles[media::VideoFrame::kUPlane],
+        handles[media::VideoFrame::kVPlane],
         timestamp - first_frame_timestamp_);
+    DCHECK(frame);
     buffer_finished_callback = media::BindToCurrentLoop(
-        base::Bind(&VideoCaptureImpl::OnClientBufferFinished,
+        base::Bind(&VideoCaptureImpl::OnClientBufferFinished2,
                    weak_factory_.GetWeakPtr(), buffer_id, buffer));
   } else {
-#if DCHECK_IS_ON()
-    for (const auto& mailbox_holder : mailbox_holders)
+    scoped_refptr<ClientBuffer> buffer;
+    if (storage_type == media::VideoFrame::STORAGE_OPAQUE) {
       DCHECK(mailbox_holder.mailbox.Verify());
-    DCHECK(mailbox_holders.size() == 1u || mailbox_holders.size() == 3u);
-#endif
-
-    scoped_refptr<ClientBuffer2> buffer;
-    if (mailbox_holders.size() ==
-        media::VideoFrame::NumPlanes(media::PIXEL_FORMAT_ARGB)) {
       DCHECK_EQ(media::PIXEL_FORMAT_ARGB, pixel_format);
       frame = media::VideoFrame::WrapNativeTexture(
           pixel_format,
-          mailbox_holders[0],
-          base::Bind(&SaveReleaseSyncPoint, release_sync_point_storage),
-          coded_size,
-          gfx::Rect(coded_size),
-          coded_size,
-          timestamp - first_frame_timestamp_);
-    } else if (mailbox_holders.size() ==
-               media::VideoFrame::NumPlanes(media::PIXEL_FORMAT_I420)) {
-      DCHECK_EQ(media::PIXEL_FORMAT_I420, pixel_format);
-      const auto& iter = client_buffer2s_.find(buffer_id);
-      DCHECK(iter != client_buffer2s_.end());
-      buffer = iter->second;
-      frame = media::VideoFrame::WrapYUV420NativeTextures(
-          mailbox_holders[media::VideoFrame::kYPlane],
-          mailbox_holders[media::VideoFrame::kUPlane],
-          mailbox_holders[media::VideoFrame::kVPlane],
-          base::Bind(&SaveReleaseSyncPoint, release_sync_point_storage),
+          mailbox_holder,
+          base::Bind(&SaveReleaseSyncToken, release_sync_token.get()),
           coded_size,
           gfx::Rect(coded_size),
           coded_size,
           timestamp - first_frame_timestamp_);
     }
+    else {
+      DCHECK(storage_type == media::VideoFrame::STORAGE_UNOWNED_MEMORY ||
+             storage_type == media::VideoFrame::STORAGE_SHMEM);
+      DCHECK_EQ(media::PIXEL_FORMAT_I420, pixel_format);
+      const auto& iter = client_buffers_.find(buffer_id);
+      DCHECK(iter != client_buffers_.end());
+      buffer = iter->second;
+      frame = media::VideoFrame::WrapExternalSharedMemory(
+          pixel_format,
+          coded_size,
+          visible_rect,
+          gfx::Size(visible_rect.width(),
+                    visible_rect.height()),
+          reinterpret_cast<uint8*>(buffer->buffer()->memory()),
+          buffer->buffer_size(),
+          buffer->buffer()->handle(),
+          0 /* shared_memory_offset */,
+          timestamp - first_frame_timestamp_);
+    }
+    DCHECK(frame);
     buffer_finished_callback = media::BindToCurrentLoop(
-        base::Bind(&VideoCaptureImpl::OnClientBufferFinished2,
+        base::Bind(&VideoCaptureImpl::OnClientBufferFinished,
                    weak_factory_.GetWeakPtr(), buffer_id, buffer));
   }
   frame->metadata()->SetTimeTicks(media::VideoFrameMetadata::REFERENCE_TIME,
                                   timestamp);
   frame->AddDestructionObserver(
       base::Bind(&VideoCaptureImpl::DidFinishConsumingFrame, frame->metadata(),
-                 release_sync_point_storage, buffer_finished_callback));
+                 base::Passed(&release_sync_token), buffer_finished_callback));
 
   frame->metadata()->MergeInternalValuesFrom(metadata);
 
@@ -403,20 +410,20 @@ void VideoCaptureImpl::OnBufferReceived(
 void VideoCaptureImpl::OnClientBufferFinished(
     int buffer_id,
     const scoped_refptr<ClientBuffer>& /* ignored_buffer */,
-    uint32 release_sync_point,
+    const gpu::SyncToken& release_sync_token,
     double consumer_resource_utilization) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
   Send(new VideoCaptureHostMsg_BufferReady(device_id_, buffer_id,
-                                           release_sync_point,
+                                           release_sync_token,
                                            consumer_resource_utilization));
 }
 void VideoCaptureImpl::OnClientBufferFinished2(
     int buffer_id,
     const scoped_refptr<ClientBuffer2>& gpu_memory_buffer /* ignored_buffer */,
-    uint32 release_sync_point,
+    const gpu::SyncToken& release_sync_token,
     double consumer_resource_utilization) {
   OnClientBufferFinished(buffer_id, scoped_refptr<ClientBuffer>(),
-                         release_sync_point, consumer_resource_utilization);
+                         release_sync_token, consumer_resource_utilization);
 }
 
 void VideoCaptureImpl::OnStateChanged(VideoCaptureState state) {
@@ -552,24 +559,17 @@ bool VideoCaptureImpl::RemoveClient(int client_id, ClientInfoMap* clients) {
 // static
 void VideoCaptureImpl::DidFinishConsumingFrame(
     const media::VideoFrameMetadata* metadata,
-    uint32* release_sync_point_storage,
-    const base::Callback<void(uint32, double)>& callback_to_io_thread) {
+    scoped_ptr<gpu::SyncToken> release_sync_token,
+    const BufferFinishedCallback& callback_to_io_thread) {
   // Note: This function may be called on any thread by the VideoFrame
   // destructor.  |metadata| is still valid for read-access at this point.
-
-  uint32 release_sync_point = 0u;
-  if (release_sync_point_storage) {
-    release_sync_point = *release_sync_point_storage;
-    delete release_sync_point_storage;
-  }
-
   double consumer_resource_utilization = -1.0;
   if (!metadata->GetDouble(media::VideoFrameMetadata::RESOURCE_UTILIZATION,
                            &consumer_resource_utilization)) {
     consumer_resource_utilization = -1.0;
   }
 
-  callback_to_io_thread.Run(release_sync_point, consumer_resource_utilization);
+  callback_to_io_thread.Run(*release_sync_token, consumer_resource_utilization);
 }
 
 }  // namespace content

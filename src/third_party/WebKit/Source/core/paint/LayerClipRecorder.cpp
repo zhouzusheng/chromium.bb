@@ -12,7 +12,7 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/paint/ClipRecorder.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 
 namespace blink {
 
@@ -28,10 +28,7 @@ LayerClipRecorder::LayerClipRecorder(GraphicsContext& graphicsContext, const Lay
         collectRoundedRectClips(*layoutObject.layer(), *localPaintingInfo, graphicsContext, fragmentOffset, paintFlags, rule, roundedRects);
     }
 
-    ASSERT(m_graphicsContext.displayItemList());
-    if (m_graphicsContext.displayItemList()->displayItemConstructionIsDisabled())
-        return;
-    m_graphicsContext.displayItemList()->createAndAppend<ClipDisplayItem>(layoutObject, m_clipType, snappedClipRect, roundedRects);
+    m_graphicsContext.paintController().createAndAppend<ClipDisplayItem>(layoutObject, m_clipType, snappedClipRect, roundedRects);
 }
 
 static bool inContainingBlockChain(PaintLayer* startLayer, PaintLayer* endLayer)
@@ -75,13 +72,7 @@ void LayerClipRecorder::collectRoundedRectClips(PaintLayer& paintLayer, const Pa
 
 LayerClipRecorder::~LayerClipRecorder()
 {
-    ASSERT(m_graphicsContext.displayItemList());
-    if (!m_graphicsContext.displayItemList()->displayItemConstructionIsDisabled()) {
-        if (m_graphicsContext.displayItemList()->lastDisplayItemIsNoopBegin())
-            m_graphicsContext.displayItemList()->removeLastDisplayItem();
-        else
-            m_graphicsContext.displayItemList()->createAndAppend<EndClipDisplayItem>(m_layoutObject, DisplayItem::clipTypeToEndClipType(m_clipType));
-    }
+    m_graphicsContext.paintController().endItem<EndClipDisplayItem>(m_layoutObject, DisplayItem::clipTypeToEndClipType(m_clipType));
 }
 
 } // namespace blink

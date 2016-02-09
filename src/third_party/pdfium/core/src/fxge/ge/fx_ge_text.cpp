@@ -4,10 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fxge/fx_ge.h"
-#include "../../../include/fxge/fx_freetype.h"
-#include "../../../include/fxcodec/fx_codec.h"
+#include "core/include/fxge/fx_ge.h"
+#include "core/include/fxge/fx_freetype.h"
+#include "core/include/fxcodec/fx_codec.h"
 #include "text_int.h"
+
 #undef FX_GAMMA
 #undef FX_GAMMA_INVERSE
 #define FX_GAMMA(value) (value)
@@ -37,7 +38,8 @@ class ScopedFontTransform {
  private:
   FT_Face m_Face;
 };
-}
+
+}  // namespace
 
 FX_RECT FXGE_GetGlyphsBBox(FXTEXT_GLYPHPOS* pGlyphAndPos,
                            int nChars,
@@ -295,10 +297,11 @@ FX_BOOL CFX_RenderDevice::DrawNormalText(int nChars,
       glyph.m_pGlyph = pFaceCache->LoadGlyphBitmap(
           pFont, charpos.m_GlyphIndex, charpos.m_bFontStyle, &new_matrix,
           charpos.m_FontCharWidth, anti_alias, nativetext_flags);
-    } else
+    } else {
       glyph.m_pGlyph = pFaceCache->LoadGlyphBitmap(
           pFont, charpos.m_GlyphIndex, charpos.m_bFontStyle, &deviceCtm,
           charpos.m_FontCharWidth, anti_alias, nativetext_flags);
+    }
   }
   if (anti_alias < FXFT_RENDER_MODE_LCD && nChars > 1) {
     _AdjustGlyphSpace(pGlyphAndPos, nChars);
@@ -1228,9 +1231,8 @@ void CFX_FontCache::FreeCache(FX_BOOL bRelease) {
   }
 }
 
-CFX_FaceCache::CFX_FaceCache(FXFT_Face face) {
-  m_Face = face;
-}
+CFX_FaceCache::CFX_FaceCache(FXFT_Face face) : m_Face(face) {}
+
 CFX_FaceCache::~CFX_FaceCache() {
   for (const auto& pair : m_SizeMap) {
     delete pair.second;
@@ -1401,20 +1403,21 @@ void CFX_Font::AdjustMMParams(int glyph_index, int dest_width, int weight) {
     int min_param = FXFT_Get_MM_Axis_Min(FXFT_Get_MM_Axis(pMasters, 1)) / 65536;
     int max_param = FXFT_Get_MM_Axis_Max(FXFT_Get_MM_Axis(pMasters, 1)) / 65536;
     coords[1] = min_param;
-    int error = FXFT_Set_MM_Design_Coordinates(m_Face, 2, coords);
-    error = FXFT_Load_Glyph(
+    (void)FXFT_Set_MM_Design_Coordinates(m_Face, 2, coords);
+    (void)FXFT_Load_Glyph(
         m_Face, glyph_index,
         FXFT_LOAD_NO_SCALE | FXFT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH);
     int min_width = FXFT_Get_Glyph_HoriAdvance(m_Face) * 1000 /
                     FXFT_Get_Face_UnitsPerEM(m_Face);
     coords[1] = max_param;
-    error = FXFT_Set_MM_Design_Coordinates(m_Face, 2, coords);
-    error = FXFT_Load_Glyph(
+    (void)FXFT_Set_MM_Design_Coordinates(m_Face, 2, coords);
+    (void)FXFT_Load_Glyph(
         m_Face, glyph_index,
         FXFT_LOAD_NO_SCALE | FXFT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH);
     int max_width = FXFT_Get_Glyph_HoriAdvance(m_Face) * 1000 /
                     FXFT_Get_Face_UnitsPerEM(m_Face);
     if (max_width == min_width) {
+      FXFT_Free(m_Face, pMasters);
       return;
     }
     int param = min_param +
@@ -1592,7 +1595,7 @@ CFX_GlyphBitmap* CFX_FaceCache::RenderGlyph(CFX_Font* pFont,
     }
     FXFT_Outline_Embolden(FXFT_Get_Glyph_Outline(m_Face), level);
   }
-  FXFT_Library_SetLcdFilter(CFX_GEModule::Get()->GetFontMgr()->m_FTLibrary,
+  FXFT_Library_SetLcdFilter(CFX_GEModule::Get()->GetFontMgr()->GetFTLibrary(),
                             FT_LCD_FILTER_DEFAULT);
   error = FXFT_Render_Glyph(m_Face, anti_alias);
   if (error) {
@@ -1655,12 +1658,12 @@ const CFX_PathData* CFX_FaceCache::LoadGlyphPath(CFX_Font* pFont,
   }
   CFX_PathData* pGlyphPath = NULL;
   void* key;
-  if (pFont->GetSubstFont())
+  if (pFont->GetSubstFont()) {
     key = (void*)(uintptr_t)(
         glyph_index + ((pFont->GetSubstFont()->m_Weight / 16) << 15) +
         ((pFont->GetSubstFont()->m_ItalicAngle / 2) << 21) +
         ((dest_width / 16) << 25) + (pFont->IsVertical() << 31));
-  else {
+  } else {
     key = (void*)(uintptr_t)glyph_index;
   }
   if (m_PathMap.Lookup(key, (void*&)pGlyphPath)) {

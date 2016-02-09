@@ -65,7 +65,7 @@ enum CompositingStateTransitionType {
 // There is one PaintLayerCompositor per LayoutView.
 
 class CORE_EXPORT PaintLayerCompositor final : public GraphicsLayerClient {
-    WTF_MAKE_FAST_ALLOCATED(PaintLayerCompositor);
+    USING_FAST_MALLOC(PaintLayerCompositor);
 public:
     explicit PaintLayerCompositor(LayoutView&);
     ~PaintLayerCompositor() override;
@@ -117,10 +117,6 @@ public:
     GraphicsLayer* frameScrollLayer() const;
     GraphicsLayer* scrollLayer() const;
     GraphicsLayer* containerLayer() const;
-
-    // We don't always have a root transform layer. This function lazily allocates one
-    // and returns it as required.
-    GraphicsLayer* ensureRootTransformLayer();
 
     enum RootLayerAttachment {
         RootLayerUnattached,
@@ -181,7 +177,7 @@ private:
 #endif
 
     // GraphicsLayerClient implementation
-    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect&) const override;
+    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect*) const override;
 
     bool isTrackingPaintInvalidations() const override;
 

@@ -95,6 +95,8 @@ class ApplicationImpl : public Application {
   // Requests a new connection to an application. Returns a pointer to the
   // connection if the connection is permitted by this application's delegate,
   // or nullptr otherwise. Caller takes ownership.
+  scoped_ptr<ApplicationConnection> ConnectToApplication(
+      const std::string& url);
   scoped_ptr<ApplicationConnection> ConnectToApplication(URLRequestPtr request);
   scoped_ptr<ApplicationConnection> ConnectToApplicationWithCapabilityFilter(
       URLRequestPtr request,
@@ -111,6 +113,10 @@ class ApplicationImpl : public Application {
       return;
     connection->ConnectToService(ptr);
   }
+
+  // Block the calling thread until the Initialize() method is called by the
+  // shell.
+  void WaitForInitialize();
 
   // Initiate shutdown of this application. This may involve a round trip to the
   // Shell to ensure there are no inbound service requests.

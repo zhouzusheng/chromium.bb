@@ -9,17 +9,18 @@
 
 #include <map>
 
-#include "../../core/include/fpdftext/fpdf_text.h"
-#include "../../public/fpdf_formfill.h"
-#include "../../public/fpdf_fwlevent.h"  // cross platform keycode and events define.
+#include "core/include/fpdftext/fpdf_text.h"
+#include "fsdk_actionhandler.h"
+#include "fsdk_annothandler.h"
+#include "fsdk_baseannot.h"
+#include "fsdk_baseform.h"
 #include "fsdk_common.h"
 #include "fsdk_define.h"
 #include "fx_systemhandler.h"
-#include "fsdk_baseannot.h"
-#include "fsdk_baseform.h"
-#include "fsdk_annothandler.h"
-#include "fsdk_actionhandler.h"
 #include "javascript/IJavaScript.h"
+#include "public/fpdf_formfill.h"
+#include "public/fpdf_fwlevent.h"  // cross platform keycode and events define.
+#include "third_party/base/nonstd_unique_ptr.h"
 
 class CFFL_IFormFiller;
 class CPDFSDK_ActionHandler;
@@ -204,23 +205,23 @@ class CPDFDoc_Environment final {
   CPDFSDK_Document* GetSDKDocument() const { return m_pSDKDoc; }
   CPDF_Document* GetPDFDocument() const { return m_pPDFDoc; }
   CFX_ByteString GetAppName() const { return ""; }
-  IFX_SystemHandler* GetSysHandler() const { return m_pSysHandler; }
+  IFX_SystemHandler* GetSysHandler() const { return m_pSysHandler.get(); }
   FPDF_FORMFILLINFO* GetFormFillInfo() const { return m_pInfo; }
 
   CFFL_IFormFiller* GetIFormFiller();             // Creates if not present.
   CPDFSDK_AnnotHandlerMgr* GetAnnotHandlerMgr();  // Creates if not present.
-  IFXJS_Runtime* GetJSRuntime();                  // Creates if not present.
+  IJS_Runtime* GetJSRuntime();                    // Creates if not present.
   CPDFSDK_ActionHandler* GetActionHander();       // Creates if not present.
 
  private:
-  CPDFSDK_AnnotHandlerMgr* m_pAnnotHandlerMgr;
-  CPDFSDK_ActionHandler* m_pActionHandler;
-  nonstd::unique_ptr<IFXJS_Runtime> m_pJSRuntime;
+  nonstd::unique_ptr<CPDFSDK_AnnotHandlerMgr> m_pAnnotHandlerMgr;
+  nonstd::unique_ptr<CPDFSDK_ActionHandler> m_pActionHandler;
+  nonstd::unique_ptr<IJS_Runtime> m_pJSRuntime;
   FPDF_FORMFILLINFO* const m_pInfo;
   CPDFSDK_Document* m_pSDKDoc;
   CPDF_Document* const m_pPDFDoc;
-  CFFL_IFormFiller* m_pIFormFiller;
-  IFX_SystemHandler* m_pSysHandler;
+  nonstd::unique_ptr<CFFL_IFormFiller> m_pIFormFiller;
+  nonstd::unique_ptr<IFX_SystemHandler> m_pSysHandler;
 };
 
 class CPDFSDK_Document {
@@ -229,7 +230,14 @@ class CPDFSDK_Document {
   ~CPDFSDK_Document();
 
   CPDFSDK_InterForm* GetInterForm();
-  CPDF_Document* GetDocument() { return m_pDoc; }
+
+  // Gets the document object for the next layer down; for master this is
+  // a CPDF_Document, but for XFA it is a CPDFXFA_Document.
+  CPDF_Document* GetDocument() const { return m_pDoc; }
+
+  // Gets the CPDF_Document, either directly in master, or from the
+  // CPDFXFA_Document for XFA.
+  CPDF_Document* GetPDFDocument() const { return m_pDoc; }
 
   CPDFSDK_PageView* GetPageView(CPDF_Page* pPDFPage, FX_BOOL ReNew = TRUE);
   CPDFSDK_PageView* GetPageView(int nIndex);
@@ -239,7 +247,7 @@ class CPDFSDK_Document {
 
   CPDFSDK_Annot* GetFocusAnnot();
 
-  IFXJS_Runtime* GetJsRuntime();
+  IJS_Runtime* GetJsRuntime();
 
   FX_BOOL SetFocusAnnot(CPDFSDK_Annot* pAnnot, FX_UINT nFlag = 0);
   FX_BOOL KillFocusAnnot(FX_UINT nFlag = 0);
@@ -270,10 +278,10 @@ class CPDFSDK_Document {
  private:
   std::map<CPDF_Page*, CPDFSDK_PageView*> m_pageMap;
   CPDF_Document* m_pDoc;
-  CPDFSDK_InterForm* m_pInterForm;
+  nonstd::unique_ptr<CPDFSDK_InterForm> m_pInterForm;
   CPDFSDK_Annot* m_pFocusAnnot;
   CPDFDoc_Environment* m_pEnv;
-  CPDF_OCContext* m_pOccontent;
+  nonstd::unique_ptr<CPDF_OCContext> m_pOccontent;
   FX_BOOL m_bChangeMask;
   FX_BOOL m_bBeingDestroyed;
 };
@@ -284,9 +292,9 @@ class CPDFSDK_PageView final {
   void PageView_OnDraw(CFX_RenderDevice* pDevice,
                        CPDF_Matrix* pUser2Device,
                        CPDF_RenderOptions* pOptions);
-  CPDF_Annot* GetPDFAnnotAtPoint(FX_FLOAT pageX, FX_FLOAT pageY);
+  const CPDF_Annot* GetPDFAnnotAtPoint(FX_FLOAT pageX, FX_FLOAT pageY);
   CPDFSDK_Annot* GetFXAnnotAtPoint(FX_FLOAT pageX, FX_FLOAT pageY);
-  CPDF_Annot* GetPDFWidgetAtPoint(FX_FLOAT pageX, FX_FLOAT pageY);
+  const CPDF_Annot* GetPDFWidgetAtPoint(FX_FLOAT pageX, FX_FLOAT pageY);
   CPDFSDK_Annot* GetFXWidgetAtPoint(FX_FLOAT pageX, FX_FLOAT pageY);
   CPDFSDK_Annot* GetFocusAnnot();
   void SetFocusAnnot(CPDFSDK_Annot* pSDKAnnot, FX_UINT nFlag = 0) {
@@ -302,8 +310,8 @@ class CPDFSDK_PageView final {
   CPDFSDK_Annot* AddAnnot(const FX_CHAR* lpSubType, CPDF_Dictionary* pDict);
   CPDFSDK_Annot* AddAnnot(CPDF_Annot* pPDFAnnot);
   FX_BOOL DeleteAnnot(CPDFSDK_Annot* pAnnot);
-  int CountAnnots();
-  CPDFSDK_Annot* GetAnnot(int nIndex);
+  size_t CountAnnots() const;
+  CPDFSDK_Annot* GetAnnot(size_t nIndex);
   CPDFSDK_Annot* GetAnnotByDict(CPDF_Dictionary* pDict);
   CPDF_Page* GetPDFPage() { return m_page; }
   CPDF_Document* GetPDFDocument();
@@ -319,15 +327,16 @@ class CPDFSDK_PageView final {
                        double deltaY,
                        const CPDF_Point& point,
                        int nFlag);
-  FX_BOOL IsValidAnnot(void* p);
+  bool IsValidAnnot(const CPDF_Annot* p) const;
   void GetCurrentMatrix(CPDF_Matrix& matrix) { matrix = m_curMatrix; }
   void UpdateRects(CFX_RectArray& rects);
   void UpdateView(CPDFSDK_Annot* pAnnot);
-  CFX_PtrArray* GetAnnotList() { return &m_fxAnnotArray; }
+  const std::vector<CPDFSDK_Annot*>& GetAnnotList() const {
+    return m_fxAnnotArray;
+  }
 
   int GetPageIndex();
   void LoadFXAnnots();
-
   void SetValid(FX_BOOL bValid) { m_bValid = bValid; }
   FX_BOOL IsValid() { return m_bValid; }
   void SetLock(FX_BOOL bLocked) { m_bLocked = bLocked; }
@@ -337,11 +346,11 @@ class CPDFSDK_PageView final {
  private:
   void PageView_OnHighlightFormFields(CFX_RenderDevice* pDevice,
                                       CPDFSDK_Widget* pWidget);
+
   CPDF_Matrix m_curMatrix;
   CPDF_Page* m_page;
-  CPDF_AnnotList* m_pAnnotList;
-  // CPDFSDK_Annot* m_pFocusAnnot;
-  CFX_PtrArray m_fxAnnotArray;
+  nonstd::unique_ptr<CPDF_AnnotList> m_pAnnotList;
+  std::vector<CPDFSDK_Annot*> m_fxAnnotArray;
   CPDFSDK_Document* m_pSDKDoc;
   CPDFSDK_Widget* m_CaptureWidget;
   FX_BOOL m_bEnterWidget;

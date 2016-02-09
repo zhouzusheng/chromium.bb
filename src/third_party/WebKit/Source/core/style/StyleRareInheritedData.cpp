@@ -53,9 +53,9 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     short hyphenationShorts[3];
 
     Color touchColors;
-    TabSize tabSize;
-
     StyleColor caretColor;
+    TabSize tabSize;
+    void* variables[1];
 };
 
 static_assert(sizeof(StyleRareInheritedData) <= sizeof(SameSizeAsStyleRareInheritedData), "StyleRareInheritedData should stay small");
@@ -88,7 +88,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , textEmphasisPosition(TextEmphasisPositionOver)
     , m_textAlignLast(ComputedStyle::initialTextAlignLast())
     , m_textJustify(ComputedStyle::initialTextJustify())
-    , m_textOrientation(TextOrientationVerticalRight)
+    , m_textOrientation(TextOrientationMixed)
     , m_textCombine(ComputedStyle::initialTextCombine())
     , m_textIndentLine(ComputedStyle::initialTextIndentLine())
     , m_textIndentType(ComputedStyle::initialTextIndentLine())
@@ -165,6 +165,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , caretColor(o.caretColor)
     , appliedTextDecorations(o.appliedTextDecorations)
     , m_tabSize(o.m_tabSize)
+    , variables(o.variables)
 {
 }
 
@@ -230,7 +231,8 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_rubyPosition == o.m_rubyPosition
         && caretColor == o.caretColor
         && dataEquivalent(listStyleImage.get(), o.listStyleImage.get())
-        && dataEquivalent(appliedTextDecorations, o.appliedTextDecorations);
+        && dataEquivalent(appliedTextDecorations, o.appliedTextDecorations)
+        && variables == o.variables;
 }
 
 bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const

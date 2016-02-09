@@ -40,7 +40,7 @@ class PaintLayerCompositor;
 
 // A GraphicsLayerPaintInfo contains all the info needed to paint a partial subtree of Layers into a GraphicsLayer.
 struct GraphicsLayerPaintInfo {
-    ALLOW_ONLY_INLINE_ALLOCATION();
+    DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     PaintLayer* paintLayer;
 
     LayoutRect compositedBounds;
@@ -68,8 +68,9 @@ enum GraphicsLayerUpdateScope {
 //
 // Currently (Oct. 2013) there is one CompositedLayerMapping for each Layer,
 // but this is likely to evolve soon.
-class CompositedLayerMapping final : public GraphicsLayerClient {
-    WTF_MAKE_NONCOPYABLE(CompositedLayerMapping); WTF_MAKE_FAST_ALLOCATED(CompositedPaintLayerMapping);
+class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
+
+    WTF_MAKE_NONCOPYABLE(CompositedLayerMapping); USING_FAST_MALLOC(CompositedPaintLayerMapping);
 public:
     explicit CompositedLayerMapping(PaintLayer&);
     ~CompositedLayerMapping() override;
@@ -122,7 +123,10 @@ public:
     // LayoutRect is in the coordinate space of the layer's layout object.
     void setContentsNeedDisplayInRect(const LayoutRect&, PaintInvalidationReason);
 
-    void invalidateDisplayItemClient(const DisplayItemClientWrapper&);
+    // If |visualRect| is not nullptr, it contains all pixels that might be painted by the display item client,
+    // in coordinate space of the layer's layout object.
+    // |visualRect| can be nullptr if we know it's unchanged and PaintController has cached the previous value.
+    void invalidateDisplayItemClient(const DisplayItemClientWrapper&, PaintInvalidationReason, const LayoutRect* visualRect);
 
     // Notification from the layoutObject that its content changed.
     void contentChanged(ContentChangeType);
@@ -145,8 +149,11 @@ public:
 
     // GraphicsLayerClient interface
     void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime, int group) override;
-    void notifyTextPainted() override;
-    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& clip) const override;
+    void notifyFirstPaint() override;
+    void notifyFirstTextPaint() override;
+    void notifyFirstImagePaint() override;
+
+    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect* clip) const override;
     bool isTrackingPaintInvalidations() const override;
 
 #if ENABLE(ASSERT)
@@ -204,6 +211,9 @@ public:
     String debugName() const { return "CompositedLayerMapping for " + owningLayer().debugName(); }
 
 private:
+    static IntRect computeInterestRect(const GraphicsLayer*, LayoutObject* owningLayoutObject);
+    static bool interestRectChangedEnoughToRepaint(const IntRect& previousInterestRect, const IntRect& newInterestRect, const IntSize& layerSize);
+
     static const GraphicsLayerPaintInfo* containingSquashedLayer(const LayoutObject*,  const Vector<GraphicsLayerPaintInfo>& layers, unsigned maxSquashedLayerIndex);
 
     // Helper methods to updateGraphicsLayerGeometry:
@@ -304,6 +314,8 @@ private:
     // Clear the groupedMapping entry on the layer at the given index, only if that layer does
     // not appear earlier in the set of layers for this object.
     bool invalidateLayerIfNoPrecedingEntry(size_t);
+
+    void paintContentsInternal(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& interestRect) const;
 
     PaintLayer& m_owningLayer;
 
@@ -427,6 +439,10 @@ private:
 
     unsigned m_backgroundLayerPaintsFixedRootBackground : 1;
     unsigned m_scrollingContentsAreEmpty : 1;
+
+    mutable IntRect m_previousPaintInterestRect;
+
+    friend class CompositedLayerMappingTest;
 };
 
 } // namespace blink

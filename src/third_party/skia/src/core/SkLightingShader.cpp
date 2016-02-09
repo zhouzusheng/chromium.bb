@@ -76,8 +76,7 @@ public:
     const GrFragmentProcessor* asFragmentProcessor(GrContext*,
                                                    const SkMatrix& viewM,
                                                    const SkMatrix* localMatrix,
-                                                   SkFilterQuality,
-                                                   GrProcessorDataManager*) const override;
+                                                   SkFilterQuality) const override;
 #endif
 
     size_t contextSize() const override;
@@ -131,16 +130,19 @@ private:
 #include "GrCoordTransform.h"
 #include "GrFragmentProcessor.h"
 #include "GrTextureAccess.h"
-#include "gl/GrGLProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "gl/GrGLFragmentProcessor.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 #include "SkGr.h"
+#include "SkGrPriv.h"
 
 class LightingFP : public GrFragmentProcessor {
 public:
-    LightingFP(GrProcessorDataManager* pdm, GrTexture* diffuse, GrTexture* normal,
-               const SkMatrix& diffMatrix, const SkMatrix& normMatrix,
-               const GrTextureParams& diffParams, const GrTextureParams& normParams,
-               const SkLightingShader::Lights* lights, const SkVector& invNormRotation)
+    LightingFP(GrTexture* diffuse, GrTexture* normal, const SkMatrix& diffMatrix,
+               const SkMatrix& normMatrix, const GrTextureParams& diffParams,
+               const GrTextureParams& normParams, const SkLightingShader::Lights* lights,
+               const SkVector& invNormRotation)
         : fDiffDeviceTransform(kLocal_GrCoordSet, diffMatrix, diffuse, diffParams.filterMode())
         , fNormDeviceTransform(kLocal_GrCoordSet, normMatrix, normal, normParams.filterMode())
         , fDiffuseTextureAccess(diffuse, diffParams)
@@ -177,26 +179,26 @@ public:
 
         void emitCode(EmitArgs& args) override {
 
-            GrGLFragmentBuilder* fpb = args.fBuilder->getFragmentShaderBuilder();
+            GrGLSLFragmentBuilder* fpb = args.fBuilder->getFragmentShaderBuilder();
 
             // add uniforms
             const char* lightDirUniName = nullptr;
-            fLightDirUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+            fLightDirUni = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                                      kVec3f_GrSLType, kDefault_GrSLPrecision,
                                                      "LightDir", &lightDirUniName);
 
             const char* lightColorUniName = nullptr;
-            fLightColorUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+            fLightColorUni = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                                        kVec3f_GrSLType, kDefault_GrSLPrecision,
                                                        "LightColor", &lightColorUniName);
 
             const char* ambientColorUniName = nullptr;
-            fAmbientColorUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+            fAmbientColorUni = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                                          kVec3f_GrSLType, kDefault_GrSLPrecision,
                                                          "AmbientColor", &ambientColorUniName);
 
             const char* xformUniName = nullptr;
-            fXformUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+            fXformUni = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                                   kVec2f_GrSLType, kDefault_GrSLPrecision,
                                                   "Xform", &xformUniName);
 
@@ -237,7 +239,7 @@ public:
         }
 
     protected:
-        void onSetData(const GrGLProgramDataManager& pdman, const GrProcessor& proc) override {
+        void onSetData(const GrGLSLProgramDataManager& pdman, const GrProcessor& proc) override {
             const LightingFP& lightingFP = proc.cast<LightingFP>();
 
             const SkVector3& lightDir = lightingFP.lightDir();
@@ -267,16 +269,16 @@ public:
 
     private:
         SkVector3 fLightDir;
-        GrGLProgramDataManager::UniformHandle fLightDirUni;
+        GrGLSLProgramDataManager::UniformHandle fLightDirUni;
 
         SkColor3f fLightColor;
-        GrGLProgramDataManager::UniformHandle fLightColorUni;
+        GrGLSLProgramDataManager::UniformHandle fLightColorUni;
 
         SkColor3f fAmbientColor;
-        GrGLProgramDataManager::UniformHandle fAmbientColorUni;
+        GrGLSLProgramDataManager::UniformHandle fAmbientColorUni;
 
         SkVector fInvNormRotation;
-        GrGLProgramDataManager::UniformHandle fXformUni;
+        GrGLSLProgramDataManager::UniformHandle fXformUni;
     };
 
     void onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override {
@@ -349,8 +351,7 @@ const GrFragmentProcessor* SkLightingShaderImpl::asFragmentProcessor(
                                                              GrContext* context,
                                                              const SkMatrix& viewM,
                                                              const SkMatrix* localMatrix,
-                                                             SkFilterQuality filterQuality,
-                                                             GrProcessorDataManager* pdm) const {
+                                                             SkFilterQuality filterQuality) const {
     // we assume diffuse and normal maps have same width and height
     // TODO: support different sizes
     SkASSERT(fDiffuseMap.width() == fNormalMap.width() &&
@@ -383,7 +384,7 @@ const GrFragmentProcessor* SkLightingShaderImpl::asFragmentProcessor(
     // TODO: support other tile modes
     GrTextureParams diffParams(kClamp_TileMode, diffFilterMode);
     SkAutoTUnref<GrTexture> diffuseTexture(GrRefCachedBitmapTexture(context,
-                                                                    fDiffuseMap, &diffParams));
+                                                                    fDiffuseMap, diffParams));
     if (!diffuseTexture) {
         SkErrorInternals::SetError(kInternalError_SkError, "Couldn't convert bitmap to texture.");
         return nullptr;
@@ -391,15 +392,15 @@ const GrFragmentProcessor* SkLightingShaderImpl::asFragmentProcessor(
 
     GrTextureParams normParams(kClamp_TileMode, normFilterMode);
     SkAutoTUnref<GrTexture> normalTexture(GrRefCachedBitmapTexture(context,
-                                                                   fNormalMap, &normParams));
+                                                                   fNormalMap, normParams));
     if (!normalTexture) {
         SkErrorInternals::SetError(kInternalError_SkError, "Couldn't convert bitmap to texture.");
         return nullptr;
     }
 
     SkAutoTUnref<const GrFragmentProcessor> inner (
-        new LightingFP(pdm, diffuseTexture, normalTexture, diffM, normM, diffParams, normParams,
-                       fLights, fInvNormRotation));
+        new LightingFP(diffuseTexture, normalTexture, diffM, normM, diffParams, normParams, fLights,
+                       fInvNormRotation));
     return GrFragmentProcessor::MulOutputByInputAlpha(inner);
 }
 

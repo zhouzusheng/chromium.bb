@@ -8,6 +8,11 @@
       'OPJ_STATIC',
       '_CRT_SECURE_NO_WARNINGS',
     ],
+    'include_dirs': [
+      # This is implicit in GN.
+      '<(DEPTH)',
+      '..',
+    ],
     'msvs_disabled_warnings': [
       4005, 4018, 4146, 4333, 4345, 4267
     ],
@@ -44,14 +49,11 @@
         'freetype/include/freetype/ftmm.h',
         'freetype/include/freetype/ftotval.h',
         'freetype/include/freetype/ftoutln.h',
-        'freetype/include/freetype/internal/freetype/ftobjs.h',
-        'freetype/include/freetype/internal/freetype/ftstream.h',
-        'freetype/include/freetype/internal/freetype/tttypes.h',
+        'freetype/include/freetype/internal/ftobjs.h',
+        'freetype/include/freetype/internal/ftstream.h',
+        'freetype/include/freetype/internal/tttypes.h',
         'freetype/include/freetype/tttables.h',
         'freetype/include/ft2build.h',
-        'freetype/src/cff/cffobjs.h',
-        'freetype/src/cff/cfftypes.h',
-        'freetype/src/cff/cff.c',
         'freetype/src/base/ftbase.c',
         'freetype/src/base/ftbase.h',
         'freetype/src/base/ftbitmap.c',
@@ -60,6 +62,10 @@
         'freetype/src/base/ftlcdfil.c',
         'freetype/src/base/ftmm.c',
         'freetype/src/base/ftsystem.c',
+        'freetype/src/cff/cff.c',
+        'freetype/src/cff/cffobjs.h',
+        'freetype/src/cff/cfftypes.h',
+        'freetype/src/cid/type1cid.c',
         'freetype/src/psaux/psaux.c',
         'freetype/src/pshinter/pshinter.c',
         'freetype/src/psnames/psmodule.c',
@@ -68,7 +74,6 @@
         'freetype/src/smooth/smooth.c',
         'freetype/src/truetype/truetype.c',
         'freetype/src/type1/type1.c',
-        'freetype/src/cid/type1cid.c',
       ],
       'variables': {
         'clang_warning_flags': [
@@ -161,7 +166,7 @@
       },
     },
     {
-      'target_name': 'fx_libjpeg',
+      'target_name': 'libjpeg',
       'type': 'static_library',
       'sources': [
         'libjpeg/cderror.h',

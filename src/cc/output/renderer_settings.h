@@ -22,11 +22,11 @@ class CC_EXPORT RendererSettings {
   bool finish_rendering_on_resize;
   bool should_clear_root_render_pass;
   bool disable_display_vsync;
-  bool delay_releasing_overlay_resources;
   double refresh_rate;
   int highp_threshold_min;
   bool use_rgba_4444_textures;
   size_t texture_id_allocation_chunk_size;
+  bool use_gpu_memory_buffer_resources;
 };
 
 }  // namespace cc

@@ -18,6 +18,7 @@ class WebThread;
 class WebThreadSupportingGC;
 
 class MODULES_EXPORT CompositorWorkerManager final {
+    USING_FAST_MALLOC(CompositorWorkerManager);
 public:
     static void initialize();
     static void shutdown();

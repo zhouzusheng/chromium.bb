@@ -23,8 +23,6 @@
 #define LayoutView_h
 
 #include "core/CoreExport.h"
-#include "core/compositing/DisplayListCompositingBuilder.h"
-#include "core/frame/FrameView.h"
 #include "core/layout/HitTestCache.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutBlockFlow.h"
@@ -38,8 +36,10 @@
 
 namespace blink {
 
+class FrameView;
 class PaintLayerCompositor;
 class LayoutQuote;
+class LayoutMedia;
 
 // LayoutView is the root of the layout tree and the Document's LayoutObject.
 //
@@ -113,8 +113,6 @@ public:
     void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
     void adjustViewportConstrainedOffset(LayoutRect&, ViewportConstrainedPosition) const;
 
-    void invalidatePaintForRectangle(const LayoutRect&, PaintInvalidationReason) const;
-
     void invalidatePaintForViewAndCompositedLayers();
 
     void paint(const PaintInfo&, const LayoutPoint&) const override;
@@ -138,7 +136,7 @@ public:
     LayoutRect overflowClipRect(const LayoutPoint& location, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) const override;
 
     bool shouldDoFullPaintInvalidationForNextLayout() const;
-    bool doingFullPaintInvalidation() const { return m_frameView->needsFullPaintInvalidation(); }
+    bool doingFullPaintInvalidation() const;
 
     LayoutState* layoutState() const { return m_layoutState; }
 
@@ -197,6 +195,20 @@ public:
     // Invalidates paint for the entire view, including composited descendants, but not including child frames.
     // It is very likely you do not want to call this method.
     void setShouldDoFullPaintInvalidationForViewAndAllDescendants();
+
+    // The document scrollbar is always on the right, even in RTL. This is to prevent it from moving around on navigations.
+    // TODO(skobes): This is not quite the ideal behavior, see http://crbug.com/250514 and http://crbug.com/249860.
+    bool shouldPlaceBlockDirectionScrollbarOnLogicalLeft() const override { return false; }
+
+    // Some LayoutMedias want to know about their viewport visibility for
+    // crbug.com/487345,402044 .  This facility will be removed once those
+    // experiments complete.
+    // TODO(ojan): Merge this with IntersectionObserver once it lands.
+    void registerMediaForPositionChangeNotification(LayoutMedia&);
+    void unregisterMediaForPositionChangeNotification(LayoutMedia&);
+    // Notify all registered LayoutMedias that their position on-screen might
+    // have changed.  visibleRect is the clipping boundary.
+    void sendMediaPositionChangeNotifications(const IntRect& visibleRect);
 
 private:
     void mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = nullptr, const PaintInvalidationState* = nullptr) const override;
@@ -260,6 +272,8 @@ private:
     unsigned m_hitTestCount;
     unsigned m_hitTestCacheHits;
     OwnPtrWillBePersistent<HitTestCache> m_hitTestCache;
+
+    Vector<LayoutMedia*> m_mediaForPositionNotification;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutView, isLayoutView());

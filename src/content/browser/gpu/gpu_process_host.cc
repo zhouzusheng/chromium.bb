@@ -23,6 +23,7 @@
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/gpu/shader_disk_cache.h"
+#include "content/browser/mojo/mojo_application_host.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
@@ -101,6 +102,7 @@ static const char* const kSwitchNames[] = {
 #if defined(OS_WIN)
   switches::kEnableAcceleratedVpxDecode,
 #endif
+  switches::kEnableHeapProfiling,
   switches::kEnableLogging,
   switches::kEnableShareGroupAsyncTextureUpload,
 #if defined(OS_CHROMEOS)
@@ -187,16 +189,15 @@ class GpuSandboxedProcessLauncherDelegate
     return sandbox;
   }
 
-  void PreSandbox(bool* disable_default_policy,
-                  base::FilePath* exposed_dir) override {
-    *disable_default_policy = true;
+  bool DisableDefaultPolicy() override {
+    return true;
   }
 
   // For the GPU process we gotten as far as USER_LIMITED. The next level
   // which is USER_RESTRICTED breaks both the DirectX backend and the OpenGL
   // backend. Note that the GPU process is connected to the interactive
   // desktop.
-  void PreSpawnTarget(sandbox::TargetPolicy* policy, bool* success) override {
+  bool PreSpawnTarget(sandbox::TargetPolicy* policy) override {
     if (base::win::GetVersion() > base::win::VERSION_XP) {
       if (cmd_line_->GetSwitchValueASCII(switches::kUseGL) ==
           gfx::kGLImplementationDesktopName) {
@@ -237,10 +238,8 @@ class GpuSandboxedProcessLauncherDelegate
         sandbox::TargetPolicy::SUBSYS_NAMED_PIPES,
         sandbox::TargetPolicy::NAMEDPIPES_ALLOW_ANY,
         L"\\\\.\\pipe\\chrome.gpu.*");
-    if (result != sandbox::SBOX_ALL_OK) {
-      *success = false;
-      return;
-    }
+    if (result != sandbox::SBOX_ALL_OK)
+      return false;
 
     // Block this DLL even if it is not loaded by the browser process.
     policy->AddDllToUnload(L"cmsetac.dll");
@@ -251,10 +250,8 @@ class GpuSandboxedProcessLauncherDelegate
     result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
                              sandbox::TargetPolicy::HANDLES_DUP_BROKER,
                              L"Section");
-    if (result != sandbox::SBOX_ALL_OK) {
-      *success = false;
-      return;
-    }
+    if (result != sandbox::SBOX_ALL_OK)
+      return false;
 #endif
 
     if (cmd_line_->HasSwitch(switches::kEnableLogging)) {
@@ -263,12 +260,12 @@ class GpuSandboxedProcessLauncherDelegate
         result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
                                  sandbox::TargetPolicy::FILES_ALLOW_ANY,
                                  log_file_path.c_str());
-        if (result != sandbox::SBOX_ALL_OK) {
-          *success = false;
-          return;
-        }
+        if (result != sandbox::SBOX_ALL_OK)
+          return false;
       }
     }
+
+    return true;
   }
 #elif defined(OS_POSIX)
 
@@ -543,6 +540,9 @@ bool GpuProcessHost::Init() {
   if (channel_id.empty())
     return false;
 
+  if (!SetupMojo())
+    return false;
+
   if (in_process_) {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     DCHECK(g_gpu_main_thread_factory);
@@ -573,6 +573,12 @@ bool GpuProcessHost::Init() {
 #endif
 
   return true;
+}
+
+bool GpuProcessHost::SetupMojo() {
+  DCHECK(!mojo_application_host_);
+  mojo_application_host_.reset(new MojoApplicationHost);
+  return mojo_application_host_->Init();
 }
 
 void GpuProcessHost::RouteOnUIThread(const IPC::Message& message) {
@@ -729,19 +735,44 @@ void GpuProcessHost::CreateGpuMemoryBuffer(
   }
 }
 
+void GpuProcessHost::CreateGpuMemoryBufferFromHandle(
+    const gfx::GpuMemoryBufferHandle& handle,
+    gfx::GpuMemoryBufferId id,
+    const gfx::Size& size,
+    gfx::BufferFormat format,
+    int client_id,
+    const CreateGpuMemoryBufferCallback& callback) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::CreateGpuMemoryBufferFromHandle");
+
+  DCHECK(CalledOnValidThread());
+
+  GpuMsg_CreateGpuMemoryBufferFromHandle_Params params;
+  params.handle = handle;
+  params.id = id;
+  params.size = size;
+  params.format = format;
+  params.client_id = client_id;
+  if (Send(new GpuMsg_CreateGpuMemoryBufferFromHandle(params))) {
+    create_gpu_memory_buffer_requests_.push(callback);
+  } else {
+    callback.Run(gfx::GpuMemoryBufferHandle());
+  }
+}
+
 void GpuProcessHost::DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
                                             int client_id,
-                                            int sync_point) {
+                                            const gpu::SyncToken& sync_token) {
   TRACE_EVENT0("gpu", "GpuProcessHost::DestroyGpuMemoryBuffer");
 
   DCHECK(CalledOnValidThread());
 
-  Send(new GpuMsg_DestroyGpuMemoryBuffer(id, client_id, sync_point));
+  Send(new GpuMsg_DestroyGpuMemoryBuffer(id, client_id, sync_token));
 }
 
 void GpuProcessHost::OnInitialized(bool result, const gpu::GPUInfo& gpu_info) {
   UMA_HISTOGRAM_BOOLEAN("GPU.GPUProcessInitialized", result);
   initialized_ = result;
+  gpu_info_ = gpu_info;
 
   if (!initialized_)
     GpuDataManagerImpl::GetInstance()->OnGpuProcessInitFailure();
@@ -777,8 +808,7 @@ void GpuProcessHost::OnChannelEstablished(
     return;
   }
 
-  callback.Run(channel_handle,
-               GpuDataManagerImpl::GetInstance()->GetGPUInfo());
+  callback.Run(channel_handle, gpu_info_);
 }
 
 void GpuProcessHost::OnCommandBufferCreated(CreateCommandBufferResult result) {
@@ -868,6 +898,14 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
 void GpuProcessHost::OnProcessLaunched() {
   UMA_HISTOGRAM_TIMES("GPU.GPUProcessLaunchTime",
                       base::TimeTicks::Now() - init_start_time_);
+
+  base::ProcessHandle handle;
+  if (in_process_)
+    handle = base::GetCurrentProcessHandle();
+  else
+    handle = process_->GetData().handle;
+
+  mojo_application_host_->Activate(this, handle);
 }
 
 void GpuProcessHost::OnProcessLaunchFailed() {
@@ -879,6 +917,10 @@ void GpuProcessHost::OnProcessCrashed(int exit_code) {
   RecordProcessCrash();
   GpuDataManagerImpl::GetInstance()->ProcessCrashed(
       process_->GetTerminationStatus(true /* known_dead */, NULL));
+}
+
+ServiceRegistry* GpuProcessHost::GetServiceRegistry() {
+  return mojo_application_host_->service_registry();
 }
 
 GpuProcessHost::GpuProcessKind GpuProcessHost::kind() {

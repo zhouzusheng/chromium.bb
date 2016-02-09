@@ -44,6 +44,7 @@
 #include "config.h"
 #include "core/paint/PaintLayerClipper.h"
 
+#include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
 #include "core/layout/LayoutView.h"
 #include "core/paint/PaintLayer.h"
@@ -169,23 +170,9 @@ void PaintLayerClipper::clearClipRectsIncludingDescendants(ClipRectsCacheSlot ca
     }
 }
 
-LayoutRect PaintLayerClipper::childrenClipRect() const
-{
-    // FIXME: border-radius not accounted for.
-    // FIXME: Flow thread based columns not accounted for.
-    PaintLayer* clippingRootLayer = clippingRootForPainting();
-    LayoutRect layerBounds;
-    ClipRect backgroundRect, foregroundRect;
-    // Need to use uncached clip rects, because the value of 'dontClipToOverflow' may be different from the painting path (<rdar://problem/11844909>).
-    ClipRectsContext context(clippingRootLayer, UncachedClipRects);
-    calculateRects(context, LayoutRect(m_layoutObject.view()->unscaledDocumentRect()), layerBounds, backgroundRect, foregroundRect);
-    return LayoutRect(clippingRootLayer->layoutObject()->localToAbsoluteQuad(FloatQuad(FloatRect(foregroundRect.rect()))).enclosingBoundingBox());
-}
 
-LayoutRect PaintLayerClipper::localClipRect() const
+LayoutRect PaintLayerClipper::localClipRect(const PaintLayer* clippingRootLayer) const
 {
-    // FIXME: border-radius not accounted for.
-    PaintLayer* clippingRootLayer = clippingRootForPainting();
     LayoutRect layerBounds;
     ClipRect backgroundRect, foregroundRect;
     ClipRectsContext context(clippingRootLayer, PaintingClipRects);
@@ -325,30 +312,6 @@ void PaintLayerClipper::getOrCalculateClipRects(const ClipRectsContext& context,
         clipRects = *getClipRects(context);
     else
         calculateClipRects(context, clipRects);
-}
-
-PaintLayer* PaintLayerClipper::clippingRootForPainting() const
-{
-    const PaintLayer* current = m_layoutObject.layer();
-    // FIXME: getting rid of current->hasCompositedLayerMapping() here breaks the
-    // compositing/backing/no-backing-for-clip.html layout test, because there is a
-    // "composited but paints into ancestor" layer involved. However, it doesn't make sense that
-    // that check would be appropriate here but not inside the while loop below.
-    if (current->isPaintInvalidationContainer() || current->hasCompositedLayerMapping())
-        return const_cast<PaintLayer*>(current);
-
-    while (current) {
-        if (current->isRootLayer())
-            return const_cast<PaintLayer*>(current);
-
-        current = current->compositingContainer();
-        ASSERT(current);
-        if (current->transform() || current->isPaintInvalidationContainer())
-            return const_cast<PaintLayer*>(current);
-    }
-
-    ASSERT_NOT_REACHED();
-    return 0;
 }
 
 bool PaintLayerClipper::shouldRespectOverflowClip(const ClipRectsContext& context) const

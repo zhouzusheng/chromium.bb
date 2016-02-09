@@ -15,8 +15,10 @@ WebInspector.Tooltip = function(doc)
     this._tooltipElement = this._shadowRoot.createChild("div", "tooltip");
     doc.addEventListener("mousemove", this._mouseMove.bind(this), true);
     doc.addEventListener("mousedown", this._hide.bind(this, true), true);
-    doc.addEventListener("mouseout", this._hide.bind(this, true), true);
+    doc.addEventListener("mouseleave", this._hide.bind(this, true), true);
     doc.addEventListener("keydown", this._hide.bind(this, true), true);
+    WebInspector.zoomManager.addEventListener(WebInspector.ZoomManager.Events.ZoomChanged, this._reset, this);
+    doc.defaultView.addEventListener("resize", this._reset.bind(this), false);
 }
 
 WebInspector.Tooltip.Timing = {
@@ -105,6 +107,7 @@ WebInspector.Tooltip.prototype = {
         const pageMargin = 2;
         var cursorOffset = 10;
         this._tooltipElement.style.maxWidth = (containerOffsetWidth - pageMargin * 2) + "px";
+        this._tooltipElement.style.maxHeight = "";
         var tooltipWidth = this._tooltipElement.offsetWidth;
         var tooltipHeight = this._tooltipElement.offsetHeight;
         var anchorTooltipAtElement = this._anchorElement.nodeName === "BUTTON" || this._anchorElement.nodeName === "LABEL";
@@ -133,6 +136,14 @@ WebInspector.Tooltip.prototype = {
             this._tooltipLastClosed = Date.now();
         if (removeInstant)
             delete this._tooltipLastClosed;
+    },
+
+    _reset: function()
+    {
+        this._hide(true);
+        this._tooltipElement.positionAt(0, 0);
+        this._tooltipElement.style.maxWidth = "0";
+        this._tooltipElement.style.maxHeight = "0";
     }
 }
 

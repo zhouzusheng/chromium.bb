@@ -4,10 +4,10 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fpdfapi/fpdf_page.h"
-#include "../../../include/fpdfapi/fpdf_parser.h"
-#include "../../../include/fpdfapi/fpdf_resource.h"
-#include "../../../include/fxge/fx_freetype.h"
+#include "core/include/fpdfapi/fpdf_page.h"
+#include "core/include/fpdfapi/fpdf_parser.h"
+#include "core/include/fpdfapi/fpdf_resource.h"
+#include "core/include/fxge/fx_freetype.h"
 
 static const struct _UnicodeAlt {
   FX_WORD m_Unicode;
@@ -1778,5 +1778,5 @@ FX_WCHAR PDF_UnicodeFromAdobeName(const FX_CHAR* name) {
 CFX_ByteString PDF_AdobeNameFromUnicode(FX_WCHAR unicode) {
   char glyph_name[64];
   FXFT_adobe_name_from_unicode(glyph_name, unicode);
-  return CFX_ByteString(glyph_name, -1);
+  return CFX_ByteString(glyph_name);
 }

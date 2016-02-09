@@ -28,18 +28,20 @@ class IconManager;
 class IntranetRedirectDetector;
 class IOThread;
 class MediaFileSystemRegistry;
-class MetricsServicesManager;
 class NotificationUIManager;
 class PrefRegistrySimple;
 class PrefService;
 class Profile;
 class ProfileManager;
-class SafeBrowsingService;
 class StatusTray;
 class WatchDogThread;
 #if defined(ENABLE_WEBRTC)
 class WebRtcLogUploader;
 #endif
+
+namespace safe_browsing {
+class SafeBrowsingService;
+}
 
 namespace variations {
 class VariationsService;
@@ -69,6 +71,10 @@ class MessageCenter;
 
 namespace metrics {
 class MetricsService;
+}
+
+namespace metrics_services_manager {
+class MetricsServicesManager;
 }
 
 namespace net {
@@ -124,7 +130,8 @@ class BrowserProcess {
 
   // Gets the manager for the various metrics-related services, constructing it
   // if necessary.
-  virtual MetricsServicesManager* GetMetricsServicesManager() = 0;
+  virtual metrics_services_manager::MetricsServicesManager*
+  GetMetricsServicesManager() = 0;
 
   // Services: any of these getters may return NULL
   virtual metrics::MetricsService* metrics_service() = 0;
@@ -208,7 +215,7 @@ class BrowserProcess {
   virtual StatusTray* status_tray() = 0;
 
   // Returns the SafeBrowsing service.
-  virtual SafeBrowsingService* safe_browsing_service() = 0;
+  virtual safe_browsing::SafeBrowsingService* safe_browsing_service() = 0;
 
   // Returns an object which handles communication with the SafeBrowsing
   // client-side detection servers.

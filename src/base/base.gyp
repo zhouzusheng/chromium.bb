@@ -381,6 +381,7 @@
         'atomicops_unittest.cc',
         'barrier_closure_unittest.cc',
         'base64_unittest.cc',
+        'base64url_unittest.cc',
         'big_endian_unittest.cc',
         'bind_unittest.cc',
         'bind_unittest.nc',
@@ -494,6 +495,7 @@
         'metrics/sparse_histogram_unittest.cc',
         'metrics/statistics_recorder_unittest.cc',
         'move_unittest.cc',
+        'native_library_unittest.cc',
         'numerics/safe_numerics_unittest.cc',
         'observer_list_unittest.cc',
         'os_compat_android_unittest.cc',
@@ -565,6 +567,7 @@
         'threading/non_thread_safe_unittest.cc',
         'threading/platform_thread_unittest.cc',
         'threading/sequenced_worker_pool_unittest.cc',
+        'threading/sequenced_task_runner_handle_unittest.cc',
         'threading/simple_thread_unittest.cc',
         'threading/thread_checker_unittest.cc',
         'threading/thread_collision_warner_unittest.cc',
@@ -704,6 +707,9 @@
         [ 'OS == "win" and target_arch == "x64"', {
           'sources': [
             'profiler/win32_stack_frame_unwinder_unittest.cc',
+          ],
+          'dependencies': [
+            'base_profiler_test_support_library',
           ],
         }],
         ['OS == "win"', {
@@ -1000,6 +1006,21 @@
           ],
         },
       ],
+    }],
+    ['OS == "win" and target_arch=="x64"', {
+      'targets': [
+        {
+          'target_name': 'base_profiler_test_support_library',
+          # Must be a shared library so that it can be unloaded during testing.
+          'type': 'shared_library',
+          'include_dirs': [
+            '..',
+          ],
+          'sources': [
+            'profiler/test_support_library.cc',
+          ],
+        },
+      ]
     }],
     ['os_posix==1 and OS!="mac" and OS!="ios"', {
       'targets': [

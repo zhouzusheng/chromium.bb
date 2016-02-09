@@ -50,13 +50,14 @@ class PrerenderHandle;
 
 // The LinkLoader can load link rel types icon, dns-prefetch, subresource, prefetch and prerender.
 class CORE_EXPORT LinkLoader final : public ResourceOwner<Resource, ResourceClient>, public PrerenderClient {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
 public:
     explicit LinkLoader(LinkLoaderClient*);
     ~LinkLoader() override;
 
     // from ResourceClient
     void notifyFinished(Resource*) override;
+    String debugName() const override { return "LinkLoader"; }
 
     // from PrerenderClient
     void didStartPrerender() override;
@@ -73,7 +74,6 @@ public:
 private:
     void linkLoadTimerFired(Timer<LinkLoader>*);
     void linkLoadingErrorTimerFired(Timer<LinkLoader>*);
-    void preloadIfNeeded(const LinkRelAttribute&, const KURL& href, Document&, const String& as);
 
     LinkLoaderClient* m_client;
 

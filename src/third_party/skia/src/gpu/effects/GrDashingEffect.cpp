@@ -23,7 +23,10 @@
 #include "batches/GrVertexBatch.h"
 #include "gl/GrGLGeometryProcessor.h"
 #include "gl/GrGLFragmentProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLVertexShaderBuilder.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -821,10 +824,10 @@ public:
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLProgramDataManager&, const GrPrimitiveProcessor&) override;
+    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&) override;
 
     void setTransformData(const GrPrimitiveProcessor& primProc,
-                          const GrGLProgramDataManager& pdman,
+                          const GrGLSLProgramDataManager& pdman,
                           int index,
                           const SkTArray<const GrCoordTransform*, true>& transforms) override {
         this->setTransformDataHelper<DashingCircleEffect>(primProc, pdman, index, transforms);
@@ -849,19 +852,19 @@ GLDashingCircleEffect::GLDashingCircleEffect() {
 
 void GLDashingCircleEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     const DashingCircleEffect& dce = args.fGP.cast<DashingCircleEffect>();
-    GrGLGPBuilder* pb = args.fPB;
-    GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+    GrGLSLGPBuilder* pb = args.fPB;
+    GrGLSLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
 
     // emit attributes
     vsBuilder->emitAttributes(dce);
 
     // XY are dashPos, Z is dashInterval
-    GrGLVertToFrag dashParams(kVec3f_GrSLType);
+    GrGLSLVertToFrag dashParams(kVec3f_GrSLType);
     args.fPB->addVarying("DashParam", &dashParams);
     vsBuilder->codeAppendf("%s = %s;", dashParams.vsOut(), dce.inDashParams()->fName);
 
     // x refers to circle radius - 0.5, y refers to cicle's center x coord
-    GrGLVertToFrag circleParams(kVec2f_GrSLType);
+    GrGLSLVertToFrag circleParams(kVec2f_GrSLType);
     args.fPB->addVarying("CircleParams", &circleParams);
     vsBuilder->codeAppendf("%s = %s;", circleParams.vsOut(), dce.inCircleParams()->fName);
 
@@ -878,7 +881,7 @@ void GLDashingCircleEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                          args.fTransformsIn, args.fTransformsOut);
 
     // transforms all points so that we can compare them to our test circle
-    GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
+    GrGLSLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
     fsBuilder->codeAppendf("float xShifted = %s.x - floor(%s.x / %s.z) * %s.z;",
                            dashParams.fsIn(), dashParams.fsIn(), dashParams.fsIn(),
                            dashParams.fsIn());
@@ -896,11 +899,11 @@ void GLDashingCircleEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     fsBuilder->codeAppendf("%s = vec4(alpha);", args.fOutputCoverage);
 }
 
-void GLDashingCircleEffect::setData(const GrGLProgramDataManager& pdman,
+void GLDashingCircleEffect::setData(const GrGLSLProgramDataManager& pdman,
                                     const GrPrimitiveProcessor& processor) {
     const DashingCircleEffect& dce = processor.cast<DashingCircleEffect>();
     if (dce.color() != fColor) {
-        GrGLfloat c[4];
+        float c[4];
         GrColorToRGBAFloat(dce.color(), c);
         pdman.set4fv(fColorUniform, 1, c);
         fColor = dce.color();
@@ -1032,10 +1035,10 @@ public:
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder*);
 
-    void setData(const GrGLProgramDataManager&, const GrPrimitiveProcessor&) override;
+    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&) override;
 
     void setTransformData(const GrPrimitiveProcessor& primProc,
-                          const GrGLProgramDataManager& pdman,
+                          const GrGLSLProgramDataManager& pdman,
                           int index,
                           const SkTArray<const GrCoordTransform*, true>& transforms) override {
         this->setTransformDataHelper<DashingLineEffect>(primProc, pdman, index, transforms);
@@ -1053,21 +1056,21 @@ GLDashingLineEffect::GLDashingLineEffect() {
 
 void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     const DashingLineEffect& de = args.fGP.cast<DashingLineEffect>();
-    GrGLGPBuilder* pb = args.fPB;
+    GrGLSLGPBuilder* pb = args.fPB;
 
-    GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+    GrGLSLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
 
     // emit attributes
     vsBuilder->emitAttributes(de);
 
     // XY refers to dashPos, Z is the dash interval length
-    GrGLVertToFrag inDashParams(kVec3f_GrSLType);
+    GrGLSLVertToFrag inDashParams(kVec3f_GrSLType);
     args.fPB->addVarying("DashParams", &inDashParams, GrSLPrecision::kHigh_GrSLPrecision);
     vsBuilder->codeAppendf("%s = %s;", inDashParams.vsOut(), de.inDashParams()->fName);
 
     // The rect uniform's xyzw refer to (left + 0.5, top + 0.5, right - 0.5, bottom - 0.5),
     // respectively.
-    GrGLVertToFrag inRectParams(kVec4f_GrSLType);
+    GrGLSLVertToFrag inRectParams(kVec4f_GrSLType);
     args.fPB->addVarying("RectParams", &inRectParams, GrSLPrecision::kHigh_GrSLPrecision);
     vsBuilder->codeAppendf("%s = %s;", inRectParams.vsOut(), de.inRectParams()->fName);
 
@@ -1085,7 +1088,7 @@ void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
                          args.fTransformsIn, args.fTransformsOut);
 
     // transforms all points so that we can compare them to our test rect
-    GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
+    GrGLSLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
     fsBuilder->codeAppendf("float xShifted = %s.x - floor(%s.x / %s.z) * %s.z;",
                            inDashParams.fsIn(), inDashParams.fsIn(), inDashParams.fsIn(),
                            inDashParams.fsIn());
@@ -1120,11 +1123,11 @@ void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     fsBuilder->codeAppendf("%s = vec4(alpha);", args.fOutputCoverage);
 }
 
-void GLDashingLineEffect::setData(const GrGLProgramDataManager& pdman,
+void GLDashingLineEffect::setData(const GrGLSLProgramDataManager& pdman,
                                   const GrPrimitiveProcessor& processor) {
     const DashingLineEffect& de = processor.cast<DashingLineEffect>();
     if (de.color() != fColor) {
-        GrGLfloat c[4];
+        float c[4];
         GrColorToRGBAFloat(de.color(), c);
         pdman.set4fv(fColorUniform, 1, c);
         fColor = de.color();

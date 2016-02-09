@@ -359,14 +359,12 @@ PassRefPtr<ComputedStyle> LayoutTextControlSingleLine::createInnerEditorStyle(co
 
     textBlockStyle->setWhiteSpace(PRE);
     textBlockStyle->setOverflowWrap(NormalOverflowWrap);
-    textBlockStyle->setOverflowX(OHIDDEN);
-    textBlockStyle->setOverflowY(OHIDDEN);
     textBlockStyle->setTextOverflow(textShouldBeTruncated() ? TextOverflowEllipsis : TextOverflowClip);
 
     if (m_desiredInnerEditorLogicalHeight >= 0)
         textBlockStyle->setLogicalHeight(Length(m_desiredInnerEditorLogicalHeight, Fixed));
     // Do not allow line-height to be smaller than our default.
-    if (textBlockStyle->fontMetrics().lineSpacing() > lineHeight(true, HorizontalLine, PositionOfInteriorLineBoxes))
+    if (textBlockStyle->fontSize() >= lineHeight(true, HorizontalLine, PositionOfInteriorLineBoxes))
         textBlockStyle->setLineHeight(ComputedStyle::initialLineHeight());
 
     textBlockStyle->setDisplay(BLOCK);
@@ -374,6 +372,14 @@ PassRefPtr<ComputedStyle> LayoutTextControlSingleLine::createInnerEditorStyle(co
 
     if (inputElement()->shouldRevealPassword())
         textBlockStyle->setTextSecurity(TSNONE);
+
+    textBlockStyle->setOverflowX(OSCROLL);
+    textBlockStyle->setOverflowY(OSCROLL);
+    RefPtr<ComputedStyle> noScrollbarStyle = ComputedStyle::create();
+    noScrollbarStyle->setStyleType(SCROLLBAR);
+    noScrollbarStyle->setDisplay(NONE);
+    textBlockStyle->addCachedPseudoStyle(noScrollbarStyle);
+    textBlockStyle->setHasPseudoStyle(SCROLLBAR);
 
     return textBlockStyle.release();
 }

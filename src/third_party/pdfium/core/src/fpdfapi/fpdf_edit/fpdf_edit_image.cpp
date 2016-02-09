@@ -4,12 +4,13 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fpdfapi/fpdf_module.h"
-#include "../../../include/fpdfapi/fpdf_page.h"
-#include "../../../include/fxcodec/fx_codec.h"
-#include "../../../include/fpdfapi/fpdf_render.h"
 #include "../fpdf_page/pageint.h"
 #include "../fpdf_render/render_int.h"
+#include "core/include/fpdfapi/fpdf_module.h"
+#include "core/include/fpdfapi/fpdf_page.h"
+#include "core/include/fpdfapi/fpdf_render.h"
+#include "core/include/fxcodec/fx_codec.h"
+
 CPDF_Dictionary* CPDF_Image::InitJPEG(uint8_t* pData, FX_DWORD size) {
   int32_t width;
   int32_t height;
@@ -84,7 +85,7 @@ void CPDF_Image::SetJpegImage(IFX_FileRead* pFile) {
   if (!pDict) {
     return;
   }
-  m_pStream->InitStream(pFile, pDict);
+  m_pStream->InitStreamFromFile(pFile, pDict);
 }
 void _DCTEncodeBitmap(CPDF_Dictionary* pBitmapDict,
                       const CFX_DIBitmap* pBitmap,
@@ -177,8 +178,8 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap,
         ptr[2] = (uint8_t)argb;
         ptr += 3;
       }
-      CPDF_Stream* pCTS = CPDF_Stream::Create(pColorTable, iPalette * 3,
-                                              CPDF_Dictionary::Create());
+      CPDF_Stream* pCTS =
+          new CPDF_Stream(pColorTable, iPalette * 3, new CPDF_Dictionary);
       m_pDocument->AddIndirectObject(pCTS);
       pCS->AddReference(m_pDocument, pCTS);
       pDict->SetAtReference(FX_BSTRC("ColorSpace"), m_pDocument, pCS);
@@ -373,7 +374,7 @@ void CPDF_Image::SetImage(const CFX_DIBitmap* pBitmap,
     m_pStream->InitStream(dest_buf, dest_size, pDict);
   } else {
     pFileWrite->Flush();
-    m_pStream->InitStream(pFileRead, pDict);
+    m_pStream->InitStreamFromFile(pFileRead, pDict);
   }
   m_bIsMask = pBitmap->IsAlphaMask();
   m_Width = BitmapWidth;

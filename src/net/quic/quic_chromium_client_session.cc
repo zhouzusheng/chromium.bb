@@ -106,7 +106,6 @@ scoped_ptr<base::Value> NetLogQuicClientSessionCallback(
   scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
   dict->SetString("host", server_id->host());
   dict->SetInteger("port", server_id->port());
-  dict->SetBoolean("is_https", server_id->is_https());
   dict->SetBoolean("privacy_mode",
                    server_id->privacy_mode() == PRIVACY_MODE_ENABLED);
   dict->SetBoolean("require_confirmation", require_confirmation);
@@ -274,20 +273,8 @@ QuicChromiumClientSession::~QuicChromiumClientSession() {
 
   bool port_selected = stream_factory_->enable_port_selection();
   SSLInfo ssl_info;
-  if (!GetSSLInfo(&ssl_info) || !ssl_info.cert.get()) {
-    if (port_selected) {
-      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectSelectPortForHTTP",
-                                  round_trip_handshakes, 0, 3, 4);
-    } else {
-      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectRandomPortForHTTP",
-                                  round_trip_handshakes, 0, 3, 4);
-      if (require_confirmation_) {
-        UMA_HISTOGRAM_CUSTOM_COUNTS(
-            "Net.QuicSession.ConnectRandomPortRequiringConfirmationForHTTP",
-            round_trip_handshakes, 0, 3, 4);
-      }
-    }
-  } else {
+  // QUIC supports only secure urls.
+  if (GetSSLInfo(&ssl_info) && ssl_info.cert.get()) {
     if (port_selected) {
       UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectSelectPortForHTTPS",
                                   round_trip_handshakes, 0, 3, 4);
@@ -348,6 +335,13 @@ QuicChromiumClientSession::~QuicChromiumClientSession() {
   UMA_HISTOGRAM_COUNTS(
       "Net.QuicSession.MaxReordering",
       static_cast<base::HistogramBase::Sample>(stats.max_sequence_reordering));
+}
+
+void QuicChromiumClientSession::OnHeadersHeadOfLineBlocking(
+    QuicTime::Delta delta) {
+  UMA_HISTOGRAM_TIMES(
+      "Net.QuicSession.HeadersHOLBlockedTime",
+      base::TimeDelta::FromMicroseconds(delta.ToMicroseconds()));
 }
 
 void QuicChromiumClientSession::OnStreamFrame(const QuicStreamFrame& frame) {
@@ -445,7 +439,7 @@ QuicReliableClientStream*
 QuicChromiumClientSession::CreateOutgoingReliableStreamImpl() {
   DCHECK(connection()->connected());
   QuicReliableClientStream* stream =
-      new QuicReliableClientStream(GetNextStreamId(), this, net_log_);
+      new QuicReliableClientStream(GetNextOutgoingStreamId(), this, net_log_);
   ActivateStream(stream);
   ++num_total_streams_;
   UMA_HISTOGRAM_COUNTS("Net.QuicSession.NumOpenStreams", GetNumOpenStreams());
@@ -570,7 +564,7 @@ bool QuicChromiumClientSession::CanPool(const std::string& hostname,
                               server_id_.host(), hostname);
 }
 
-QuicDataStream* QuicChromiumClientSession::CreateIncomingDynamicStream(
+QuicSpdyStream* QuicChromiumClientSession::CreateIncomingDynamicStream(
     QuicStreamId id) {
   DLOG(ERROR) << "Server push not supported";
   return nullptr;
@@ -674,6 +668,11 @@ void QuicChromiumClientSession::OnCryptoHandshakeMessageReceived(
 void QuicChromiumClientSession::OnGoAway(const QuicGoAwayFrame& frame) {
   QuicSession::OnGoAway(frame);
   NotifyFactoryOfSessionGoingAway();
+}
+
+void QuicChromiumClientSession::OnRstStream(const QuicRstStreamFrame& frame) {
+  QuicSession::OnRstStream(frame);
+  OnClosedStream();
 }
 
 void QuicChromiumClientSession::OnConnectionClosed(QuicErrorCode error,
@@ -837,7 +836,7 @@ void QuicChromiumClientSession::CloseSessionOnErrorInner(
   CloseAllStreams(net_error);
   CloseAllObservers(net_error);
   net_log_.AddEvent(NetLog::TYPE_QUIC_SESSION_CLOSE_ON_ERROR,
-                    NetLog::IntegerCallback("net_error", net_error));
+                    NetLog::IntCallback("net_error", net_error));
 
   if (connection()->connected())
     connection()->CloseConnection(quic_error, false);
@@ -934,7 +933,7 @@ void QuicChromiumClientSession::NotifyFactoryOfSessionClosedLater() {
     RecordUnexpectedNotGoingAway(NOTIFY_FACTORY_OF_SESSION_CLOSED_LATER);
 
   going_away_ = true;
-  DCHECK_EQ(0u, GetNumOpenStreams());
+  DCHECK_EQ(0u, GetNumActiveStreams());
   DCHECK(!connection()->connected());
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
@@ -950,7 +949,7 @@ void QuicChromiumClientSession::NotifyFactoryOfSessionClosed() {
     RecordUnexpectedNotGoingAway(NOTIFY_FACTORY_OF_SESSION_CLOSED);
 
   going_away_ = true;
-  DCHECK_EQ(0u, GetNumOpenStreams());
+  DCHECK_EQ(0u, GetNumActiveStreams());
   // Will delete |this|.
   if (stream_factory_)
     stream_factory_->OnSessionClosed(this);

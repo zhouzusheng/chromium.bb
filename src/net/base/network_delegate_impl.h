@@ -125,7 +125,7 @@ class NET_EXPORT NetworkDelegateImpl : public NetworkDelegate {
   // greater than 0.
   // Currently, this is only implemented for HTTP transactions, and
   // |bytes_received| does not include TLS overhead or TCP retransmits.
-  void OnNetworkBytesReceived(const URLRequest& request,
+  void OnNetworkBytesReceived(URLRequest* request,
                               int64_t bytes_received) override;
 
   // Called when bytes are sent over the network, such as when sending request
@@ -135,8 +135,7 @@ class NET_EXPORT NetworkDelegateImpl : public NetworkDelegate {
   // OnNetworkBytesSent was called. |bytes_sent| will always be greater than 0.
   // Currently, this is only implemented for HTTP transactions, and |bytes_sent|
   // does not include TLS overhead or TCP retransmits.
-  void OnNetworkBytesSent(const URLRequest& request,
-                          int64_t bytes_sent) override;
+  void OnNetworkBytesSent(URLRequest* request, int64_t bytes_sent) override;
 
   // Indicates that the URL request has been completed or failed.
   // |started| indicates whether the request has been started. If false,
@@ -210,8 +209,9 @@ class NET_EXPORT NetworkDelegateImpl : public NetworkDelegate {
   // experiment, and false otherwise.
   //
   // TODO(mkwst): Remove this once we decide whether or not we wish to ship
-  // first-party cookies. https://crbug.com/459154
-  bool OnFirstPartyOnlyCookieExperimentEnabled() const override;
+  // first-party cookies and cookie prefixes. https://crbug.com/459154,
+  // https://crbug.com/541511
+  bool OnAreExperimentalCookieFeaturesEnabled() const override;
 
   // Called when the |referrer_url| for requesting |target_url| during handling
   // of the |request| is does not comply with the referrer policy (e.g. a

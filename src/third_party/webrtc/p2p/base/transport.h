@@ -56,6 +56,19 @@ enum IceConnectionState {
   kIceConnectionCompleted,
 };
 
+enum DtlsTransportState {
+  // Haven't started negotiating.
+  DTLS_TRANSPORT_NEW = 0,
+  // Have started negotiating.
+  DTLS_TRANSPORT_CONNECTING,
+  // Negotiated, and has a secure connection.
+  DTLS_TRANSPORT_CONNECTED,
+  // Transport is closed.
+  DTLS_TRANSPORT_CLOSED,
+  // Failed due to some error in the handshake process.
+  DTLS_TRANSPORT_FAILED,
+};
+
 // TODO(deadbeef): Unify with PeerConnectionInterface::IceConnectionState
 // once /talk/ and /webrtc/ are combined, and also switch to ENUM_NAME naming
 // style.
@@ -111,7 +124,7 @@ struct TransportChannelStats {
   int component = 0;
   ConnectionInfos connection_infos;
   std::string srtp_cipher;
-  uint16_t ssl_cipher = 0;
+  int ssl_cipher = 0;
 };
 
 // Information about all the channels of a transport.
@@ -160,8 +173,8 @@ class Transport : public sigslot::has_slots<> {
   void SetIceRole(IceRole role);
   IceRole ice_role() const { return ice_role_; }
 
-  void SetIceTiebreaker(uint64 IceTiebreaker) { tiebreaker_ = IceTiebreaker; }
-  uint64 IceTiebreaker() { return tiebreaker_; }
+  void SetIceTiebreaker(uint64_t IceTiebreaker) { tiebreaker_ = IceTiebreaker; }
+  uint64_t IceTiebreaker() { return tiebreaker_; }
 
   void SetIceConfig(const IceConfig& config);
 
@@ -290,7 +303,7 @@ class Transport : public sigslot::has_slots<> {
   bool channels_destroyed_ = false;
   bool connect_requested_ = false;
   IceRole ice_role_ = ICEROLE_UNKNOWN;
-  uint64 tiebreaker_ = 0;
+  uint64_t tiebreaker_ = 0;
   IceMode remote_ice_mode_ = ICEMODE_FULL;
   IceConfig ice_config_;
   rtc::scoped_ptr<TransportDescription> local_description_;

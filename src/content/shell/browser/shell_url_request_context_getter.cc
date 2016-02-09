@@ -141,7 +141,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
         make_scoped_ptr(new net::HttpServerPropertiesImpl()));
 
     base::FilePath cache_path = base_path_.Append(FILE_PATH_LITERAL("Cache"));
-    net::HttpCache::DefaultBackend* main_backend =
+    scoped_ptr<net::HttpCache::DefaultBackend> main_backend(
         new net::HttpCache::DefaultBackend(
             net::DISK_CACHE,
 #if defined(OS_ANDROID)
@@ -153,7 +153,7 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
 #endif
             cache_path,
             0,
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE));
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)));
 
     net::HttpNetworkSession::Params network_session_params;
     network_session_params.cert_verifier =
@@ -201,8 +201,12 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     network_session_params.host_resolver =
         url_request_context_->host_resolver();
 
+    storage_->set_http_network_session(
+        make_scoped_ptr(new net::HttpNetworkSession(network_session_params)));
     storage_->set_http_transaction_factory(make_scoped_ptr(
-        new net::HttpCache(network_session_params, main_backend)));
+        new net::HttpCache(storage_->http_network_session(),
+                           main_backend.Pass(),
+                           true /* set_up_quic_server_info */)));
 
     scoped_ptr<net::URLRequestJobFactoryImpl> job_factory(
         new net::URLRequestJobFactoryImpl());

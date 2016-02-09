@@ -42,7 +42,6 @@ public:
     // EventTarget implementation.
     const AtomicString& interfaceName() const override;
     ExecutionContext* executionContext() const override;
-    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool capture) override;
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -53,7 +52,7 @@ public:
     void send(PassRefPtr<DOMArrayBuffer>, ExceptionState&);
     void send(PassRefPtr<DOMArrayBufferView>, ExceptionState&);
     void send(Blob*, ExceptionState&);
-    void close();
+    void terminate();
 
     String binaryType() const;
     void setBinaryType(const String&);
@@ -70,6 +69,10 @@ public:
     // Notifies the presentation about new message.
     void didReceiveTextMessage(const String& message);
     void didReceiveBinaryMessage(const uint8_t* data, size_t length);
+
+protected:
+    // EventTarget implementation.
+    bool addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) override;
 
 private:
     class BlobLoader;
@@ -112,6 +115,9 @@ private:
     // Callbacks invoked from BlobLoader.
     void didFinishLoadingBlob(PassRefPtr<DOMArrayBuffer>);
     void didFailLoadingBlob(FileError::ErrorCode);
+
+    // Returns true iff current state is closed or terminated.
+    bool isDisconnected() const;
 
     String m_id;
     String m_url;

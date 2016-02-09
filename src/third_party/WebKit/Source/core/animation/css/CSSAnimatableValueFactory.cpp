@@ -71,8 +71,6 @@ static PassRefPtr<AnimatableValue> createFromLengthWithZoom(const Length& length
     case Calculated:
         return AnimatableLength::create(length, zoom);
     case Auto:
-    case Intrinsic:
-    case MinIntrinsic:
     case MinContent:
     case MaxContent:
     case FillAvailable:
@@ -367,7 +365,7 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         return AnimatableShadow::create(style.boxShadow(), style.color());
     case CSSPropertyClip:
         if (style.hasAutoClip())
-            return AnimatableUnknown::create(CSSPrimitiveValue::create(CSSValueAuto));
+            return AnimatableUnknown::create(CSSPrimitiveValue::createIdentifier(CSSValueAuto));
         return createFromLengthBox(style.clip(), style);
     case CSSPropertyColor:
         return createFromColor(property, style);

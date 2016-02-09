@@ -8,11 +8,14 @@
 #ifndef GrGLFragmentProcessor_DEFINED
 #define GrGLFragmentProcessor_DEFINED
 
-#include "GrGLProgramDataManager.h"
-#include "GrGLProcessor.h"
-#include "GrTextureAccess.h"
+#include "glsl/GrGLSLProcessorTypes.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLTextureSampler.h"
 
-class GrGLFPBuilder;
+class GrProcessor;
+class GrProcessorKeyBuilder;
+class GrGLSLFPBuilder;
+class GrGLSLCaps;
 
 class GrGLFragmentProcessor {
 public:
@@ -24,9 +27,8 @@ public:
         }
     }
 
-    typedef GrGLProgramDataManager::UniformHandle UniformHandle;
-    typedef GrGLProcessor::TransformedCoordsArray TransformedCoordsArray;
-    typedef GrGLProcessor::TextureSamplerArray TextureSamplerArray;
+    typedef GrGLSLProgramDataManager::UniformHandle UniformHandle;
+    typedef GrGLSLTextureSampler::TextureSamplerArray TextureSamplerArray;
 
     /** Called when the program stage should insert its code into the shaders. The code in each
         shader will be in its own block ({}) and so locally scoped names will not collide across
@@ -48,11 +50,11 @@ public:
      */
 
     struct EmitArgs {
-        EmitArgs(GrGLFPBuilder* builder,
+        EmitArgs(GrGLSLFPBuilder* builder,
                  const GrFragmentProcessor& fp,
                  const char* outputColor,
                  const char* inputColor,
-                 const TransformedCoordsArray& coords,
+                 const GrGLSLTransformedCoordsArray& coords,
                  const TextureSamplerArray& samplers)
             : fBuilder(builder)
             , fFp(fp)
@@ -60,17 +62,17 @@ public:
             , fInputColor(inputColor)
             , fCoords(coords)
             , fSamplers(samplers) {}
-        GrGLFPBuilder* fBuilder;
+        GrGLSLFPBuilder* fBuilder;
         const GrFragmentProcessor& fFp;
         const char* fOutputColor;
         const char* fInputColor;
-        const TransformedCoordsArray& fCoords;
+        const GrGLSLTransformedCoordsArray& fCoords;
         const TextureSamplerArray& fSamplers;
     };
 
     virtual void emitCode(EmitArgs&) = 0;
 
-    void setData(const GrGLProgramDataManager& pdman, const GrFragmentProcessor& processor);
+    void setData(const GrGLSLProgramDataManager& pdman, const GrFragmentProcessor& processor);
 
     static void GenKey(const GrProcessor&, const GrGLSLCaps&, GrProcessorKeyBuilder*) {}
 
@@ -101,7 +103,7 @@ protected:
     parameter is guaranteed to be of the same type that created this GrGLFragmentProcessor and
     to have an identical processor key as the one that created this GrGLFragmentProcessor.  */
     // TODO update this to pass in GrFragmentProcessor
-    virtual void onSetData(const GrGLProgramDataManager&, const GrProcessor&) {}
+    virtual void onSetData(const GrGLSLProgramDataManager&, const GrProcessor&) {}
 
 private:
     void internalEmitChild(int, const char*, const char*, EmitArgs&);
@@ -109,7 +111,6 @@ private:
     SkTArray<GrGLFragmentProcessor*, true> fChildProcessors;
 
     friend class GrFragmentProcessor;
-    typedef GrGLProcessor INHERITED;
 };
 
 #endif

@@ -85,6 +85,7 @@ class BASE_EXPORT File {
     FLAG_TERMINAL_DEVICE = 1 << 16,   // Serial port flags.
     FLAG_BACKUP_SEMANTICS = 1 << 17,  // Used on Windows only.
     FLAG_EXECUTE = 1 << 18,           // Used on Windows only.
+    FLAG_SEQUENTIAL_SCAN = 1 << 19,   // Used on Windows only.
   };
 
   // This enum has been recorded in multiple histograms. If the order of the
@@ -182,6 +183,9 @@ class BASE_EXPORT File {
   // Creates or opens the given file.
   void Initialize(const FilePath& path, uint32 flags);
 
+  // Returns |true| if the handle / fd wrapped by this object is valid.  This
+  // method doesn't interact with the file system (and is safe to be called from
+  // ThreadRestrictions::SetIOAllowed(false) threads).
   bool IsValid() const;
 
   // Returns true if a new file was created (or an old one truncated to zero

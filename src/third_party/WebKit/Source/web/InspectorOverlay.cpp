@@ -30,8 +30,10 @@
 #include "web/InspectorOverlay.h"
 
 #include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/V8InspectorOverlayHost.h"
 #include "core/dom/Node.h"
+#include "core/dom/StaticNodeList.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -49,10 +51,11 @@
 #include "platform/JSONValues.h"
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/CullRect.h"
+#include "platform/graphics/paint/DisplayItemCacheSkipper.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebData.h"
 #include "web/PageOverlay.h"
-#include "web/WebGraphicsContextImpl.h"
 #include "web/WebInputEventConversion.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebViewImpl.h"
@@ -107,15 +110,16 @@ public:
         PageOverlay::Delegate::trace(visitor);
     }
 
-    void paintPageOverlay(WebGraphicsContext* context, const WebSize& webViewSize) const override
+    void paintPageOverlay(const PageOverlay&, GraphicsContext& graphicsContext, const WebSize& webViewSize) const override
     {
         if (m_overlay->isEmpty())
             return;
 
-        GraphicsContext& graphicsContext = toWebGraphicsContextImpl(context)->graphicsContext();
+        // Skip cache because the following paint may conflict with the view's real painting.
+        DisplayItemCacheSkipper cacheSkipper(graphicsContext);
         FrameView* view = m_overlay->overlayMainFrame()->view();
         ASSERT(!view->needsLayout());
-        view->paint(&graphicsContext, IntRect(0, 0, view->width(), view->height()));
+        view->paint(&graphicsContext, CullRect(IntRect(0, 0, view->width(), view->height())));
     }
 
 private:
@@ -137,10 +141,10 @@ public:
         EmptyChromeClient::trace(visitor);
     }
 
-    void setCursor(const Cursor& cursor) override
+    void setCursor(const Cursor& cursor, LocalFrame* localRoot) override
     {
         toChromeClientImpl(m_client)->setCursorOverridden(false);
-        toChromeClientImpl(m_client)->setCursor(cursor);
+        toChromeClientImpl(m_client)->setCursor(cursor, localRoot);
         bool overrideCursor = m_overlay->m_layoutEditor;
         toChromeClientImpl(m_client)->setCursorOverridden(overrideCursor);
     }
@@ -409,6 +413,20 @@ void InspectorOverlay::drawNodeHighlight()
     if (!m_highlightNode)
         return;
 
+    String selectors = m_nodeHighlightConfig.selectorList;
+    RefPtrWillBeRawPtr<StaticElementList> elements = nullptr;
+    TrackExceptionState exceptionState;
+    if (selectors.length())
+        elements = m_highlightNode->ownerDocument()->querySelectorAll(AtomicString(selectors), exceptionState);
+    if (elements && !exceptionState.hadException()) {
+        for (unsigned i = 0; i < elements->length(); ++i) {
+            Element* element = elements->item(i);
+            InspectorHighlight highlight(element, m_nodeHighlightConfig, false);
+            RefPtr<JSONObject> highlightJSON = highlight.asJSONObject();
+            evaluateInOverlay("drawHighlight", highlightJSON.release());
+        }
+    }
+
     bool appendElementInfo = m_highlightNode->isElementNode() && !m_omitTooltip && m_nodeHighlightConfig.showInfo && m_highlightNode->layoutObject() && m_highlightNode->document().frame();
     InspectorHighlight highlight(m_highlightNode.get(), m_nodeHighlightConfig, appendElementInfo);
     if (m_eventTargetNode)
@@ -538,6 +556,14 @@ void InspectorOverlay::evaluateInOverlay(const String& method, PassRefPtr<JSONVa
     toLocalFrame(overlayPage()->mainFrame())->script().executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
 }
 
+String InspectorOverlay::evaluateInOverlayForTest(const String& script)
+{
+    ScriptForbiddenScope::AllowUserAgentScript allowScript;
+    v8::HandleScope handleScope(toIsolate(overlayMainFrame()));
+    v8::Local<v8::Value> string = toLocalFrame(overlayPage()->mainFrame())->script().executeScriptInMainWorldAndReturnValue(ScriptSourceCode(script), ScriptController::ExecuteScriptWhenScriptsDisabled);
+    return toCoreStringWithUndefinedOrNullCheck(string);
+}
+
 void InspectorOverlay::onTimer(Timer<InspectorOverlay>*)
 {
     m_resizeTimerActive = false;
@@ -624,7 +650,7 @@ void InspectorOverlay::overlayClearSelection(bool commitChanges)
         highlightNode(m_hoveredNodeForInspectMode.get(), *m_inspectModeHighlightConfig, false);
 
     toChromeClientImpl(m_webViewImpl->page()->chromeClient()).setCursorOverridden(false);
-    toChromeClientImpl(m_webViewImpl->page()->chromeClient()).setCursor(pointerCursor());
+    toChromeClientImpl(m_webViewImpl->page()->chromeClient()).setCursor(pointerCursor(), overlayMainFrame());
 }
 
 void InspectorOverlay::profilingStarted()
@@ -642,7 +668,7 @@ void InspectorOverlay::pageLayoutInvalidated(bool resized)
 {
     if (resized && m_drawViewSize) {
         m_resizeTimerActive = true;
-        m_timer.startOneShot(1, FROM_HERE);
+        m_timer.startOneShot(1, BLINK_FROM_HERE);
     }
     scheduleUpdate();
 }
@@ -683,6 +709,7 @@ bool InspectorOverlay::handleMouseMove(const PlatformMouseEvent& event)
 
     if (node && m_inspectModeHighlightConfig) {
         m_hoveredNodeForInspectMode = node;
+        m_domAgent->nodeHighlightedInOverlay(node);
         highlightNode(node, eventTarget, *m_inspectModeHighlightConfig, event.ctrlKey() || event.metaKey());
     }
     return true;

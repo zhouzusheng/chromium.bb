@@ -190,11 +190,6 @@ void WebSettingsImpl::setInvertViewportScrollOrder(bool enabled)
     m_settings->setInvertViewportScrollOrder(enabled);
 }
 
-void WebSettingsImpl::setInertVisualViewport(bool enabled)
-{
-    m_settings->setInertVisualViewport(enabled);
-}
-
 void WebSettingsImpl::setDeviceScaleAdjustment(float deviceScaleAdjustment)
 {
     m_devToolsEmulator->setDeviceScaleAdjustment(deviceScaleAdjustment);
@@ -472,11 +467,6 @@ void WebSettingsImpl::setThreadedScrollingEnabled(bool enabled)
 void WebSettingsImpl::setTouchDragDropEnabled(bool enabled)
 {
     m_settings->setTouchDragDropEnabled(enabled);
-}
-
-void WebSettingsImpl::setTouchEditingEnabled(bool enabled)
-{
-    m_settings->setTouchEditingEnabled(enabled);
 }
 
 void WebSettingsImpl::setOfflineWebApplicationCacheEnabled(bool enabled)
@@ -803,11 +793,6 @@ void WebSettingsImpl::setV8CacheOptions(V8CacheOptions options)
 void WebSettingsImpl::setUseMobileViewportStyle(bool enabled)
 {
     m_devToolsEmulator->setUseMobileViewportStyle(enabled);
-}
-
-void WebSettingsImpl::setHidePinchScrollbarsNearMinScale(bool enabled)
-{
-    m_devToolsEmulator->setHidePinchScrollbarsNearMinScale(enabled);
 }
 
 } // namespace blink

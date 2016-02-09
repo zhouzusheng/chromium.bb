@@ -553,7 +553,7 @@ void Layer::SetTextureMailbox(
     frame_size_in_dip_ = gfx::Size();
   }
   if (mailbox_release_callback_)
-    mailbox_release_callback_->Run(0, false);
+    mailbox_release_callback_->Run(gpu::SyncToken(), false);
   mailbox_release_callback_ = release_callback.Pass();
   mailbox_ = mailbox;
   SetTextureSize(texture_size_in_dip);
@@ -623,7 +623,7 @@ void Layer::SetShowSolidColorContent() {
 
   mailbox_ = cc::TextureMailbox();
   if (mailbox_release_callback_) {
-    mailbox_release_callback_->Run(0, false);
+    mailbox_release_callback_->Run(gpu::SyncToken(), false);
     mailbox_release_callback_.reset();
   }
   RecomputeDrawsContentAndUVRect();
@@ -750,14 +750,6 @@ void Layer::RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request) {
   cc_layer_->RequestCopyOfOutput(request.Pass());
 }
 
-void Layer::PaintContents(
-    SkCanvas* sk_canvas,
-    const gfx::Rect& clip,
-    ContentLayerClient::PaintingControlSetting painting_control) {
-  // The old non-slimming paint path is not used in ui::Compositor.
-  NOTREACHED();
-}
-
 scoped_refptr<cc::DisplayItemList> Layer::PaintContentsToDisplayList(
     const gfx::Rect& clip,
     ContentLayerClient::PaintingControlSetting painting_control) {
@@ -831,12 +823,11 @@ void Layer::OnAnimationStarted(const cc::AnimationEvent& event) {
 }
 
 void Layer::CollectAnimators(
-    std::vector<scoped_refptr<LayerAnimator> >* animators) {
+    std::vector<scoped_refptr<LayerAnimator>>* animators) {
   if (IsAnimating())
     animators->push_back(animator_);
-  std::for_each(children_.begin(), children_.end(),
-                std::bind2nd(std::mem_fun(&Layer::CollectAnimators),
-                             animators));
+  for (auto* child : children_)
+    child->CollectAnimators(animators);
 }
 
 void Layer::StackRelativeTo(Layer* child, Layer* other, bool above) {
@@ -866,7 +857,7 @@ bool Layer::ConvertPointForAncestor(const Layer* ancestor,
                                     gfx::Point* point) const {
   gfx::Transform transform;
   bool result = GetTargetTransformRelativeTo(ancestor, &transform);
-  gfx::Point3F p(*point);
+  auto p = gfx::Point3F(gfx::PointF(*point));
   transform.TransformPoint(&p);
   *point = gfx::ToFlooredPoint(p.AsPointF());
   return result;
@@ -876,7 +867,7 @@ bool Layer::ConvertPointFromAncestor(const Layer* ancestor,
                                      gfx::Point* point) const {
   gfx::Transform transform;
   bool result = GetTargetTransformRelativeTo(ancestor, &transform);
-  gfx::Point3F p(*point);
+  auto p = gfx::Point3F(gfx::PointF(*point));
   transform.TransformPointReverse(&p);
   *point = gfx::ToFlooredPoint(p.AsPointF());
   return result;
@@ -1081,7 +1072,8 @@ void Layer::RecomputeDrawsContentAndUVRect() {
 }
 
 void Layer::RecomputePosition() {
-  cc_layer_->SetPosition(bounds_.origin() + subpixel_position_offset_);
+  cc_layer_->SetPosition(gfx::PointF(bounds_.origin()) +
+                         subpixel_position_offset_);
 }
 
 void Layer::AddAnimatorsInTreeToCollection(
@@ -1089,11 +1081,8 @@ void Layer::AddAnimatorsInTreeToCollection(
   DCHECK(collection);
   if (IsAnimating())
     animator_->AddToCollection(collection);
-  std::for_each(
-      children_.begin(),
-      children_.end(),
-      std::bind2nd(std::mem_fun(&Layer::AddAnimatorsInTreeToCollection),
-                   collection));
+  for (auto* child : children_)
+    child->AddAnimatorsInTreeToCollection(collection);
 }
 
 void Layer::RemoveAnimatorsInTreeFromCollection(
@@ -1101,11 +1090,8 @@ void Layer::RemoveAnimatorsInTreeFromCollection(
   DCHECK(collection);
   if (IsAnimating())
     animator_->RemoveFromCollection(collection);
-  std::for_each(
-      children_.begin(),
-      children_.end(),
-      std::bind2nd(std::mem_fun(&Layer::RemoveAnimatorsInTreeFromCollection),
-                   collection));
+  for (auto* child : children_)
+    child->RemoveAnimatorsInTreeFromCollection(collection);
 }
 
 bool Layer::IsAnimating() const {

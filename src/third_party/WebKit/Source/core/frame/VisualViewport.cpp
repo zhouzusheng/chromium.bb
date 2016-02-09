@@ -195,6 +195,9 @@ void VisualViewport::setScale(float scale)
 
 void VisualViewport::setScaleAndLocation(float scale, const FloatPoint& location)
 {
+    if (!mainFrame())
+        return;
+
     bool valuesChanged = false;
 
     if (scale != m_scale) {
@@ -213,8 +216,10 @@ void VisualViewport::setScaleAndLocation(float scale, const FloatPoint& location
         if (ScrollingCoordinator* coordinator = frameHost().page().scrollingCoordinator())
             coordinator->scrollableAreaScrollLayerDidChange(this);
 
-        Document* document = mainFrame()->document();
-        document->enqueueScrollEventForNode(document);
+        if (!frameHost().settings().inertVisualViewport()) {
+            if (Document* document = mainFrame()->document())
+                document->enqueueScrollEventForNode(document);
+        }
 
         mainFrame()->loader().client()->didChangeScrollOffset();
         valuesChanged = true;
@@ -370,8 +375,6 @@ void VisualViewport::setupScrollbar(WebScrollbar::Orientation orientation)
         ScrollbarOrientation webcoreOrientation = isHorizontal ? HorizontalScrollbar : VerticalScrollbar;
         webScrollbarLayer = coordinator->createSolidColorScrollbarLayer(webcoreOrientation, thumbThickness, scrollbarMargin, false);
 
-        webScrollbarLayer->setClipLayer(m_innerViewportContainerLayer->platformLayer());
-
         // The compositor will control the scrollbar's visibility. Set to invisible by defualt
         // so scrollbars don't show up in layout tests.
         webScrollbarLayer->layer()->setOpacity(0);
@@ -413,9 +416,6 @@ void VisualViewport::registerLayersWithTreeView(WebLayerTreeView* layerTreeView)
         m_pageScaleLayer->platformLayer(),
         m_innerViewportScrollLayer->platformLayer(),
         scrollLayer);
-
-    // TODO(aelias): Remove this call after this setting is deleted.
-    layerTreeView->setHidePinchScrollbarsNearMinScale(false);
 }
 
 bool VisualViewport::visualViewportSuppliesScrollbars() const
@@ -579,7 +579,7 @@ GraphicsLayer* VisualViewport::layerForVerticalScrollbar() const
     return m_overlayScrollbarVertical.get();
 }
 
-void VisualViewport::paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) const
+void VisualViewport::paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect* inClip) const
 {
 }
 

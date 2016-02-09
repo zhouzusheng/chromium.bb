@@ -11,7 +11,7 @@
 #include "webrtc/modules/video_coding/main/source/session_info.h"
 
 #include "webrtc/modules/video_coding/main/source/packet.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/include/logging.h"
 
 namespace webrtc {
 
@@ -112,6 +112,24 @@ bool VCMSessionInfo::NonReference() const {
       packets_.front().codecSpecificHeader.codec != kRtpVideoVp8)
     return false;
   return packets_.front().codecSpecificHeader.codecHeader.VP8.nonReference;
+}
+
+void VCMSessionInfo::SetGofInfo(const GofInfoVP9& gof_info, size_t idx) {
+  if (packets_.empty() ||
+      packets_.front().codecSpecificHeader.codec != kRtpVideoVp9 ||
+      packets_.front().codecSpecificHeader.codecHeader.VP9.flexible_mode) {
+    return;
+  }
+  packets_.front().codecSpecificHeader.codecHeader.VP9.temporal_idx =
+      gof_info.temporal_idx[idx];
+  packets_.front().codecSpecificHeader.codecHeader.VP9.temporal_up_switch =
+      gof_info.temporal_up_switch[idx];
+  packets_.front().codecSpecificHeader.codecHeader.VP9.num_ref_pics =
+      gof_info.num_ref_pics[idx];
+  for (uint8_t i = 0; i < gof_info.num_ref_pics[idx]; ++i) {
+    packets_.front().codecSpecificHeader.codecHeader.VP9.pid_diff[i] =
+        gof_info.pid_diff[idx][i];
+  }
 }
 
 void VCMSessionInfo::Reset() {
@@ -464,7 +482,7 @@ int VCMSessionInfo::InsertPacket(const VCMPacket& packet,
                                  uint8_t* frame_buffer,
                                  VCMDecodeErrorMode decode_error_mode,
                                  const FrameData& frame_data) {
-  if (packet.frameType == kFrameEmpty) {
+  if (packet.frameType == kEmptyFrame) {
     // Update sequence number of an empty packet.
     // Only media packets are inserted into the packet list.
     InformOfEmptyPacket(packet.seqNum);
@@ -516,7 +534,7 @@ int VCMSessionInfo::InsertPacket(const VCMPacket& packet,
       LOG(LS_WARNING) << "Received packet with a sequence number which is out "
                          "of frame boundaries";
       return -3;
-    } else if (frame_type_ == kFrameEmpty && packet.frameType != kFrameEmpty) {
+    } else if (frame_type_ == kEmptyFrame && packet.frameType != kEmptyFrame) {
       // Update the frame type with the type of the first media packet.
       // TODO(mikhal): Can this trigger?
       frame_type_ = packet.frameType;

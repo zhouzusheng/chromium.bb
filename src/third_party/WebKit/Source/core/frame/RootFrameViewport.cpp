@@ -42,7 +42,7 @@ IntRect RootFrameViewport::visibleContentRect(IncludeScrollbarsInRect scrollbarI
 
 bool RootFrameViewport::shouldUseIntegerScrollOffset() const
 {
-    // Fractionals are floored in the ScrollAnimator but it's important that the ScrollAnimators of the
+    // Fractionals are floored in the ScrollAnimatorBase but it's important that the ScrollAnimators of the
     // visual and layout viewports get the precise fractional number so never use integer scrolling for
     // RootFrameViewport, we'll let the truncation happen in the subviewports.
     return false;
@@ -93,12 +93,12 @@ ScrollBehavior RootFrameViewport::scrollBehaviorStyle() const
     return layoutViewport().scrollBehaviorStyle();
 }
 
-LayoutRect RootFrameViewport::scrollIntoView(const LayoutRect& rectInContent, const ScrollAlignment& alignX, const ScrollAlignment& alignY)
+LayoutRect RootFrameViewport::scrollIntoView(const LayoutRect& rectInContent, const ScrollAlignment& alignX, const ScrollAlignment& alignY, ScrollType scrollType)
 {
     // We want to move the rect into the viewport that excludes the scrollbars so we intersect
     // the visual viewport with the scrollbar-excluded frameView content rect. However, we don't
     // use visibleContentRect directly since it floors the scroll position. Instead, we use
-    // ScrollAnimator::currentPosition and construct a LayoutRect from that.
+    // ScrollAnimatorBase::currentPosition and construct a LayoutRect from that.
 
     LayoutRect frameRectInContent = LayoutRect(
         layoutViewport().scrollAnimator()->currentPosition(),
@@ -113,7 +113,7 @@ LayoutRect RootFrameViewport::scrollIntoView(const LayoutRect& rectInContent, co
         ScrollAlignment::getRectToExpose(viewRectInContent, rectInContent, alignX, alignY);
     DoublePoint targetOffset(targetViewport.x(), targetViewport.y());
 
-    setScrollPosition(targetOffset, ProgrammaticScroll);
+    setScrollPosition(targetOffset, scrollType, ScrollBehaviorInstant);
 
     // RootFrameViewport only changes the viewport relative to the document so we can't change the input
     // rect's location relative to the document origin.
@@ -132,7 +132,7 @@ void RootFrameViewport::setScrollOffset(const DoublePoint& offset, ScrollType sc
 
 void RootFrameViewport::distributeScrollBetweenViewports(const DoublePoint& offset, ScrollType scrollType, ScrollBehavior behavior)
 {
-    // Make sure we use the scroll positions as reported by each viewport's ScrollAnimator, since its
+    // Make sure we use the scroll positions as reported by each viewport's ScrollAnimatorBase, since its
     // ScrollableArea's position may have the fractional part truncated off.
     DoublePoint oldPosition = scrollOffsetFromScrollAnimators();
 

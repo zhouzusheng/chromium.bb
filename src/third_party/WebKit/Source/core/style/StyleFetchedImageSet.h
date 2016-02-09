@@ -39,7 +39,7 @@ class CSSImageSetValue;
 // This class keeps one cached image and has access to a set of alternatives.
 
 class StyleFetchedImageSet final : public StyleImage, private ImageResourceClient {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleFetchedImageSet);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(StyleFetchedImageSet);
 public:
     static PassRefPtrWillBeRawPtr<StyleFetchedImageSet> create(ImageResource* image, float imageScaleFactor, CSSImageSetValue* value)
     {
@@ -79,6 +79,8 @@ public:
 
 private:
     StyleFetchedImageSet(ImageResource*, float imageScaleFactor, CSSImageSetValue*);
+
+    String debugName() const override { return "StyleFetchedImageSet"; }
 
     ResourcePtr<ImageResource> m_bestFitImage;
     float m_imageScaleFactor;

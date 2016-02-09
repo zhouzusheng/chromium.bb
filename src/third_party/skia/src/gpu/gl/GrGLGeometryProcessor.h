@@ -10,7 +10,7 @@
 
 #include "GrGLPrimitiveProcessor.h"
 
-class GrGLGPBuilder;
+class GrGLSLGPBuilder;
 
 /**
  * If a GL effect needs a GrGLFullShaderBuilder* object to emit vertex code, then it must inherit
@@ -24,7 +24,7 @@ public:
 
     // By default we use the identity matrix
     void setTransformData(const GrPrimitiveProcessor&,
-                          const GrGLProgramDataManager& pdman,
+                          const GrGLSLProgramDataManager& pdman,
                           int index,
                           const SkTArray<const GrCoordTransform*, true>& transforms) override {
         this->setTransformDataMatrix(SkMatrix::I(), pdman, index, transforms);
@@ -33,7 +33,7 @@ public:
     // A helper which subclasses can use if needed
     template <class GeometryProcessor>
     void setTransformDataHelper(const GrPrimitiveProcessor& primProc,
-                                const GrGLProgramDataManager& pdman,
+                                const GrGLSLProgramDataManager& pdman,
                                 int index,
                                 const SkTArray<const GrCoordTransform*, true>& transforms) {
         const GeometryProcessor& gp = primProc.cast<GeometryProcessor>();
@@ -42,7 +42,7 @@ public:
 
 protected:
     // Emit a uniform matrix for each coord transform.
-    void emitTransforms(GrGLGPBuilder* gp,
+    void emitTransforms(GrGLSLGPBuilder* gp,
                         const GrShaderVar& posVar,
                         const char* localCoords,
                         const TransformsIn& tin,
@@ -51,7 +51,7 @@ protected:
     }
 
     // Emit pre-transformed coords as a vertex attribute per coord-transform.
-    void emitTransforms(GrGLGPBuilder*,
+    void emitTransforms(GrGLSLGPBuilder*,
                         const GrShaderVar& posVar,
                         const char* localCoords,
                         const SkMatrix& localMatrix,
@@ -59,7 +59,7 @@ protected:
                         TransformsOut*);
 
     // caller has emitted transforms via attributes
-    void emitTransforms(GrGLGPBuilder*,
+    void emitTransforms(GrGLSLGPBuilder*,
                         const char* localCoords,
                         const TransformsIn& tin,
                         TransformsOut* tout);
@@ -71,8 +71,8 @@ protected:
     };
 
     // Create the correct type of position variable given the CTM
-    void setupPosition(GrGLGPBuilder*, GrGPArgs*, const char* posName);
-    void setupPosition(GrGLGPBuilder*, GrGPArgs*, const char* posName, const SkMatrix& mat,
+    void setupPosition(GrGLSLGPBuilder*, GrGPArgs*, const char* posName);
+    void setupPosition(GrGLSLGPBuilder*, GrGPArgs*, const char* posName, const SkMatrix& mat,
                        UniformHandle* viewMatrixUniform);
 
     static uint32_t ComputePosKey(const SkMatrix& mat) {
@@ -87,7 +87,7 @@ protected:
 
 private:
     void setTransformDataMatrix(const SkMatrix& localMatrix,
-                                const GrGLProgramDataManager& pdman,
+                                const GrGLSLProgramDataManager& pdman,
                                 int index,
                                 const SkTArray<const GrCoordTransform*, true>& transforms) {
         SkSTArray<2, Transform, true>& procTransforms = fInstalledTransforms[index];

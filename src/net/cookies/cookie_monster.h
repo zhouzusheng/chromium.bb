@@ -67,7 +67,6 @@ class ParsedCookie;
 class NET_EXPORT CookieMonster : public CookieStore {
  public:
   class PersistentCookieStore;
-  typedef CookieMonsterDelegate Delegate;
 
   // Terminology:
   //    * The 'top level domain' (TLD) of an internet domain name is
@@ -168,6 +167,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
                                  bool secure,
                                  bool http_only,
                                  bool first_party,
+                                 bool enforce_prefixes,
                                  CookiePriority priority,
                                  const SetCookiesCallback& callback);
 
@@ -465,14 +465,13 @@ class NET_EXPORT CookieMonster : public CookieStore {
                             bool secure,
                             bool http_only,
                             bool first_party,
+                            bool enforce_prefixes,
                             CookiePriority priority);
 
   CookieList GetAllCookies();
 
   CookieList GetAllCookiesForURLWithOptions(const GURL& url,
                                             const CookieOptions& options);
-
-  CookieList GetAllCookiesForURL(const GURL& url);
 
   int DeleteAll(bool sync_to_store);
 

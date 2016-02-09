@@ -12,6 +12,8 @@ WebInspector.BlockedURLsPane = function()
     this.registerRequiredCSS("network/blockedURLsPane.css");
     this.contentElement.classList.add("blocked-urls-pane");
 
+    WebInspector.BlockedURLsPane._instance = this;
+
     this._blockedURLsSetting = WebInspector.moduleSetting("blockedURLs");
     this._blockedURLsSetting.addChangeListener(this._update, this);
 
@@ -285,13 +287,6 @@ WebInspector.BlockedURLsPane.reset = function()
         WebInspector.BlockedURLsPane._instance.reset();
 }
 
-WebInspector.BlockedURLsPane.reveal = function()
-{
-    if (!WebInspector.BlockedURLsPane._instance)
-        WebInspector.BlockedURLsPane._instance = new WebInspector.BlockedURLsPane();
-    WebInspector.inspectorView.showCloseableViewInDrawer("network.blocked-urls", WebInspector.UIString("Request blocking"), WebInspector.BlockedURLsPane._instance);
-}
-
 /**
  * @constructor
  * @implements {WebInspector.ActionDelegate}
@@ -305,10 +300,12 @@ WebInspector.BlockedURLsPane.ActionDelegate.prototype = {
      * @override
      * @param {!WebInspector.Context} context
      * @param {string} actionId
+     * @return {boolean}
      */
     handleAction: function(context, actionId)
     {
-        WebInspector.BlockedURLsPane.reveal();
+        WebInspector.inspectorView.showViewInDrawer("network.blocked-urls");
+        return true;
     }
 }
 

@@ -239,8 +239,28 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   // If we have any copy requests, we can't remove any quads for overlays,
   // otherwise the framebuffer will be missing the overlay contents.
   if (root_render_pass->copy_requests.empty()) {
-    overlay_processor_->ProcessForOverlays(render_passes_in_draw_order,
-                                           &frame.overlay_list);
+    overlay_processor_->ProcessForOverlays(
+        resource_provider_, render_passes_in_draw_order, &frame.overlay_list,
+        &frame.root_damage_rect);
+
+    // No need to render in case the damage rect is completely composited using
+    // overlays and dont have any copy requests.
+    if (frame.root_damage_rect.IsEmpty()) {
+      bool handle_copy_requests = false;
+      for (auto* pass : *render_passes_in_draw_order) {
+        if (!pass->copy_requests.empty()) {
+          handle_copy_requests = true;
+          break;
+        }
+      }
+
+      if (!handle_copy_requests) {
+        BindFramebufferToOutputSurface(&frame);
+        FinishDrawingFrame(&frame);
+        render_passes_in_draw_order->clear();
+        return;
+      }
+    }
   }
 
   for (size_t i = 0; i < render_passes_in_draw_order->size(); ++i) {
@@ -436,8 +456,8 @@ void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
 
   // If |has_external_stencil_test| we can't discard or clear. Make sure we
   // don't need to.
-  DCHECK_IMPLIES(has_external_stencil_test,
-                 !frame->current_render_pass->has_transparent_background);
+  DCHECK(!has_external_stencil_test ||
+         !frame->current_render_pass->has_transparent_background);
 
   SurfaceInitializationMode mode;
   if (should_clear_surface && render_pass_is_clipped) {
@@ -516,8 +536,9 @@ bool DirectRenderer::UseRenderPass(DrawingFrame* frame,
   size.Enlarge(enlarge_pass_texture_amount_.x(),
                enlarge_pass_texture_amount_.y());
   if (!texture->id()) {
-    texture->Allocate(
-        size, ResourceProvider::TEXTURE_HINT_IMMUTABLE_FRAMEBUFFER, RGBA_8888);
+    texture->Allocate(size,
+                      ResourceProvider::TEXTURE_HINT_IMMUTABLE_FRAMEBUFFER,
+                      resource_provider_->best_texture_format());
   }
   DCHECK(texture->id());
 

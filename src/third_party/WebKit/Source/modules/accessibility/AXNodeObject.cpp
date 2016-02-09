@@ -30,6 +30,7 @@
 #include "modules/accessibility/AXNodeObject.h"
 
 #include "core/InputTypeNames.h"
+#include "core/dom/Element.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ComposedTreeTraversal.h"
@@ -158,6 +159,7 @@ String AXNodeObject::ariaAccessibilityDescription() const
 
 void AXNodeObject::ariaLabelledbyElements(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements) const
 {
+    // Try both spellings, but prefer aria-labelledby, which is the official spec.
     elementsFromAttribute(elements, aria_labelledbyAttr);
     if (!elements.size())
         elementsFromAttribute(elements, aria_labeledbyAttr);
@@ -578,7 +580,7 @@ void AXNodeObject::elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Ele
     }
 }
 
-void AXNodeObject::accessibilityChildrenFromAttribute(QualifiedName attr, AccessibilityChildrenVector& children) const
+void AXNodeObject::accessibilityChildrenFromAttribute(QualifiedName attr, AXObject::AXObjectVector& children) const
 {
     WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
     elementsFromAttribute(elements, attr);
@@ -1029,15 +1031,6 @@ AccessibilityExpanded AXNodeObject::isExpanded() const
     return ExpandedUndefined;
 }
 
-bool AXNodeObject::isIndeterminate() const
-{
-    Node* node = this->node();
-    if (!isHTMLInputElement(node))
-        return false;
-
-    return toHTMLInputElement(node)->shouldAppearIndeterminate();
-}
-
 bool AXNodeObject::isPressed() const
 {
     if (!isButton())
@@ -1336,6 +1329,9 @@ AXObject* AXNodeObject::deprecatedTitleUIElement() const
 
 AccessibilityButtonState AXNodeObject::checkboxOrRadioValue() const
 {
+    if (isNativeCheckboxInMixedState())
+        return ButtonStateMixed;
+
     if (isNativeCheckboxOrRadio())
         return isChecked() ? ButtonStateOn : ButtonStateOff;
 
@@ -1498,6 +1494,15 @@ String AXNodeObject::stringValue() const
     if (node->isTextNode())
         return deprecatedTextUnderElement(TextUnderElementAll);
 
+    return stringValueOfControl();
+}
+
+String AXNodeObject::stringValueOfControl() const
+{
+    Node* node = this->node();
+    if (!node)
+        return String();
+
     if (isHTMLSelectElement(*node)) {
         HTMLSelectElement& selectElement = toHTMLSelectElement(*node);
         int selectedIndex = selectElement.selectedIndex();
@@ -1515,10 +1520,15 @@ String AXNodeObject::stringValue() const
     if (isNativeTextControl())
         return text();
 
-    // FIXME: We might need to implement a value here for more types
-    // FIXME: It would be better not to advertise a value at all for the types for which we don't implement one;
-    // this would require subclassing or making accessibilityAttributeNames do something other than return a
-    // single static array.
+    // Handle other HTML input elements that aren't text controls, like date and time
+    // controls, by returning the string value, with the exception of checkboxes
+    // and radio buttons (which would return "on").
+    if (isHTMLInputElement(node)) {
+        HTMLInputElement* input = toHTMLInputElement(node);
+        if (input->type() != InputTypeNames::checkbox && input->type() != InputTypeNames::radio)
+            return input->value();
+    }
+
     return String();
 }
 
@@ -1839,15 +1849,25 @@ String AXNodeObject::computedName() const
     return String();
 }
 
+bool AXNodeObject::isNativeCheckboxInMixedState() const
+{
+    if (!isHTMLInputElement(m_node))
+        return false;
+
+    HTMLInputElement* input = toHTMLInputElement(m_node);
+    return input->type() == InputTypeNames::checkbox
+        && input->shouldAppearIndeterminate();
+}
+
 //
 // New AX name calculation.
 //
 
-String AXNodeObject::textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXObjectVector* nameObjects, NameSources* nameSources) const
+String AXNodeObject::textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXRelatedObjectVector* relatedObjects, NameSources* nameSources) const
 {
-    // If nameSources is non-null, nameObjects is used in filling it in, so it must be non-null as well.
+    // If nameSources is non-null, relatedObjects is used in filling it in, so it must be non-null as well.
     if (nameSources)
-        ASSERT(nameObjects);
+        ASSERT(relatedObjects);
 
     bool alreadyVisited = visited.contains(this);
     bool foundTextAlternative = false;
@@ -1878,13 +1898,13 @@ String AXNodeObject::textAlternative(bool recursive, bool inAriaLabelledByTraver
             if (nameSources)
                 nameSources->last().attributeValue = ariaLabelledby;
 
-            textAlternative = textFromAriaLabelledby(visited, nameObjects);
+            textAlternative = textFromAriaLabelledby(visited, relatedObjects);
 
             if (!textAlternative.isNull()) {
                 if (nameSources) {
                     NameSource& source = nameSources->last();
                     source.type = nameFrom;
-                    source.nameObjects = *nameObjects;
+                    source.relatedObjects = *relatedObjects;
                     source.text = textAlternative;
                     foundTextAlternative = true;
                 } else {
@@ -1917,21 +1937,21 @@ String AXNodeObject::textAlternative(bool recursive, bool inAriaLabelledByTraver
     }
 
     // Step 2D from: http://www.w3.org/TR/accname-aam-1.1
-    textAlternative = nativeTextAlternative(visited, nameFrom, nameObjects, nameSources, &foundTextAlternative);
+    textAlternative = nativeTextAlternative(visited, nameFrom, relatedObjects, nameSources, &foundTextAlternative);
     if (!textAlternative.isNull() && !nameSources)
         return textAlternative;
 
     // Step 2E from: http://www.w3.org/TR/accname-aam-1.1
     if (recursive && !inAriaLabelledByTraversal && isControl()) {
         // No need to set any name source info in a recursive call.
-        if (roleValue() == TextFieldRole || roleValue() == ComboBoxRole)
-            return text();
         if (isRange()) {
             const AtomicString& ariaValuetext = getAttribute(aria_valuetextAttr);
             if (!ariaValuetext.isNull())
                 return ariaValuetext.string();
             return String::number(valueForRange());
         }
+
+        return stringValueOfControl();
     }
 
     // Step 2F / 2G from: http://www.w3.org/TR/accname-aam-1.1
@@ -1945,6 +1965,8 @@ String AXNodeObject::textAlternative(bool recursive, bool inAriaLabelledByTraver
         Node* node = this->node();
         if (node && node->isTextNode())
             textAlternative = toText(node)->wholeText();
+        else if (isHTMLBRElement(node))
+            textAlternative = String("\n");
         else
             textAlternative = textFromDescendants(visited);
 
@@ -1959,7 +1981,7 @@ String AXNodeObject::textAlternative(bool recursive, bool inAriaLabelledByTraver
     }
 
     // Step 2H from: http://www.w3.org/TR/accname-aam-1.1
-    nameFrom = AXNameFromAttribute;
+    nameFrom = AXNameFromTitle;
     if (nameSources) {
         nameSources->append(NameSource(foundTextAlternative, titleAttr));
         nameSources->last().type = nameFrom;
@@ -1982,8 +2004,8 @@ String AXNodeObject::textAlternative(bool recursive, bool inAriaLabelledByTraver
             if (!(*nameSources)[i].text.isNull() && !(*nameSources)[i].superseded) {
                 NameSource& nameSource = (*nameSources)[i];
                 nameFrom = nameSource.type;
-                if (!nameSource.nameObjects.isEmpty())
-                    *nameObjects = nameSource.nameObjects;
+                if (!nameSource.relatedObjects.isEmpty())
+                    *relatedObjects = nameSource.relatedObjects;
                 return nameSource.text;
             }
         }
@@ -1997,6 +2019,10 @@ String AXNodeObject::textFromDescendants(AXObjectSet& visited) const
     StringBuilder accumulatedText;
     AXObject* previous = nullptr;
     for (AXObject* child = firstChild(); child; child = child->nextSibling()) {
+        // Skip hidden children
+        if (child->isInertOrAriaHidden())
+            continue;
+
         // If we're going between two layoutObjects that are in separate LayoutBoxes, add
         // whitespace if it wasn't there already. Intuitively if you have
         // <span>Hello</span><span>World</span>, those are part of the same LayoutBox
@@ -2015,19 +2041,19 @@ String AXNodeObject::textFromDescendants(AXObjectSet& visited) const
     return accumulatedText.toString();
 }
 
-String AXNodeObject::textFromElements(bool inAriaLabelledbyTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXObjectVector* nameObjects) const
+String AXNodeObject::textFromElements(bool inAriaLabelledbyTraversal, AXObjectSet& visited, WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, AXRelatedObjectVector* relatedObjects) const
 {
     StringBuilder accumulatedText;
     bool foundValidElement = false;
-    AXObjectVector localNameObjects;
+    AXRelatedObjectVector localRelatedObjects;
 
     for (const auto& element : elements) {
         AXObject* axElement = axObjectCache().getOrCreate(element);
         if (axElement) {
             foundValidElement = true;
-            localNameObjects.append(axElement);
 
             String result = recursiveTextAlternative(*axElement, inAriaLabelledbyTraversal, visited);
+            localRelatedObjects.append(new NameSourceRelatedObject(axElement, result));
             if (!result.isEmpty()) {
                 if (!accumulatedText.isEmpty())
                     accumulatedText.append(" ");
@@ -2037,16 +2063,24 @@ String AXNodeObject::textFromElements(bool inAriaLabelledbyTraversal, AXObjectSe
     }
     if (!foundValidElement)
         return String();
-    if (nameObjects)
-        *nameObjects = localNameObjects;
+    if (relatedObjects)
+        *relatedObjects = localRelatedObjects;
     return accumulatedText.toString();
 }
 
-String AXNodeObject::textFromAriaLabelledby(AXObjectSet& visited, AXObjectVector* nameObjects) const
+String AXNodeObject::textFromAriaLabelledby(AXObjectSet& visited, AXRelatedObjectVector* relatedObjects) const
 {
     WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
     ariaLabelledbyElements(elements);
-    return textFromElements(true, visited, elements, nameObjects);
+    return textFromElements(true, visited, elements, relatedObjects);
+}
+
+String AXNodeObject::textFromAriaDescribedby(AXRelatedObjectVector* relatedObjects) const
+{
+    AXObjectSet visited;
+    WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
+    elementsFromAttribute(elements, aria_describedbyAttr);
+    return textFromElements(true, visited, elements, relatedObjects);
 }
 
 LayoutRect AXNodeObject::elementRect() const
@@ -2216,6 +2250,9 @@ bool AXNodeObject::canHaveChildren() const
     if (!node() && !isAXLayoutObject())
         return false;
 
+    if (node() && isHTMLMapElement(node()))
+        return false;
+
     // Elements that should not have children
     switch (roleValue()) {
     case ImageRole:
@@ -2352,7 +2389,7 @@ void AXNodeObject::setFocused(bool on)
 
     Document* document = this->document();
     if (!on) {
-        document->setFocusedElement(nullptr);
+        document->clearFocusedElement();
     } else {
         Node* node = this->node();
         if (node && node->isElementNode()) {
@@ -2360,11 +2397,11 @@ void AXNodeObject::setFocused(bool on)
             // That is a problem when focus is removed from the webpage to chrome, and then returns.
             // In these cases, we need to do what keyboard and mouse focus do, which is reset focus first.
             if (document->focusedElement() == node)
-                document->setFocusedElement(nullptr);
+                document->clearFocusedElement();
 
             toElement(node)->focus();
         } else {
-            document->setFocusedElement(nullptr);
+            document->clearFocusedElement();
         }
     }
 }
@@ -2556,17 +2593,17 @@ void AXNodeObject::deprecatedAriaLabelledbyText(HeapVector<Member<AccessibilityT
 }
 
 // Based on http://rawgit.com/w3c/aria/master/html-aam/html-aam.html#accessible-name-and-description-calculation
-String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nameFrom, AXObjectVector* nameObjects, NameSources* nameSources, bool* foundTextAlternative) const
+String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nameFrom, AXRelatedObjectVector* relatedObjects, NameSources* nameSources, bool* foundTextAlternative) const
 {
     if (!node())
         return String();
 
-    // If nameSources is non-null, nameObjects is used in filling it in, so it must be non-null as well.
+    // If nameSources is non-null, relatedObjects is used in filling it in, so it must be non-null as well.
     if (nameSources)
-        ASSERT(nameObjects);
+        ASSERT(relatedObjects);
 
     String textAlternative;
-    AXObjectVector localNameObjects;
+    AXRelatedObjectVector localRelatedObjects;
 
     const HTMLInputElement* inputElement = nullptr;
     if (isHTMLInputElement(node()))
@@ -2589,16 +2626,17 @@ String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nam
             AXObject* labelAXObject = axObjectCache().getOrCreate(label);
             // Avoid an infinite loop for label wrapped
             if (labelAXObject && !visited.contains(labelAXObject)) {
-                if (nameObjects) {
-                    localNameObjects.append(labelAXObject);
-                    *nameObjects = localNameObjects;
-                    localNameObjects.clear();
-                }
                 textAlternative = recursiveTextAlternative(*labelAXObject, false, visited);
+
+                if (relatedObjects) {
+                    localRelatedObjects.append(new NameSourceRelatedObject(labelAXObject, textAlternative));
+                    *relatedObjects = localRelatedObjects;
+                    localRelatedObjects.clear();
+                }
 
                 if (nameSources) {
                     NameSource& source = nameSources->last();
-                    source.nameObjects = *nameObjects;
+                    source.relatedObjects = *relatedObjects;
                     source.text = textAlternative;
                     if (label->getAttribute(forAttr).isNull())
                         source.nativeSource = AXTextFromNativeHTMLLabelWrapped;
@@ -2615,7 +2653,7 @@ String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nam
     // 5.2 input type="button", input type="submit" and input type="reset"
     if (inputElement && inputElement->isTextButton()) {
         // value attribue
-        nameFrom = AXNameFromAttribute;
+        nameFrom = AXNameFromValue;
         if (nameSources) {
             nameSources->append(NameSource(*foundTextAlternative, valueAttr));
             nameSources->last().type = nameFrom;
@@ -2731,18 +2769,19 @@ String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nam
         if (figcaption) {
             AXObject* figcaptionAXObject = axObjectCache().getOrCreate(figcaption);
             if (figcaptionAXObject) {
-                if (nameObjects) {
-                    localNameObjects.append(figcaptionAXObject);
-                    *nameObjects = localNameObjects;
-                    localNameObjects.clear();
-                }
-
                 textAlternative = recursiveTextAlternative(*figcaptionAXObject, false, visited);
+
+                if (relatedObjects) {
+                    localRelatedObjects.append(new NameSourceRelatedObject(figcaptionAXObject, textAlternative));
+                    *relatedObjects = localRelatedObjects;
+                    localRelatedObjects.clear();
+                }
 
                 if (nameSources) {
                     NameSource& source = nameSources->last();
-                    source.nameObjects = *nameObjects;
+                    source.relatedObjects = *relatedObjects;
                     source.text = textAlternative;
+                    *foundTextAlternative = true;
                 } else {
                     return textAlternative;
                 }
@@ -2751,8 +2790,8 @@ String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nam
         return textAlternative;
     }
 
-    // 5.8 img Element
-    if (isHTMLImageElement(node())) {
+    // 5.8 img or area Element
+    if (isHTMLImageElement(node()) || isHTMLAreaElement(node()) || (layoutObject() && layoutObject()->isSVGImage())) {
         // alt
         nameFrom = AXNameFromAttribute;
         if (nameSources) {
@@ -2779,7 +2818,7 @@ String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nam
         HTMLTableElement* tableElement = toHTMLTableElement(node());
 
         // caption
-        nameFrom = AXNameFromRelatedElement;
+        nameFrom = AXNameFromCaption;
         if (nameSources) {
             nameSources->append(NameSource(*foundTextAlternative));
             nameSources->last().type = nameFrom;
@@ -2789,17 +2828,18 @@ String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nam
         if (caption) {
             AXObject* captionAXObject = axObjectCache().getOrCreate(caption);
             if (captionAXObject) {
-                if (nameObjects) {
-                    localNameObjects.append(captionAXObject);
-                    *nameObjects = localNameObjects;
-                    localNameObjects.clear();
+                textAlternative = recursiveTextAlternative(*captionAXObject, false, visited);
+                if (relatedObjects) {
+                    localRelatedObjects.append(new NameSourceRelatedObject(captionAXObject, textAlternative));
+                    *relatedObjects = localRelatedObjects;
+                    localRelatedObjects.clear();
                 }
 
-                textAlternative = recursiveTextAlternative(*captionAXObject, false, visited);
                 if (nameSources) {
                     NameSource& source = nameSources->last();
-                    source.nameObjects = *nameObjects;
+                    source.relatedObjects = *relatedObjects;
                     source.text = textAlternative;
+                    *foundTextAlternative = true;
                 } else {
                     return textAlternative;
                 }
@@ -2809,7 +2849,7 @@ String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nam
         // summary
         nameFrom = AXNameFromAttribute;
         if (nameSources) {
-            nameSources->append(NameSource(*foundTextAlternative));
+            nameSources->append(NameSource(*foundTextAlternative, summaryAttr));
             nameSources->last().type = nameFrom;
         }
         const AtomicString& summary = getAttribute(summaryAttr);
@@ -2828,7 +2868,251 @@ String AXNodeObject::nativeTextAlternative(AXObjectSet& visited, AXNameFrom& nam
         return textAlternative;
     }
 
+    // Fieldset / legend.
+    if (isHTMLFieldSetElement(node())) {
+        nameFrom = AXNameFromRelatedElement;
+        if (nameSources) {
+            nameSources->append(NameSource(*foundTextAlternative));
+            nameSources->last().type = nameFrom;
+            nameSources->last().nativeSource = AXTextFromNativeHTMLLegend;
+        }
+        HTMLElement* legend = toHTMLFieldSetElement(node())->legend();
+        if (legend) {
+            AXObject* legendAXObject = axObjectCache().getOrCreate(legend);
+            // Avoid an infinite loop
+            if (legendAXObject && !visited.contains(legendAXObject)) {
+                textAlternative = recursiveTextAlternative(*legendAXObject, false, visited);
+
+                if (relatedObjects) {
+                    localRelatedObjects.append(new NameSourceRelatedObject(legendAXObject, textAlternative));
+                    *relatedObjects = localRelatedObjects;
+                    localRelatedObjects.clear();
+                }
+
+                if (nameSources) {
+                    NameSource& source = nameSources->last();
+                    source.relatedObjects = *relatedObjects;
+                    source.text = textAlternative;
+                    *foundTextAlternative = true;
+                } else {
+                    return textAlternative;
+                }
+            }
+        }
+    }
+
     return textAlternative;
+}
+
+String AXNodeObject::description(AXNameFrom nameFrom, AXDescriptionFrom& descriptionFrom, AXObjectVector* descriptionObjects) const
+{
+    AXRelatedObjectVector relatedObjects;
+    String result = description(nameFrom, descriptionFrom, nullptr, &relatedObjects);
+    if (descriptionObjects) {
+        descriptionObjects->clear();
+        for (size_t i = 0; i < relatedObjects.size(); i++)
+            descriptionObjects->append(relatedObjects[i]->object);
+    }
+    return result;
+}
+
+// Based on http://rawgit.com/w3c/aria/master/html-aam/html-aam.html#accessible-name-and-description-calculation
+String AXNodeObject::description(AXNameFrom nameFrom, AXDescriptionFrom& descriptionFrom, DescriptionSources* descriptionSources, AXRelatedObjectVector* relatedObjects) const
+{
+    // If descriptionSources is non-null, relatedObjects is used in filling it in, so it must be non-null as well.
+    if (descriptionSources)
+        ASSERT(relatedObjects);
+
+    if (!node())
+        return String();
+
+    String description;
+    bool foundDescription = false;
+
+    descriptionFrom = AXDescriptionFromRelatedElement;
+    if (descriptionSources) {
+        descriptionSources->append(DescriptionSource(foundDescription, aria_describedbyAttr));
+        descriptionSources->last().type = descriptionFrom;
+    }
+
+    // aria-describedby overrides any other accessible description, from: http://rawgit.com/w3c/aria/master/html-aam/html-aam.html
+    const AtomicString& ariaDescribedby = getAttribute(aria_describedbyAttr);
+    if (!ariaDescribedby.isNull()) {
+        if (descriptionSources)
+            descriptionSources->last().attributeValue = ariaDescribedby;
+
+        description = textFromAriaDescribedby(relatedObjects);
+
+        if (!description.isNull()) {
+            if (descriptionSources) {
+                DescriptionSource& source = descriptionSources->last();
+                source.type = descriptionFrom;
+                source.relatedObjects = *relatedObjects;
+                source.text = description;
+                foundDescription = true;
+            } else {
+                return description;
+            }
+        } else if (descriptionSources) {
+            descriptionSources->last().invalid = true;
+        }
+    }
+
+    HTMLElement* htmlElement = nullptr;
+    if (node()->isHTMLElement())
+        htmlElement = toHTMLElement(node());
+
+    // placeholder, 5.1.2 from: http://rawgit.com/w3c/aria/master/html-aam/html-aam.html
+    if (nameFrom != AXNameFromPlaceholder && htmlElement && htmlElement->isTextFormControl()) {
+        descriptionFrom = AXDescriptionFromPlaceholder;
+        if (descriptionSources) {
+            descriptionSources->append(DescriptionSource(foundDescription, placeholderAttr));
+            DescriptionSource& source = descriptionSources->last();
+            source.type = descriptionFrom;
+        }
+        HTMLElement* element = toHTMLElement(node());
+        const AtomicString& placeholder = element->fastGetAttribute(placeholderAttr);
+        if (!placeholder.isEmpty()) {
+            description = placeholder;
+            if (descriptionSources) {
+                DescriptionSource& source = descriptionSources->last();
+                source.text = description;
+                source.attributeValue = placeholder;
+                foundDescription = true;
+            } else {
+                return description;
+            }
+        }
+    }
+
+    const HTMLInputElement* inputElement = nullptr;
+    if (isHTMLInputElement(node()))
+        inputElement = toHTMLInputElement(node());
+
+    // value, 5.2.2 from: http://rawgit.com/w3c/aria/master/html-aam/html-aam.html
+    if (nameFrom != AXNameFromValue && inputElement && inputElement->isTextButton()) {
+        descriptionFrom = AXDescriptionFromAttribute;
+        if (descriptionSources) {
+            descriptionSources->append(DescriptionSource(foundDescription, valueAttr));
+            descriptionSources->last().type = descriptionFrom;
+        }
+        String value = inputElement->value();
+        if (!value.isNull()) {
+            description = value;
+            if (descriptionSources) {
+                DescriptionSource& source = descriptionSources->last();
+                source.text = description;
+                foundDescription = true;
+            } else {
+                return description;
+            }
+        }
+    }
+
+    // table caption, 5.9.2 from: http://rawgit.com/w3c/aria/master/html-aam/html-aam.html
+    if (nameFrom != AXNameFromCaption && isHTMLTableElement(node())) {
+        HTMLTableElement* tableElement = toHTMLTableElement(node());
+
+        descriptionFrom = AXDescriptionFromRelatedElement;
+        if (descriptionSources) {
+            descriptionSources->append(DescriptionSource(foundDescription));
+            descriptionSources->last().type = descriptionFrom;
+            descriptionSources->last().nativeSource = AXTextFromNativeHTMLTableCaption;
+        }
+        HTMLTableCaptionElement* caption = tableElement->caption();
+        if (caption) {
+            AXObject* captionAXObject = axObjectCache().getOrCreate(caption);
+            if (captionAXObject) {
+                AXObjectSet visited;
+                description = recursiveTextAlternative(*captionAXObject, false, visited);
+                if (relatedObjects)
+                    relatedObjects->append(new NameSourceRelatedObject(captionAXObject, description));
+
+                if (descriptionSources) {
+                    DescriptionSource& source = descriptionSources->last();
+                    source.relatedObjects = *relatedObjects;
+                    source.text = description;
+                    foundDescription = true;
+                } else {
+                    return description;
+                }
+            }
+        }
+    }
+
+    // summary, 5.6.2 from: http://rawgit.com/w3c/aria/master/html-aam/html-aam.html
+    if (nameFrom != AXNameFromContents && isHTMLSummaryElement(node())) {
+        descriptionFrom = AXDescriptionFromContents;
+        if (descriptionSources) {
+            descriptionSources->append(DescriptionSource(foundDescription));
+            descriptionSources->last().type = descriptionFrom;
+        }
+
+        AXObjectSet visited;
+        description = textFromDescendants(visited);
+
+        if (!description.isEmpty()) {
+            if (descriptionSources) {
+                foundDescription = true;
+                descriptionSources->last().text = description;
+            } else {
+                return description;
+            }
+        }
+    }
+
+    // title attribute, from: http://rawgit.com/w3c/aria/master/html-aam/html-aam.html
+    if (nameFrom != AXNameFromTitle) {
+        descriptionFrom = AXDescriptionFromAttribute;
+        if (descriptionSources) {
+            descriptionSources->append(DescriptionSource(foundDescription, titleAttr));
+            descriptionSources->last().type = descriptionFrom;
+        }
+        const AtomicString& title = getAttribute(titleAttr);
+        if (!title.isEmpty()) {
+            description = title;
+            if (descriptionSources) {
+                foundDescription = true;
+                descriptionSources->last().text = description;
+            } else {
+                return description;
+            }
+        }
+    }
+
+    // aria-help.
+    // FIXME: this is not part of the official standard, but it's needed because the built-in date/time controls use it.
+    descriptionFrom = AXDescriptionFromAttribute;
+    if (descriptionSources) {
+        descriptionSources->append(DescriptionSource(foundDescription, aria_helpAttr));
+        descriptionSources->last().type = descriptionFrom;
+    }
+    const AtomicString& help = getAttribute(aria_helpAttr);
+    if (!help.isEmpty()) {
+        description = help;
+        if (descriptionSources) {
+            foundDescription = true;
+            descriptionSources->last().text = description;
+        } else {
+            return description;
+        }
+    }
+
+    descriptionFrom = AXDescriptionFromUninitialized;
+
+    if (foundDescription) {
+        for (size_t i = 0; i < descriptionSources->size(); ++i) {
+            if (!(*descriptionSources)[i].text.isNull() && !(*descriptionSources)[i].superseded) {
+                DescriptionSource& descriptionSource = (*descriptionSources)[i];
+                descriptionFrom = descriptionSource.type;
+                if (!descriptionSource.relatedObjects.isEmpty())
+                    *relatedObjects = descriptionSource.relatedObjects;
+                return descriptionSource.text;
+            }
+        }
+    }
+
+    return String();
 }
 
 DEFINE_TRACE(AXNodeObject)
@@ -2837,4 +3121,4 @@ DEFINE_TRACE(AXNodeObject)
     AXObject::trace(visitor);
 }
 
-} // namespace blink
+} // namespace blin

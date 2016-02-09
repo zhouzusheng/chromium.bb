@@ -25,9 +25,9 @@
 #include "SkString.h"
 #include "SkTraceEvent.h"
 #include "batches/GrVertexBatch.h"
-#include "gl/GrGLProcessor.h"
 #include "gl/GrGLGeometryProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 
 GrAAConvexPathRenderer::GrAAConvexPathRenderer() {
 }
@@ -548,13 +548,13 @@ public:
 
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
             const QuadEdgeEffect& qe = args.fGP.cast<QuadEdgeEffect>();
-            GrGLGPBuilder* pb = args.fPB;
-            GrGLVertexBuilder* vsBuilder = pb->getVertexShaderBuilder();
+            GrGLSLGPBuilder* pb = args.fPB;
+            GrGLSLVertexBuilder* vsBuilder = pb->getVertexShaderBuilder();
 
             // emit attributes
             vsBuilder->emitAttributes(qe);
 
-            GrGLVertToFrag v(kVec4f_GrSLType);
+            GrGLSLVertToFrag v(kVec4f_GrSLType);
             args.fPB->addVarying("QuadEdge", &v);
             vsBuilder->codeAppendf("%s = %s;", v.vsOut(), qe.inQuadEdge()->fName);
 
@@ -570,10 +570,10 @@ public:
             this->emitTransforms(args.fPB, gpArgs->fPositionVar, qe.inPosition()->fName,
                                  qe.localMatrix(), args.fTransformsIn, args.fTransformsOut);
 
-            GrGLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
+            GrGLSLFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
 
             SkAssertResult(fsBuilder->enableFeature(
-                    GrGLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
+                    GrGLSLFragmentShaderBuilder::kStandardDerivatives_GLSLFeature));
             fsBuilder->codeAppendf("float edgeAlpha;");
 
             // keep the derivative instructions outside the conditional
@@ -605,10 +605,11 @@ public:
             b->add32(key);
         }
 
-        void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
+        void setData(const GrGLSLProgramDataManager& pdman,
+                     const GrPrimitiveProcessor& gp) override {
             const QuadEdgeEffect& qe = gp.cast<QuadEdgeEffect>();
             if (qe.color() != fColor) {
-                GrGLfloat c[4];
+                float c[4];
                 GrColorToRGBAFloat(qe.color(), c);
                 pdman.set4fv(fColorUniform, 1, c);
                 fColor = qe.color();
@@ -616,7 +617,7 @@ public:
         }
 
         void setTransformData(const GrPrimitiveProcessor& primProc,
-                              const GrGLProgramDataManager& pdman,
+                              const GrGLSLProgramDataManager& pdman,
                               int index,
                               const SkTArray<const GrCoordTransform*, true>& transforms) override {
             this->setTransformDataHelper<QuadEdgeEffect>(primProc, pdman, index, transforms);

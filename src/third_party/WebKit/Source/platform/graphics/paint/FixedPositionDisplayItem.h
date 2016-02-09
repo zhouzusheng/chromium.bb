@@ -7,7 +7,6 @@
 
 #include "platform/geometry/LayoutSize.h"
 #include "platform/graphics/paint/DisplayItem.h"
-#include "wtf/FastAllocBase.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
@@ -17,8 +16,8 @@ public:
     BeginFixedPositionDisplayItem(const DisplayItemClientWrapper& client)
         : PairedBeginDisplayItem(client, BeginFixedPosition, sizeof(*this)) { }
 
-    void replay(GraphicsContext&) final { }
-    void appendToWebDisplayItemList(WebDisplayItemList*) const final;
+    void replay(GraphicsContext&) const final { }
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const final;
 };
 
 class PLATFORM_EXPORT EndFixedPositionDisplayItem final : public PairedEndDisplayItem {
@@ -26,8 +25,8 @@ public:
     EndFixedPositionDisplayItem(const DisplayItemClientWrapper& client)
         : PairedEndDisplayItem(client, EndFixedPosition, sizeof(*this)) { }
 
-    void replay(GraphicsContext&) final { }
-    void appendToWebDisplayItemList(WebDisplayItemList*) const final;
+    void replay(GraphicsContext&) const final { }
+    void appendToWebDisplayItemList(const IntRect&, WebDisplayItemList*) const final;
 
 private:
 #if ENABLE(ASSERT)

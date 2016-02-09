@@ -88,10 +88,6 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
                              const ResultCallback& continuation) override;
   void UnregisterServiceWorker(const GURL& pattern,
                                const ResultCallback& continuation) override;
-  void CanHandleMainResourceOffline(
-      const GURL& url,
-      const GURL& first_party,
-      const net::CompletionCallback& callback) override;
   void GetAllOriginsInfo(const GetUsageInfoCallback& callback) override;
   void DeleteForOrigin(const GURL& origin,
                        const ResultCallback& callback) override;
@@ -107,16 +103,12 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   std::vector<ServiceWorkerRegistrationInfo> GetAllLiveRegistrationInfo();
   std::vector<ServiceWorkerVersionInfo> GetAllLiveVersionInfo();
 
+  bool HasWindowProviderHost(const GURL& origin) const;
+
   // Returns the registration whose scope longest matches |document_url|.
   // Returns ERROR_NOT_FOUND if it is not found.
   void FindRegistrationForDocument(const GURL& document_url,
                                    const FindRegistrationCallback& callback);
-
-  // Returns the registration for |registration_id| and |origin|. Returns
-  // ERROR_NOT_FOUND if it is not found.
-  void FindRegistrationForId(int64_t registration_id,
-                             const GURL& origin,
-                             const FindRegistrationCallback& callback);
 
   // Returns the registration for |registration_id|. It is guaranteed that the
   // returned registration has the activated worker.
@@ -127,9 +119,6 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   //  - If the registration does not have the active version but has the waiting
   //    version, activates the waiting version and runs |callback| when it is
   //    activated.
-  //
-  // TODO(nhiroki): Consider merging this into FindRegistrationForId because
-  // external modules might not be interested in non-ready registration.
   void FindReadyRegistrationForId(int64_t registration_id,
                                   const GURL& origin,
                                   const FindRegistrationCallback& callback);
@@ -166,6 +155,7 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   friend class EmbeddedWorkerBrowserTest;
   friend class ServiceWorkerDispatcherHost;
   friend class ServiceWorkerInternalsUI;
+  friend class ServiceWorkerNavigationHandleCore;
   friend class ServiceWorkerProcessManager;
   friend class ServiceWorkerRequestHandler;
   friend class ServiceWorkerVersionBrowserTest;
@@ -195,11 +185,8 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
       const GetUsageInfoCallback& callback,
       const std::vector<ServiceWorkerRegistrationInfo>& registrations);
 
-  void DidFindRegistrationForCheckHasServiceWorker(
-      const GURL& other_url,
-      const CheckHasServiceWorkerCallback& callback,
-      ServiceWorkerStatusCode status,
-      const scoped_refptr<ServiceWorkerRegistration>& registration);
+  void DidCheckHasServiceWorker(const CheckHasServiceWorkerCallback& callback,
+                                bool has_service_worker);
 
   void DidFindRegistrationForUpdate(
       ServiceWorkerStatusCode status,

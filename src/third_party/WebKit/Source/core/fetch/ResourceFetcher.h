@@ -110,7 +110,6 @@ public:
     void didLoadResource();
     void redirectReceived(Resource*, const ResourceResponse&);
     void didFinishLoading(Resource*, double finishTime, int64_t encodedDataLength);
-    void didChangeLoadingPriority(const Resource*, ResourceLoadPriority, int intraPriorityValue);
     void didFailLoading(const Resource*, const ResourceError&);
     void willSendRequest(unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
     void didReceiveResponse(const Resource*, const ResourceResponse&);
@@ -132,7 +131,7 @@ public:
 
     void acceptDataFromThreadedReceiver(unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
 
-    ResourceLoadPriority loadPriority(Resource::Type, const FetchRequest&);
+    ResourceLoadPriority loadPriority(Resource::Type, const FetchRequest&, ResourcePriority::VisibilityStatus = ResourcePriority::NotVisible);
 
     enum ResourceLoadStartType {
         ResourceLoadingFromNetwork,
@@ -147,19 +146,28 @@ public:
     bool clientDefersImage(const KURL&) const;
     void determineRequestContext(ResourceRequest&, Resource::Type);
 
+    WebTaskRunner* loadingTaskRunner();
+
+    void updateAllImageResourcePriorities();
+
+    // This is only exposed for testing purposes.
+    WillBeHeapListHashSet<RawPtrWillBeMember<Resource>>* preloads() { return m_preloads.get(); }
+
 private:
     friend class ResourceCacheValidationSuppressor;
 
     explicit ResourceFetcher(FetchContext*);
 
-    ResourcePtr<Resource> createResourceForRevalidation(const FetchRequest&, Resource*, const ResourceFactory&);
+    void initializeRevalidation(const FetchRequest&, Resource*);
     ResourcePtr<Resource> createResourceForLoading(FetchRequest&, const String& charset, const ResourceFactory&);
     void storeResourceTimingInitiatorInformation(Resource*);
     bool scheduleArchiveLoad(Resource*, const ResourceRequest&);
-    void preCacheData(const FetchRequest&, const ResourceFactory&, const SubstituteData&);
+    ResourcePtr<Resource> preCacheData(const FetchRequest&, const ResourceFactory&, const SubstituteData&);
 
     enum RevalidationPolicy { Use, Revalidate, Reload, Load };
     RevalidationPolicy determineRevalidationPolicy(Resource::Type, const FetchRequest&, Resource* existingResource, bool isStaticData) const;
+
+    void moveCachedNonBlockingResourceToBlocking(Resource*);
 
     void initializeResourceRequest(ResourceRequest&, Resource::Type);
 
@@ -203,7 +211,7 @@ private:
 
     // Used in hit rate histograms.
     class DeadResourceStatsRecorder {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         DeadResourceStatsRecorder();
         ~DeadResourceStatsRecorder();

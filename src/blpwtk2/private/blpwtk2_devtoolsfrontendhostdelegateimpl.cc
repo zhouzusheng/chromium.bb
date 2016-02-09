@@ -138,7 +138,9 @@ void DevToolsFrontendHostDelegateImpl::RenderViewCreated(
     content::RenderViewHost* renderViewHost)
 {
     if (!d_frontendHost) {
-        d_frontendHost.reset(content::DevToolsFrontendHost::Create(web_contents()->GetMainFrame(), this));
+        d_frontendHost.reset(content::DevToolsFrontendHost::Create(web_contents()->GetMainFrame(),
+                                                                   base::Bind(&DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontend,
+                                                                              base::Unretained(this))));
     }
 }
 
@@ -180,10 +182,12 @@ void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontend(
     dict->GetInteger("id", &request_id);
     dict->GetList("params", &params);
 
-    std::string browser_message;
-    if (method == "sendMessageToBrowser" && params &&
-        params->GetSize() == 1 && params->GetString(0, &browser_message)) {
-        d_agentHost->DispatchProtocolMessage(browser_message);
+    if (method == "dispatchProtocolMessage" && params && params->GetSize() == 1) {
+        std::string protocol_message;
+        if (!params->GetString(0, &protocol_message))
+            return;
+        if (d_agentHost)
+            d_agentHost->DispatchProtocolMessage(protocol_message);
     }
     else if (method == "loadCompleted") {
         web_contents()->GetMainFrame()->ExecuteJavaScriptForTests(
@@ -248,15 +252,6 @@ void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontend(
 
     if (request_id)
         SendMessageAck(request_id, nullptr);
-}
-
-void DevToolsFrontendHostDelegateImpl::HandleMessageFromDevToolsFrontendToBackend(
-    const std::string& message)
-{
-    // This implementation was copied from shell_devtools_frontend.cc
-
-    if (d_agentHost)
-        d_agentHost->DispatchProtocolMessage(message);
 }
 
 void DevToolsFrontendHostDelegateImpl::DispatchProtocolMessage(

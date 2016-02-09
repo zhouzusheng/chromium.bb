@@ -154,7 +154,8 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       establishing_tunnel_(false),
       websocket_handshake_stream_base_create_helper_(NULL) {
   session->ssl_config_service()->GetSSLConfig(&server_ssl_config_);
-  session->GetNextProtos(&server_ssl_config_.next_protos);
+  session->GetAlpnProtos(&server_ssl_config_.alpn_protos);
+  session->GetNpnProtos(&server_ssl_config_.npn_protos);
   proxy_ssl_config_ = server_ssl_config_;
 }
 
@@ -1078,7 +1079,7 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
       NetLog::TYPE_HTTP_TRANSACTION_READ_RESPONSE_HEADERS,
       base::Bind(&HttpResponseHeaders::NetLogCallback, response_.headers));
 
-  if (response_.headers->GetParsedHttpVersion() < HttpVersion(1, 0)) {
+  if (response_.headers->GetHttpVersion() < HttpVersion(1, 0)) {
     // HTTP/0.9 doesn't support the PUT method, so lack of response headers
     // indicates a buggy server.  See:
     // https://bugzilla.mozilla.org/show_bug.cgi?id=193921
@@ -1290,13 +1291,13 @@ int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
   // reflect servers require a deprecated cipher rather than merely prefer
   // it. This, however, has no security benefit until the ciphers are actually
   // removed.
-  if (!server_ssl_config_.enable_deprecated_cipher_suites &&
+  if (!server_ssl_config_.deprecated_cipher_suites_enabled &&
       (error == ERR_SSL_VERSION_OR_CIPHER_MISMATCH ||
        error == ERR_CONNECTION_CLOSED || error == ERR_CONNECTION_RESET)) {
     net_log_.AddEvent(
         NetLog::TYPE_SSL_CIPHER_FALLBACK,
         base::Bind(&NetLogSSLCipherFallbackCallback, &request_->url, error));
-    server_ssl_config_.enable_deprecated_cipher_suites = true;
+    server_ssl_config_.deprecated_cipher_suites_enabled = true;
     ResetConnectionAndRequestForResend();
     return OK;
   }
@@ -1513,7 +1514,7 @@ void HttpNetworkTransaction::RecordSSLFallbackMetrics(int result) {
   }
 
   UMA_HISTOGRAM_BOOLEAN("Net.ConnectionUsedSSLDeprecatedCipherFallback2",
-                        server_ssl_config_.enable_deprecated_cipher_suites);
+                        server_ssl_config_.deprecated_cipher_suites_enabled);
 
   if (server_ssl_config_.version_fallback) {
     // Record the error code which triggered the fallback and the state the

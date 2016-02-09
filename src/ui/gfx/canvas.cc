@@ -14,6 +14,7 @@
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/scoped_canvas.h"
@@ -30,9 +31,9 @@ Canvas::Canvas(const Size& size, float image_scale, bool is_opaque)
                                                             pixel_size.height(),
                                                             is_opaque));
   canvas_ = owned_canvas_.get();
-#if defined(OS_WIN) || defined(OS_MACOSX)
-  // skia::PlatformCanvas instances are initialized to 0 by Cairo on Linux, but
-  // uninitialized on Win and Mac.
+#if !defined(USE_CAIRO)
+  // skia::PlatformCanvas instances are initialized to 0 by Cairo, but
+  // uninitialized on other platforms.
   if (!is_opaque)
     owned_canvas_->clear(SkColorSetARGB(0, 0, 0, 0));
 #endif
@@ -175,15 +176,14 @@ void Canvas::DrawDashedRect(const Rect& rect, SkColor color) {
            paint);
 }
 
-void Canvas::Save() {
-  canvas_->save();
-}
-
-float Canvas::SaveAndUnscale() {
-  Save();
+float Canvas::UndoDeviceScaleFactor() {
   SkScalar scale_factor = 1.0f / image_scale_;
   canvas_->scale(scale_factor, scale_factor);
   return image_scale_;
+}
+
+void Canvas::Save() {
+  canvas_->save();
 }
 
 void Canvas::SaveLayerAlpha(uint8 alpha) {
@@ -302,6 +302,13 @@ void Canvas::DrawRoundRect(const Rect& rect,
                            const SkPaint& paint) {
   canvas_->drawRoundRect(RectToSkRect(rect), SkIntToScalar(radius),
                          SkIntToScalar(radius), paint);
+}
+
+void Canvas::DrawRoundRect(const RectF& rect,
+                           float radius,
+                           const SkPaint& paint) {
+  canvas_->drawRoundRect(RectFToSkRect(rect), SkFloatToScalar(radius),
+                         SkFloatToScalar(radius), paint);
 }
 
 void Canvas::DrawPath(const SkPath& path, const SkPaint& paint) {
@@ -498,14 +505,6 @@ void Canvas::TileImageInt(const ImageSkia& image,
                        SkIntToScalar(dest_x + w),
                        SkIntToScalar(dest_y + h) };
   canvas_->drawRect(dest_rect, paint);
-}
-
-NativeDrawingContext Canvas::BeginPlatformPaint() {
-  return skia::BeginPlatformPaint(canvas_);
-}
-
-void Canvas::EndPlatformPaint() {
-  skia::EndPlatformPaint(canvas_);
 }
 
 void Canvas::Transform(const gfx::Transform& transform) {

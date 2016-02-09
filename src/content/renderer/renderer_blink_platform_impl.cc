@@ -19,6 +19,7 @@
 #include "build/build_config.h"
 #include "cc/blink/context_provider_web_context.h"
 #include "components/scheduler/child/web_scheduler_impl.h"
+#include "components/scheduler/child/web_task_runner_impl.h"
 #include "components/scheduler/renderer/renderer_scheduler.h"
 #include "components/scheduler/renderer/webthread_impl_for_renderer_scheduler.h"
 #include "components/url_formatter/url_formatter.h"
@@ -32,6 +33,7 @@
 #include "content/child/simple_webmimeregistry_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/web_database_observer_impl.h"
+#include "content/child/web_url_loader_impl.h"
 #include "content/child/webblobregistry_impl.h"
 #include "content/child/webfileutilities_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
@@ -51,6 +53,7 @@
 #include "content/renderer/cache_storage/webserviceworkercachestorage_impl.h"
 #include "content/renderer/device_sensors/device_light_event_pump.h"
 #include "content/renderer/device_sensors/device_motion_event_pump.h"
+#include "content/renderer/device_sensors/device_orientation_absolute_event_pump.h"
 #include "content/renderer/device_sensors/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
@@ -58,6 +61,7 @@
 #include "content/renderer/media/media_recorder_handler.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
 #include "content/renderer/media/renderer_webmidiaccessor_impl.h"
+#include "content/renderer/media/rtc_certificate_generator.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_delegate.h"
 #include "content/renderer/screen_orientation/screen_orientation_observer.h"
@@ -229,15 +233,16 @@ class RendererBlinkPlatformImpl::SandboxSupport
 RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
     scheduler::RendererScheduler* renderer_scheduler)
     : BlinkPlatformImpl(renderer_scheduler->DefaultTaskRunner()),
-      main_thread_(
-          new scheduler::WebThreadImplForRendererScheduler(renderer_scheduler)),
+      main_thread_(renderer_scheduler->CreateMainThread()),
       clipboard_delegate_(new RendererClipboardDelegate),
       clipboard_(new WebClipboardImpl(clipboard_delegate_.get())),
       mime_registry_(new RendererBlinkPlatformImpl::MimeRegistry),
       sudden_termination_disables_(0),
       plugin_refresh_allowed_(true),
       default_task_runner_(renderer_scheduler->DefaultTaskRunner()),
-      web_scrollbar_behavior_(new WebScrollbarBehaviorImpl) {
+      loading_task_runner_(renderer_scheduler->LoadingTaskRunner()),
+      web_scrollbar_behavior_(new WebScrollbarBehaviorImpl),
+      renderer_scheduler_(renderer_scheduler) {
 #if !defined(OS_ANDROID) && !defined(OS_WIN)
   if (g_sandbox_enabled && sandboxEnabled()) {
     sandbox_support_.reset(new RendererBlinkPlatformImpl::SandboxSupport);
@@ -272,6 +277,29 @@ void RendererBlinkPlatformImpl::Shutdown() {
 }
 
 //------------------------------------------------------------------------------
+
+double RendererBlinkPlatformImpl::currentTimeSeconds() {
+  return renderer_scheduler_->CurrentTimeSeconds();
+}
+
+double RendererBlinkPlatformImpl::monotonicallyIncreasingTimeSeconds() {
+  return renderer_scheduler_->MonotonicallyIncreasingTimeSeconds();
+}
+
+//------------------------------------------------------------------------------
+
+blink::WebURLLoader* RendererBlinkPlatformImpl::createURLLoader() {
+  ChildThreadImpl* child_thread = ChildThreadImpl::current();
+  // There may be no child thread in RenderViewTests.  These tests can still use
+  // data URLs to bypass the ResourceDispatcher.
+  scoped_ptr<scheduler::WebTaskRunnerImpl> task_runner(
+      new scheduler::WebTaskRunnerImpl(
+        loading_task_runner_->BelongsToCurrentThread()
+            ? loading_task_runner_ : base::ThreadTaskRunnerHandle::Get()));
+  return new content::WebURLLoaderImpl(
+      child_thread ? child_thread->resource_dispatcher() : NULL,
+      task_runner.Pass());
+}
 
 blink::WebThread* RendererBlinkPlatformImpl::currentThread() {
   if (main_thread_->isCurrentThread())
@@ -643,14 +671,6 @@ bool RendererBlinkPlatformImpl::databaseSetFileSize(
 }
 
 bool RendererBlinkPlatformImpl::canAccelerate2dCanvas() {
-#if defined(OS_ANDROID)
-  SynchronousCompositorFactory* factory =
-      SynchronousCompositorFactory::GetInstance();
-  if (factory && factory->OverrideWithFactory()) {
-    return factory->GetGPUInfo().SupportsAccelerated2dCanvas();
-  }
-#endif
-
   RenderThreadImpl* thread = RenderThreadImpl::current();
   GpuChannelHost* host = thread->EstablishGpuChannelSync(
       CAUSE_FOR_GPU_LAUNCH_CANVAS_2D);
@@ -875,7 +895,7 @@ WebBlobRegistry* RendererBlinkPlatformImpl::blobRegistry() {
 
 void RendererBlinkPlatformImpl::sampleGamepads(WebGamepads& gamepads) {
   PlatformEventObserverBase* observer =
-      platform_event_observers_.Lookup(blink::WebPlatformEventGamepad);
+      platform_event_observers_.Lookup(blink::WebPlatformEventTypeGamepad);
   if (!observer)
     return;
   static_cast<RendererGamepadProvider*>(observer)->SampleGamepads(gamepads);
@@ -914,6 +934,17 @@ RendererBlinkPlatformImpl::createRTCPeerConnectionHandler(
   return rtc_dependency_factory->CreateRTCPeerConnectionHandler(client);
 #else
   return NULL;
+#endif  // defined(ENABLE_WEBRTC)
+}
+
+//------------------------------------------------------------------------------
+
+blink::WebRTCCertificateGenerator*
+RendererBlinkPlatformImpl::createRTCCertificateGenerator() {
+#if defined(ENABLE_WEBRTC)
+  return new RTCCertificateGenerator();
+#else
+  return nullptr;
 #endif  // defined(ENABLE_WEBRTC)
 }
 
@@ -965,58 +996,64 @@ blink::WebGraphicsContext3D*
 RendererBlinkPlatformImpl::createOffscreenGraphicsContext3D(
     const blink::WebGraphicsContext3D::Attributes& attributes,
     blink::WebGraphicsContext3D* share_context) {
-  return createOffscreenGraphicsContext3D(attributes, share_context, NULL);
+  blink::WebGraphicsContext3D::WebGraphicsInfo gl_info;
+  return createOffscreenGraphicsContext3D(attributes, share_context, &gl_info);
+}
+
+static void Collect3DContextInformationOnFailure(
+    blink::WebGraphicsContext3D* share_context,
+    blink::WebGraphicsContext3D::WebGraphicsInfo* gl_info,
+    GpuChannelHost* host) {
+  DCHECK(gl_info);
+  std::string error_message("OffscreenContext Creation failed, ");
+  if (host) {
+    const gpu::GPUInfo& gpu_info = host->gpu_info();
+    gl_info->vendorId = gpu_info.gpu.vendor_id;
+    gl_info->deviceId = gpu_info.gpu.device_id;
+    switch (gpu_info.context_info_state) {
+      case gpu::kCollectInfoSuccess:
+      case gpu::kCollectInfoNonFatalFailure:
+        gl_info->rendererInfo = WebString::fromUTF8(gpu_info.gl_renderer);
+        gl_info->vendorInfo = WebString::fromUTF8(gpu_info.gl_vendor);
+        gl_info->driverVersion = WebString::fromUTF8(gpu_info.driver_version);
+        gl_info->resetNotificationStrategy =
+            gpu_info.gl_reset_notification_strategy;
+        gl_info->sandboxed = gpu_info.sandboxed;
+        gl_info->processCrashCount = gpu_info.process_crash_count;
+        gl_info->amdSwitchable = gpu_info.amd_switchable;
+        gl_info->optimus = gpu_info.optimus;
+        break;
+      case gpu::kCollectInfoFatalFailure:
+      case gpu::kCollectInfoNone:
+        error_message.append(
+            "Failed to collect gpu information, GLSurface or GLContext "
+            "creation failed");
+        gl_info->errorMessage = WebString::fromUTF8(error_message);
+        break;
+      default:
+        NOTREACHED();
+    }
+  } else {
+    error_message.append("GpuChannelHost creation failed");
+    gl_info->errorMessage = WebString::fromUTF8(error_message);
+  }
 }
 
 blink::WebGraphicsContext3D*
 RendererBlinkPlatformImpl::createOffscreenGraphicsContext3D(
     const blink::WebGraphicsContext3D::Attributes& attributes,
     blink::WebGraphicsContext3D* share_context,
-    blink::WebGLInfo* gl_info) {
-  if (!RenderThreadImpl::current())
+    blink::WebGraphicsContext3D::WebGraphicsInfo* gl_info) {
+  DCHECK(gl_info);
+  if (!RenderThreadImpl::current()) {
+    std::string error_message("Failed to run in Current RenderThreadImpl");
+    gl_info->errorMessage = WebString::fromUTF8(error_message);
     return NULL;
-
-#if defined(OS_ANDROID)
-  SynchronousCompositorFactory* factory =
-      SynchronousCompositorFactory::GetInstance();
-  if (factory && factory->OverrideWithFactory()) {
-    scoped_ptr<gpu_blink::WebGraphicsContext3DInProcessCommandBufferImpl>
-        in_process_context(
-            factory->CreateOffscreenGraphicsContext3D(attributes));
-    if (!in_process_context || !in_process_context->InitializeOnCurrentThread())
-      return NULL;
-    return in_process_context.release();
   }
-#endif
 
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       RenderThreadImpl::current()->EstablishGpuChannelSync(
           CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
-
-  if (gpu_channel_host.get() && gl_info) {
-    const gpu::GPUInfo& gpu_info = gpu_channel_host->gpu_info();
-    switch (gpu_info.context_info_state) {
-      case gpu::kCollectInfoSuccess:
-      case gpu::kCollectInfoNonFatalFailure:
-        gl_info->vendorInfo.assign(
-            blink::WebString::fromUTF8(gpu_info.gl_vendor));
-        gl_info->rendererInfo.assign(
-            blink::WebString::fromUTF8(gpu_info.gl_renderer));
-        gl_info->driverVersion.assign(
-            blink::WebString::fromUTF8(gpu_info.driver_version));
-        gl_info->vendorId = gpu_info.gpu.vendor_id;
-        gl_info->deviceId = gpu_info.gpu.device_id;
-        break;
-      case gpu::kCollectInfoFatalFailure:
-      case gpu::kCollectInfoNone:
-        gl_info->contextInfoCollectionFailure.assign(blink::WebString::fromUTF8(
-            "GPUInfoCollectionFailure: GPU initialization Failed. GPU "
-            "Info not Collected."));
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
 
   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
   bool lose_context_when_out_of_memory = false;
@@ -1031,8 +1068,14 @@ RendererBlinkPlatformImpl::createOffscreenGraphicsContext3D(
 
   // Most likely the GPU process exited and the attempt to reconnect to it
   // failed. Need to try to restore the context again later.
-  if (!context || !context->InitializeOnCurrentThread())
+  if (!context || !context->InitializeOnCurrentThread() ||
+      gl_info->testFailContext) {
+    // Collect Graphicsinfo if there is a context failure or it is failed
+    // purposefully in case of layout tests.
+    Collect3DContextInformationOnFailure(share_context, gl_info,
+                                         gpu_channel_host.get());
       return NULL;
+  }
   return context.release();
 }
 
@@ -1133,15 +1176,17 @@ RendererBlinkPlatformImpl::CreatePlatformEventObserverFromType(
     thread = NULL;
 
   switch (type) {
-    case blink::WebPlatformEventDeviceMotion:
+    case blink::WebPlatformEventTypeDeviceMotion:
       return new DeviceMotionEventPump(thread);
-    case blink::WebPlatformEventDeviceOrientation:
+    case blink::WebPlatformEventTypeDeviceOrientation:
       return new DeviceOrientationEventPump(thread);
-    case blink::WebPlatformEventDeviceLight:
+    case blink::WebPlatformEventTypeDeviceOrientationAbsolute:
+      return new DeviceOrientationAbsoluteEventPump(thread);
+    case blink::WebPlatformEventTypeDeviceLight:
       return new DeviceLightEventPump(thread);
-    case blink::WebPlatformEventGamepad:
+    case blink::WebPlatformEventTypeGamepad:
       return new GamepadSharedMemoryReader(thread);
-    case blink::WebPlatformEventScreenOrientation:
+    case blink::WebPlatformEventTypeScreenOrientation:
       return new ScreenOrientationObserver();
     default:
       // A default statement is required to prevent compilation errors when
@@ -1156,7 +1201,7 @@ RendererBlinkPlatformImpl::CreatePlatformEventObserverFromType(
 void RendererBlinkPlatformImpl::SetPlatformEventObserverForTesting(
     blink::WebPlatformEventType type,
     scoped_ptr<PlatformEventObserverBase> observer) {
-  DCHECK(type != blink::WebPlatformEventBattery);
+  DCHECK(type != blink::WebPlatformEventTypeBattery);
 
   if (platform_event_observers_.Lookup(type))
     platform_event_observers_.Remove(type);
@@ -1166,7 +1211,7 @@ void RendererBlinkPlatformImpl::SetPlatformEventObserverForTesting(
 void RendererBlinkPlatformImpl::startListening(
     blink::WebPlatformEventType type,
     blink::WebPlatformEventListener* listener) {
-  if (type == blink::WebPlatformEventBattery) {
+  if (type == blink::WebPlatformEventTypeBattery) {
     if (RenderThreadImpl::current() &&
         RenderThreadImpl::current()->layout_test_mode()) {
       g_test_battery_status_listener =
@@ -1193,9 +1238,10 @@ void RendererBlinkPlatformImpl::startListening(
   // using this broken pattern.
   if (RenderThreadImpl::current() &&
       RenderThreadImpl::current()->layout_test_mode() &&
-      (type == blink::WebPlatformEventDeviceMotion ||
-       type == blink::WebPlatformEventDeviceOrientation ||
-       type == blink::WebPlatformEventDeviceLight)) {
+      (type == blink::WebPlatformEventTypeDeviceMotion ||
+       type == blink::WebPlatformEventTypeDeviceOrientation ||
+       type == blink::WebPlatformEventTypeDeviceOrientationAbsolute ||
+       type == blink::WebPlatformEventTypeDeviceLight)) {
     SendFakeDeviceEventDataForTesting(type);
   }
 }
@@ -1208,15 +1254,16 @@ void RendererBlinkPlatformImpl::SendFakeDeviceEventDataForTesting(
   void* data = 0;
 
   switch (type) {
-  case blink::WebPlatformEventDeviceMotion:
+  case blink::WebPlatformEventTypeDeviceMotion:
     if (!(g_test_device_motion_data == 0))
       data = &g_test_device_motion_data.Get();
     break;
-  case blink::WebPlatformEventDeviceOrientation:
+  case blink::WebPlatformEventTypeDeviceOrientation:
+  case blink::WebPlatformEventTypeDeviceOrientationAbsolute:
     if (!(g_test_device_orientation_data == 0))
       data = &g_test_device_orientation_data.Get();
     break;
-  case blink::WebPlatformEventDeviceLight:
+  case blink::WebPlatformEventTypeDeviceLight:
     if (g_test_device_light_data >= 0)
       data = &g_test_device_light_data;
     break;
@@ -1235,7 +1282,7 @@ void RendererBlinkPlatformImpl::SendFakeDeviceEventDataForTesting(
 
 void RendererBlinkPlatformImpl::stopListening(
     blink::WebPlatformEventType type) {
-  if (type == blink::WebPlatformEventBattery) {
+  if (type == blink::WebPlatformEventTypeBattery) {
     g_test_battery_status_listener = nullptr;
     battery_status_dispatcher_.reset();
     return;

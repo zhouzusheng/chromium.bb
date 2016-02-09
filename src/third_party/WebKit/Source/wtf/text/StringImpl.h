@@ -32,7 +32,7 @@
 #include "wtf/text/Unicode.h"
 #include <limits.h>
 
-#if USE(CF)
+#if OS(MACOSX)
 typedef const struct __CFString * CFStringRef;
 #endif
 
@@ -217,20 +217,6 @@ public:
 
     static PassRefPtr<StringImpl> createUninitialized(unsigned length, LChar*& data);
     static PassRefPtr<StringImpl> createUninitialized(unsigned length, UChar*& data);
-
-    // Reallocate the StringImpl. The originalString must be only owned by the
-    // PassRefPtr.  Just like the input pointer of realloc(), the originalString
-    // can't be used after this function.
-    static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length);
-
-    // If this StringImpl has only one reference, we can truncate the string by
-    // updating its m_length property without actually re-allocating its buffer.
-    void truncateAssumingIsolated(unsigned length)
-    {
-        ASSERT(hasOneRef());
-        ASSERT(length <= m_length);
-        m_length = length;
-    }
 
     unsigned length() const { return m_length; }
     bool is8Bit() const { return m_is8Bit; }
@@ -418,7 +404,7 @@ public:
     PassRefPtr<StringImpl> replace(unsigned index, unsigned len, StringImpl*);
     PassRefPtr<StringImpl> upconvertedString();
 
-#if USE(CF)
+#if OS(MACOSX)
     RetainPtr<CFStringRef> createCFString();
 #endif
 #ifdef __OBJC__
@@ -457,11 +443,11 @@ private:
 
 private:
     unsigned m_refCount;
-    unsigned m_length;
+    const unsigned m_length;
     mutable unsigned m_hash : 24;
     unsigned m_isAtomic : 1;
-    unsigned m_is8Bit : 1;
-    unsigned m_isStatic : 1;
+    const unsigned m_is8Bit : 1;
+    const unsigned m_isStatic : 1;
 };
 
 template <>

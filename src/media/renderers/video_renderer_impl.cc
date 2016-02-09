@@ -30,7 +30,7 @@ VideoRendererImpl::VideoRendererImpl(
     VideoRendererSink* sink,
     ScopedVector<VideoDecoder> decoders,
     bool drop_frames,
-    const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories,
+    GpuVideoAcceleratorFactories* gpu_factories,
     const scoped_refptr<MediaLog>& media_log)
     : task_runner_(media_task_runner),
       sink_(sink),
@@ -54,6 +54,7 @@ VideoRendererImpl::VideoRendererImpl(
       time_progressing_(false),
       render_first_frame_and_stop_(false),
       posted_maybe_stop_after_first_paint_(false),
+      last_video_memory_usage_(0),
       weak_factory_(this) {
   if (gpu_factories &&
       gpu_factories->ShouldUseGpuMemoryBuffersForVideoFrames()) {
@@ -119,7 +120,7 @@ void VideoRendererImpl::StartPlayingFrom(base::TimeDelta timestamp) {
 void VideoRendererImpl::Initialize(
     DemuxerStream* stream,
     const PipelineStatusCB& init_cb,
-    const SetDecryptorReadyCB& set_decryptor_ready_cb,
+    const SetCdmReadyCB& set_cdm_ready_cb,
     const StatisticsCB& statistics_cb,
     const BufferingStateCB& buffering_state_cb,
     const base::Closure& ended_cb,
@@ -164,7 +165,7 @@ void VideoRendererImpl::Initialize(
   video_frame_stream_->Initialize(
       stream, base::Bind(&VideoRendererImpl::OnVideoFrameStreamInitialized,
                          weak_factory_.GetWeakPtr()),
-      set_decryptor_ready_cb, statistics_cb, waiting_for_decryption_key_cb);
+      set_cdm_ready_cb, statistics_cb, waiting_for_decryption_key_cb);
 }
 
 scoped_refptr<VideoFrame> VideoRendererImpl::Render(
@@ -550,10 +551,14 @@ void VideoRendererImpl::UpdateStats_Locked() {
     PipelineStatistics statistics;
     statistics.video_frames_decoded = frames_decoded_;
     statistics.video_frames_dropped = frames_dropped_;
-    task_runner_->PostTask(FROM_HERE, base::Bind(statistics_cb_, statistics));
 
+    const size_t memory_usage = algorithm_->GetMemoryUsage();
+    statistics.video_memory_usage = memory_usage - last_video_memory_usage_;
+
+    task_runner_->PostTask(FROM_HERE, base::Bind(statistics_cb_, statistics));
     frames_decoded_ = 0;
     frames_dropped_ = 0;
+    last_video_memory_usage_ = memory_usage;
   }
 }
 

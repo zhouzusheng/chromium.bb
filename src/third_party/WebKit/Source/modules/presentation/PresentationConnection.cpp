@@ -45,17 +45,20 @@ WebPresentationClient* presentationClient(ExecutionContext* executionContext)
 const AtomicString& connectionStateToString(WebPresentationConnectionState state)
 {
     DEFINE_STATIC_LOCAL(const AtomicString, connectedValue, ("connected", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const AtomicString, disconnectedValue, ("disconnected", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, closedValue, ("closed", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, terminatedValue, ("terminated", AtomicString::ConstructFromLiteral));
 
     switch (state) {
     case WebPresentationConnectionState::Connected:
         return connectedValue;
-    case WebPresentationConnectionState::Disconnected:
-        return disconnectedValue;
+    case WebPresentationConnectionState::Closed:
+        return closedValue;
+    case WebPresentationConnectionState::Terminated:
+        return terminatedValue;
     }
 
     ASSERT_NOT_REACHED();
-    return disconnectedValue;
+    return terminatedValue;
 }
 
 void throwPresentationDisconnectedError(ExceptionState& exceptionState)
@@ -160,14 +163,14 @@ ExecutionContext* PresentationConnection::executionContext() const
     return frame()->document();
 }
 
-bool PresentationConnection::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool capture)
+bool PresentationConnection::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
     if (eventType == EventTypeNames::statechange)
         UseCounter::count(executionContext(), UseCounter::PresentationConnectionStateChangeEventListener);
     else if (eventType == EventTypeNames::message)
         UseCounter::count(executionContext(), UseCounter::PresentationConnectionMessageEventListener);
 
-    return EventTarget::addEventListener(eventType, listener, capture);
+    return EventTarget::addEventListenerInternal(eventType, listener, options);
 }
 
 DEFINE_TRACE(PresentationConnection)
@@ -223,7 +226,7 @@ void PresentationConnection::send(Blob* data, ExceptionState& exceptionState)
 
 bool PresentationConnection::canSendMessage(ExceptionState& exceptionState)
 {
-    if (m_state == WebPresentationConnectionState::Disconnected) {
+    if (m_state != WebPresentationConnectionState::Connected) {
         throwPresentationDisconnectedError(exceptionState);
         return false;
     }
@@ -284,7 +287,7 @@ void PresentationConnection::setBinaryType(const String& binaryType)
 
 void PresentationConnection::didReceiveTextMessage(const String& message)
 {
-    if (m_state == WebPresentationConnectionState::Disconnected)
+    if (m_state != WebPresentationConnectionState::Connected)
         return;
 
     dispatchEvent(MessageEvent::create(message));
@@ -292,7 +295,7 @@ void PresentationConnection::didReceiveTextMessage(const String& message)
 
 void PresentationConnection::didReceiveBinaryMessage(const uint8_t* data, size_t length)
 {
-    if (m_state == WebPresentationConnectionState::Disconnected)
+    if (m_state != WebPresentationConnectionState::Connected)
         return;
 
     switch (m_binaryType) {
@@ -311,13 +314,13 @@ void PresentationConnection::didReceiveBinaryMessage(const uint8_t* data, size_t
     ASSERT_NOT_REACHED();
 }
 
-void PresentationConnection::close()
+void PresentationConnection::terminate()
 {
     if (m_state != WebPresentationConnectionState::Connected)
         return;
     WebPresentationClient* client = presentationClient(executionContext());
     if (client)
-        client->closeSession(m_url, m_id);
+        client->terminateSession(m_url, m_id);
 
     // Cancel current Blob loading if any.
     if (m_blobLoader) {
@@ -366,6 +369,11 @@ void PresentationConnection::didFailLoadingBlob(FileError::ErrorCode errorCode)
     m_messages.removeFirst();
     m_blobLoader.clear();
     handleMessageQueue();
+}
+
+bool PresentationConnection::isDisconnected() const
+{
+    return m_state == WebPresentationConnectionState::Closed || m_state == WebPresentationConnectionState::Terminated;
 }
 
 } // namespace blink

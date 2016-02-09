@@ -81,6 +81,8 @@ public:
     TriState (*state)(LocalFrame&, Event*);
     String (*value)(LocalFrame&, Event*);
     bool isTextInsertion;
+    // TODO(yosin) We should have |canExecute()|, which checks clipboard
+    // accessibility to simplify |Editor::Command::execute()|.
     bool allowExecutionWhenDisabled;
 };
 
@@ -297,8 +299,24 @@ static bool executeBackColor(LocalFrame& frame, Event*, EditorCommandSource sour
     return executeApplyStyle(frame, source, EditActionSetBackgroundColor, CSSPropertyBackgroundColor, value);
 }
 
-static bool executeCopy(LocalFrame& frame, Event*, EditorCommandSource, const String&)
+static bool canWriteClipboard(LocalFrame& frame, EditorCommandSource source)
 {
+    if (source == CommandFromMenuOrKeyBinding)
+        return true;
+    Settings* settings = frame.settings();
+    bool defaultValue = (settings && settings->javaScriptCanAccessClipboard()) || UserGestureIndicator::processingUserGesture();
+    return frame.editor().client().canCopyCut(&frame, defaultValue);
+}
+
+static bool executeCopy(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
+{
+    // To support |allowExecutionWhenDisabled|, we need to check clipboard
+    // accessibility here rather than |Editor::Command::execute()|.
+    // TODO(yosin) We should move checking |canWriteClipboard()| to
+    // |Editor::Command::execute()| with introducing appropriate predicate, e.g.
+    // |canExecute()|. See also "Cut", and "Paste" command.
+    if (!canWriteClipboard(frame, source))
+        return false;
     frame.editor().copy();
     return true;
 }
@@ -312,8 +330,15 @@ static bool executeCreateLink(LocalFrame& frame, Event*, EditorCommandSource, co
     return true;
 }
 
-static bool executeCut(LocalFrame& frame, Event*, EditorCommandSource, const String&)
+static bool executeCut(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
+    // To support |allowExecutionWhenDisabled|, we need to check clipboard
+    // accessibility here rather than |Editor::Command::execute()|.
+    // TODO(yosin) We should move checking |canWriteClipboard()| to
+    // |Editor::Command::execute()| with introducing appropriate predicate, e.g.
+    // |canExecute()|. See also "Copy", and "Paste" command.
+    if (!canWriteClipboard(frame, source))
+        return false;
     frame.editor().cut();
     return true;
 }
@@ -964,14 +989,37 @@ static bool executeToggleOverwrite(LocalFrame& frame, Event*, EditorCommandSourc
     return true;
 }
 
-static bool executePaste(LocalFrame& frame, Event*, EditorCommandSource, const String&)
+static bool canReadClipboard(LocalFrame& frame, EditorCommandSource source)
 {
+    if (source == CommandFromMenuOrKeyBinding)
+        return true;
+    Settings* settings = frame.settings();
+    bool defaultValue = settings && settings->javaScriptCanAccessClipboard() && settings->DOMPasteAllowed();
+    return frame.editor().client().canPaste(&frame, defaultValue);
+}
+
+static bool executePaste(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
+{
+    // To support |allowExecutionWhenDisabled|, we need to check clipboard
+    // accessibility here rather than |Editor::Command::execute()|.
+    // TODO(yosin) We should move checking |canReadClipboard()| to
+    // |Editor::Command::execute()| with introducing appropriate predicate, e.g.
+    // |canExecute()|. See also "Copy", and "Cut" command.
+    if (!canReadClipboard(frame, source))
+        return false;
     frame.editor().paste();
     return true;
 }
 
 static bool executePasteGlobalSelection(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
+    // To support |allowExecutionWhenDisabled|, we need to check clipboard
+    // accessibility here rather than |Editor::Command::execute()|.
+    // TODO(yosin) We should move checking |canReadClipboard()| to
+    // |Editor::Command::execute()| with introducing appropriate predicate, e.g.
+    // |canExecute()|. See also "Copy", and "Cut" command.
+    if (!canReadClipboard(frame, source))
+        return false;
     if (!frame.editor().behavior().supportsGlobalSelection())
         return false;
     ASSERT_UNUSED(source, source == CommandFromMenuOrKeyBinding);
@@ -1193,26 +1241,6 @@ static bool supportedFromMenuOrKeyBinding(LocalFrame*)
     return false;
 }
 
-static bool supportedCopyCut(LocalFrame* frame)
-{
-    if (!frame)
-        return false;
-
-    Settings* settings = frame->settings();
-    bool defaultValue = (settings && settings->javaScriptCanAccessClipboard()) || UserGestureIndicator::processingUserGesture();
-    return frame->editor().client().canCopyCut(frame, defaultValue);
-}
-
-static bool supportedPaste(LocalFrame* frame)
-{
-    if (!frame)
-        return false;
-
-    Settings* settings = frame->settings();
-    bool defaultValue = settings && settings->javaScriptCanAccessClipboard() && settings->DOMPasteAllowed();
-    return frame->editor().client().canPaste(frame, defaultValue);
-}
-
 // Enabled functions
 
 static bool enabled(LocalFrame&, Event*, EditorCommandSource)
@@ -1253,13 +1281,17 @@ static bool enableCaretInEditableText(LocalFrame& frame, Event* event, EditorCom
     return selection.isCaret() && selection.isContentEditable();
 }
 
-static bool enabledCopy(LocalFrame& frame, Event*, EditorCommandSource)
+static bool enabledCopy(LocalFrame& frame, Event*, EditorCommandSource source)
 {
+    if (!canWriteClipboard(frame, source))
+        return false;
     return frame.editor().canDHTMLCopy() || frame.editor().canCopy();
 }
 
-static bool enabledCut(LocalFrame& frame, Event*, EditorCommandSource)
+static bool enabledCut(LocalFrame& frame, Event*, EditorCommandSource source)
 {
+    if (!canWriteClipboard(frame, source))
+        return false;
     return frame.editor().canDHTMLCut() || frame.editor().canCut();
 }
 
@@ -1293,8 +1325,10 @@ static bool enabledInRichlyEditableText(LocalFrame& frame, Event*, EditorCommand
     return frame.selection().isCaretOrRange() && frame.selection().isContentRichlyEditable() && frame.selection().rootEditableElement();
 }
 
-static bool enabledPaste(LocalFrame& frame, Event*, EditorCommandSource)
+static bool enabledPaste(LocalFrame& frame, Event*, EditorCommandSource source)
 {
+    if (!canReadClipboard(frame, source))
+        return false;
     return frame.editor().canPaste();
 }
 
@@ -1480,9 +1514,9 @@ static const CommandMap& createCommandMap()
         { "BackColor", {4, executeBackColor, supported, enabledInRichlyEditableText, stateNone, valueBackColor, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "BackwardDelete", {5, executeDeleteBackward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } }, // FIXME: remove BackwardDelete when Safari for Windows stops using it.
         { "Bold", {6, executeToggleBold, supported, enabledInRichlyEditableText, stateBold, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Copy", {7, executeCopy, supportedCopyCut, enabledCopy, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "Copy", {7, executeCopy, supported, enabledCopy, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "CreateLink", {8, executeCreateLink, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Cut", {9, executeCut, supportedCopyCut, enabledCut, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "Cut", {9, executeCut, supported, enabledCut, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "DefaultParagraphSeparator", {10, executeDefaultParagraphSeparator, supported, enabled, stateNone, valueDefaultParagraphSeparator, notTextInsertion, doNotAllowExecutionWhenDisabled} },
         { "Delete", {11, executeDelete, supported, enabledDelete, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "DeleteBackward", {12, executeDeleteBackward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
@@ -1579,8 +1613,8 @@ static const CommandMap& createCommandMap()
         { "Outdent", {101, executeOutdent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "OutdentBlock", {9997, executeOutdentBlock, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "OverWrite", {102, executeToggleOverwrite, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Paste", {103, executePaste, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
-        { "PasteAndMatchStyle", {104, executePasteAndMatchStyle, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "Paste", {103, executePaste, supported, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "PasteAndMatchStyle", {104, executePasteAndMatchStyle, supported, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "PasteGlobalSelection", {105, executePasteGlobalSelection, supportedFromMenuOrKeyBinding, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "Print", {106, executePrint, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Redo", {107, executeRedo, supported, enabledRedo, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
@@ -1757,6 +1791,10 @@ Editor::Command::Command(const EditorInternalCommand* command, EditorCommandSour
 
 bool Editor::Command::execute(const String& parameter, Event* triggeringEvent) const
 {
+    // TODO(yosin) We should move this logic into |canExecute()| member function
+    // in |EditorInternalCommand| to replace |allowExecutionWhenDisabled|.
+    // |allowExecutionWhenDisabled| is for "Copy", "Cut" and "Paste" commands
+    // only.
     if (!isEnabled(triggeringEvent)) {
         // Let certain commands be executed when performed explicitly even if they are disabled.
         if (!isSupported() || !m_frame || !m_command->allowExecutionWhenDisabled)

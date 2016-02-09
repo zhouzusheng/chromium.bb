@@ -7,7 +7,9 @@
 
 #include "GrBicubicEffect.h"
 #include "GrInvariantOutput.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 
 #define DS(x) SkDoubleToScalar(x)
 
@@ -32,10 +34,10 @@ public:
     }
 
 protected:
-    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
+    void onSetData(const GrGLSLProgramDataManager&, const GrProcessor&) override;
 
 private:
-    typedef GrGLProgramDataManager::UniformHandle UniformHandle;
+    typedef GrGLSLProgramDataManager::UniformHandle UniformHandle;
 
     UniformHandle               fCoefficientsUni;
     UniformHandle               fImageIncrementUni;
@@ -50,10 +52,10 @@ GrGLBicubicEffect::GrGLBicubicEffect(const GrProcessor&) {
 void GrGLBicubicEffect::emitCode(EmitArgs& args) {
     const GrTextureDomain& domain = args.fFp.cast<GrBicubicEffect>().domain();
 
-    fCoefficientsUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    fCoefficientsUni = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                            kMat44f_GrSLType, kDefault_GrSLPrecision,
                                            "Coefficients");
-    fImageIncrementUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    fImageIncrementUni = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                              kVec2f_GrSLType, kDefault_GrSLPrecision,
                                              "ImageIncrement");
 
@@ -62,15 +64,15 @@ void GrGLBicubicEffect::emitCode(EmitArgs& args) {
 
     SkString cubicBlendName;
 
-    static const GrGLShaderVar gCubicBlendArgs[] = {
-        GrGLShaderVar("coefficients",  kMat44f_GrSLType),
-        GrGLShaderVar("t",             kFloat_GrSLType),
-        GrGLShaderVar("c0",            kVec4f_GrSLType),
-        GrGLShaderVar("c1",            kVec4f_GrSLType),
-        GrGLShaderVar("c2",            kVec4f_GrSLType),
-        GrGLShaderVar("c3",            kVec4f_GrSLType),
+    static const GrGLSLShaderVar gCubicBlendArgs[] = {
+        GrGLSLShaderVar("coefficients",  kMat44f_GrSLType),
+        GrGLSLShaderVar("t",             kFloat_GrSLType),
+        GrGLSLShaderVar("c0",            kVec4f_GrSLType),
+        GrGLSLShaderVar("c1",            kVec4f_GrSLType),
+        GrGLSLShaderVar("c2",            kVec4f_GrSLType),
+        GrGLSLShaderVar("c3",            kVec4f_GrSLType),
     };
-    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+    GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
     SkString coords2D = fsBuilder->ensureFSCoords2D(args.fCoords, 0);
     fsBuilder->emitFunction(kVec4f_GrSLType,
                             "cubicBlend",
@@ -105,8 +107,8 @@ void GrGLBicubicEffect::emitCode(EmitArgs& args) {
                            GrGLSLExpr4(args.fInputColor)).c_str());
 }
 
-void GrGLBicubicEffect::onSetData(const GrGLProgramDataManager& pdman,
-                                const GrProcessor& processor) {
+void GrGLBicubicEffect::onSetData(const GrGLSLProgramDataManager& pdman,
+                                  const GrProcessor& processor) {
     const GrBicubicEffect& bicubicEffect = processor.cast<GrBicubicEffect>();
     const GrTexture& texture = *processor.texture(0);
     float imageIncrement[2];
@@ -126,24 +128,21 @@ static inline void convert_row_major_scalar_coeffs_to_column_major_floats(float 
     }
 }
 
-GrBicubicEffect::GrBicubicEffect(GrProcessorDataManager* procDataManager,
-                                 GrTexture* texture,
+GrBicubicEffect::GrBicubicEffect(GrTexture* texture,
                                  const SkScalar coefficients[16],
                                  const SkMatrix &matrix,
                                  const SkShader::TileMode tileModes[2])
-  : INHERITED(procDataManager, texture, matrix,
-              GrTextureParams(tileModes, GrTextureParams::kNone_FilterMode))
+  : INHERITED(texture, matrix, GrTextureParams(tileModes, GrTextureParams::kNone_FilterMode))
   , fDomain(GrTextureDomain::IgnoredDomain()) {
     this->initClassID<GrBicubicEffect>();
     convert_row_major_scalar_coeffs_to_column_major_floats(fCoefficients, coefficients);
 }
 
-GrBicubicEffect::GrBicubicEffect(GrProcessorDataManager* procDataManager,
-                                 GrTexture* texture,
+GrBicubicEffect::GrBicubicEffect(GrTexture* texture,
                                  const SkScalar coefficients[16],
                                  const SkMatrix &matrix,
                                  const SkRect& domain)
-  : INHERITED(procDataManager, texture, matrix,
+  : INHERITED(texture, matrix,
               GrTextureParams(SkShader::kClamp_TileMode, GrTextureParams::kNone_FilterMode))
   , fDomain(domain, GrTextureDomain::kClamp_Mode) {
     this->initClassID<GrBicubicEffect>();
@@ -182,7 +181,7 @@ const GrFragmentProcessor* GrBicubicEffect::TestCreate(GrProcessorTestData* d) {
     for (int i = 0; i < 16; i++) {
         coefficients[i] = d->fRandom->nextSScalar1();
     }
-    return GrBicubicEffect::Create(d->fProcDataManager, d->fTextures[texIdx], coefficients);
+    return GrBicubicEffect::Create(d->fTextures[texIdx], coefficients);
 }
 
 //////////////////////////////////////////////////////////////////////////////

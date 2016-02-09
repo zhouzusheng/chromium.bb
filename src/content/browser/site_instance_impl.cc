@@ -234,7 +234,8 @@ bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) {
 bool SiteInstanceImpl::RequiresDedicatedProcess() {
   if (!has_site_)
     return false;
-  return SiteIsolationPolicy::DoesSiteRequireDedicatedProcess(site_);
+  return SiteInstanceImpl::DoesSiteRequireDedicatedProcess(GetBrowserContext(),
+                                                           site_);
 }
 
 void SiteInstanceImpl::IncrementRelatedActiveContentsCount() {
@@ -254,12 +255,12 @@ BrowserContext* SiteInstanceImpl::GetBrowserContext() const {
   return browsing_instance_->browser_context();
 }
 
-/*static*/
+// static
 SiteInstance* SiteInstance::Create(BrowserContext* browser_context) {
   return new SiteInstanceImpl(new BrowsingInstance(browser_context));
 }
 
-/*static*/
+// static
 SiteInstance* SiteInstance::CreateForURL(BrowserContext* browser_context,
                                          const GURL& url) {
   // This will create a new SiteInstance and BrowsingInstance.
@@ -268,7 +269,7 @@ SiteInstance* SiteInstance::CreateForURL(BrowserContext* browser_context,
   return instance->GetSiteInstanceForURL(url);
 }
 
-/*static*/
+// static
 bool SiteInstance::IsSameWebSite(BrowserContext* browser_context,
                                  const GURL& real_src_url,
                                  const GURL& real_dest_url) {
@@ -308,7 +309,7 @@ bool SiteInstance::IsSameWebSite(BrowserContext* browser_context,
       net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
 }
 
-/*static*/
+// static
 GURL SiteInstance::GetSiteForURL(BrowserContext* browser_context,
                                  const GURL& real_url) {
   // TODO(fsamuel, creis): For some reason appID is not recognized as a host.
@@ -353,11 +354,29 @@ GURL SiteInstance::GetSiteForURL(BrowserContext* browser_context,
   return GURL();
 }
 
-/*static*/
+// static
 GURL SiteInstanceImpl::GetEffectiveURL(BrowserContext* browser_context,
                                        const GURL& url) {
   return GetContentClient()->browser()->
       GetEffectiveURL(browser_context, url);
+}
+
+// static
+bool SiteInstanceImpl::DoesSiteRequireDedicatedProcess(
+    BrowserContext* browser_context,
+    const GURL& effective_url) {
+  // If --site-per-process is enabled, site isolation is enabled everywhere.
+  if (SiteIsolationPolicy::UseDedicatedProcessesForAllSites())
+    return true;
+
+  // Let the content embedder enable site isolation for specific URLs.
+  if (GetContentClient()->IsSupplementarySiteIsolationModeEnabled() &&
+      GetContentClient()->browser()->DoesSiteRequireDedicatedProcess(
+          browser_context, effective_url)) {
+    return true;
+  }
+
+  return false;
 }
 
 void SiteInstanceImpl::RenderProcessHostDestroyed(RenderProcessHost* host) {
@@ -371,7 +390,7 @@ void SiteInstanceImpl::LockToOrigin() {
   // protection. If only some sites are isolated, we need additional logic to
   // prevent the non-isolated sites from requesting resources for isolated
   // sites. https://crbug.com/509125
-  if (SiteIsolationPolicy::DoesSiteRequireDedicatedProcess(site_)) {
+  if (RequiresDedicatedProcess()) {
     // Guest processes cannot be locked to its site because guests always have
     // a fixed SiteInstance. The site of GURLs a guest loads doesn't match that
     // SiteInstance. So we skip locking the guest process to the site.

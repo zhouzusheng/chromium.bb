@@ -120,9 +120,10 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
     spellcheckData->AddObserver(this);
   }
   else {
-    custom_dictionary_.reset(new SpellcheckCustomDictionary(context_->GetPath()));
-    custom_dictionary_->AddObserver(this);
-    custom_dictionary_->Load();
+    // SHEZ: Remove dependency on Chrome's custom dictionary
+    //custom_dictionary_.reset(new SpellcheckCustomDictionary(context_->GetPath()));
+    //custom_dictionary_->AddObserver(this);
+    //custom_dictionary_->Load();
   }
 
   registrar_.Add(this,
@@ -211,16 +212,13 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
             : IPC::InvalidPlatformFileForTransit();
   }
 
-  const std::set<std::string>* custom_words_ptr;
+  std::set<std::string> empty_string_set;
+  const std::set<std::string>* custom_words_ptr = &empty_string_set;
 
   content::SpellcheckData* spellcheckData =
       content::SpellcheckData::FromContext(context_);
   if (spellcheckData) {
     custom_words_ptr = &spellcheckData->custom_words();
-  }
-  else {
-    DCHECK(custom_dictionary_);
-    custom_words_ptr = &custom_dictionary_->GetWords();
   }
 
   process->Send(new SpellCheckMsg_Init(
@@ -234,9 +232,12 @@ SpellCheckHostMetrics* SpellcheckService::GetMetrics() const {
   return metrics_.get();
 }
 
+// SHEZ: Remove dependency on Chrome's custom dictionary
+#if 0
 SpellcheckCustomDictionary* SpellcheckService::GetCustomDictionary() {
   return custom_dictionary_.get();
 }
+#endif
 
 const ScopedVector<SpellcheckHunspellDictionary>&
 SpellcheckService::GetHunspellDictionaries() {
@@ -297,6 +298,8 @@ void SpellcheckService::OnCustomWordsChanged(
   }
 }
 
+// SHEZ: Remove dependency on Chrome's custom dictionary
+#if 0
 void SpellcheckService::OnCustomDictionaryLoaded() {
   InitForAllRenderers();
 }
@@ -314,6 +317,7 @@ void SpellcheckService::OnCustomDictionaryChanged(
         dictionary_change.to_remove()));
   }
 }
+#endif
 
 void SpellcheckService::OnHunspellDictionaryInitialized(
     const std::string& language) {

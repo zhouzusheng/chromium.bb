@@ -80,6 +80,9 @@ public:
     bool instanceUpdatesBlocked() const;
     void setInstanceUpdatesBlocked(bool);
 
+    // Records the SVG element as having a Web Animation on an SVG attribute that needs applying.
+    void setWebAnimationsPending();
+
     SVGSVGElement* ownerSVGElement() const;
     SVGElement* viewportElement() const;
 
@@ -121,7 +124,7 @@ public:
     void cursorImageValueRemoved();
 #endif
 
-    SVGElement* correspondingElement();
+    SVGElement* correspondingElement() const;
     void setCorrespondingElement(SVGElement*);
     SVGUseElement* correspondingUseElement() const;
 
@@ -138,9 +141,6 @@ public:
     void setUseOverrideComputedStyle(bool);
 
     virtual bool haveLoadedRequiredResources();
-
-    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) final;
-    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) final;
 
     void invalidateRelativeLengthClients(SubtreeLayoutScope* = 0);
 
@@ -219,6 +219,9 @@ protected:
     friend class SVGFitToViewBox;
     void reportAttributeParsingError(SVGParsingError, const QualifiedName&, const AtomicString&);
     bool hasFocusEventListeners() const;
+
+    bool addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) final;
+    bool removeEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, const EventListenerOptions&) final;
 
 private:
     bool isSVGElement() const = delete; // This will catch anyone doing an unnecessary check.

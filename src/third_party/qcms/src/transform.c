@@ -411,7 +411,7 @@ static void qcms_transform_data_rgb_out_lut_precache(qcms_transform *transform, 
 	}
 }
 
-static void qcms_transform_data_rgba_out_lut_precache(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length, qcms_format_type output_format)
+void qcms_transform_data_rgba_out_lut_precache(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length, qcms_format_type output_format)
 {
 	const int r_out = output_format.r;
 	const int b_out = output_format.b;
@@ -531,25 +531,26 @@ void qcms_transform_data_tetra_clut_rgba(qcms_transform *transform, unsigned cha
 	float c0_b, c1_b, c2_b, c3_b;
 	float clut_r, clut_g, clut_b;
 
+	if (!(transform->transform_flags & TRANSFORM_FLAG_CLUT_CACHE))
+		qcms_transform_build_clut_cache(transform);
+
 	for (i = 0; i < length; i++) {
 		unsigned char in_r = *src++;
 		unsigned char in_g = *src++;
 		unsigned char in_b = *src++;
 		unsigned char in_a = *src++;
 
-		float linear_r = in_r/255.0f, linear_g=in_g/255.0f, linear_b = in_b/255.0f;
+		int x = transform->floor_cache[in_r];
+		int y = transform->floor_cache[in_g];
+		int z = transform->floor_cache[in_b];
 
-		int x = floor(linear_r * (transform->grid_size-1));
-		int y = floor(linear_g * (transform->grid_size-1));
-		int z = floor(linear_b * (transform->grid_size-1));
+		int x_n = transform->ceil_cache[in_r];
+		int y_n = transform->ceil_cache[in_g];
+		int z_n = transform->ceil_cache[in_b];
 
-		int x_n = ceil(linear_r * (transform->grid_size-1));
-		int y_n = ceil(linear_g * (transform->grid_size-1));
-		int z_n = ceil(linear_b * (transform->grid_size-1));
-
-		float rx = linear_r * (transform->grid_size-1) - x;
-		float ry = linear_g * (transform->grid_size-1) - y;
-		float rz = linear_b * (transform->grid_size-1) - z;
+		float rx = transform->r_cache[in_r];
+		float ry = transform->r_cache[in_g];
+		float rz = transform->r_cache[in_b];
 
 		c0_r = CLU(r_table, x, y, z);
 		c0_g = CLU(g_table, x, y, z);
@@ -655,24 +656,25 @@ static void qcms_transform_data_tetra_clut(qcms_transform *transform, unsigned c
 	float c0_b, c1_b, c2_b, c3_b;
 	float clut_r, clut_g, clut_b;
 
+	if (!(transform->transform_flags & TRANSFORM_FLAG_CLUT_CACHE))
+		qcms_transform_build_clut_cache(transform);
+
 	for (i = 0; i < length; i++) {
 		unsigned char in_r = *src++;
 		unsigned char in_g = *src++;
 		unsigned char in_b = *src++;
 
-		float linear_r = in_r/255.0f, linear_g=in_g/255.0f, linear_b = in_b/255.0f;
+		int x = transform->floor_cache[in_r];
+		int y = transform->floor_cache[in_g];
+		int z = transform->floor_cache[in_b];
 
-		int x = floor(linear_r * (transform->grid_size-1));
-		int y = floor(linear_g * (transform->grid_size-1));
-		int z = floor(linear_b * (transform->grid_size-1));
+		int x_n = transform->ceil_cache[in_r];
+		int y_n = transform->ceil_cache[in_g];
+		int z_n = transform->ceil_cache[in_b];
 
-		int x_n = ceil(linear_r * (transform->grid_size-1));
-		int y_n = ceil(linear_g * (transform->grid_size-1));
-		int z_n = ceil(linear_b * (transform->grid_size-1));
-
-		float rx = linear_r * (transform->grid_size-1) - x;
-		float ry = linear_g * (transform->grid_size-1) - y;
-		float rz = linear_b * (transform->grid_size-1) - z;
+		float rx = transform->r_cache[in_r];
+		float ry = transform->r_cache[in_g];
+		float rz = transform->r_cache[in_b];
 
 		c0_r = CLU(r_table, x, y, z);
 		c0_g = CLU(g_table, x, y, z);
@@ -1481,7 +1483,9 @@ void qcms_transform_data_type(qcms_transform *transform, void *src, void *dest, 
 	transform->transform_fn(transform, src, dest, length, type == QCMS_OUTPUT_BGRX ? output_bgrx : output_rgbx);
 }
 
-qcms_bool qcms_supports_iccv4;
+#define ENABLE_ICC_V4_PROFILE_SUPPORT false
+
+qcms_bool qcms_supports_iccv4 = ENABLE_ICC_V4_PROFILE_SUPPORT;
 
 void qcms_enable_iccv4()
 {

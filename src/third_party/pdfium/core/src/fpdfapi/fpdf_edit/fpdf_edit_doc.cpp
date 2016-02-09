@@ -4,10 +4,12 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fpdfapi/fpdf_page.h"
-#include "../../../include/fpdfapi/fpdf_module.h"
-#include "../fpdf_page/pageint.h"
 #include <limits.h>
+
+#include "../fpdf_page/pageint.h"
+#include "core/include/fpdfapi/fpdf_module.h"
+#include "core/include/fpdfapi/fpdf_page.h"
+
 CPDF_Document::CPDF_Document() : CPDF_IndirectObjects(NULL) {
   m_pRootDict = NULL;
   m_pInfoDict = NULL;
@@ -1105,15 +1107,15 @@ CPDF_Dictionary* CPDF_Document::CreateNewPage(int iPage) {
   }
   return pDict;
 }
-int _PDF_GetStandardFontName(CFX_ByteString& name);
+
 CPDF_Font* CPDF_Document::AddStandardFont(const FX_CHAR* font,
                                           CPDF_FontEncoding* pEncoding) {
-  CFX_ByteString name(font, -1);
-  if (_PDF_GetStandardFontName(name) < 0) {
-    return NULL;
-  }
+  CFX_ByteString name(font);
+  if (PDF_GetStandardFontName(&name) < 0)
+    return nullptr;
   return GetPageData()->GetStandardFont(name, pEncoding);
 }
+
 void CPDF_Document::DeletePage(int iPage) {
   CPDF_Dictionary* pRoot = GetRoot();
   if (pRoot == NULL) {

@@ -9,7 +9,10 @@
 
 #include "GrInvariantOutput.h"
 #include "gl/GrGLGeometryProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "gl/GrGLUtil.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLVertexShaderBuilder.h"
 
 /*
  * The default Geometry Processor simply takes position and multiplies it by the uniform view
@@ -60,9 +63,9 @@ public:
 
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
             const DefaultGeoProc& gp = args.fGP.cast<DefaultGeoProc>();
-            GrGLGPBuilder* pb = args.fPB;
-            GrGLVertexBuilder* vsBuilder = pb->getVertexShaderBuilder();
-            GrGLFragmentBuilder* fs = args.fPB->getFragmentShaderBuilder();
+            GrGLSLGPBuilder* pb = args.fPB;
+            GrGLSLVertexBuilder* vsBuilder = pb->getVertexShaderBuilder();
+            GrGLSLFragmentBuilder* fs = args.fPB->getFragmentShaderBuilder();
 
             // emit attributes
             vsBuilder->emitAttributes(gp);
@@ -104,7 +107,7 @@ public:
                     fs->codeAppendf("%s = vec4(1);", args.fOutputCoverage);
                 } else {
                     const char* fragCoverage;
-                    fCoverageUniform = pb->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+                    fCoverageUniform = pb->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                                       kFloat_GrSLType,
                                                       kDefault_GrSLPrecision,
                                                       "Coverage",
@@ -130,18 +133,19 @@ public:
             b->add32(key);
         }
 
-        void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
+        void setData(const GrGLSLProgramDataManager& pdman,
+                     const GrPrimitiveProcessor& gp) override {
             const DefaultGeoProc& dgp = gp.cast<DefaultGeoProc>();
 
             if (!dgp.viewMatrix().isIdentity() && !fViewMatrix.cheapEqualTo(dgp.viewMatrix())) {
                 fViewMatrix = dgp.viewMatrix();
-                GrGLfloat viewMatrix[3 * 3];
+                float viewMatrix[3 * 3];
                 GrGLGetMatrix<3>(viewMatrix, fViewMatrix);
                 pdman.setMatrix3f(fViewMatrixUniform, viewMatrix);
             }
 
             if (dgp.color() != fColor && !dgp.hasVertexColor()) {
-                GrGLfloat c[4];
+                float c[4];
                 GrColorToRGBAFloat(dgp.color(), c);
                 pdman.set4fv(fColorUniform, 1, c);
                 fColor = dgp.color();
@@ -155,7 +159,7 @@ public:
         }
 
         void setTransformData(const GrPrimitiveProcessor& primProc,
-                              const GrGLProgramDataManager& pdman,
+                              const GrGLSLProgramDataManager& pdman,
                               int index,
                               const SkTArray<const GrCoordTransform*, true>& transforms) override {
             this->setTransformDataHelper<DefaultGeoProc>(primProc, pdman, index, transforms);

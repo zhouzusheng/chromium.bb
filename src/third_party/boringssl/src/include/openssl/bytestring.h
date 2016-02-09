@@ -242,7 +242,7 @@ struct cbb_st {
    * pending length-prefix. */
   size_t offset;
   /* child points to a child CBB if a length-prefix is pending. */
-  struct cbb_st *child;
+  CBB *child;
   /* pending_len_len contains the number of bytes in a pending length-prefix,
    * or zero if no length-prefix is pending. */
   uint8_t pending_len_len;
@@ -343,6 +343,10 @@ OPENSSL_EXPORT int CBB_add_u16(CBB *cbb, uint16_t value);
 /* CBB_add_u24 appends a 24-bit, big-endian number from |value| to |cbb|. It
  * returns one on success and zero otherwise. */
 OPENSSL_EXPORT int CBB_add_u24(CBB *cbb, uint32_t value);
+
+/* CBB_discard_child discards the current unflushed child of |cbb|. Neither the
+ * child's contents nor the length prefix will be included in the output. */
+OPENSSL_EXPORT void CBB_discard_child(CBB *cbb);
 
 /* CBB_add_asn1_uint64 writes an ASN.1 INTEGER into |cbb| using |CBB_add_asn1|
  * and writes |value| in its contents. It returns one on success and zero on

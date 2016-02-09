@@ -55,14 +55,14 @@ class MEDIA_EXPORT VideoRendererImpl
       VideoRendererSink* sink,
       ScopedVector<VideoDecoder> decoders,
       bool drop_frames,
-      const scoped_refptr<GpuVideoAcceleratorFactories>& gpu_factories,
+      GpuVideoAcceleratorFactories* gpu_factories,
       const scoped_refptr<MediaLog>& media_log);
   ~VideoRendererImpl() override;
 
   // VideoRenderer implementation.
   void Initialize(DemuxerStream* stream,
                   const PipelineStatusCB& init_cb,
-                  const SetDecryptorReadyCB& set_decryptor_ready_cb,
+                  const SetCdmReadyCB& set_cdm_ready_cb,
                   const StatisticsCB& statistics_cb,
                   const BufferingStateCB& buffering_state_cb,
                   const base::Closure& ended_cb,
@@ -255,6 +255,10 @@ class MEDIA_EXPORT VideoRendererImpl
   // to avoid repeated task posts.
   bool render_first_frame_and_stop_;
   bool posted_maybe_stop_after_first_paint_;
+
+  // Memory usage of |algorithm_| recorded during the last UpdateStats_Locked()
+  // call.
+  int64_t last_video_memory_usage_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<VideoRendererImpl> weak_factory_;

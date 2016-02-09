@@ -26,6 +26,10 @@
 #include "media/base/video_frame.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
+namespace tracked_objects {
+class Location;
+}  // namespace tracked_objects
+
 namespace media {
 
 class MEDIA_EXPORT VideoCaptureDevice {
@@ -186,7 +190,7 @@ class MEDIA_EXPORT VideoCaptureDevice {
       virtual void* data(int plane) = 0;
       void* data() { return data(0); }
       virtual ClientBuffer AsClientBuffer(int plane) = 0;
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !(defined(OS_MACOSX) && !defined(OS_IOS))
       virtual base::FileDescriptor AsPlatformFile() = 0;
 #endif
     };
@@ -250,7 +254,8 @@ class MEDIA_EXPORT VideoCaptureDevice {
 
     // An error has occurred that cannot be handled and VideoCaptureDevice must
     // be StopAndDeAllocate()-ed. |reason| is a text description of the error.
-    virtual void OnError(const std::string& reason) = 0;
+    virtual void OnError(const tracked_objects::Location& from_here,
+                         const std::string& reason) = 0;
 
     // VideoCaptureDevice requests the |message| to be logged.
     virtual void OnLog(const std::string& message) {}
@@ -283,12 +288,13 @@ class MEDIA_EXPORT VideoCaptureDevice {
 
   // Gets the power line frequency, either from the params if specified by the
   // user or from the current system time zone.
-  int GetPowerLineFrequency(const VideoCaptureParams& params) const;
+  PowerLineFrequency GetPowerLineFrequency(
+      const VideoCaptureParams& params) const;
 
  private:
   // Gets the power line frequency from the current system time zone if this is
   // defined, otherwise returns 0.
-  int GetPowerLineFrequencyForLocation() const;
+  PowerLineFrequency GetPowerLineFrequencyForLocation() const;
 };
 
 }  // namespace media

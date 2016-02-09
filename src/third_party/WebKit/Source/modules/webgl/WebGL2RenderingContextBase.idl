@@ -308,7 +308,7 @@ typedef long long      GLint64;
 
     /* Framebuffer objects */
     void blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter);
-    void framebufferTextureLayer(GLenum target, GLenum attachment, WebGLTexture texture, GLint level, GLint layer);
+    [CallWith=ScriptState] void framebufferTextureLayer(GLenum target, GLenum attachment, WebGLTexture? texture, GLint level, GLint layer);
     [CallWith=ScriptState] any getInternalformatParameter(GLenum target, GLenum internalformat, GLenum pname);
     void invalidateFramebuffer(GLenum target, sequence<GLenum> attachments);
     void invalidateSubFramebuffer (GLenum target, sequence<GLenum> attachments, GLint x, GLint y, GLsizei width, GLsizei height);
@@ -435,9 +435,9 @@ typedef long long      GLint64;
 
     /* Vertex Array Objects */
     WebGLVertexArrayObject createVertexArray();
-    void deleteVertexArray(WebGLVertexArrayObject? vertexArray);
+    [CallWith=ScriptState] void deleteVertexArray(WebGLVertexArrayObject? vertexArray);
     GLboolean isVertexArray(WebGLVertexArrayObject? vertexArray);
-    void bindVertexArray(WebGLVertexArrayObject? vertexArray);
+    [CallWith=ScriptState] void bindVertexArray(WebGLVertexArrayObject? vertexArray);
 
     /* Reading */
     void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLintptr offset);

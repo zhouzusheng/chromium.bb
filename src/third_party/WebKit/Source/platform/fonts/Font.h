@@ -48,6 +48,7 @@ namespace blink {
 
 class FloatPoint;
 class FloatRect;
+class FontFallbackIterator;
 class FontData;
 class FontMetrics;
 class FontSelector;
@@ -146,6 +147,7 @@ private:
 
 public:
     FontSelector* fontSelector() const;
+    PassRefPtr<FontFallbackIterator> createFontFallbackIterator() const;
 
     void willUseFontData(UChar32) const;
 
@@ -162,6 +164,9 @@ private:
     mutable RefPtr<FontFallbackList> m_fontFallbackList;
     mutable unsigned m_canShapeWordByWord : 1;
     mutable unsigned m_shapeWordByWordComputed : 1;
+
+    // For accessing buildGlyphBuffer and retrieving fonts used in rendering a node.
+    friend class InspectorCSSAgent;
 };
 
 inline Font::~Font()

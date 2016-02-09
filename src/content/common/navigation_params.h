@@ -13,6 +13,7 @@
 #include "content/common/frame_message_enums.h"
 #include "content/public/common/page_state.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/request_context_type.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 
@@ -21,6 +22,18 @@ class RefCountedMemory;
 }
 
 namespace content {
+
+// The LoFi state which determines whether to add the Lo-Fi header.
+enum LoFiState {
+  // Let the browser process decide whether or not to request the Lo-Fi version.
+  LOFI_UNSPECIFIED = 0,
+
+  // Request a normal (non-Lo-Fi) version of the resource.
+  LOFI_OFF,
+
+  // Request a Lo-Fi version of the resource.
+  LOFI_ON,
+};
 
 // PlzNavigate
 // Helper function to determine if the navigation to |url| should make a request
@@ -46,7 +59,9 @@ struct CONTENT_EXPORT CommonNavigationParams {
                          base::TimeTicks ui_timestamp,
                          FrameMsg_UILoadMetricsReportType::Value report_type,
                          const GURL& base_url_for_data_url,
-                         const GURL& history_url_for_data_url);
+                         const GURL& history_url_for_data_url,
+                         LoFiState lofi_state,
+                         const base::TimeTicks& navigation_start);
   ~CommonNavigationParams();
 
   // The URL to navigate to.
@@ -89,6 +104,17 @@ struct CONTENT_EXPORT CommonNavigationParams {
   // History URL for use in Blink's SubstituteData.
   // Is only used with data: URLs.
   GURL history_url_for_data_url;
+
+  // Whether or not to request a LoFi version of the document or let the browser
+  // decide.
+  LoFiState lofi_state;
+
+  // The navigationStart time exposed through the Navigation Timing API to JS.
+  // If this is for a browser-initiated navigation, this can override the
+  // navigation_start value in Blink.
+  // PlzNavigate: For renderer initiated navigations, this will be set on the
+  // renderer side and sent with FrameHostMsg_BeginNavigation.
+  base::TimeTicks navigation_start;
 };
 
 // Provided by the renderer ----------------------------------------------------
@@ -107,7 +133,9 @@ struct CONTENT_EXPORT BeginNavigationParams {
   BeginNavigationParams(std::string method,
                         std::string headers,
                         int load_flags,
-                        bool has_user_gesture);
+                        bool has_user_gesture,
+                        bool skip_service_worker,
+                        RequestContextType request_context_type);
 
   // The request method: GET, POST, etc.
   std::string method;
@@ -120,6 +148,12 @@ struct CONTENT_EXPORT BeginNavigationParams {
 
   // True if the request was user initiated.
   bool has_user_gesture;
+
+  // True if the ServiceWorker should be skipped.
+  bool skip_service_worker;
+
+  // Indicates the request context type.
+  RequestContextType request_context_type;
 };
 
 // Provided by the browser -----------------------------------------------------
@@ -178,7 +212,6 @@ struct CONTENT_EXPORT StartNavigationParams {
 struct CONTENT_EXPORT RequestNavigationParams {
   RequestNavigationParams();
   RequestNavigationParams(bool is_overriding_user_agent,
-                          base::TimeTicks navigation_start,
                           const std::vector<GURL>& redirects,
                           bool can_load_local_resources,
                           base::Time request_time,
@@ -196,9 +229,6 @@ struct CONTENT_EXPORT RequestNavigationParams {
 
   // Whether or not the user agent override string should be used.
   bool is_overriding_user_agent;
-
-  // The navigationStart time to expose through the Navigation Timing API to JS.
-  base::TimeTicks browser_navigation_start;
 
   // Any redirect URLs that occurred before |url|. Useful for cross-process
   // navigations; defaults to empty.
@@ -257,6 +287,17 @@ struct CONTENT_EXPORT RequestNavigationParams {
   // needs to notify the browser that the clearing was succesful when the
   // navigation commits.
   bool should_clear_history_list;
+
+  // PlzNavigate
+  // Whether a ServiceWorkerProviderHost should be created for the window.
+  bool should_create_service_worker;
+
+  // PlzNavigate
+  // The ServiceWorkerProviderHost ID used for navigations, if it was already
+  // created by the browser. Set to kInvalidServiceWorkerProviderId otherwise.
+  // This parameter is not used in the current navigation architecture, where
+  // it will always be equal to kInvalidServiceWorkerProviderId.
+  int service_worker_provider_id;
 };
 
 // Helper struct keeping track in one place of all the parameters the browser

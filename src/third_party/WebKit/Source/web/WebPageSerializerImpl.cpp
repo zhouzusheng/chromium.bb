@@ -279,12 +279,10 @@ void WebPageSerializerImpl::encodeAndFlushBuffer(
     String content = m_dataBuffer.toString();
     m_dataBuffer.clear();
 
-    CString encodedContent = param->textEncoding.normalizeAndEncode(content, WTF::EntitiesForUnencodables);
+    CString encodedContent = param->textEncoding.encode(content, WTF::EntitiesForUnencodables);
 
     // Send result to the client.
-    m_client->didSerializeDataForFrame(param->url,
-                                       WebCString(encodedContent.data(), encodedContent.length()),
-                                       status);
+    m_client->didSerializeDataForFrame(WebCString(encodedContent), status);
 }
 
 // TODO(yosin): We should utilize |MarkupFormatter| here to share code,
@@ -322,9 +320,7 @@ void WebPageSerializerImpl::openTagToString(Element* element,
                     result.append(m_htmlEntities.convertEntitiesInString(attrValue));
                 } else {
                     // Get the absolute link
-                    WebLocalFrameImpl* subFrame = WebLocalFrameImpl::fromFrameOwnerElement(element);
-                    String completeURL = subFrame ? subFrame->frame()->document()->url() :
-                                                    param->document->completeURL(attrValue);
+                    String completeURL = param->document->completeURL(attrValue);
                     // Check whether we have local files for those link.
                     if (m_localLinks.contains(completeURL)) {
                         if (!param->directoryName.isEmpty()) {
@@ -427,7 +423,7 @@ void WebPageSerializerImpl::buildContentForNode(Node* node,
     }
 }
 
-WebPageSerializerImpl::WebPageSerializerImpl(WebFrame* frame,
+WebPageSerializerImpl::WebPageSerializerImpl(WebLocalFrame* frame,
                                              WebPageSerializerClient* client,
                                              const WebVector<WebURL>& links,
                                              const WebVector<WebString>& localPaths,
@@ -457,28 +453,28 @@ bool WebPageSerializerImpl::serialize()
 {
     bool didSerialization = false;
 
-    WebLocalFrameImpl* webFrame = m_specifiedWebLocalFrameImpl;
-    bool isMainFrame = webFrame->frame()->isMainFrame();
-    Document* document = webFrame->frame()->document();
+    Document* document = m_specifiedWebLocalFrameImpl->frame()->document();
     const KURL& url = document->url();
 
-    if (url.isValid() && m_localLinks.contains(url.string())) {
+    if (url.isValid()) {
         didSerialization = true;
 
         const WTF::TextEncoding& textEncoding = document->encoding().isValid() ? document->encoding() : UTF8Encoding();
-        String directoryName = isMainFrame ? m_localDirectoryName : "";
 
-        SerializeDomParam param(url, textEncoding, document, directoryName);
+        SerializeDomParam param(url, textEncoding, document, m_localDirectoryName);
 
         Element* documentElement = document->documentElement();
         if (documentElement)
             buildContentForNode(documentElement, &param);
 
         encodeAndFlushBuffer(WebPageSerializerClient::CurrentFrameIsFinished, &param, ForceFlush);
+    } else {
+        // Report empty contents for invalid URLs.
+        m_client->didSerializeDataForFrame(
+            WebCString(), WebPageSerializerClient::CurrentFrameIsFinished);
     }
 
     ASSERT(m_dataBuffer.isEmpty());
-    m_client->didSerializeDataForFrame(KURL(), WebCString("", 0), WebPageSerializerClient::AllFramesAreFinished);
     return didSerialization;
 }
 

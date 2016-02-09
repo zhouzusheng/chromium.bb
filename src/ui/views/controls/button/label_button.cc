@@ -116,6 +116,12 @@ void LabelButton::SetTextColor(ButtonState for_state, SkColor color) {
   explicitly_set_colors_[for_state] = true;
 }
 
+void LabelButton::SetEnabledTextColors(SkColor color) {
+  ButtonState states[] = {STATE_NORMAL, STATE_HOVERED, STATE_PRESSED};
+  for (auto state : states)
+    SetTextColor(state, color);
+}
+
 void LabelButton::SetTextShadows(const gfx::ShadowValues& shadows) {
   label_->SetShadows(shadows);
 }
@@ -336,6 +342,11 @@ const char* LabelButton::GetClassName() const {
   return kViewClassName;
 }
 
+void LabelButton::EnableCanvasFlippingForRTLUI(bool flip) {
+  CustomButton::EnableCanvasFlippingForRTLUI(flip);
+  image_->EnableCanvasFlippingForRTLUI(flip);
+}
+
 scoped_ptr<LabelButtonBorder> LabelButton::CreateDefaultBorder() const {
   return PlatformStyle::CreateLabelButtonBorder(style());
 }
@@ -365,6 +376,24 @@ void LabelButton::OnBlur() {
   View::OnBlur();
   // Typically the border renders differently when focused.
   SchedulePaint();
+}
+
+void LabelButton::OnNativeThemeChanged(const ui::NativeTheme* theme) {
+  ResetColorsFromNativeTheme();
+  UpdateThemedBorder();
+  // Invalidate the layout to pickup the new insets from the border.
+  InvalidateLayout();
+}
+
+void LabelButton::StateChanged() {
+  const gfx::Size previous_image_size(image_->GetPreferredSize());
+  UpdateImage();
+  const SkColor color = button_state_colors_[state()];
+  if (state() != STATE_DISABLED && label_->enabled_color() != color)
+    label_->SetEnabledColor(color);
+  label_->SetEnabled(state() != STATE_DISABLED);
+  if (image_->GetPreferredSize() != previous_image_size)
+    Layout();
 }
 
 void LabelButton::GetExtraParams(ui::NativeTheme::ExtraParams* params) const {
@@ -440,27 +469,9 @@ void LabelButton::UpdateThemedBorder() {
   border_is_themed_border_ = true;
 }
 
-void LabelButton::StateChanged() {
-  const gfx::Size previous_image_size(image_->GetPreferredSize());
-  UpdateImage();
-  const SkColor color = button_state_colors_[state()];
-  if (state() != STATE_DISABLED && label_->enabled_color() != color)
-    label_->SetEnabledColor(color);
-  label_->SetEnabled(state() != STATE_DISABLED);
-  if (image_->GetPreferredSize() != previous_image_size)
-    Layout();
-}
-
 void LabelButton::ChildPreferredSizeChanged(View* child) {
   ResetCachedPreferredSize();
   PreferredSizeChanged();
-}
-
-void LabelButton::OnNativeThemeChanged(const ui::NativeTheme* theme) {
-  ResetColorsFromNativeTheme();
-  UpdateThemedBorder();
-  // Invalidate the layout to pickup the new insets from the border.
-  InvalidateLayout();
 }
 
 ui::NativeTheme::Part LabelButton::GetThemePart() const {

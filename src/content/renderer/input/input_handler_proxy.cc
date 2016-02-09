@@ -362,7 +362,7 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleMouseWheel(
     // Wheel events with |canScroll| == false will not trigger scrolling,
     // only event handlers.  Forward to the main thread.
     result = DID_NOT_HANDLE;
-  } else if (smooth_scroll_enabled_) {
+  } else if (smooth_scroll_enabled_ && !wheel_event.hasPreciseScrollingDeltas) {
     cc::InputHandler::ScrollStatus scroll_status =
         input_handler_->ScrollAnimated(gfx::Point(wheel_event.x, wheel_event.y),
                                        scroll_delta);
@@ -372,6 +372,7 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleMouseWheel(
         break;
       case cc::InputHandler::SCROLL_IGNORED:
         result = DROP_EVENT;
+        break;
       default:
         result = DID_NOT_HANDLE;
         break;
@@ -499,9 +500,10 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureScrollEnd(
 
 InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureFlingStart(
     const WebGestureEvent& gesture_event) {
-  cc::InputHandler::ScrollStatus scroll_status;
-
-  if (gesture_event.sourceDevice == blink::WebGestureDeviceTouchpad) {
+  cc::InputHandler::ScrollStatus scroll_status =
+      cc::InputHandler::SCROLL_ON_MAIN_THREAD;
+  switch (gesture_event.sourceDevice) {
+  case blink::WebGestureDeviceTouchpad:
     if (gesture_event.data.flingStart.targetViewport) {
       scroll_status = input_handler_->RootScrollBegin(
           cc::InputHandler::NON_BUBBLING_GESTURE);
@@ -510,11 +512,16 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureFlingStart(
           gfx::Point(gesture_event.x, gesture_event.y),
           cc::InputHandler::NON_BUBBLING_GESTURE);
     }
-  } else {
+    break;
+  case blink::WebGestureDeviceTouchscreen:
     if (!gesture_scroll_on_impl_thread_)
       scroll_status = cc::InputHandler::SCROLL_ON_MAIN_THREAD;
     else
       scroll_status = input_handler_->FlingScrollBegin();
+    break;
+  case blink::WebGestureDeviceUninitialized:
+    NOTREACHED();
+    return DID_NOT_HANDLE;
   }
 
 #ifndef NDEBUG
@@ -536,13 +543,9 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureFlingStart(
           blink::WebSize()));
       disallow_horizontal_fling_scroll_ = !vx;
       disallow_vertical_fling_scroll_ = !vy;
-      TRACE_EVENT_ASYNC_BEGIN2("input",
+      TRACE_EVENT_ASYNC_BEGIN2("input,benchmark",
                                "InputHandlerProxy::HandleGestureFling::started",
-                               this,
-                               "vx",
-                               vx,
-                               "vy",
-                               vy);
+                               this, "vx", vx, "vy", vy);
       // Note that the timestamp will only be used to kickstart the animation if
       // its sufficiently close to the timestamp of the first call |Animate()|.
       has_fling_animation_started_ = false;
@@ -728,8 +731,7 @@ bool InputHandlerProxy::FilterInputEventForFlingBoosting(
                            current_fling_velocity_.y());
 
       // The client expects balanced calls between a consumed GestureFlingStart
-      // and |DidStopFlinging()|. TODO(jdduke): Provide a count parameter to
-      // |DidStopFlinging()| and only send after the accumulated fling ends.
+      // and |DidStopFlinging()|.
       client_->DidStopFlinging();
       return true;
     }
@@ -755,8 +757,8 @@ void InputHandlerProxy::ExtendBoostedFlingTimeout(
 void InputHandlerProxy::Animate(base::TimeTicks time) {
   // If using synchronous animate, then only expect Animate attempts started by
   // the synchronous system. Don't let the InputHandler try to Animate also.
-  DCHECK_IMPLIES(input_handler_->IsCurrentlyScrollingInnerViewport(),
-                 allow_root_animate_);
+  DCHECK(!input_handler_->IsCurrentlyScrollingInnerViewport() ||
+         allow_root_animate_);
 
   if (scroll_elasticity_controller_)
     scroll_elasticity_controller_->Animate(time);
@@ -873,7 +875,7 @@ void InputHandlerProxy::HandleOverscroll(
   params.latest_overscroll_delta = scroll_result.unused_scroll_delta;
   params.current_fling_velocity =
       ToClientScrollIncrement(current_fling_velocity_);
-  params.causal_event_viewport_point = causal_event_viewport_point;
+  params.causal_event_viewport_point = gfx::PointF(causal_event_viewport_point);
 
   if (fling_curve_) {
     static const int kFlingOverscrollThreshold = 1;
@@ -1023,6 +1025,9 @@ bool InputHandlerProxy::scrollBy(const WebFloatSize& increment,
       HandleOverscroll(fling_parameters_.point, scroll_result);
       did_scroll = scroll_result.did_scroll;
     } break;
+    case blink::WebGestureDeviceUninitialized:
+      NOTREACHED();
+      return false;
   }
 
   if (did_scroll) {

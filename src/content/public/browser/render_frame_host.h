@@ -35,10 +35,12 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // Returns nullptr if the IDs do not correspond to a live RenderFrameHost.
   static RenderFrameHost* FromID(int render_process_id, int render_frame_id);
 
+#if defined(OS_ANDROID)
   // Globally allows for injecting JavaScript into the main world. This feature
   // is present only to support Android WebView and must not be used in other
   // configurations.
   static void AllowInjectingJavaScriptForAndroidWebView();
+#endif
 
   // Returns a RenderFrameHost given its accessibility tree ID.
   static RenderFrameHost* FromAXTreeID(int ax_tree_id);
@@ -113,8 +115,10 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   virtual void AccessibilityScrollToMakeVisible(
       int acc_obj_id, const gfx::Rect& subfocus) = 0;
   virtual void AccessibilityShowContextMenu(int acc_obj_id) = 0;
-  virtual void AccessibilitySetTextSelection(
-      int acc_obj_id, int start_offset, int end_offset) = 0;
+  virtual void AccessibilitySetSelection(int anchor_object_id,
+                                         int anchor_offset,
+                                         int focus_object_id,
+                                         int focus_offset) = 0;
 
   // This is called when the user has committed to the given find in page
   // request (e.g. by pressing enter or by clicking on the next / previous

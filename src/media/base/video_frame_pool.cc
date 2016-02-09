@@ -73,6 +73,7 @@ scoped_refptr<VideoFrame> VideoFramePool::PoolImpl::CreateFrame(
           pool_frame->natural_size() == natural_size) {
         frame = pool_frame;
         frame->set_timestamp(timestamp);
+        frame->metadata()->Clear();
         break;
       }
   }
@@ -80,6 +81,7 @@ scoped_refptr<VideoFrame> VideoFramePool::PoolImpl::CreateFrame(
   if (!frame.get()) {
     frame = VideoFrame::CreateZeroInitializedFrame(
         format, coded_size, visible_rect, natural_size, timestamp);
+    LOG_IF(ERROR, !frame.get()) << "Failed to create a video frame";
   }
 
   scoped_refptr<VideoFrame> wrapped_frame = VideoFrame::WrapVideoFrame(

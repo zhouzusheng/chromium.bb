@@ -143,6 +143,13 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ServiceWorkerVersionInfo GetInfo();
   Status status() const { return status_; }
 
+  const std::vector<GURL>& foreign_fetch_scopes() const {
+    return foreign_fetch_scopes_;
+  }
+  void set_foreign_fetch_scopes(const std::vector<GURL>& scopes) {
+    foreign_fetch_scopes_ = scopes;
+  }
+
   // This sets the new status and also run status change callbacks
   // if there're any (see RegisterStatusChangeCallback).
   void SetStatus(Status status);
@@ -211,6 +218,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   //
   // This must be called when the status() is ACTIVATED.
   void DispatchSyncEvent(BackgroundSyncRegistrationHandle::HandleId handle_id,
+                         BackgroundSyncEventLastChance last_chance,
                          const StatusCallback& callback);
 
   // Sends notificationclick event to the associated embedded worker and
@@ -275,10 +283,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   // Returns if it has controllee.
   bool HasControllee() const { return !controllee_map_.empty(); }
-
-  // Returns whether the service worker has active window clients under its
-  // control.
-  bool HasWindowClients();
 
   // Adds and removes |request_job| as a dependent job not to stop the
   // ServiceWorker while |request_job| is reading the stream of the fetch event
@@ -360,6 +364,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, StayAliveAfterPush);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerStallInStoppingTest, DetachThenStart);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerStallInStoppingTest, DetachThenRestart);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest,
+                           RegisterForeignFetchScopes);
 
   class Metrics;
   class PingController;
@@ -495,6 +501,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
                              const std::string& client_uuid,
                              const ServiceWorkerClientInfo& client);
 
+  void OnRegisterForeignFetchScopes(const std::vector<GURL>& sub_scopes);
+
   void DidEnsureLiveRegistrationForStartWorker(
       const StatusCallback& callback,
       ServiceWorkerStatusCode status,
@@ -505,8 +513,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   void GetWindowClients(int request_id,
                         const ServiceWorkerClientQueryOptions& options);
-  const std::vector<base::Tuple<int, int, std::string>>
-  GetWindowClientsInternal(bool include_uncontolled);
   void DidGetWindowClients(int request_id,
                            const ServiceWorkerClientQueryOptions& options,
                            scoped_ptr<ServiceWorkerClients> clients);
@@ -577,6 +583,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   const int64 registration_id_;
   const GURL script_url_;
   const GURL scope_;
+  std::vector<GURL> foreign_fetch_scopes_;
 
   Status status_ = NEW;
   scoped_ptr<EmbeddedWorkerInstance> embedded_worker_;

@@ -244,17 +244,9 @@ void LatencyInfo::AddLatencyNumberWithTimestampImpl(
           FindLatency(INPUT_EVENT_LATENCY_UI_COMPONENT,
                       0,
                       &begin_component)) {
-        // The timestamp stored in ORIGINAL/UI_COMPONENT is using clock
-        // CLOCK_MONOTONIC while TRACE_EVENT_ASYNC_BEGIN_WITH_TIMESTAMP0
-        // expects timestamp using CLOCK_MONOTONIC or CLOCK_SYSTEM_TRACE (on
-        // CrOS). So we need to adjust the diff between in CLOCK_MONOTONIC and
-        // CLOCK_SYSTEM_TRACE. Note that the diff is drifting overtime so we
-        // can't use a static value.
-        base::TimeDelta diff = (base::TimeTicks::Now() - base::TimeTicks()) -
-            (base::TraceTicks::Now() - base::TraceTicks());
-        ts = (begin_component.event_time - diff).ToInternalValue();
+        ts = begin_component.event_time.ToInternalValue();
       } else {
-        ts = base::TraceTicks::Now().ToInternalValue();
+        ts = base::TimeTicks::Now().ToInternalValue();
       }
 
       if (trace_name_str) {
@@ -303,10 +295,10 @@ void LatencyInfo::AddLatencyNumberWithTimestampImpl(
     terminated_ = true;
 
     if (*benchmark_enabled) {
-      TRACE_EVENT_COPY_ASYNC_END1("benchmark,latencyInfo",
-                                  trace_name_.c_str(),
-                                  TRACE_ID_DONT_MANGLE(trace_id_),
-                                  "data", AsTraceableData());
+      TRACE_EVENT_COPY_ASYNC_END2("benchmark,latencyInfo", trace_name_.c_str(),
+                                  TRACE_ID_DONT_MANGLE(trace_id_), "data",
+                                  AsTraceableData(), "coordinates",
+                                  CoordinatesAsTraceableData());
     }
 
     TRACE_EVENT_WITH_FLOW0("input,benchmark",
@@ -332,7 +324,11 @@ LatencyInfo::AsTraceableData() {
     record_data->Set(GetComponentName(lc.first.first), component_info.Pass());
   }
   record_data->SetDouble("trace_id", static_cast<double>(trace_id_));
+  return LatencyInfoTracedValue::FromValue(record_data.Pass());
+}
 
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+LatencyInfo::CoordinatesAsTraceableData() {
   scoped_ptr<base::ListValue> coordinates(new base::ListValue());
   for (size_t i = 0; i < input_coordinates_size_; i++) {
     scoped_ptr<base::DictionaryValue> coordinate_pair(
@@ -341,8 +337,7 @@ LatencyInfo::AsTraceableData() {
     coordinate_pair->SetDouble("y", input_coordinates_[i].y);
     coordinates->Append(coordinate_pair.release());
   }
-  record_data->Set("coordinates", coordinates.release());
-  return LatencyInfoTracedValue::FromValue(record_data.Pass());
+  return LatencyInfoTracedValue::FromValue(coordinates.Pass());
 }
 
 bool LatencyInfo::FindLatency(LatencyComponentType type,

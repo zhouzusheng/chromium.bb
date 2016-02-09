@@ -19,7 +19,7 @@ namespace content {
 
 // static
 BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
-    const SimpleAXTreeUpdate& initial_tree,
+    const ui::AXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory) {
   return new BrowserAccessibilityManagerWin(initial_tree, delegate, factory);
@@ -31,7 +31,7 @@ BrowserAccessibilityManager::ToBrowserAccessibilityManagerWin() {
 }
 
 BrowserAccessibilityManagerWin::BrowserAccessibilityManagerWin(
-    const SimpleAXTreeUpdate& initial_tree,
+    const ui::AXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(delegate, factory),
@@ -50,7 +50,7 @@ BrowserAccessibilityManagerWin::~BrowserAccessibilityManagerWin() {
 }
 
 // static
-SimpleAXTreeUpdate
+ui::AXTreeUpdate
     BrowserAccessibilityManagerWin::GetEmptyDocument() {
   ui::AXNodeData empty_document;
   empty_document.id = 0;
@@ -60,7 +60,7 @@ SimpleAXTreeUpdate
       (1 << ui::AX_STATE_READ_ONLY) |
       (1 << ui::AX_STATE_BUSY);
 
-  SimpleAXTreeUpdate update;
+  ui::AXTreeUpdate update;
   update.nodes.push_back(empty_document);
   return update;
 }
@@ -84,7 +84,7 @@ void BrowserAccessibilityManagerWin::MaybeCallNotifyWinEvent(
     // This line and other LOG(WARNING) lines are temporary, to debug
     // flaky failures in DumpAccessibilityEvent* tests.
     // http://crbug.com/440579
-    LOG(WARNING) << "Not firing AX event because of no delegate";
+    DLOG(WARNING) << "Not firing AX event because of no delegate";
     return;
   }
 
@@ -93,7 +93,7 @@ void BrowserAccessibilityManagerWin::MaybeCallNotifyWinEvent(
 
   HWND hwnd = delegate->AccessibilityGetAcceleratedWidget();
   if (!hwnd) {
-    LOG(WARNING) << "Not firing AX event because of no hwnd";
+    DLOG(WARNING) << "Not firing AX event because of no hwnd";
     return;
   }
 
@@ -122,7 +122,7 @@ void BrowserAccessibilityManagerWin::MaybeCallNotifyWinEvent(
       node == GetRoot() &&
       node->PlatformChildCount() == 0 &&
       !node->HasState(ui::AX_STATE_BUSY) &&
-      !node->GetBoolAttribute(ui::AX_ATTR_DOC_LOADED)) {
+      !node->manager()->GetTreeData().loaded) {
     return;
   }
 
@@ -175,7 +175,7 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
     BrowserAccessibility* node) {
   BrowserAccessibilityDelegate* root_delegate = GetDelegateFromRootManager();
   if (!root_delegate || !root_delegate->AccessibilityGetAcceleratedWidget()) {
-    LOG(WARNING) << "Not firing AX event because of no root_delegate or hwnd";
+    DLOG(WARNING) << "Not firing AX event because of no root_delegate or hwnd";
     return;
   }
 
@@ -205,7 +205,7 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
       node == GetRoot() &&
       node->PlatformChildCount() == 0 &&
       !node->HasState(ui::AX_STATE_BUSY) &&
-      !node->GetBoolAttribute(ui::AX_ATTR_DOC_LOADED)) {
+      !node->manager()->GetTreeData().loaded) {
     return;
   }
 
@@ -255,9 +255,15 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
     case ui::AX_EVENT_SELECTED_CHILDREN_CHANGED:
       event_id = EVENT_OBJECT_SELECTIONWITHIN;
       break;
-    case ui::AX_EVENT_TEXT_SELECTION_CHANGED:
+    case ui::AX_EVENT_DOCUMENT_SELECTION_CHANGED: {
+      // Fire the event on the object where the focus of the selection is.
+      int32 focus_id = GetTreeData().sel_focus_object_id;
+      BrowserAccessibility* focus_object = GetFromID(focus_id);
+      if (focus_object)
+        node = focus_object;
       event_id = IA2_EVENT_TEXT_CARET_MOVED;
       break;
+    }
     default:
       // Not all WebKit accessibility events result in a Windows
       // accessibility notification.
@@ -290,6 +296,7 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
 
 void BrowserAccessibilityManagerWin::OnNodeCreated(ui::AXTree* tree,
                                                    ui::AXNode* node) {
+  DCHECK(node);
   BrowserAccessibilityManager::OnNodeCreated(tree, node);
   BrowserAccessibility* obj = GetFromAXNode(node);
   if (!obj)
@@ -303,6 +310,7 @@ void BrowserAccessibilityManagerWin::OnNodeCreated(ui::AXTree* tree,
 
 void BrowserAccessibilityManagerWin::OnNodeWillBeDeleted(ui::AXTree* tree,
                                                          ui::AXNode* node) {
+  DCHECK(node);
   BrowserAccessibilityManager::OnNodeWillBeDeleted(tree, node);
   BrowserAccessibility* obj = GetFromAXNode(node);
   if (!obj)
@@ -337,7 +345,9 @@ void BrowserAccessibilityManagerWin::OnAtomicUpdateFinished(
   // The first step moves win_attributes_ to old_win_attributes_ and then
   // recomputes all of win_attributes_ other than IAccessibleText.
   for (size_t i = 0; i < changes.size(); ++i) {
-    BrowserAccessibility* obj = GetFromAXNode(changes[i].node);
+    const ui::AXNode* changed_node = changes[i].node;
+    DCHECK(changed_node);
+    BrowserAccessibility* obj = GetFromAXNode(changed_node);
     if (obj && obj->IsNative() && !obj->PlatformIsChildOfLeaf())
       obj->ToBrowserAccessibilityWin()->UpdateStep1ComputeWinAttributes();
   }
@@ -346,7 +356,9 @@ void BrowserAccessibilityManagerWin::OnAtomicUpdateFinished(
   // concatenation of all of its child text nodes, so it can't run until
   // the text of all of the nodes was computed in the previous step.
   for (size_t i = 0; i < changes.size(); ++i) {
-    BrowserAccessibility* obj = GetFromAXNode(changes[i].node);
+    const ui::AXNode* changed_node = changes[i].node;
+    DCHECK(changed_node);
+    BrowserAccessibility* obj = GetFromAXNode(changed_node);
     if (obj && obj->IsNative() && !obj->PlatformIsChildOfLeaf())
       obj->ToBrowserAccessibilityWin()->UpdateStep2ComputeHypertext();
   }
@@ -360,7 +372,9 @@ void BrowserAccessibilityManagerWin::OnAtomicUpdateFinished(
   // At the end, it deletes old_win_attributes_ since they're not needed
   // anymore.
   for (size_t i = 0; i < changes.size(); ++i) {
-    BrowserAccessibility* obj = GetFromAXNode(changes[i].node);
+    const ui::AXNode* changed_node = changes[i].node;
+    DCHECK(changed_node);
+    BrowserAccessibility* obj = GetFromAXNode(changed_node);
     if (obj && obj->IsNative() && !obj->PlatformIsChildOfLeaf()) {
       obj->ToBrowserAccessibilityWin()->UpdateStep3FireEvents(
           changes[i].type == AXTreeDelegate::SUBTREE_CREATED);

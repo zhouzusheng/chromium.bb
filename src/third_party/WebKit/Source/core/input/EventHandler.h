@@ -86,7 +86,7 @@ enum class DragInitiator;
 
 class CORE_EXPORT EventHandler final : public NoBaseWillBeGarbageCollectedFinalized<EventHandler> {
     WTF_MAKE_NONCOPYABLE(EventHandler);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(EventHandler);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(EventHandler);
 public:
     explicit EventHandler(LocalFrame*);
     ~EventHandler();
@@ -176,7 +176,7 @@ public:
 
     void setMouseDownMayStartAutoscroll() { m_mouseDownMayStartAutoscroll = true; }
 
-    static unsigned accessKeyModifiers();
+    static PlatformEvent::Modifiers accessKeyModifiers();
     bool handleAccessKey(const PlatformKeyboardEvent&);
     bool keyEvent(const PlatformKeyboardEvent&);
     void defaultKeyboardEventHandler(KeyboardEvent*);
@@ -203,7 +203,7 @@ public:
     SelectionController& selectionController() const { return *m_selectionController; }
 
     class TouchInfo {
-        ALLOW_ONLY_INLINE_ALLOCATION();
+        DISALLOW_NEW_EXCEPT_PLACEMENT_NEW();
     public:
         DEFINE_INLINE_TRACE()
         {
@@ -282,12 +282,24 @@ private:
 
     void updateMouseEventTargetNode(Node*, const PlatformMouseEvent&);
 
-    /* Dispatches mouseover, mouseout, mouseenter and mouseleave events to appropriate nodes when the mouse pointer moves from one node to another. */
+    // Returns true when the sent PE has defaultPrevented or defaultHandled set.
+    bool dispatchPointerEvent(Node* target, const AtomicString& eventType, const PlatformMouseEvent&, Node* relatedTarget = nullptr);
+
+    // Dispatches mouseover, mouseout, mouseenter and mouseleave events to appropriate nodes when the mouse pointer moves from one node to another.
     void sendMouseEventsForNodeTransition(Node*, Node*, const PlatformMouseEvent&);
 
     MouseEventWithHitTestResults prepareMouseEvent(const HitTestRequest&, const PlatformMouseEvent&);
 
     bool dispatchMouseEvent(const AtomicString& eventType, Node* target, int clickCount, const PlatformMouseEvent&);
+
+    // Dispatches ME after corresponding PE provided the PE has not been canceled. The eventType arg
+    // must be a mouse event that can be gated though a preventDefaulted pointerdown (i.e., one of
+    // {mousedown, mousemove, mouseup}).
+    // TODO(mustaq): Can we avoid the clickCount param, instead use PlatformMouseEvent's count?
+    //     Same applied to dispatchMouseEvent() above.
+    bool updatePointerTargetAndDispatchEvents(const AtomicString& mouseEventType, Node* target,
+        int clickCount, const PlatformMouseEvent&);
+
     bool dispatchDragEvent(const AtomicString& eventType, Node* target, const PlatformMouseEvent&, DataTransfer*);
 
     void clearDragDataTransfer();
@@ -329,6 +341,8 @@ private:
     bool panScrollInProgress() const;
     void setLastKnownMousePosition(const PlatformMouseEvent&);
 
+    void conditionallyEnableMouseEventForPointerTypeMouse(const PlatformMouseEvent&);
+
     bool shouldTopControlsConsumeScroll(FloatSize) const;
 
     // If the given element is a shadow host and its root has delegatesFocus=false flag,
@@ -336,7 +350,7 @@ private:
     // the given element.
     bool slideFocusOnShadowHostIfNecessary(const Element&);
 
-    void dispatchPointerEventsForTouchEvent(const PlatformTouchEvent&, WillBeHeapVector<TouchInfo>&);
+    void dispatchPointerEvents(const PlatformTouchEvent&, WillBeHeapVector<TouchInfo>&);
     void sendPointerCancels(WillBeHeapVector<TouchInfo>&);
 
     bool dispatchTouchEvents(const PlatformTouchEvent&, WillBeHeapVector<TouchInfo>&, bool, bool);
@@ -410,6 +424,11 @@ private:
     bool m_touchPressed;
 
     PointerIdManager m_pointerIdManager;
+
+    // Prevents firing mousedown, mousemove & mouseup in-between a canceled pointerdown and next pointerup/pointercancel.
+    // See "PREVENT MOUSE EVENT flag" in the spec:
+    //   https://w3c.github.io/pointerevents/#compatibility-mapping-with-mouse-events
+    bool m_preventMouseEventForPointerTypeMouse;
 
     // This is set upon sending a pointercancel for touch, prevents PE dispatches for touches until
     // all touch-points become inactive.

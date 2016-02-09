@@ -11,14 +11,15 @@
 #include "gl/GrGLCaps.h"
 #include "gl/GrGLFragmentProcessor.h"
 #include "gl/GrGLTexture.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
 
 class GrGLSimpleTextureEffect : public GrGLFragmentProcessor {
 public:
     GrGLSimpleTextureEffect(const GrProcessor&) {}
 
     virtual void emitCode(EmitArgs& args) override {
-        GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+        GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
         fsBuilder->codeAppendf("\t%s = ", args.fOutputColor);
         fsBuilder->appendTextureLookupAndModulate(args.fInputColor,
                                                   args.fSamplers[0],
@@ -38,7 +39,7 @@ void GrSimpleTextureEffect::onComputeInvariantOutput(GrInvariantOutput* inout) c
 }
 
 void GrSimpleTextureEffect::onGetGLProcessorKey(const GrGLSLCaps& caps,
-                                              GrProcessorKeyBuilder* b) const {
+                                                GrProcessorKeyBuilder* b) const {
     GrGLSimpleTextureEffect::GenKey(*this, caps, b);
 }
 
@@ -72,6 +73,5 @@ const GrFragmentProcessor* GrSimpleTextureEffect::TestCreate(GrProcessorTestData
     GrCoordSet coordSet = kCoordSets[d->fRandom->nextULessThan(SK_ARRAY_COUNT(kCoordSets))];
 
     const SkMatrix& matrix = GrTest::TestMatrix(d->fRandom);
-    return GrSimpleTextureEffect::Create(d->fProcDataManager, d->fTextures[texIdx], matrix,
-                                         coordSet);
+    return GrSimpleTextureEffect::Create(d->fTextures[texIdx], matrix, coordSet);
 }

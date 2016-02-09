@@ -39,7 +39,6 @@
 WebInspector.TimelineModel = function(tracingModel, eventFilter)
 {
     WebInspector.Object.call(this);
-    this._filters = [];
     this._tracingModel = tracingModel;
     this._eventFilter = eventFilter;
     this._targets = [];
@@ -97,6 +96,7 @@ WebInspector.TimelineModel.RecordType = {
 
     XHRReadyStateChange: "XHRReadyStateChange",
     XHRLoad: "XHRLoad",
+    CompileScript: "v8.compile",
     EvaluateScript: "EvaluateScript",
 
     CommitLoad: "CommitLoad",
@@ -165,9 +165,18 @@ WebInspector.TimelineModel.Events = {
     RecordsCleared: "RecordsCleared",
     RecordingStarted: "RecordingStarted",
     RecordingStopped: "RecordingStopped",
-    RecordFilterChanged: "RecordFilterChanged",
     BufferUsage: "BufferUsage",
     RetrieveEventsProgress: "RetrieveEventsProgress"
+}
+
+/**
+ * @enum {string}
+ */
+WebInspector.TimelineModel.WarningType = {
+    ForcedStyle: "ForcedStyle",
+    ForcedLayout: "ForcedLayout",
+    IdleDeadlineExceeded: "IdleDeadlineExceeded",
+    V8Deopt: "V8Deopt"
 }
 
 WebInspector.TimelineModel.MainThreadName = "main";
@@ -178,13 +187,21 @@ WebInspector.TimelineModel.RendererMainThreadName = "CrRendererMain";
  * @param {!Array.<!WebInspector.TracingModel.Event>} events
  * @param {function(!WebInspector.TracingModel.Event)} onStartEvent
  * @param {function(!WebInspector.TracingModel.Event)} onEndEvent
- * @param {function(!WebInspector.TracingModel.Event,?WebInspector.TracingModel.Event)=} onInstantEvent
+ * @param {function(!WebInspector.TracingModel.Event,?WebInspector.TracingModel.Event)|undefined=} onInstantEvent
+ * @param {number=} startTime
+ * @param {number=} endTime
  */
-WebInspector.TimelineModel.forEachEvent = function(events, onStartEvent, onEndEvent, onInstantEvent)
+WebInspector.TimelineModel.forEachEvent = function(events, onStartEvent, onEndEvent, onInstantEvent, startTime, endTime)
 {
+    startTime = startTime || 0;
+    endTime = endTime || Infinity;
     var stack = [];
     for (var i = 0; i < events.length; ++i) {
         var e = events[i];
+        if ((e.endTime || e.startTime) < startTime)
+            continue;
+        if (e.startTime >= endTime)
+            break;
         if (WebInspector.TracingModel.isAsyncPhase(e.phase) || WebInspector.TracingModel.isFlowPhase(e.phase))
             continue;
         while (stack.length && stack.peekLast().endTime <= e.startTime)
@@ -451,18 +468,10 @@ WebInspector.TimelineModel.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TimelineModel.Filter} filter
-     */
-    addFilter: function(filter)
-    {
-        this._filters.push(filter);
-        filter.addEventListener(WebInspector.TimelineModel.Filter.Events.Changed, this._filterChanged, this);
-    },
-
-    /**
+     * @param {!Array<!WebInspector.TimelineModel.Filter>} filters
      * @param {function(!WebInspector.TimelineModel.Record)|function(!WebInspector.TimelineModel.Record,number)} callback
      */
-    forAllFilteredRecords: function(callback)
+    forAllFilteredRecords: function(filters, callback)
     {
         /**
          * @param {!WebInspector.TimelineModel.Record} record
@@ -472,11 +481,9 @@ WebInspector.TimelineModel.prototype = {
          */
         function processRecord(record, depth)
         {
-            var visible = this.isVisible(record.traceEvent());
-            if (visible) {
-                if (callback(record, depth))
-                    return true;
-            }
+            var visible = WebInspector.TimelineModel.isVisible(filters, record.traceEvent());
+            if (visible && callback(record, depth))
+                return true;
 
             for (var i = 0; i < record.children().length; ++i) {
                 if (processRecord.call(this, record.children()[i], visible ? depth + 1 : depth))
@@ -489,23 +496,6 @@ WebInspector.TimelineModel.prototype = {
             processRecord.call(this, this._records[i], 0);
     },
 
-    /**
-     * @param {!WebInspector.TracingModel.Event} event
-     * @return {boolean}
-     */
-    isVisible: function(event)
-    {
-        for (var i = 0; i < this._filters.length; ++i) {
-            if (!this._filters[i].accept(event))
-                return false;
-        }
-        return true;
-    },
-
-    _filterChanged: function()
-    {
-        this.dispatchEventToListeners(WebInspector.TimelineModel.Events.RecordFilterChanged);
-    },
 
     /**
      * @return {!Array.<!WebInspector.TimelineModel.Record>}
@@ -992,10 +982,12 @@ WebInspector.TimelineModel.prototype = {
             }
         }
 
-        if (jsSamples) {
+        if (jsSamples && jsSamples.length)
             events = events.mergeOrdered(jsSamples, WebInspector.TracingModel.Event.orderedCompareStartTime);
+        if (jsSamples || events.some(function(e) { return e.name === WebInspector.TimelineModel.RecordType.JSSample; })) {
             var jsFrameEvents = WebInspector.TimelineJSProfileProcessor.generateJSFrameEvents(events);
-            events = jsFrameEvents.mergeOrdered(events, WebInspector.TracingModel.Event.orderedCompareStartTime);
+            if (jsFrameEvents && jsFrameEvents.length)
+                events = jsFrameEvents.mergeOrdered(events, WebInspector.TracingModel.Event.orderedCompareStartTime);
         }
 
         var threadEvents;
@@ -1079,6 +1071,8 @@ WebInspector.TimelineModel.prototype = {
             if (event.args["beginData"])
                 event.initiator = this._lastScheduleStyleRecalculation[event.args["beginData"]["frame"]];
             this._lastRecalculateStylesEvent = event;
+            if (this._currentScriptEvent)
+                event.warning = WebInspector.TimelineModel.WarningType.ForcedStyle;
             break;
 
         case recordTypes.ScheduleStyleInvalidationTracking:
@@ -1112,7 +1106,7 @@ WebInspector.TimelineModel.prototype = {
             }
             this._layoutInvalidate[frameId] = null;
             if (this._currentScriptEvent)
-                event.warning = WebInspector.UIString("Forced synchronous layout is a possible performance bottleneck.");
+                event.warning = WebInspector.TimelineModel.WarningType.ForcedLayout;
             break;
 
         case recordTypes.EvaluateScript:
@@ -1129,13 +1123,11 @@ WebInspector.TimelineModel.prototype = {
             this._invalidationTracker.didPaint(event);
             event.highlightQuad = event.args["data"]["clip"];
             event.backendNodeId = event.args["data"]["nodeId"];
-            var layerUpdateEvent = this._findAncestorEvent(recordTypes.UpdateLayer);
-            if (!layerUpdateEvent || layerUpdateEvent.args["layerTreeId"] !== this._inspectedTargetLayerTreeId)
-                break;
             // Only keep layer paint events, skip paints for subframes that get painted to the same layer as parent.
             if (!event.args["data"]["layerId"])
                 break;
-            this._lastPaintForLayer[layerUpdateEvent.args["layerId"]] = event;
+            var layerId = event.args["data"]["layerId"];
+            this._lastPaintForLayer[layerId] = event;
             break;
 
         case recordTypes.DisplayItemListSnapshot:
@@ -1203,8 +1195,7 @@ WebInspector.TimelineModel.prototype = {
 
         case recordTypes.FireIdleCallback:
             if (event.duration > eventData["allottedMilliseconds"]) {
-                event.warning = WebInspector.UIString("Idle callback execution extended beyond deadline by " +
-                    Number.millisToString(event.duration - eventData["allottedMilliseconds"], true));
+                event.warning = WebInspector.TimelineModel.WarningType.IdleDeadlineExceeded;
             }
             break;
 
@@ -1440,6 +1431,20 @@ WebInspector.TimelineModel.prototype = {
 }
 
 /**
+ * @param {!Array<!WebInspector.TimelineModel.Filter>} filters
+ * @param {!WebInspector.TracingModel.Event} event
+ * @return {boolean}
+ */
+WebInspector.TimelineModel.isVisible = function(filters, event)
+{
+    for (var i = 0; i < filters.length; ++i) {
+        if (!filters[i].accept(event))
+            return false;
+    }
+    return true;
+}
+
+/**
  * @constructor
  */
 WebInspector.TimelineModel.ProfileTreeNode = function()
@@ -1456,7 +1461,7 @@ WebInspector.TimelineModel.ProfileTreeNode = function()
     this.id;
     /** @type {!WebInspector.TracingModel.Event} */
     this.event;
-    /** @type {?Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */
+    /** @type {?Map<string|symbol,!WebInspector.TimelineModel.ProfileTreeNode>} */
     this.children;
     /** @type {?WebInspector.TimelineModel.ProfileTreeNode} */
     this.parent;
@@ -1467,7 +1472,7 @@ WebInspector.TimelineModel.ProfileTreeNode = function()
  * @param {number} startTime
  * @param {number} endTime
  * @param {!Array<!WebInspector.TimelineModel.Filter>} filters
- * @param {function(!WebInspector.TracingModel.Event):string} eventIdCallback
+ * @param {function(!WebInspector.TracingModel.Event):(string|symbol)=} eventIdCallback
  * @return {!WebInspector.TimelineModel.ProfileTreeNode}
  */
 WebInspector.TimelineModel.buildTopDownTree = function(events, startTime, endTime, filters, eventIdCallback)
@@ -1478,36 +1483,18 @@ WebInspector.TimelineModel.buildTopDownTree = function(events, startTime, endTim
     root.totalTime = initialTime;
     root.selfTime = initialTime;
     root.name = WebInspector.UIString("Top-Down Chart");
+    root.children = /** @type {!Map<string, !WebInspector.TimelineModel.ProfileTreeNode>} */ (new Map());
     var parent = root;
-
-    /**
-     * @param {!WebInspector.TracingModel.Event} e
-     * @return {boolean}
-     */
-    function filter(e)
-    {
-        if (!e.endTime && e.phase !== WebInspector.TracingModel.Phase.Instant)
-            return false;
-        if (e.endTime <= startTime || e.startTime >= endTime)
-            return false;
-        if (WebInspector.TracingModel.isAsyncPhase(e.phase))
-            return false;
-        for (var i = 0, l = filters.length; i < l; ++i) {
-            if (!filters[i].accept(e))
-                return false;
-        }
-        return true;
-    }
 
     /**
      * @param {!WebInspector.TracingModel.Event} e
      */
     function onStartEvent(e)
     {
-        if (!filter(e))
+        if (!WebInspector.TimelineModel.isVisible(filters, e))
             return;
-        var time = Math.min(endTime, e.endTime) - Math.max(startTime, e.startTime);
-        var id = eventIdCallback(e);
+        var time = e.endTime ? Math.min(endTime, e.endTime) - Math.max(startTime, e.startTime) : 0;
+        var id = eventIdCallback ? eventIdCallback(e) : Symbol("uniqueEventId");
         if (!parent.children)
             parent.children = /** @type {!Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */ (new Map());
         var node = parent.children.get(id);
@@ -1528,7 +1515,8 @@ WebInspector.TimelineModel.buildTopDownTree = function(events, startTime, endTim
             console.log("Error: Negative self of " + parent.selfTime, e);
             parent.selfTime = 0;
         }
-        parent = node;
+        if (e.endTime)
+            parent = node;
     }
 
     /**
@@ -1536,12 +1524,13 @@ WebInspector.TimelineModel.buildTopDownTree = function(events, startTime, endTim
      */
     function onEndEvent(e)
     {
-        if (!filter(e))
+        if (!WebInspector.TimelineModel.isVisible(filters, e))
             return;
         parent = parent.parent;
     }
 
-    WebInspector.TimelineModel.forEachEvent(events, onStartEvent, onEndEvent);
+    var instantEventCallback = eventIdCallback ? undefined : onStartEvent; // Ignore instant events when aggregating.
+    WebInspector.TimelineModel.forEachEvent(events, onStartEvent, onEndEvent, instantEventCallback, startTime, endTime);
     root.totalTime -= root.selfTime;
     root.selfTime = 0;
     return root;
@@ -1563,6 +1552,7 @@ WebInspector.TimelineModel.buildBottomUpTree = function(topDownTree, groupingCal
     var nodesOnStack = /** @type {!Set<string>} */ (new Set());
     if (topDownTree.children)
         topDownTree.children.forEach(processNode);
+    buRoot.totalTime = topDownTree.totalTime;
 
     /**
      * @param {!WebInspector.TimelineModel.ProfileTreeNode} tdNode
@@ -1570,6 +1560,8 @@ WebInspector.TimelineModel.buildBottomUpTree = function(topDownTree, groupingCal
     function processNode(tdNode)
     {
         var buParent = groupingCallback && groupingCallback(tdNode) || buRoot;
+        if (buParent !== buRoot)
+            buRoot.children.set(buParent.id, buParent);
         appendNode(tdNode, buParent);
         var hadNode = nodesOnStack.has(tdNode.id);
         if (!hadNode)
@@ -1658,15 +1650,9 @@ WebInspector.TimelineModel.NetworkRequest.prototype = {
 
 /**
  * @constructor
- * @extends {WebInspector.Object}
  */
 WebInspector.TimelineModel.Filter = function()
 {
-    WebInspector.Object.call(this);
-}
-
-WebInspector.TimelineModel.Filter.Events = {
-    Changed: "Changed"
 }
 
 WebInspector.TimelineModel.Filter.prototype = {
@@ -1677,14 +1663,7 @@ WebInspector.TimelineModel.Filter.prototype = {
     accept: function(event)
     {
         return true;
-    },
-
-    notifyFilterChanged: function()
-    {
-        this.dispatchEventToListeners(WebInspector.TimelineModel.Filter.Events.Changed, this);
-    },
-
-    __proto__: WebInspector.Object.prototype
+    }
 }
 
 /**

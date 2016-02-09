@@ -25,7 +25,6 @@
         'geometry/dip_util.h',
         'geometry/insets.cc',
         'geometry/insets.h',
-        'geometry/insets_base.h',
         'geometry/insets_f.cc',
         'geometry/insets_f.h',
         'geometry/matrix3_f.cc',
@@ -179,7 +178,6 @@
         'gfx_export.h',
         'gfx_paths.cc',
         'gfx_paths.h',
-        
         'harfbuzz_font_skia.cc',
         'harfbuzz_font_skia.h',
         'hud_font.cc',
@@ -218,6 +216,8 @@
         'linux_font_delegate.h',
         'mac/coordinate_conversion.h',
         'mac/coordinate_conversion.mm',
+        'mac/io_surface_manager.cc',
+        'mac/io_surface_manager.h',
         'mac/nswindow_frame_controls.h',
         'mac/nswindow_frame_controls.mm',
         'mac/scoped_cocoa_disable_screen_updates.h',
@@ -309,8 +309,6 @@
         'win/dpi.h',
         'win/hwnd_util.cc',
         'win/hwnd_util.h',
-        'win/metro_mode.cc',
-        'win/metro_mode.h',
         'win/scoped_set_map_mode.h',
         'win/singleton_hwnd.cc',
         'win/singleton_hwnd.h',
@@ -373,6 +371,13 @@
           # C4324 is structure was padded due to __declspec(align()), which is
           # uninteresting.
           'msvs_disabled_warnings': [ 4267, 4324 ],
+        }],
+        ['OS=="mac"', {
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
+            ],
+          },
         }],
         ['OS=="android"', {
           'sources!': [

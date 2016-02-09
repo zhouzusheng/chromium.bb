@@ -317,7 +317,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
                 goto fail;
             }
             if (av_cmp_q(st->sample_aspect_ratio, codec->sample_aspect_ratio)
-                && FFABS(av_q2d(st->sample_aspect_ratio) - av_q2d(codec->sample_aspect_ratio)) > 0.004*av_q2d(st->sample_aspect_ratio)
+                && fabs(av_q2d(st->sample_aspect_ratio) - av_q2d(codec->sample_aspect_ratio)) > 0.004*av_q2d(st->sample_aspect_ratio)
             ) {
                 if (st->sample_aspect_ratio.num != 0 &&
                     st->sample_aspect_ratio.den != 0 &&
@@ -437,11 +437,7 @@ static int init_pts(AVFormatContext *s)
             if (den <= 0)
                 return AVERROR_INVALIDDATA;
 
-#if FF_API_LAVF_FRAC
-FF_DISABLE_DEPRECATION_WARNINGS
             frac_init(st->priv_pts, 0, 0, den);
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
         }
     }
 
@@ -500,7 +496,7 @@ static int compute_pkt_fields2(AVFormatContext *s, AVStream *st, AVPacket *pkt)
             av_ts2str(pkt->pts), av_ts2str(pkt->dts), av_ts2str(st->cur_dts), delay, pkt->size, pkt->stream_index);
 
     if (pkt->duration < 0 && st->codec->codec_type != AVMEDIA_TYPE_SUBTITLE) {
-        av_log(s, AV_LOG_WARNING, "Packet with invalid duration %d in stream %d\n",
+        av_log(s, AV_LOG_WARNING, "Packet with invalid duration %"PRId64" in stream %d\n",
                pkt->duration, pkt->stream_index);
         pkt->duration = 0;
     }
@@ -523,13 +519,9 @@ static int compute_pkt_fields2(AVFormatContext *s, AVStream *st, AVPacket *pkt)
             av_log(s, AV_LOG_WARNING, "Encoder did not produce proper pts, making some up.\n");
             warned = 1;
         }
-#if FF_API_LAVF_FRAC
-FF_DISABLE_DEPRECATION_WARNINGS
         pkt->dts =
 //        pkt->pts= st->cur_dts;
             pkt->pts = st->priv_pts->val;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
     }
 
     //calculate dts from pts
@@ -565,11 +557,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
             av_ts2str(pkt->pts), av_ts2str(pkt->dts));
 
     st->cur_dts = pkt->dts;
-#if FF_API_LAVF_FRAC
-FF_DISABLE_DEPRECATION_WARNINGS
     st->priv_pts->val = pkt->dts;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     /* update pts */
     switch (st->codec->codec_type) {
@@ -581,20 +569,12 @@ FF_ENABLE_DEPRECATION_WARNINGS
         /* HACK/FIXME, we skip the initial 0 size packets as they are most
          * likely equal to the encoder delay, but it would be better if we
          * had the real timestamps from the encoder */
-#if FF_API_LAVF_FRAC
-FF_DISABLE_DEPRECATION_WARNINGS
         if (frame_size >= 0 && (pkt->size || st->priv_pts->num != st->priv_pts->den >> 1 || st->priv_pts->val)) {
             frac_add(st->priv_pts, (int64_t)st->time_base.den * frame_size);
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
         }
         break;
     case AVMEDIA_TYPE_VIDEO:
-#if FF_API_LAVF_FRAC
-FF_DISABLE_DEPRECATION_WARNINGS
         frac_add(st->priv_pts, (int64_t)st->time_base.den * st->codec->time_base.num);
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
         break;
     }
     return 0;
@@ -760,19 +740,14 @@ int ff_interleave_add_packet(AVFormatContext *s, AVPacket *pkt,
     this_pktl      = av_mallocz(sizeof(AVPacketList));
     if (!this_pktl)
         return AVERROR(ENOMEM);
-    this_pktl->pkt = *pkt;
-    pkt->buf       = NULL;
-    pkt->side_data = NULL;
-    pkt->side_data_elems = 0;
     if ((pkt->flags & AV_PKT_FLAG_UNCODED_FRAME)) {
         av_assert0(pkt->size == UNCODED_FRAME_PACKET_SIZE);
         av_assert0(((AVFrame *)pkt->data)->buf);
-    } else {
-        // Duplicate the packet if it uses non-allocated memory
-        if ((ret = av_dup_packet(&this_pktl->pkt)) < 0) {
-            av_free(this_pktl);
-            return ret;
-        }
+    }
+
+    if ((ret = av_packet_ref(&this_pktl->pkt, pkt)) < 0) {
+        av_free(this_pktl);
+        return ret;
     }
 
     if (s->streams[pkt->stream_index]->last_in_packet_buffer) {
@@ -822,6 +797,8 @@ next_non_null:
 
     s->streams[pkt->stream_index]->last_in_packet_buffer =
         *next_point                                      = this_pktl;
+
+    av_packet_unref(pkt);
 
     return 0;
 }
@@ -943,7 +920,7 @@ static int interleave_packet(AVFormatContext *s, AVPacket *out, AVPacket *in, in
     if (s->oformat->interleave_packet) {
         int ret = s->oformat->interleave_packet(s, out, in, flush);
         if (in)
-            av_free_packet(in);
+            av_packet_unref(in);
         return ret;
     } else
         return ff_interleave_packet_per_dts(s, out, in, flush);
@@ -991,7 +968,7 @@ int av_interleaved_write_frame(AVFormatContext *s, AVPacket *pkt)
         if (ret >= 0)
             s->streams[opkt.stream_index]->nb_frames++;
 
-        av_free_packet(&opkt);
+        av_packet_unref(&opkt);
 
         if (ret < 0)
             return ret;
@@ -1019,7 +996,7 @@ int av_write_trailer(AVFormatContext *s)
         if (ret >= 0)
             s->streams[pkt.stream_index]->nb_frames++;
 
-        av_free_packet(&pkt);
+        av_packet_unref(&pkt);
 
         if (ret < 0)
             goto fail;
@@ -1082,12 +1059,8 @@ int ff_write_chained(AVFormatContext *dst, int dst_stream, AVPacket *pkt,
     if (interleave) ret = av_interleaved_write_frame(dst, &local_pkt);
     else            ret = av_write_frame(dst, &local_pkt);
     pkt->buf = local_pkt.buf;
-#if FF_API_DESTRUCT_PACKET
-FF_DISABLE_DEPRECATION_WARNINGS
     pkt->side_data       = local_pkt.side_data;
     pkt->side_data_elems = local_pkt.side_data_elems;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
     return ret;
 }
 

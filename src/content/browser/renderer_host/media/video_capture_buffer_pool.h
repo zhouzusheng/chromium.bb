@@ -55,7 +55,7 @@ class CONTENT_EXPORT VideoCaptureBufferPool
     virtual size_t mapped_size() const = 0;
     virtual void* data(int plane) = 0;
     virtual ClientBuffer AsClientBuffer(int plane) = 0;
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !(defined(OS_MACOSX) && !defined(OS_IOS))
     virtual base::FileDescriptor AsPlatformFile() = 0;
 #endif
   };
@@ -119,13 +119,14 @@ class CONTENT_EXPORT VideoCaptureBufferPool
   // Tracker carries indication of pixel format and storage type.
   class Tracker {
    public:
-    static scoped_ptr<Tracker> CreateTracker(bool use_gmb);
+    static scoped_ptr<Tracker> CreateTracker(media::VideoPixelStorage storage);
 
     Tracker()
         : pixel_count_(0), held_by_producer_(false), consumer_hold_count_(0) {}
     virtual bool Init(media::VideoPixelFormat format,
                       media::VideoPixelStorage storage_type,
-                      const gfx::Size& dimensions) = 0;
+                      const gfx::Size& dimensions,
+                      base::Lock* lock) = 0;
     virtual ~Tracker();
 
     size_t pixel_count() const { return pixel_count_; }

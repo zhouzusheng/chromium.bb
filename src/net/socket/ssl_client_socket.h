@@ -114,6 +114,10 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
 
   static const char* NextProtoStatusToString(const NextProtoStatus status);
 
+  // Export SSL key material to be logged to the specified file if platform
+  // uses OpenSSL. Must be called before SSLClientSockets are created.
+  static void SetSSLKeyLogFile(const std::string& ssl_keylog_file);
+
   // Returns true if |error| is OK or |load_flags| ignores certificate errors
   // and |error| is a certificate error.
   static bool IgnoreCertError(int error, int load_flags);
@@ -152,11 +156,9 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
 
   // Records histograms for channel id support during full handshakes - resumed
   // handshakes are ignored.
-  static void RecordChannelIDSupport(
-      ChannelIDService* channel_id_service,
-      bool negotiated_channel_id,
-      bool channel_id_enabled,
-      bool supports_ecc);
+  static void RecordChannelIDSupport(ChannelIDService* channel_id_service,
+                                     bool negotiated_channel_id,
+                                     bool channel_id_enabled);
 
   // Returns whether TLS channel ID is enabled.
   static bool IsChannelIDEnabled(

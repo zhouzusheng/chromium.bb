@@ -17,12 +17,17 @@ const char kConfigModeKey[] = "mode";
 const char kConfigModePreemptive[] = "PREEMPTIVE_TRACING_MODE";
 const char kConfigModeReactive[] = "REACTIVE_TRACING_MODE";
 
+const char kConfigScenarioName[] = "scenario_name";
+const char kConfigEnableBlinkFeatures[] = "enable_blink_features";
+const char kConfigDisableBlinkFeatures[] = "disable_blink_features";
+
 const char kConfigCategoryKey[] = "category";
 const char kConfigCategoryBenchmark[] = "BENCHMARK";
 const char kConfigCategoryBenchmarkDeep[] = "BENCHMARK_DEEP";
 const char kConfigCategoryBenchmarkGPU[] = "BENCHMARK_GPU";
 const char kConfigCategoryBenchmarkIPC[] = "BENCHMARK_IPC";
 const char kConfigCategoryBenchmarkStartup[] = "BENCHMARK_STARTUP";
+const char kConfigCategoryBlinkStyle[] = "BLINK_STYLE";
 
 }  // namespace
 
@@ -46,6 +51,8 @@ std::string BackgroundTracingConfigImpl::CategoryPresetToString(
       return kConfigCategoryBenchmarkIPC;
     case BackgroundTracingConfigImpl::BENCHMARK_STARTUP:
       return kConfigCategoryBenchmarkStartup;
+    case BackgroundTracingConfigImpl::BLINK_STYLE:
+      return kConfigCategoryBlinkStyle;
   }
   NOTREACHED();
   return "";
@@ -79,6 +86,11 @@ bool BackgroundTracingConfigImpl::StringToCategoryPreset(
     return true;
   }
 
+  if (category_preset_string == kConfigCategoryBlinkStyle) {
+    *category_preset = BackgroundTracingConfigImpl::BLINK_STYLE;
+    return true;
+  }
+
   return false;
 }
 
@@ -103,6 +115,13 @@ void BackgroundTracingConfigImpl::IntoDict(base::DictionaryValue* dict) const {
   }
 
   dict->Set(kConfigsKey, configs_list.Pass());
+
+  if (!scenario_name_.empty())
+    dict->SetString(kConfigScenarioName, scenario_name_);
+  if (!enable_blink_features_.empty())
+    dict->SetString(kConfigEnableBlinkFeatures, enable_blink_features_);
+  if (!disable_blink_features_.empty())
+    dict->SetString(kConfigDisableBlinkFeatures, disable_blink_features_);
 }
 
 void BackgroundTracingConfigImpl::AddPreemptiveRule(
@@ -138,6 +157,14 @@ scoped_ptr<BackgroundTracingConfigImpl> BackgroundTracingConfigImpl::FromDict(
     config = ReactiveFromDict(dict);
   } else {
     return nullptr;
+  }
+
+  if (config) {
+    dict->GetString(kConfigScenarioName, &config->scenario_name_);
+    dict->GetString(kConfigEnableBlinkFeatures,
+                    &config->enable_blink_features_);
+    dict->GetString(kConfigDisableBlinkFeatures,
+                    &config->disable_blink_features_);
   }
 
   return config.Pass();

@@ -12,9 +12,9 @@
 #include "device/devices_app/usb/public/interfaces/device.mojom.h"
 #include "device/devices_app/usb/public/interfaces/permission_provider.mojom.h"
 #include "device/usb/usb_device_handle.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/callback.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
+#include "mojo/public/cpp/bindings/binding.h"
+#include "mojo/public/cpp/bindings/callback.h"
+#include "mojo/public/cpp/bindings/interface_request.h"
 
 namespace net {
 class IOBuffer;
@@ -28,11 +28,6 @@ namespace usb {
 // lifetime.
 class DeviceImpl : public Device {
  public:
-  using MojoTransferInCallback =
-      mojo::Callback<void(TransferStatus, mojo::Array<uint8_t>)>;
-
-  using MojoTransferOutCallback = mojo::Callback<void(TransferStatus)>;
-
   DeviceImpl(scoped_refptr<UsbDevice> device,
              PermissionProviderPtr permission_provider,
              mojo::InterfaceRequest<Device> request);

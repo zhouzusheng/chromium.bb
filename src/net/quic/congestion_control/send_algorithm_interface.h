@@ -27,7 +27,7 @@ class RttStats;
 class NET_EXPORT_PRIVATE SendAlgorithmInterface {
  public:
   // A sorted vector of packets.
-  typedef std::vector<std::pair<QuicPacketNumber, TransmissionInfo>>
+  typedef std::vector<std::pair<QuicPacketNumber, QuicPacketLength>>
       CongestionVector;
 
   static SendAlgorithmInterface* Create(
@@ -74,6 +74,9 @@ class NET_EXPORT_PRIVATE SendAlgorithmInterface {
   // Called when the retransmission timeout fires.  Neither OnPacketAbandoned
   // nor OnPacketLost will be called for these packets.
   virtual void OnRetransmissionTimeout(bool packets_retransmitted) = 0;
+
+  // Called when connection migrates and cwnd needs to be reset.
+  virtual void OnConnectionMigration() = 0;
 
   // Calculate the time until we can send the next packet.
   virtual QuicTime::Delta TimeUntilSend(

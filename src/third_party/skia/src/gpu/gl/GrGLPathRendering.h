@@ -11,8 +11,8 @@
 #include "SkRefCnt.h"
 #include "GrPathRendering.h"
 #include "GrStencil.h"
-#include "gl/GrGLFunctions.h"
 #include "gl/GrGLProgram.h"
+#include "gl/GrGLTypes.h"
 
 class GrGLNameAllocator;
 class GrGLGpu;
@@ -94,7 +94,7 @@ private:
         /**
          * Gets a matrix that goes from local coordinates to GL normalized device coords.
          */
-        template<int Size> void getRTAdjustedGLMatrix(GrGLfloat* destMatrix) {
+        template<int Size> void getRTAdjustedGLMatrix(float* destMatrix) {
             SkMatrix combined;
             if (kBottomLeft_GrSurfaceOrigin == fRenderTargetOrigin) {
                 combined.setAll(SkIntToScalar(2) / fRenderTargetSize.fWidth, 0, -SK_Scalar1,

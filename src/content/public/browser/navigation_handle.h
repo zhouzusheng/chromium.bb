@@ -90,14 +90,16 @@ class CONTENT_EXPORT NavigationHandle {
   // Whether the navigation resulted in an error page.
   virtual bool IsErrorPage() = 0;
 
+  // Resumes a navigation that was previously deferred by a NavigationThrottle.
+  virtual void Resume() = 0;
+
   // Testing methods ----------------------------------------------------------
   //
   // The following methods should be used exclusively for writing unit tests.
 
   static scoped_ptr<NavigationHandle> CreateNavigationHandleForTesting(
       const GURL& url,
-      bool is_main_frame,
-      WebContents* web_contents);
+      RenderFrameHost* render_frame_host);
 
   // Registers a NavigationThrottle for tests. The throttle can
   // modify the request, pause the request or cancel the request. This will

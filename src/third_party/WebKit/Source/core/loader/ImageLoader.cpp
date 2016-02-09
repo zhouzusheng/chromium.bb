@@ -193,7 +193,7 @@ void ImageLoader::dispose()
 #if ENABLE(OILPAN)
 void ImageLoader::clearWeakMembers(Visitor* visitor)
 {
-    Vector<ImageLoaderClient*> deadClients;
+    Vector<UntracedMember<ImageLoaderClient>> deadClients;
     for (const auto& client : m_clients) {
         if (!Heap::isHeapObjectAlive(client)) {
             willRemoveClient(*client);
@@ -315,7 +315,9 @@ void ImageLoader::doUpdateFromElement(BypassMainWorldBehavior bypassBehavior, Up
         resourceRequest.setFetchCredentialsMode(WebURLRequest::FetchCredentialsModeSameOrigin);
         if (updateBehavior == UpdateForcedReload) {
             resourceRequest.setCachePolicy(ResourceRequestCachePolicy::ReloadBypassingCache);
-            // ImageLoader defers the load of images when in an ImageDocument. Don't defer this load on a forced reload.
+            resourceRequest.setLoFiState(WebURLRequest::LoFiOff);
+            // ImageLoader defers the load of images when in an ImageDocument.
+            // Don't defer this load on a forced reload.
             m_loadingImageDocument = false;
         }
 
@@ -571,7 +573,7 @@ void ImageLoader::updatedHasPendingEvent()
             m_keepAlive = m_element;
     } else {
         ASSERT(!m_derefElementTimer.isActive());
-        m_derefElementTimer.startOneShot(0, FROM_HERE);
+        m_derefElementTimer.startOneShot(0, BLINK_FROM_HERE);
     }
 }
 

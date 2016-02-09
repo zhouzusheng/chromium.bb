@@ -67,9 +67,9 @@ PassOwnPtr<ImageBuffer> ImageBuffer::create(PassOwnPtr<ImageBufferSurface> surfa
     return adoptPtr(new ImageBuffer(surface));
 }
 
-PassOwnPtr<ImageBuffer> ImageBuffer::create(const IntSize& size, OpacityMode opacityMode)
+PassOwnPtr<ImageBuffer> ImageBuffer::create(const IntSize& size, OpacityMode opacityMode, ImageInitializationMode initializationMode)
 {
-    OwnPtr<ImageBufferSurface> surface(adoptPtr(new UnacceleratedImageBufferSurface(size, opacityMode)));
+    OwnPtr<ImageBufferSurface> surface(adoptPtr(new UnacceleratedImageBufferSurface(size, opacityMode, initializationMode)));
     if (!surface->isValid())
         return nullptr;
     return adoptPtr(new ImageBuffer(surface.release()));
@@ -102,11 +102,6 @@ void ImageBuffer::disableDeferral() const
 bool ImageBuffer::writePixels(const SkImageInfo& info, const void* pixels, size_t rowBytes, int x, int y)
 {
     return m_surface->writePixels(info, pixels, rowBytes, x, y);
-}
-
-const SkBitmap& ImageBuffer::deprecatedBitmapForOverwrite() const
-{
-    return m_surface->deprecatedBitmapForOverwrite();
 }
 
 bool ImageBuffer::isSurfaceValid() const
@@ -214,9 +209,10 @@ bool ImageBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platform3
     sharedContext->produceTextureDirectCHROMIUM(textureId, GL_TEXTURE_2D, mailbox->name);
     sharedContext->flush();
 
-    mailbox->syncPoint = sharedContext->insertSyncPoint();
+    mailbox->validSyncToken = sharedContext->insertSyncPoint(mailbox->syncToken);
+    if (mailbox->validSyncToken)
+        context->waitSyncToken(mailbox->syncToken);
 
-    context->waitSyncPoint(mailbox->syncPoint);
     Platform3DObject sourceTexture = context->createAndConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox->name);
 
     // The canvas is stored in a premultiplied format, so unpremultiply if necessary.
@@ -226,7 +222,10 @@ bool ImageBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platform3
     context->deleteTexture(sourceTexture);
 
     context->flush();
-    sharedContext->waitSyncPoint(context->insertSyncPoint());
+
+    WGC3Dbyte syncToken[24];
+    if (context->insertSyncPoint(syncToken))
+        sharedContext->waitSyncToken(syncToken);
 
     // Undo grContext texture binding changes introduced in this function
     provider->grContext()->resetContext(kTextureBinding_GrGLBackendState);
@@ -346,10 +345,8 @@ void ImageBuffer::putByteArray(Multiply multiplied, const unsigned char* source,
     m_surface->writePixels(info, srcAddr, srcBytesPerRow, destX, destY);
 }
 
-bool ImageDataBuffer::encodeImage(const String& mimeType, const double& quality, Vector<char>* output) const
+bool ImageDataBuffer::encodeImage(const String& mimeType, const double& quality, Vector<unsigned char>* encodedImage) const
 {
-    Vector<unsigned char>* encodedImage = reinterpret_cast<Vector<unsigned char>*>(output);
-
     if (mimeType == "image/jpeg") {
         int compressionQuality = JPEGImageEncoder::DefaultCompressionQuality;
         if (quality >= 0.0 && quality <= 1.0)
@@ -375,11 +372,11 @@ String ImageDataBuffer::toDataURL(const String& mimeType, const double& quality)
 {
     ASSERT(MIMETypeRegistry::isSupportedImageMIMETypeForEncoding(mimeType));
 
-    Vector<char> encodedImage;
-    if (!encodeImage(mimeType, quality, &encodedImage))
+    Vector<unsigned char> result;
+    if (!encodeImage(mimeType, quality, &result))
         return "data:,";
 
-    return "data:" + mimeType + ";base64," + base64Encode(encodedImage);
+    return "data:" + mimeType + ";base64," + base64Encode(result);
 }
 
 } // namespace blink

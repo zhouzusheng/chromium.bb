@@ -15,17 +15,17 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "media/base/cdm_factory.h"
-#include "media/base/media_export.h"
 #include "media/base/pipeline.h"
 #include "media/base/renderer_factory.h"
 #include "media/base/text_track.h"
 #include "media/blink/buffered_data_source.h"
 #include "media/blink/buffered_data_source_host_impl.h"
 #include "media/blink/encrypted_media_player_support.h"
-#include "media/blink/skcanvas_video_renderer.h"
+#include "media/blink/media_blink_export.h"
 #include "media/blink/video_frame_compositor.h"
 #include "media/blink/webmediaplayer_params.h"
 #include "media/blink/webmediaplayer_util.h"
+#include "media/renderers/skcanvas_video_renderer.h"
 #include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/platform/WebContentDecryptionModuleResult.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayer.h"
@@ -61,7 +61,7 @@ class WebTextTrackImpl;
 // The canonical implementation of blink::WebMediaPlayer that's backed by
 // Pipeline. Handles normal resource loading, Media Source, and
 // Encrypted Media.
-class MEDIA_EXPORT WebMediaPlayerImpl
+class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
     : public NON_EXPORTED_BASE(blink::WebMediaPlayer),
       public base::SupportsWeakPtr<WebMediaPlayerImpl> {
  public:
@@ -91,8 +91,9 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   void seek(double seconds) override;
   void setRate(double rate) override;
   void setVolume(double volume) override;
-  void setSinkId(const blink::WebString& device_id,
-                 WebSetSinkIdCB* web_callbacks) override;
+  void setSinkId(const blink::WebString& sink_id,
+                 const blink::WebSecurityOrigin& security_origin,
+                 blink::WebSetSinkIdCallbacks* web_callback) override;
   void setPreload(blink::WebMediaPlayer::Preload preload) override;
   blink::WebTimeRanges buffered() const override;
   blink::WebTimeRanges seekable() const override;
@@ -233,6 +234,15 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   // |ended_| state by clamping current time to duration upon |ended_|.
   void UpdatePausedTime();
 
+  // Notifies |delegate_| that playback has started or was paused; also starts
+  // or stops the memory usage reporting timer respectively.
+  void NotifyPlaybackStarted();
+  void NotifyPlaybackPaused();
+
+  // Called at low frequency to tell external observers how much memory we're
+  // using for video playback.  Called by |memory_usage_reporting_timer_|.
+  void ReportMemoryUsage();
+
   blink::WebLocalFrame* frame_;
 
   // TODO(hclam): get rid of these members and read from the pipeline directly.
@@ -299,6 +309,12 @@ class MEDIA_EXPORT WebMediaPlayerImpl
 
   WebMediaPlayerParams::DeferLoadCB defer_load_cb_;
   WebMediaPlayerParams::Context3DCB context_3d_cb_;
+
+  // Members for notifying upstream clients about internal memory usage.  The
+  // |adjust_allocated_memory_cb_| must only be called on |main_task_runner_|.
+  base::RepeatingTimer memory_usage_reporting_timer_;
+  WebMediaPlayerParams::AdjustAllocatedMemoryCB adjust_allocated_memory_cb_;
+  int64_t last_reported_memory_usage_;
 
   // Routes audio playback to either AudioRendererSink or WebAudio.
   scoped_refptr<WebAudioSourceProviderImpl> audio_source_provider_;

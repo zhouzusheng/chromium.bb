@@ -74,7 +74,7 @@
         'CODEC_RED',
       ],
       'include_dirs': [
-        'interface',
+        'include',
         'test',
         '<(webrtc_root)',
       ],
@@ -279,7 +279,7 @@
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-          'interface',
+          'include',
           'test',
           '<(webrtc_root)',
         ],
@@ -287,7 +287,7 @@
       'defines': [
       ],
       'include_dirs': [
-        'interface',
+        'include',
         'test',
         '<(webrtc_root)',
       ],

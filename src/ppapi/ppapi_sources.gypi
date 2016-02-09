@@ -263,8 +263,6 @@
       'cpp/dev/device_ref_dev.h',
       'cpp/dev/file_chooser_dev.cc',
       'cpp/dev/file_chooser_dev.h',
-      'cpp/dev/font_dev.cc',
-      'cpp/dev/font_dev.h',
       'cpp/dev/ime_input_event_dev.cc',
       'cpp/dev/ime_input_event_dev.h',
       'cpp/dev/memory_dev.cc',

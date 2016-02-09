@@ -105,7 +105,6 @@ void DataPipe::StartSerialize(bool have_channel_handle,
     (*max_platform_handles)++;
   if (have_shared_memory)
     (*max_platform_handles)++;
-  DCHECK_LE(*max_size, TransportData::kMaxSerializedDispatcherSize);
 }
 
 void DataPipe::EndSerialize(const MojoCreateDataPipeOptions& options,
@@ -132,6 +131,8 @@ void DataPipe::EndSerialize(const MojoCreateDataPipeOptions& options,
   if (serialization->shared_memory_size) {
     serialization->shared_memory_handle_index = platform_handles->size();
     platform_handles->push_back(shared_memory_handle.release());
+  } else {
+    serialization->shared_memory_handle_index = kInvalidDataPipeHandleIndex;
   }
 
   *actual_size = sizeof(SerializedDataPipeHandleDispatcher);
@@ -145,7 +146,7 @@ ScopedPlatformHandle DataPipe::Deserialize(
     ScopedPlatformHandle* shared_memory_handle,
     size_t* shared_memory_size) {
   if (size != sizeof(SerializedDataPipeHandleDispatcher)) {
-    LOG(ERROR) << "Invalid serialized platform handle dispatcher (bad size)";
+    LOG(ERROR) << "Invalid serialized data pipe dispatcher (bad size)";
     return ScopedPlatformHandle();
   }
 
@@ -159,7 +160,7 @@ ScopedPlatformHandle DataPipe::Deserialize(
     if (!platform_handles ||
         platform_handle_index >= platform_handles->size()) {
       LOG(ERROR)
-          << "Invalid serialized platform handle dispatcher (missing handles)";
+          << "Invalid serialized data pipe dispatcher (missing handles)";
       return ScopedPlatformHandle();
     }
 
@@ -178,10 +179,10 @@ ScopedPlatformHandle DataPipe::Deserialize(
     if (*shared_memory_size) {
       DCHECK(serialization->shared_memory_handle_index !=
              kInvalidDataPipeHandleIndex);
-      if (!serialization->shared_memory_handle_index ||
+      if (!platform_handles ||
           serialization->shared_memory_handle_index >=
               platform_handles->size()) {
-        LOG(ERROR) << "Invalid serialized platform handle dispatcher "
+        LOG(ERROR) << "Invalid serialized data pipe dispatcher "
                    << "(missing handles)";
         return ScopedPlatformHandle();
       }

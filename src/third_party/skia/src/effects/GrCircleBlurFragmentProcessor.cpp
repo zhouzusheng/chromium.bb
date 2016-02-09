@@ -14,7 +14,9 @@
 #include "GrTextureProvider.h"
 
 #include "gl/GrGLFragmentProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 
 class GrGLCircleBlurFragmentProcessor : public GrGLFragmentProcessor {
 public:
@@ -22,10 +24,10 @@ public:
     void emitCode(EmitArgs&) override;
 
 protected:
-    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
+    void onSetData(const GrGLSLProgramDataManager&, const GrProcessor&) override;
 
 private:
-    GrGLProgramDataManager::UniformHandle fDataUniform;
+    GrGLSLProgramDataManager::UniformHandle fDataUniform;
 
     typedef GrGLFragmentProcessor INHERITED;
 };
@@ -38,13 +40,13 @@ void GrGLCircleBlurFragmentProcessor::emitCode(EmitArgs& args) {
     // x,y  - the center of the circle
     // z    - the distance at which the intensity starts falling off (e.g., the start of the table)
     // w    - the size of the profile texture
-    fDataUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    fDataUniform = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                              kVec4f_GrSLType,
                                              kDefault_GrSLPrecision,
                                              "data",
                                              &dataName);
 
-    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+    GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
     const char *fragmentPos = fsBuilder->fragmentPosition();
 
     if (args.fInputColor) {
@@ -63,7 +65,7 @@ void GrGLCircleBlurFragmentProcessor::emitCode(EmitArgs& args) {
     fsBuilder->codeAppendf("%s = src * intensity;\n", args.fOutputColor );
 }
 
-void GrGLCircleBlurFragmentProcessor::onSetData(const GrGLProgramDataManager& pdman,
+void GrGLCircleBlurFragmentProcessor::onSetData(const GrGLSLProgramDataManager& pdman,
                                                 const GrProcessor& proc) {
     const GrCircleBlurFragmentProcessor& cbfp = proc.cast<GrCircleBlurFragmentProcessor>();
     const SkRect& circle = cbfp.circle();

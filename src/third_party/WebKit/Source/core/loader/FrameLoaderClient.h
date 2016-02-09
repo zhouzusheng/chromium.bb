@@ -50,6 +50,7 @@ class Document;
 class DocumentLoader;
 class FetchRequest;
 class HTMLFormElement;
+class HTMLFrameElementBase;
 class HTMLFrameOwnerElement;
 class HTMLMediaElement;
 class HTMLPlugInElement;
@@ -67,6 +68,7 @@ class WebApplicationCacheHostClient;
 class WebCookieJar;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
+class WebMediaSession;
 class WebRTCPeerConnectionHandler;
 class WebServiceWorkerProvider;
 class WebSocketHandle;
@@ -97,7 +99,7 @@ public:
     virtual void dispatchDidFinishLoad() = 0;
     virtual void dispatchDidChangeThemeColor() = 0;
 
-    virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) = 0;
+    virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationType, NavigationPolicy, bool shouldReplaceCurrentEntry) = 0;
     virtual bool hasPendingNavigation() = 0;
 
     virtual void dispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
@@ -107,7 +109,7 @@ public:
     virtual void progressEstimateChanged(double progressEstimate) = 0;
     virtual void didStopLoading() = 0;
 
-    virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName = String()) = 0;
+    virtual void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName, bool replacesCurrentHistoryItem) = 0;
 
     virtual bool navigateBackForward(int offset) const = 0;
 
@@ -136,7 +138,7 @@ public:
 
     virtual PassRefPtrWillBeRawPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) = 0;
 
-    virtual String userAgent(const KURL&) = 0;
+    virtual String userAgent() = 0;
 
     virtual String doNotTrackValue() = 0;
 
@@ -152,6 +154,8 @@ public:
     virtual PassRefPtrWillBeRawPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually, DetachedPluginPolicy) = 0;
 
     virtual PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) = 0;
+
+    virtual PassOwnPtr<WebMediaSession> createWebMediaSession() = 0;
 
     virtual ObjectContentType objectContentType(const KURL&, const String& mimeType, bool shouldPreferPlugInsForImages) = 0;
 
@@ -191,6 +195,8 @@ public:
     virtual void didChangeName(const String&) { }
 
     virtual void didChangeSandboxFlags(Frame* childFrame, SandboxFlags) { }
+
+    virtual void didChangeFrameOwnerProperties(HTMLFrameElementBase*) { }
 
     virtual void dispatchWillOpenWebSocket(WebSocketHandle*) { }
 

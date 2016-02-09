@@ -4,9 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fpdfapi/fpdf_page.h"
-#include "../../../include/fpdfapi/fpdf_pageobj.h"
 #include "pageint.h"
+
+#include "core/include/fpdfapi/fpdf_page.h"
+#include "core/include/fpdfapi/fpdf_pageobj.h"
+
 CPDF_ImageObject::CPDF_ImageObject() {
   m_pImage = NULL;
   m_Type = PDFPAGE_IMAGE;
@@ -45,16 +47,14 @@ void CPDF_Image::Release() {
   }
 }
 CPDF_Image* CPDF_Image::Clone() {
-  if (m_pStream->GetObjNum()) {
+  if (m_pStream->GetObjNum())
     return m_pDocument->GetPageData()->GetImage(m_pStream);
-  }
+
   CPDF_Image* pImage = new CPDF_Image(m_pDocument);
-  pImage->LoadImageF((CPDF_Stream*)((CPDF_Object*)m_pStream)->Clone(),
-                     m_bInline);
-  if (m_bInline) {
-    CPDF_Dictionary* pInlineDict = (CPDF_Dictionary*)m_pInlineDict->Clone(TRUE);
-    pImage->SetInlineDict(pInlineDict);
-  }
+  pImage->LoadImageF(ToStream(m_pStream->CPDF_Object::Clone()), m_bInline);
+  if (m_bInline)
+    pImage->SetInlineDict(ToDictionary(m_pInlineDict->Clone(TRUE)));
+
   return pImage;
 }
 CPDF_Image::CPDF_Image(CPDF_Document* pDoc) {
@@ -86,7 +86,7 @@ FX_BOOL CPDF_Image::LoadImageF(CPDF_Stream* pStream, FX_BOOL bInline) {
   m_bInline = bInline;
   CPDF_Dictionary* pDict = pStream->GetDict();
   if (m_bInline) {
-    m_pInlineDict = (CPDF_Dictionary*)pDict->Clone();
+    m_pInlineDict = ToDictionary(pDict->Clone());
   }
   m_pOC = pDict->GetDict(FX_BSTRC("OC"));
   m_bIsMask = !pDict->KeyExist(FX_BSTRC("ColorSpace")) ||

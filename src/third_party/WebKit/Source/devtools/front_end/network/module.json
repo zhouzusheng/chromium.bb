@@ -37,7 +37,9 @@
         {
             "type": "@WebInspector.ActionDelegate",
             "actionId": "network.blocked-urls.show",
-            "className": "WebInspector.BlockedURLsPane.ActionDelegate"
+            "className": "WebInspector.BlockedURLsPane.ActionDelegate",
+            "iconClass": "block-toolbar-item",
+            "title": "Block network requests"
         },
         {
             "type": "@WebInspector.ActionDelegate",
@@ -55,6 +57,35 @@
                     "shortcut": "Meta+E"
                 }
             ]
+        },
+        {
+            "type": "drawer-view",
+            "name": "network.blocked-urls",
+            "title": "Request blocking",
+            "persistence": "closeable",
+            "order": 60,
+            "className": "WebInspector.BlockedURLsPane",
+            "experiment": "requestBlocking"
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "network.show-config",
+            "title": "Network conditions",
+            "className": "WebInspector.NetworkConfigView.ShowActionDelegate"
+        },
+        {
+            "type": "context-menu-item",
+            "location": "mainMenu/tools/open",
+            "order": 60,
+            "actionId": "network.show-config"
+        },
+        {
+            "type": "drawer-view",
+            "name": "network.config",
+            "title": "Network conditions",
+            "persistence": "closeable",
+            "order": 40,
+            "className": "WebInspector.NetworkConfigView"
         }
     ],
     "dependencies": [
@@ -69,6 +100,7 @@
         "FilterSuggestionBuilder.js",
         "HARWriter.js",
         "RequestView.js",
+        "NetworkConfigView.js",
         "NetworkDataGridNode.js",
         "NetworkItemView.js",
         "NetworkTimeCalculator.js",
@@ -88,6 +120,7 @@
     "resources": [
         "blockedURLsPane.css",
         "eventSourceMessagesView.css",
+        "networkConfigView.css",
         "networkLogView.css",
         "networkPanel.css",
         "requestCookiesView.css",

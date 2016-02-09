@@ -47,7 +47,7 @@ enum ShapeGeometryCodePath {
 
 struct LayoutSVGShapeRareData {
     WTF_MAKE_NONCOPYABLE(LayoutSVGShapeRareData);
-    WTF_MAKE_FAST_ALLOCATED(LayoutSVGShapeRareData);
+    USING_FAST_MALLOC(LayoutSVGShapeRareData);
 public:
     LayoutSVGShapeRareData() {}
     Path m_cachedNonScalingStrokePath;
@@ -130,6 +130,9 @@ private:
 
 private:
     OwnPtr<AffineTransform> m_localTransform;
+    // TODO(fmalita): the Path is now cached in SVGPath; while this additional cache is just a
+    // shallow copy, it certainly has a complexity/state management cost (plus allocation & storage
+    // overhead) - so we should look into removing it.
     OwnPtr<Path> m_path;
     mutable OwnPtr<LayoutSVGShapeRareData> m_rareData;
 

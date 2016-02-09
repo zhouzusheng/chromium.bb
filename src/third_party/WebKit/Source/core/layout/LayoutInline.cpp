@@ -307,7 +307,7 @@ void LayoutInline::addChildIgnoringContinuation(LayoutObject* newChild, LayoutOb
         // inline into continuations.  This involves creating an anonymous block box to hold
         // |newChild|.  We then make that block box a continuation of this inline.  We take all of
         // the children after |beforeChild| and put them in a clone of this object.
-        RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(styleRef(), BLOCK);
+        RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(containingBlock()->styleRef(), BLOCK);
 
         // If inside an inline affected by in-flow positioning the block needs to be affected by it too.
         // Giving the block a layer like this allows it to collect the x/y offsets from inline parents later.
@@ -746,6 +746,16 @@ LayoutUnit LayoutInline::marginBefore(const ComputedStyle* otherStyle) const
 LayoutUnit LayoutInline::marginAfter(const ComputedStyle* otherStyle) const
 {
     return computeMargin(this, style()->marginAfterUsing(otherStyle ? otherStyle : style()));
+}
+
+LayoutUnit LayoutInline::marginOver() const
+{
+    return computeMargin(this, style()->marginOver());
+}
+
+LayoutUnit LayoutInline::marginUnder() const
+{
+    return computeMargin(this, style()->marginUnder());
 }
 
 bool LayoutInline::nodeAtPoint(HitTestResult& result,
@@ -1404,11 +1414,14 @@ void LayoutInline::addAnnotatedRegions(Vector<AnnotatedRegionValue>& regions)
     regions.append(region);
 }
 
-void LayoutInline::invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const
+void LayoutInline::invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer, PaintInvalidationReason invalidationReason, const LayoutRect* paintInvalidationRect) const
 {
-    LayoutBoxModelObject::invalidateDisplayItemClients(paintInvalidationContainer);
+    LayoutBoxModelObject::invalidateDisplayItemClients(paintInvalidationContainer, invalidationReason, paintInvalidationRect);
+
+    // Use the paintInvalidationRect of LayoutInline for inline boxes, which saves the cost to calculate paint invalidation rect
+    // for every inline box. This won't cause more rasterization invalidations because the whole LayoutInline is being invalidated.
     for (InlineFlowBox* box = firstLineBox(); box; box = box->nextLineBox())
-        paintInvalidationContainer.invalidateDisplayItemClientOnBacking(*box);
+        paintInvalidationContainer.invalidateDisplayItemClientOnBacking(*box, invalidationReason, paintInvalidationRect);
 }
 
 } // namespace blink

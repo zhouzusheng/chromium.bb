@@ -102,9 +102,9 @@ DOMTimer::DOMTimer(ExecutionContext* context, PassOwnPtrWillBeRawPtr<ScheduledAc
     if (intervalMilliseconds < minimumInterval && m_nestingLevel >= maxTimerNestingLevel)
         intervalMilliseconds = minimumInterval;
     if (singleShot)
-        startOneShot(intervalMilliseconds, FROM_HERE);
+        startOneShot(intervalMilliseconds, BLINK_FROM_HERE);
     else
-        startRepeating(intervalMilliseconds, FROM_HERE);
+        startRepeating(intervalMilliseconds, BLINK_FROM_HERE);
 }
 
 DOMTimer::~DOMTimer()
@@ -206,6 +206,11 @@ double DOMTimer::alignedFireTime(double fireTime) const
     }
 
     return fireTime;
+}
+
+WebTaskRunner* DOMTimer::timerTaskRunner()
+{
+    return executionContext()->timers()->timerTaskRunner();
 }
 
 DEFINE_TRACE(DOMTimer)

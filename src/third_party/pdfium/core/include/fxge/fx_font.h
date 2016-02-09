@@ -11,6 +11,7 @@
 
 #include "../fxcrt/fx_system.h"
 #include "fx_dib.h"
+#include "third_party/base/nonstd_unique_ptr.h"
 
 typedef struct FT_FaceRec_* FXFT_Face;
 typedef void* FXFT_Library;
@@ -21,7 +22,6 @@ class CFX_FontMapper;
 class CFX_PathData;
 class CFX_SizeGlyphCache;
 class CFX_SubstFont;
-class CFontFileFaceInfo;
 class CTTFontDesc;
 class IFX_FontEncoding;
 class IFX_SystemFontInfo;
@@ -139,6 +139,7 @@ class CFX_UnicodeEncoding {
 #define FXFONT_SUBST_NONSYMBOL 0x20
 #define FXFONT_SUBST_EXACT 0x40
 #define FXFONT_SUBST_STANDARD 0x80
+
 class CFX_SubstFont {
  public:
   CFX_SubstFont();
@@ -168,15 +169,12 @@ class CFX_SubstFont {
 #define FX_FONT_FLAG_SYMBOLIC_SYMBOL 0x10
 #define FX_FONT_FLAG_SYMBOLIC_DINGBATS 0x20
 #define FX_FONT_FLAG_MULTIPLEMASTER 0x40
-typedef struct {
-  const uint8_t* m_pFontData;
-  FX_DWORD m_dwSize;
-} FoxitFonts;
+
 class CFX_FontMgr {
  public:
   CFX_FontMgr();
   ~CFX_FontMgr();
-  void InitFTLibrary();
+
   FXFT_Face GetCachedFace(const CFX_ByteString& face_name,
                           int weight,
                           FX_BOOL bItalic,
@@ -207,13 +205,16 @@ class CFX_FontMgr {
                           int italic_angle,
                           int CharsetCP,
                           CFX_SubstFont* pSubstFont);
-  void FreeCache();
-  FX_BOOL GetStandardFont(const uint8_t*& pFontData, FX_DWORD& size, int index);
+  bool GetBuiltinFont(size_t index, const uint8_t** pFontData, FX_DWORD* size);
+  CFX_FontMapper* GetBuiltinMapper() const { return m_pBuiltinMapper.get(); }
+  FXFT_Library GetFTLibrary() const { return m_FTLibrary; }
 
-  CFX_FontMapper* m_pBuiltinMapper;
+ private:
+  void InitFTLibrary();
+
+  nonstd::unique_ptr<CFX_FontMapper> m_pBuiltinMapper;
   std::map<CFX_ByteString, CTTFontDesc*> m_FaceMap;
   FXFT_Library m_FTLibrary;
-  FoxitFonts m_ExternalFonts[16];
 };
 
 class IFX_FontEnumerator {
@@ -256,8 +257,12 @@ class CFX_FontMapper {
                           int italic_angle,
                           int CharsetCP,
                           CFX_SubstFont* pSubstFont);
+  FX_BOOL IsBuiltinFace(const FXFT_Face face) const;
 
  private:
+  static const size_t MM_FACE_COUNT = 2;
+  static const size_t FOXIT_FACE_COUNT = 14;
+
   CFX_ByteString GetPSNameFromTT(void* hFont);
   CFX_ByteString MatchInstalledFonts(const CFX_ByteString& norm_name);
   FXFT_Face UseInternalSubst(CFX_SubstFont* pSubstFont,
@@ -267,12 +272,12 @@ class CFX_FontMapper {
                              int picthfamily);
 
   FX_BOOL m_bListLoaded;
-  FXFT_Face m_MMFaces[2];
+  FXFT_Face m_MMFaces[MM_FACE_COUNT];
   CFX_ByteString m_LastFamily;
   CFX_DWordArray m_CharsetArray;
   CFX_ByteStringArray m_FaceArray;
   IFX_SystemFontInfo* m_pFontInfo;
-  FXFT_Face m_FoxitFaces[14];
+  FXFT_Face m_FoxitFaces[FOXIT_FACE_COUNT];
   IFX_FontEnumerator* m_pFontEnumerator;
   CFX_FontMgr* const m_pFontMgr;
 };
@@ -338,6 +343,13 @@ class CFX_FolderFontInfo : public IFX_SystemFontInfo {
                   FXSYS_FILE* pFile,
                   FX_DWORD filesize,
                   FX_DWORD offset);
+  void* GetSubstFont(const CFX_ByteString& face);
+  void* FindFont(int weight,
+                 FX_BOOL bItalic,
+                 int charset,
+                 int pitch_family,
+                 const FX_CHAR* family,
+                 FX_BOOL bMatchName);
 };
 class CFX_CountedFaceCache {
  public:
@@ -375,6 +387,7 @@ class CFX_GlyphBitmap {
 };
 class CFX_FaceCache {
  public:
+  explicit CFX_FaceCache(FXFT_Face face);
   ~CFX_FaceCache();
   const CFX_GlyphBitmap* LoadGlyphBitmap(CFX_Font* pFont,
                                          FX_DWORD glyph_index,
@@ -387,10 +400,7 @@ class CFX_FaceCache {
                                     FX_DWORD glyph_index,
                                     int dest_width);
 
-  CFX_FaceCache(FXFT_Face face);
-
  private:
-  FXFT_Face m_Face;
   CFX_GlyphBitmap* RenderGlyph(CFX_Font* pFont,
                                FX_DWORD glyph_index,
                                FX_BOOL bFontStyle,
@@ -409,18 +419,23 @@ class CFX_FaceCache {
                                      FX_BOOL bFontStyle,
                                      int dest_width,
                                      int anti_alias);
+  void InitPlatform();
+  void DestroyPlatform();
+
+  FXFT_Face const m_Face;
   std::map<CFX_ByteString, CFX_SizeGlyphCache*> m_SizeMap;
   CFX_MapPtrToPtr m_PathMap;
   CFX_DIBitmap* m_pBitmap;
-
-  void InitPlatform();
-  void DestroyPlatform();
 };
-typedef struct {
+
+struct FXTEXT_GLYPHPOS {
   const CFX_GlyphBitmap* m_pGlyph;
-  int m_OriginX, m_OriginY;
-  FX_FLOAT m_fOriginX, m_fOriginY;
-} FXTEXT_GLYPHPOS;
+  int m_OriginX;
+  int m_OriginY;
+  FX_FLOAT m_fOriginX;
+  FX_FLOAT m_fOriginY;
+};
+
 FX_RECT FXGE_GetGlyphsBBox(FXTEXT_GLYPHPOS* pGlyphAndPos,
                            int nChars,
                            int anti_alias,
@@ -437,5 +452,7 @@ class IFX_GSUBTable {
 };
 
 CFX_ByteString GetNameFromTT(const uint8_t* name_table, FX_DWORD name);
+
+int PDF_GetStandardFontName(CFX_ByteString* name);
 
 #endif  // CORE_INCLUDE_FXGE_FX_FONT_H_

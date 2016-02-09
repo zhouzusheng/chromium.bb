@@ -65,7 +65,7 @@ enum HashTokenType {
 };
 
 class CORE_EXPORT CSSParserToken {
-    WTF_MAKE_FAST_ALLOCATED(CSSParserToken);
+    USING_FAST_MALLOC(CSSParserToken);
 public:
     enum BlockType {
         NotBlock,
@@ -109,9 +109,13 @@ public:
     CSSValueID id() const;
     CSSValueID functionId() const;
 
+    bool hasStringBacking() const;
+
     CSSPropertyID parseAsUnresolvedCSSPropertyID() const;
 
     void serialize(StringBuilder&) const;
+
+    CSSParserToken copyWithUpdatedString(const CSSParserString&) const;
 
 private:
     void initValueFromCSSParserString(const CSSParserString& value)

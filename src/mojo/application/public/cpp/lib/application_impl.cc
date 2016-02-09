@@ -20,7 +20,7 @@ namespace {
 void DefaultTerminationClosure() {
   if (base::MessageLoop::current() &&
       base::MessageLoop::current()->is_running())
-    base::MessageLoop::current()->Quit();
+    base::MessageLoop::current()->QuitWhenIdle();
 }
 
 }  // namespace
@@ -43,6 +43,13 @@ ApplicationImpl::ApplicationImpl(ApplicationDelegate* delegate,
 
 ApplicationImpl::~ApplicationImpl() {
   app_lifetime_helper_.OnQuit();
+}
+
+scoped_ptr<ApplicationConnection> ApplicationImpl::ConnectToApplication(
+    const std::string& url) {
+  mojo::URLRequestPtr request(mojo::URLRequest::New());
+  request->url = url;
+  return ConnectToApplication(request.Pass());
 }
 
 scoped_ptr<ApplicationConnection> ApplicationImpl::ConnectToApplication(
@@ -79,11 +86,9 @@ scoped_ptr<ApplicationConnection>
   return registry.Pass();
 }
 
-void ApplicationImpl::Initialize(ShellPtr shell, const mojo::String& url) {
-  shell_ = shell.Pass();
-  shell_.set_connection_error_handler([this]() { OnConnectionError(); });
-  url_ = url;
-  delegate_->Initialize(this);
+void ApplicationImpl::WaitForInitialize() {
+  DCHECK(!shell_.is_bound());
+  binding_.WaitForIncomingMethodCall();
 }
 
 void ApplicationImpl::Quit() {
@@ -95,6 +100,13 @@ void ApplicationImpl::Quit() {
   } else {
     QuitNow();
   }
+}
+
+void ApplicationImpl::Initialize(ShellPtr shell, const mojo::String& url) {
+  shell_ = shell.Pass();
+  shell_.set_connection_error_handler([this]() { OnConnectionError(); });
+  url_ = url;
+  delegate_->Initialize(this);
 }
 
 void ApplicationImpl::AcceptConnection(

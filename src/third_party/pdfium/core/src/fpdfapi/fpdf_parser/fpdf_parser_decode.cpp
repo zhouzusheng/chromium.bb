@@ -5,9 +5,10 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include <limits.h>
-#include "../../../include/fpdfapi/fpdf_parser.h"
-#include "../../../include/fpdfapi/fpdf_module.h"
-#include "../../../include/fxcodec/fx_codec.h"
+
+#include "core/include/fpdfapi/fpdf_module.h"
+#include "core/include/fpdfapi/fpdf_parser.h"
+#include "core/include/fxcodec/fx_codec.h"
 
 #define _STREAM_MAX_SIZE_ 20 * 1024 * 1024
 
@@ -42,10 +43,10 @@ const FX_WORD PDFDocEncoding[256] = {
     0x00f3, 0x00f4, 0x00f5, 0x00f6, 0x00f7, 0x00f8, 0x00f9, 0x00fa, 0x00fb,
     0x00fc, 0x00fd, 0x00fe, 0x00ff};
 
-FX_DWORD _A85Decode(const uint8_t* src_buf,
-                    FX_DWORD src_size,
-                    uint8_t*& dest_buf,
-                    FX_DWORD& dest_size) {
+FX_DWORD A85Decode(const uint8_t* src_buf,
+                   FX_DWORD src_size,
+                   uint8_t*& dest_buf,
+                   FX_DWORD& dest_size) {
   dest_size = 0;
   dest_buf = NULL;
   if (src_size == 0) {
@@ -80,9 +81,9 @@ FX_DWORD _A85Decode(const uint8_t* src_buf,
   pos = dest_size = 0;
   while (pos < src_size) {
     uint8_t ch = src_buf[pos++];
-    if (ch == '\n' || ch == '\r' || ch == ' ' || ch == '\t') {
+    if (PDFCharIsLineEnding(ch) || ch == ' ' || ch == '\t')
       continue;
-    }
+
     if (ch == 'z') {
       FXSYS_memset(dest_buf + dest_size, 0, 4);
       state = 0;
@@ -117,10 +118,10 @@ FX_DWORD _A85Decode(const uint8_t* src_buf,
   }
   return pos;
 }
-FX_DWORD _HexDecode(const uint8_t* src_buf,
-                    FX_DWORD src_size,
-                    uint8_t*& dest_buf,
-                    FX_DWORD& dest_size) {
+FX_DWORD HexDecode(const uint8_t* src_buf,
+                   FX_DWORD src_size,
+                   uint8_t*& dest_buf,
+                   FX_DWORD& dest_size) {
   FX_DWORD i;
   for (i = 0; i < src_size; i++)
     if (src_buf[i] == '>') {
@@ -131,9 +132,9 @@ FX_DWORD _HexDecode(const uint8_t* src_buf,
   FX_BOOL bFirstDigit = TRUE;
   for (i = 0; i < src_size; i++) {
     uint8_t ch = src_buf[i];
-    if (ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r') {
+    if (PDFCharIsLineEnding(ch) || ch == ' ' || ch == '\t')
       continue;
-    }
+
     int digit;
     if (ch <= '9' && ch >= '0') {
       digit = ch - '0';
@@ -283,7 +284,7 @@ ICodec_ScanlineDecoder* FPDFAPI_CreateFlateDecoder(
   int predictor = 0;
   int Colors = 0, BitsPerComponent = 0, Columns = 0;
   if (pParams) {
-    predictor = ((CPDF_Dictionary*)pParams)->GetInteger(FX_BSTRC("Predictor"));
+    predictor = pParams->GetInteger(FX_BSTRC("Predictor"));
     Colors = pParams->GetInteger(FX_BSTRC("Colors"), 1);
     BitsPerComponent = pParams->GetInteger(FX_BSTRC("BitsPerComponent"), 8);
     Columns = pParams->GetInteger(FX_BSTRC("Columns"), 1);
@@ -306,9 +307,8 @@ FX_DWORD FPDFAPI_FlateOrLZWDecode(FX_BOOL bLZW,
   FX_BOOL bEarlyChange = TRUE;
   int Colors = 0, BitsPerComponent = 0, Columns = 0;
   if (pParams) {
-    predictor = ((CPDF_Dictionary*)pParams)->GetInteger(FX_BSTRC("Predictor"));
-    bEarlyChange =
-        ((CPDF_Dictionary*)pParams)->GetInteger(FX_BSTRC("EarlyChange"), 1);
+    predictor = pParams->GetInteger(FX_BSTRC("Predictor"));
+    bEarlyChange = pParams->GetInteger(FX_BSTRC("EarlyChange"), 1);
     Colors = pParams->GetInteger(FX_BSTRC("Colors"), 1);
     BitsPerComponent = pParams->GetInteger(FX_BSTRC("BitsPerComponent"), 8);
     Columns = pParams->GetInteger(FX_BSTRC("Columns"), 1);
@@ -332,32 +332,27 @@ FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
 
 {
   CPDF_Object* pDecoder =
-      pDict ? pDict->GetElementValue(FX_BSTRC("Filter")) : NULL;
-  if (pDecoder == NULL || (pDecoder->GetType() != PDFOBJ_ARRAY &&
-                           pDecoder->GetType() != PDFOBJ_NAME)) {
+      pDict ? pDict->GetElementValue(FX_BSTRC("Filter")) : nullptr;
+  if (!pDecoder || (!pDecoder->IsArray() && !pDecoder->IsName()))
     return FALSE;
-  }
+
   CPDF_Object* pParams =
-      pDict ? pDict->GetElementValue(FX_BSTRC("DecodeParms")) : NULL;
+      pDict ? pDict->GetElementValue(FX_BSTRC("DecodeParms")) : nullptr;
   CFX_ByteStringArray DecoderList;
   CFX_PtrArray ParamList;
-  if (pDecoder->GetType() == PDFOBJ_ARRAY) {
-    if (pParams && pParams->GetType() != PDFOBJ_ARRAY) {
-      pParams = NULL;
-    }
-    CPDF_Array* pDecoders = (CPDF_Array*)pDecoder;
+  if (CPDF_Array* pDecoders = pDecoder->AsArray()) {
+    CPDF_Array* pParamsArray = ToArray(pParams);
+    if (!pParamsArray)
+      pParams = nullptr;
+
     for (FX_DWORD i = 0; i < pDecoders->GetCount(); i++) {
       CFX_ByteStringC str = pDecoders->GetConstString(i);
       DecoderList.Add(str);
-      if (pParams) {
-        ParamList.Add(((CPDF_Array*)pParams)->GetDict(i));
-      } else {
-        ParamList.Add(NULL);
-      }
+      ParamList.Add(pParams ? pParamsArray->GetDict(i) : nullptr);
     }
   } else {
     DecoderList.Add(pDecoder->GetConstString());
-    ParamList.Add(pParams ? pParams->GetDict() : NULL);
+    ParamList.Add(pParams ? pParams->GetDict() : nullptr);
   }
   uint8_t* last_buf = (uint8_t*)src_buf;
   FX_DWORD last_size = src_size;
@@ -365,8 +360,10 @@ FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
     int estimated_size =
         i == DecoderList.GetSize() - 1 ? last_estimated_size : 0;
     CFX_ByteString decoder = DecoderList[i];
-    CPDF_Dictionary* pParam = (CPDF_Dictionary*)ParamList[i];
-    uint8_t* new_buf = NULL;
+    // Use ToDictionary here because we can push NULL into the ParamList.
+    CPDF_Dictionary* pParam =
+        ToDictionary(static_cast<CPDF_Object*>(ParamList[i]));
+    uint8_t* new_buf = nullptr;
     FX_DWORD new_size = (FX_DWORD)-1;
     int offset = -1;
     if (decoder == FX_BSTRC("FlateDecode") || decoder == FX_BSTRC("Fl")) {
@@ -384,10 +381,10 @@ FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
                                         estimated_size, new_buf, new_size);
     } else if (decoder == FX_BSTRC("ASCII85Decode") ||
                decoder == FX_BSTRC("A85")) {
-      offset = _A85Decode(last_buf, last_size, new_buf, new_size);
+      offset = A85Decode(last_buf, last_size, new_buf, new_size);
     } else if (decoder == FX_BSTRC("ASCIIHexDecode") ||
                decoder == FX_BSTRC("AHx")) {
-      offset = _HexDecode(last_buf, last_size, new_buf, new_size);
+      offset = HexDecode(last_buf, last_size, new_buf, new_size);
     } else if (decoder == FX_BSTRC("RunLengthDecode") ||
                decoder == FX_BSTRC("RL")) {
       if (bImageAcc && i == DecoderList.GetSize() - 1) {
@@ -411,10 +408,8 @@ FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
       pImageParms = pParam;
       dest_buf = (uint8_t*)last_buf;
       dest_size = last_size;
-      if (pDecoder->GetType() == PDFOBJ_ARRAY) {
-        CPDF_Array* pDecoders = reinterpret_cast<CPDF_Array*>(pDecoder);
+      if (CPDF_Array* pDecoders = pDecoder->AsArray())
         pDecoders->RemoveAt(i + 1, pDecoders->GetCount() - i - 1);
-      }
       return TRUE;
     }
     if (last_buf != src_buf) {

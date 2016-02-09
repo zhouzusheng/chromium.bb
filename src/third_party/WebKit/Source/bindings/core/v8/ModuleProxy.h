@@ -5,7 +5,7 @@
 #ifndef ModuleProxy_h
 #define ModuleProxy_h
 
-#include "wtf/FastAllocBase.h"
+#include "wtf/Allocator.h"
 #include <v8.h>
 
 namespace blink {
@@ -13,7 +13,7 @@ namespace blink {
 // A proxy class to invoke functions implemented in bindings/modules
 // from bindings/core.
 class ModuleProxy {
-    WTF_MAKE_FAST_ALLOCATED(ModuleProxy);
+    USING_FAST_MALLOC(ModuleProxy);
 public:
     static ModuleProxy& moduleProxy();
 

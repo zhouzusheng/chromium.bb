@@ -25,8 +25,9 @@
 #include "webrtc/modules/video_coding/main/source/media_optimization.h"
 #include "webrtc/modules/video_coding/main/source/receiver.h"
 #include "webrtc/modules/video_coding/main/source/timing.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/modules/video_coding/utility/include/qp_parser.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 
 namespace webrtc {
 
@@ -85,8 +86,6 @@ class VideoSender {
                                   uint8_t payloadType,
                                   bool internalSource);
 
-  int32_t CodecConfigParameters(uint8_t* buffer, int32_t size) const;
-  int32_t SentFrameCount(VCMFrameCount* frameCount);
   int Bitrate(unsigned int* bitrate) const;
   int FrameRate(unsigned int* framerate) const;
 
@@ -113,14 +112,6 @@ class VideoSender {
   int32_t Process();
 
  private:
-  struct EncoderParameters {
-    uint32_t target_bitrate;
-    uint8_t loss_rate;
-    int64_t rtt;
-    uint32_t input_frame_rate;
-    bool updated;
-  };
-
   void SetEncoderParameters(EncoderParameters params)
       EXCLUSIVE_LOCKS_REQUIRED(send_crit_);
 
@@ -238,6 +229,7 @@ class VideoReceiver {
   VCMProcessTimer _receiveStatsTimer;
   VCMProcessTimer _retransmissionTimer;
   VCMProcessTimer _keyRequestTimer;
+  QpParser qp_parser_;
 };
 
 }  // namespace vcm

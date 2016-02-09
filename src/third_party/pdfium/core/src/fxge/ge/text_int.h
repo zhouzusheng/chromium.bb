@@ -7,7 +7,8 @@
 #ifndef CORE_SRC_FXGE_GE_TEXT_INT_H_
 #define CORE_SRC_FXGE_GE_TEXT_INT_H_
 
-#include "../../../include/fxge/fx_freetype.h"
+#include "core/include/fxge/fx_font.h"
+#include "core/include/fxge/fx_freetype.h"
 
 struct _CFX_UniqueKeyGen {
   void Generate(int count, ...);
@@ -28,7 +29,10 @@ class CTTFontDesc {
     m_RefCount = 0;
   }
   ~CTTFontDesc();
-  FX_BOOL ReleaseFace(FXFT_Face face);
+  // ret < 0, releaseface not appropriate for this object.
+  // ret == 0, object released
+  // ret > 0, object still alive, other referrers.
+  int ReleaseFace(FXFT_Face face);
   int m_Type;
   union {
     struct {
@@ -73,23 +77,6 @@ class CFX_FontFaceInfo {
   const FX_DWORD m_FileSize;
   FX_DWORD m_Styles;
   FX_DWORD m_Charsets;
-};
-
-class CFontFileFaceInfo {
- public:
-  CFontFileFaceInfo();
-  ~CFontFileFaceInfo();
-
-  IFX_FileStream* m_pFile;
-  FXFT_Face m_Face;
-  CFX_ByteString m_FaceName;
-  FX_DWORD m_Charsets;
-  FX_DWORD m_FileSize;
-  FX_DWORD m_FontOffset;
-  int m_Weight;
-  FX_BOOL m_bItalic;
-  int m_PitchFamily;
-  CFX_ByteString m_FontTables;
 };
 
 #endif  // CORE_SRC_FXGE_GE_TEXT_INT_H_

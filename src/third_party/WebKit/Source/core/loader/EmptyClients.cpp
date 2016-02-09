@@ -35,8 +35,10 @@
 #include "core/loader/DocumentLoader.h"
 #include "platform/FileChooser.h"
 #include "platform/Widget.h"
+#include "public/platform/Platform.h"
 #include "public/platform/WebApplicationCacheHost.h"
 #include "public/platform/WebMediaPlayer.h"
+#include "public/platform/modules/mediasession/WebMediaSession.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
 
@@ -68,6 +70,24 @@ public:
     void disconnectClient() override { }
 };
 
+class EmptyFrameScheduler : public WebFrameScheduler {
+public:
+    void setFrameVisible(bool) override { }
+    WebTaskRunner* loadingTaskRunner() override;
+    WebTaskRunner* timerTaskRunner() override;
+    void setFrameOrigin(const WebSecurityOrigin*) override { }
+};
+
+WebTaskRunner* EmptyFrameScheduler::loadingTaskRunner()
+{
+    return Platform::current()->currentThread()->taskRunner();
+}
+
+WebTaskRunner* EmptyFrameScheduler::timerTaskRunner()
+{
+    return Platform::current()->currentThread()->taskRunner();
+}
+
 PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::openPopupMenu(LocalFrame&, HTMLSelectElement&)
 {
     return adoptRefWillBeNoop(new EmptyPopupMenu());
@@ -78,9 +98,9 @@ PassOwnPtrWillBeRawPtr<ColorChooser> EmptyChromeClient::openColorChooser(LocalFr
     return nullptr;
 }
 
-PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
+PassRefPtrWillBeRawPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
-    return PassRefPtr<DateTimeChooser>();
+    return nullptr;
 }
 
 void EmptyChromeClient::openTextDataListChooser(HTMLInputElement&)
@@ -96,7 +116,12 @@ String EmptyChromeClient::acceptLanguages()
     return String();
 }
 
-NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy)
+PassOwnPtr<WebFrameScheduler> EmptyChromeClient::createFrameScheduler()
+{
+    return adoptPtr(new EmptyFrameScheduler());
+}
+
+NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationType, NavigationPolicy, bool)
 {
     return NavigationPolicyIgnore;
 }
@@ -130,6 +155,11 @@ PassRefPtrWillBeRawPtr<Widget> EmptyFrameLoaderClient::createPlugin(HTMLPlugInEl
 }
 
 PassOwnPtr<WebMediaPlayer> EmptyFrameLoaderClient::createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*)
+{
+    return nullptr;
+}
+
+PassOwnPtr<WebMediaSession> EmptyFrameLoaderClient::createWebMediaSession()
 {
     return nullptr;
 }

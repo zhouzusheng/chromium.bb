@@ -9,25 +9,27 @@
 #define GrGLPrimitiveProcessor_DEFINED
 
 #include "GrPrimitiveProcessor.h"
-#include "GrGLProcessor.h"
+#include "glsl/GrGLSLProcessorTypes.h"
+#include "glsl/GrGLSLProgramDataManager.h"
+#include "glsl/GrGLSLTextureSampler.h"
 
 class GrBatchTracker;
 class GrPrimitiveProcessor;
-class GrGLGPBuilder;
+class GrGLSLGPBuilder;
 
 class GrGLPrimitiveProcessor {
 public:
     virtual ~GrGLPrimitiveProcessor() {}
 
-    typedef GrGLProgramDataManager::UniformHandle UniformHandle;
-    typedef GrGLProcessor::TextureSamplerArray TextureSamplerArray;
+    typedef GrGLSLProgramDataManager::UniformHandle UniformHandle;
+    typedef GrGLSLTextureSampler::TextureSamplerArray TextureSamplerArray;
 
     typedef SkSTArray<2, const GrCoordTransform*, true> ProcCoords;
     typedef SkSTArray<8, ProcCoords> TransformsIn;
-    typedef SkSTArray<8, GrGLProcessor::TransformedCoordsArray> TransformsOut;
+    typedef SkSTArray<8, GrGLSLTransformedCoordsArray> TransformsOut;
 
     struct EmitArgs {
-        EmitArgs(GrGLGPBuilder* pb,
+        EmitArgs(GrGLSLGPBuilder* pb,
                  const GrPrimitiveProcessor& gp,
                  const char* outputColor,
                  const char* outputCoverage,
@@ -41,7 +43,7 @@ public:
             , fSamplers(samplers)
             , fTransformsIn(transformsIn)
             , fTransformsOut(transformsOut) {}
-        GrGLGPBuilder* fPB;
+        GrGLSLGPBuilder* fPB;
         const GrPrimitiveProcessor& fGP;
         const char* fOutputColor;
         const char* fOutputCoverage;
@@ -63,23 +65,25 @@ public:
         GrPrimitiveProcessor parameter is guaranteed to be of the same type that created this
         GrGLPrimitiveProcessor and to have an identical processor key as the one that created this
         GrGLPrimitiveProcessor.  */
-    virtual void setData(const GrGLProgramDataManager&, const GrPrimitiveProcessor&) = 0;
+    virtual void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&) = 0;
 
     static SkMatrix GetTransformMatrix(const SkMatrix& localMatrix, const GrCoordTransform&);
 
     virtual void setTransformData(const GrPrimitiveProcessor&,
-                                  const GrGLProgramDataManager& pdman,
+                                  const GrGLSLProgramDataManager& pdman,
                                   int index,
                                   const SkTArray<const GrCoordTransform*, true>& transforms) = 0;
 
 protected:
-    void setupUniformColor(GrGLGPBuilder* pb, const char* outputName, UniformHandle* colorUniform);
+    void setupUniformColor(GrGLSLGPBuilder* pb,
+                           const char* outputName,
+                           UniformHandle* colorUniform);
 
     struct Transform {
         Transform() : fType(kVoid_GrSLType) { fCurrentValue = SkMatrix::InvalidMatrix(); }
-        GrGLProgramDataManager::UniformHandle fHandle;
-        SkMatrix                              fCurrentValue;
-        GrSLType                              fType;
+        UniformHandle  fHandle;
+        SkMatrix       fCurrentValue;
+        GrSLType       fType;
     };
 
     SkSTArray<8, SkSTArray<2, Transform, true> > fInstalledTransforms;

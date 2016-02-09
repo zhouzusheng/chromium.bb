@@ -177,6 +177,8 @@
       'common/android/surface_texture_manager.h',
       'common/android/surface_texture_peer.cc',
       'common/android/surface_texture_peer.h',
+      'common/android/sync_compositor_messages.cc',
+      'common/android/sync_compositor_messages.h',
       'common/appcache_interfaces.cc',
       'common/appcache_interfaces.h',
       'common/appcache_messages.h',
@@ -321,8 +323,6 @@
       'common/gpu/gpu_memory_buffer_factory.h',
       'common/gpu/gpu_memory_buffer_factory_ozone_native_pixmap.cc',
       'common/gpu/gpu_memory_buffer_factory_ozone_native_pixmap.h',
-      'common/gpu/gpu_memory_buffer_factory_shared_memory.cc',
-      'common/gpu/gpu_memory_buffer_factory_shared_memory.h',
       'common/gpu/gpu_memory_manager.cc',
       'common/gpu/gpu_memory_manager.h',
       'common/gpu/gpu_memory_manager_client.cc',
@@ -340,12 +340,6 @@
       'common/gpu/image_transport_surface.cc',
       'common/gpu/image_transport_surface.h',
       'common/gpu/image_transport_surface_android.cc',
-      'common/gpu/image_transport_surface_calayer_mac.h',
-      'common/gpu/image_transport_surface_calayer_mac.mm',
-      'common/gpu/image_transport_surface_fbo_mac.h',
-      'common/gpu/image_transport_surface_fbo_mac.mm',
-      'common/gpu/image_transport_surface_iosurface_mac.cc',
-      'common/gpu/image_transport_surface_iosurface_mac.h',
       'common/gpu/image_transport_surface_linux.cc',
       'common/gpu/image_transport_surface_overlay_mac.h',
       'common/gpu/image_transport_surface_overlay_mac.mm',
@@ -422,8 +416,6 @@
       'common/mac/font_descriptor.mm',
       'common/mac/font_loader.h',
       'common/mac/font_loader.mm',
-      'common/mac/io_surface_manager.cc',
-      'common/mac/io_surface_manager.h',
       'common/mac/io_surface_manager_messages.h',
       'common/mac/io_surface_manager_token.h',
       'common/manifest_manager_messages.h',
@@ -523,6 +515,7 @@
       'common/sandbox_util.h',
       'common/sandbox_win.cc',
       'common/sandbox_win.h',
+      'common/savable_subframe.h',
       'common/savable_url_schemes.cc',
       'common/savable_url_schemes.h',
       'common/screen_orientation_messages.h',
@@ -652,7 +645,7 @@
             '<(template)',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/webkit_version.h',
+            '<(SHARED_INTERMEDIATE_DIR)/build/util/webkit_version.h',
           ],
           'action': ['python',
                      '<(script)',
@@ -663,7 +656,7 @@
           'variables': {
             'script': '<(DEPTH)/build/util/version.py',
             'lastchange': '<(DEPTH)/build/util/LASTCHANGE.blink',
-            'template': 'webkit_version.h.in',
+            'template': '<(DEPTH)/build/util/webkit_version.h.in',
           },
         },
       ],
@@ -799,9 +792,15 @@
       'sources': [
         'common/gpu/media/android_copying_backing_strategy.cc',
         'common/gpu/media/android_copying_backing_strategy.h',
+        'common/gpu/media/android_deferred_rendering_backing_strategy.cc',
+        'common/gpu/media/android_deferred_rendering_backing_strategy.h',
         'common/gpu/media/android_video_decode_accelerator.cc',
         'common/gpu/media/android_video_decode_accelerator.h',
+        'common/gpu/media/avda_codec_image.cc',
+        'common/gpu/media/avda_codec_image.h',
         'common/gpu/media/avda_return_on_failure.h',
+        'common/gpu/media/avda_shared_state.h',
+        'common/gpu/media/avda_state_provider.h',
       ],
     }],
     ['OS=="android" and enable_webrtc==1', {
@@ -816,6 +815,10 @@
     ['enable_webrtc==1', {
       'dependencies': [
         '../third_party/libjingle/libjingle.gyp:libjingle',
+      ],
+      'sources': [
+        'public/common/webrtc_ip_handling_policy.cc',
+        'public/common/webrtc_ip_handling_policy.h',
       ],
     }],
     ['use_v4lplugin==1 and chromeos==1', {
@@ -1087,6 +1090,7 @@
       'dependencies': [
         '../ui/ozone/ozone.gyp:ozone',
         '../ui/ozone/ozone.gyp:ozone_base',
+        '../ui/ozone/ozone.gyp:vgem_map',
       ],
       'sources!': [
         'common/gpu/client/gpu_memory_buffer_impl_linux.cc',

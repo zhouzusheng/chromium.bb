@@ -5,6 +5,7 @@
 #include "media/base/video_frame.h"
 
 #include <algorithm>
+#include <climits>
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
@@ -62,7 +63,8 @@ static bool IsStorageTypeMappable(VideoFrame::StorageType storage_type) {
 #endif
       (storage_type == VideoFrame::STORAGE_UNOWNED_MEMORY ||
        storage_type == VideoFrame::STORAGE_OWNED_MEMORY ||
-       storage_type == VideoFrame::STORAGE_SHMEM);
+       storage_type == VideoFrame::STORAGE_SHMEM ||
+       storage_type == VideoFrame::STORAGE_GPU_MEMORY_BUFFERS);
 }
 
 // Returns the pixel size per element for given |plane| and |format|. E.g. 2x2
@@ -162,13 +164,15 @@ bool VideoFrame::IsValidConfig(VideoPixelFormat format,
                                const gfx::Rect& visible_rect,
                                const gfx::Size& natural_size) {
   // Check maximum limits for all formats.
-  if (coded_size.GetArea() > limits::kMaxCanvas ||
+  int coded_size_area = coded_size.GetCheckedArea().ValueOrDefault(INT_MAX);
+  int natural_size_area = natural_size.GetCheckedArea().ValueOrDefault(INT_MAX);
+  static_assert(limits::kMaxCanvas < INT_MAX, "");
+  if (coded_size_area > limits::kMaxCanvas ||
       coded_size.width() > limits::kMaxDimension ||
-      coded_size.height() > limits::kMaxDimension ||
-      visible_rect.x() < 0 || visible_rect.y() < 0 ||
-      visible_rect.right() > coded_size.width() ||
+      coded_size.height() > limits::kMaxDimension || visible_rect.x() < 0 ||
+      visible_rect.y() < 0 || visible_rect.right() > coded_size.width() ||
       visible_rect.bottom() > coded_size.height() ||
-      natural_size.GetArea() > limits::kMaxCanvas ||
+      natural_size_area > limits::kMaxCanvas ||
       natural_size.width() > limits::kMaxDimension ||
       natural_size.height() > limits::kMaxDimension)
     return false;
@@ -329,6 +333,44 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvData(
   frame->data_[kYPlane] = y_data;
   frame->data_[kUPlane] = u_data;
   frame->data_[kVPlane] = v_data;
+  return frame;
+}
+
+// static
+scoped_refptr<VideoFrame> VideoFrame::WrapExternalYuvGpuMemoryBuffers(
+    VideoPixelFormat format,
+    const gfx::Size& coded_size,
+    const gfx::Rect& visible_rect,
+    const gfx::Size& natural_size,
+    int32 y_stride,
+    int32 u_stride,
+    int32 v_stride,
+    uint8* y_data,
+    uint8* u_data,
+    uint8* v_data,
+    const gfx::GpuMemoryBufferHandle& y_handle,
+    const gfx::GpuMemoryBufferHandle& u_handle,
+    const gfx::GpuMemoryBufferHandle& v_handle,
+    base::TimeDelta timestamp) {
+  const StorageType storage = STORAGE_GPU_MEMORY_BUFFERS;
+  if (!IsValidConfig(format, storage, coded_size, visible_rect, natural_size)) {
+    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+                << ConfigToString(format, storage, coded_size, visible_rect,
+                                  natural_size);
+    return nullptr;
+  }
+
+  scoped_refptr<VideoFrame> frame(new VideoFrame(
+      format, storage, coded_size, visible_rect, natural_size, timestamp));
+  frame->strides_[kYPlane] = y_stride;
+  frame->strides_[kUPlane] = u_stride;
+  frame->strides_[kVPlane] = v_stride;
+  frame->data_[kYPlane] = y_data;
+  frame->data_[kUPlane] = u_data;
+  frame->data_[kVPlane] = v_data;
+  frame->gpu_memory_buffer_handles_.push_back(y_handle);
+  frame->gpu_memory_buffer_handles_.push_back(u_handle);
+  frame->gpu_memory_buffer_handles_.push_back(v_handle);
   return frame;
 }
 
@@ -705,6 +747,13 @@ size_t VideoFrame::shared_memory_offset() const {
   return shared_memory_offset_;
 }
 
+const std::vector<gfx::GpuMemoryBufferHandle>&
+VideoFrame::gpu_memory_buffer_handles() const {
+  DCHECK_EQ(storage_type_, STORAGE_GPU_MEMORY_BUFFERS);
+  DCHECK(!gpu_memory_buffer_handles_.empty());
+  return gpu_memory_buffer_handles_;
+}
+
 #if defined(OS_LINUX)
 int VideoFrame::dmabuf_fd(size_t plane) const {
   DCHECK_EQ(storage_type_, STORAGE_DMABUFS);
@@ -756,15 +805,15 @@ void VideoFrame::AddDestructionObserver(const base::Closure& callback) {
   done_callbacks_.push_back(callback);
 }
 
-void VideoFrame::UpdateReleaseSyncPoint(SyncPointClient* client) {
+void VideoFrame::UpdateReleaseSyncToken(SyncTokenClient* client) {
   DCHECK(HasTextures());
-  base::AutoLock locker(release_sync_point_lock_);
+  base::AutoLock locker(release_sync_token_lock_);
   // Must wait on the previous sync point before inserting a new sync point so
   // that |mailbox_holders_release_cb_| guarantees the previous sync point
-  // occurred when it waits on |release_sync_point_|.
-  if (release_sync_point_)
-    client->WaitSyncPoint(release_sync_point_);
-  release_sync_point_ = client->InsertSyncPoint();
+  // occurred when it waits on |release_sync_token_|.
+  if (release_sync_token_.HasData())
+    client->WaitSyncToken(release_sync_token_);
+  client->GenerateSyncToken(&release_sync_token_);
 }
 
 // static
@@ -825,8 +874,7 @@ VideoFrame::VideoFrame(VideoPixelFormat format,
       natural_size_(natural_size),
       shared_memory_handle_(base::SharedMemory::NULLHandle()),
       shared_memory_offset_(0),
-      timestamp_(timestamp),
-      release_sync_point_(0) {
+      timestamp_(timestamp) {
   DCHECK(IsValidConfig(format_, storage_type, coded_size_, visible_rect_,
                        natural_size_));
   memset(&mailbox_holders_, 0, sizeof(mailbox_holders_));
@@ -873,14 +921,14 @@ VideoFrame::VideoFrame(VideoPixelFormat format,
 
 VideoFrame::~VideoFrame() {
   if (!mailbox_holders_release_cb_.is_null()) {
-    uint32 release_sync_point;
+    gpu::SyncToken release_sync_token;
     {
-      // To ensure that changes to |release_sync_point_| are visible on this
+      // To ensure that changes to |release_sync_token_| are visible on this
       // thread (imply a memory barrier).
-      base::AutoLock locker(release_sync_point_lock_);
-      release_sync_point = release_sync_point_;
+      base::AutoLock locker(release_sync_token_lock_);
+      release_sync_token = release_sync_token_;
     }
-    base::ResetAndReturn(&mailbox_holders_release_cb_).Run(release_sync_point);
+    base::ResetAndReturn(&mailbox_holders_release_cb_).Run(release_sync_token);
   }
 
   for (auto& callback : done_callbacks_)

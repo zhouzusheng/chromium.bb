@@ -96,7 +96,7 @@
     },
   ],
   'conditions': [
-    ['test_isolation_mode != "noop"', {
+    ['test_isolation_mode != "noop" and OS != "android"', {
       'targets': [
         {
           'target_name': 'ui_touch_selection_unittests_run',

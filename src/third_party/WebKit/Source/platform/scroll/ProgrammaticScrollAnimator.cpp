@@ -31,7 +31,7 @@ ProgrammaticScrollAnimator::ProgrammaticScrollAnimator(ScrollableArea* scrollabl
     , m_compositorAnimationId(0)
     , m_compositorAnimationGroupId(0)
 {
-    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled() && Platform::current()->isThreadedAnimationEnabled()) {
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled()) {
         ASSERT(Platform::current()->compositorSupport());
         m_compositorPlayer = adoptPtr(Platform::current()->compositorSupport()->createAnimationPlayer());
         ASSERT(m_compositorPlayer);
@@ -216,13 +216,14 @@ void ProgrammaticScrollAnimator::reattachCompositorPlayerIfNeeded(WebCompositorA
         if (m_compositorPlayer && timeline) {
             // Detach from old layer (if any).
             if (m_compositorAnimationAttachedToLayerId) {
-                ASSERT(m_compositorPlayer->isLayerAttached());
-                m_compositorPlayer->detachLayer();
+                if (m_compositorPlayer->isLayerAttached())
+                    m_compositorPlayer->detachLayer();
                 timeline->playerDestroyed(*this);
             }
             // Attach to new layer (if any).
             if (compositorAnimationAttachedToLayerId) {
                 ASSERT(m_scrollableArea->layerForScrolling());
+                ASSERT(!m_compositorPlayer->isLayerAttached());
                 timeline->playerAttached(*this);
                 m_compositorPlayer->attachLayer(m_scrollableArea->layerForScrolling()->platformLayer());
             }

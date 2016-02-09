@@ -15,7 +15,7 @@ namespace cc {
 
 SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
     : settings_(settings),
-      output_surface_state_(OUTPUT_SURFACE_LOST),
+      output_surface_state_(OUTPUT_SURFACE_NONE),
       begin_impl_frame_state_(BEGIN_IMPL_FRAME_STATE_IDLE),
       begin_main_frame_state_(BEGIN_MAIN_FRAME_STATE_IDLE),
       forced_redraw_state_(FORCED_REDRAW_STATE_IDLE),
@@ -39,8 +39,9 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       needs_animate_(false),
       needs_prepare_tiles_(false),
       needs_begin_main_frame_(false),
+      needs_one_begin_impl_frame_(false),
       visible_(false),
-      can_start_(false),
+      resourceless_draw_(false),
       can_draw_(false),
       has_pending_tree_(false),
       pending_tree_is_ready_for_activation_(false),
@@ -60,10 +61,10 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
 const char* SchedulerStateMachine::OutputSurfaceStateToString(
     OutputSurfaceState state) {
   switch (state) {
+    case OUTPUT_SURFACE_NONE:
+      return "OUTPUT_SURFACE_NONE";
     case OUTPUT_SURFACE_ACTIVE:
       return "OUTPUT_SURFACE_ACTIVE";
-    case OUTPUT_SURFACE_LOST:
-      return "OUTPUT_SURFACE_LOST";
     case OUTPUT_SURFACE_CREATING:
       return "OUTPUT_SURFACE_CREATING";
     case OUTPUT_SURFACE_WAITING_FOR_FIRST_COMMIT:
@@ -224,9 +225,10 @@ void SchedulerStateMachine::AsValueInto(
   state->SetBoolean("needs_animate_", needs_animate_);
   state->SetBoolean("needs_prepare_tiles", needs_prepare_tiles_);
   state->SetBoolean("needs_begin_main_frame", needs_begin_main_frame_);
+  state->SetBoolean("needs_one_begin_impl_frame", needs_one_begin_impl_frame_);
   state->SetBoolean("visible", visible_);
-  state->SetBoolean("can_start", can_start_);
   state->SetBoolean("can_draw", can_draw_);
+  state->SetBoolean("resourceless_draw", resourceless_draw_);
   state->SetBoolean("has_pending_tree", has_pending_tree_);
   state->SetBoolean("pending_tree_is_ready_for_activation",
                     pending_tree_is_ready_for_activation_);
@@ -257,8 +259,8 @@ bool SchedulerStateMachine::PendingDrawsShouldBeAborted() const {
   // draws will be aborted. However, when the embedder is Android WebView,
   // software draws could be scheduled by the Android OS at any time and draws
   // should not be aborted in this case.
-  bool is_output_surface_lost = (output_surface_state_ == OUTPUT_SURFACE_LOST);
-  if (settings_.using_synchronous_renderer_compositor)
+  bool is_output_surface_lost = (output_surface_state_ == OUTPUT_SURFACE_NONE);
+  if (resourceless_draw_)
     return is_output_surface_lost || !can_draw_;
 
   // These are all the cases where we normally cannot or do not want to draw
@@ -274,7 +276,7 @@ bool SchedulerStateMachine::PendingActivationsShouldBeForced() const {
   // There is no output surface to trigger our activations.
   // If we do not force activations to make forward progress, we might deadlock
   // with the main thread.
-  if (output_surface_state_ == OUTPUT_SURFACE_LOST)
+  if (output_surface_state_ == OUTPUT_SURFACE_NONE)
     return true;
 
   // If we're not visible, we should force activation.
@@ -292,10 +294,6 @@ bool SchedulerStateMachine::PendingActivationsShouldBeForced() const {
 
 bool SchedulerStateMachine::ShouldBeginOutputSurfaceCreation() const {
   if (!visible_)
-    return false;
-
-  // Don't try to initialize too early.
-  if (!can_start_)
     return false;
 
   // We only want to start output surface initialization after the
@@ -317,7 +315,7 @@ bool SchedulerStateMachine::ShouldBeginOutputSurfaceCreation() const {
 
   // We need to create the output surface if we don't have one and we haven't
   // started creating one yet.
-  return output_surface_state_ == OUTPUT_SURFACE_LOST;
+  return output_surface_state_ == OUTPUT_SURFACE_NONE;
 }
 
 bool SchedulerStateMachine::ShouldDraw() const {
@@ -497,8 +495,7 @@ bool SchedulerStateMachine::ShouldCommit() const {
 
   // If we only have an active tree, it is incorrect to replace it
   // before we've drawn it.
-  DCHECK_IMPLIES(settings_.commit_to_active_tree,
-                 !active_tree_needs_first_draw_);
+  DCHECK(!settings_.commit_to_active_tree || !active_tree_needs_first_draw_);
 
   return true;
 }
@@ -568,8 +565,6 @@ void SchedulerStateMachine::WillAnimate() {
   last_frame_number_animate_performed_ = current_frame_number_;
   animate_funnel_ = true;
   needs_animate_ = false;
-  // TODO(skyostil): Instead of assuming this, require the client to tell us.
-  SetNeedsRedraw();
 }
 
 void SchedulerStateMachine::WillSendBeginMainFrame() {
@@ -676,7 +671,7 @@ void SchedulerStateMachine::WillPrepareTiles() {
 }
 
 void SchedulerStateMachine::WillBeginOutputSurfaceCreation() {
-  DCHECK_EQ(output_surface_state_, OUTPUT_SURFACE_LOST);
+  DCHECK_EQ(output_surface_state_, OUTPUT_SURFACE_NONE);
   output_surface_state_ = OUTPUT_SURFACE_CREATING;
 
   // The following DCHECKs make sure we are in the proper quiescent state.
@@ -750,7 +745,7 @@ bool SchedulerStateMachine::BeginFrameRequiredForAction() const {
   if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW)
     return true;
 
-  return needs_animate_ || needs_redraw_ ||
+  return needs_animate_ || needs_redraw_ || needs_one_begin_impl_frame_ ||
          (needs_begin_main_frame_ && !defer_commits_);
 }
 
@@ -806,6 +801,7 @@ void SchedulerStateMachine::OnBeginImplFrame() {
 
   last_commit_had_no_updates_ = false;
   did_request_swap_in_last_frame_ = false;
+  needs_one_begin_impl_frame_ = false;
 
   // Clear funnels for any actions we perform during the frame.
   animate_funnel_ = false;
@@ -863,15 +859,13 @@ SchedulerStateMachine::CurrentBeginImplFrameDeadlineMode() const {
     // When we are waiting for ready to draw signal, we do not wait to post a
     // deadline yet.
     return BEGIN_IMPL_FRAME_DEADLINE_MODE_BLOCKED_ON_READY_TO_DRAW;
-  } else if (needs_redraw_ && !SwapThrottled()) {
+  } else if (needs_redraw_) {
     // We have an animation or fast input path on the impl thread that wants
     // to draw, so don't wait too long for a new active tree.
-    // If we are swap throttled we should wait until we are unblocked.
     return BEGIN_IMPL_FRAME_DEADLINE_MODE_REGULAR;
   } else {
     // The impl thread doesn't have anything it wants to draw and we are just
-    // waiting for a new active tree or we are swap throttled. In short we are
-    // blocked.
+    // waiting for a new active tree. In short we are blocked.
     return BEGIN_IMPL_FRAME_DEADLINE_MODE_LATE;
   }
 }
@@ -935,6 +929,10 @@ void SchedulerStateMachine::SetVisible(bool visible) {
   wait_for_ready_to_draw_ = false;
 }
 
+void SchedulerStateMachine::SetResourcelessSoftareDraw(bool resourceless_draw) {
+  resourceless_draw_ = resourceless_draw;
+}
+
 void SchedulerStateMachine::SetCanDraw(bool can_draw) { can_draw_ = can_draw; }
 
 void SchedulerStateMachine::SetNeedsRedraw() { needs_redraw_ = true; }
@@ -944,7 +942,8 @@ void SchedulerStateMachine::SetNeedsAnimate() {
 }
 
 bool SchedulerStateMachine::OnlyImplSideUpdatesExpected() const {
-  bool has_impl_updates = needs_redraw_ || needs_animate_;
+  bool has_impl_updates =
+      needs_redraw_ || needs_animate_ || needs_one_begin_impl_frame_;
   bool main_updates_expected =
       needs_begin_main_frame_ ||
       begin_main_frame_state_ != BEGIN_MAIN_FRAME_STATE_IDLE ||
@@ -964,6 +963,7 @@ void SchedulerStateMachine::SetMaxSwapsPending(int max) {
 }
 
 void SchedulerStateMachine::DidSwapBuffers() {
+  TRACE_EVENT_ASYNC_BEGIN0("cc", "Scheduler:pending_swaps", this);
   pending_swaps_++;
   swaps_with_current_output_surface_++;
 
@@ -974,6 +974,7 @@ void SchedulerStateMachine::DidSwapBuffers() {
 }
 
 void SchedulerStateMachine::DidSwapBuffersComplete() {
+  TRACE_EVENT_ASYNC_END0("cc", "Scheduler:pending_swaps", this);
   pending_swaps_--;
 }
 
@@ -1029,8 +1030,12 @@ void SchedulerStateMachine::SetNeedsBeginMainFrame() {
   needs_begin_main_frame_ = true;
 }
 
+void SchedulerStateMachine::SetNeedsOneBeginImplFrame() {
+  needs_one_begin_impl_frame_ = true;
+}
+
 void SchedulerStateMachine::NotifyReadyToCommit() {
-  DCHECK(begin_main_frame_state_ == BEGIN_MAIN_FRAME_STATE_STARTED)
+  DCHECK_EQ(begin_main_frame_state_, BEGIN_MAIN_FRAME_STATE_STARTED)
       << AsValue()->ToString();
   begin_main_frame_state_ = BEGIN_MAIN_FRAME_STATE_READY_TO_COMMIT;
   // In commit_to_active_tree mode, commit should happen right after
@@ -1041,7 +1046,7 @@ void SchedulerStateMachine::NotifyReadyToCommit() {
 }
 
 void SchedulerStateMachine::BeginMainFrameAborted(CommitEarlyOutReason reason) {
-  DCHECK_EQ(begin_main_frame_state_, BEGIN_MAIN_FRAME_STATE_SENT);
+  DCHECK_EQ(begin_main_frame_state_, BEGIN_MAIN_FRAME_STATE_STARTED);
   switch (reason) {
     case CommitEarlyOutReason::ABORTED_OUTPUT_SURFACE_LOST:
     case CommitEarlyOutReason::ABORTED_NOT_VISIBLE:
@@ -1063,10 +1068,10 @@ void SchedulerStateMachine::DidPrepareTiles() {
 }
 
 void SchedulerStateMachine::DidLoseOutputSurface() {
-  if (output_surface_state_ == OUTPUT_SURFACE_LOST ||
+  if (output_surface_state_ == OUTPUT_SURFACE_NONE ||
       output_surface_state_ == OUTPUT_SURFACE_CREATING)
     return;
-  output_surface_state_ = OUTPUT_SURFACE_LOST;
+  output_surface_state_ = OUTPUT_SURFACE_NONE;
   needs_redraw_ = false;
   wait_for_ready_to_draw_ = false;
 }
@@ -1102,7 +1107,7 @@ void SchedulerStateMachine::NotifyBeginMainFrameStarted() {
 
 bool SchedulerStateMachine::HasInitializedOutputSurface() const {
   switch (output_surface_state_) {
-    case OUTPUT_SURFACE_LOST:
+    case OUTPUT_SURFACE_NONE:
     case OUTPUT_SURFACE_CREATING:
       return false;
 

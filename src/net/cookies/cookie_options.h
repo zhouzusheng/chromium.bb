@@ -10,6 +10,7 @@
 #include "base/time/time.h"
 #include "net/base/net_export.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace net {
 
@@ -32,8 +33,13 @@ class NET_EXPORT CookieOptions {
   void set_include_first_party_only() { include_first_party_only_ = true; }
   bool include_first_party_only() const { return include_first_party_only_; }
 
-  void set_first_party_url(const GURL& url) { first_party_url_ = url; }
-  GURL first_party_url() const { return first_party_url_; }
+  void set_first_party(const url::Origin& origin) { first_party_ = origin; }
+  const url::Origin& first_party() const { return first_party_; }
+
+  // TODO(estark): Remove once we decide whether to ship cookie
+  // prefixes. https://crbug.com/541511
+  void set_enforce_prefixes() { enforce_prefixes_ = true; }
+  bool enforce_prefixes() const { return enforce_prefixes_; }
 
   // |server_time| indicates what the server sending us the Cookie thought the
   // current time was when the cookie was produced.  This is used to adjust for
@@ -47,7 +53,8 @@ class NET_EXPORT CookieOptions {
  private:
   bool exclude_httponly_;
   bool include_first_party_only_;
-  GURL first_party_url_;
+  url::Origin first_party_;
+  bool enforce_prefixes_;
   base::Time server_time_;
 };
 

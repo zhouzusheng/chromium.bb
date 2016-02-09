@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "8.28",
+  "version": "8.32",
   "entries": [
     {
       "id": 1,
@@ -405,10 +405,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 33,
-      "description": "Share group-related crashes and poor context switching perf on Galaxy Nexus",
-      "os": {
-        "type": "android"
-      },
+      "description": "Share group-related crashes and poor context switching perf on Imagination drivers",
       "gl_vendor": "Imagination.*",
       "features": [
         "use_virtualized_gl_contexts"
@@ -1270,10 +1267,11 @@ LONG_STRING_CONST(
     },
     {
       "id": 109,
-      "description": "MakeCurrent is slow on Linux",
+      "description": "MakeCurrent is slow on Linux with NVIDIA drivers",
       "os": {
         "type": "linux"
       },
+      "gl_vendor": "NVIDIA.*",
       "features": [
         "use_virtualized_gl_contexts"
       ]
@@ -1432,12 +1430,15 @@ LONG_STRING_CONST(
     {
       "id": 123,
       "cr_bugs": [344330],
-      "description": "NVIDIA drivers before 337 lack features in NV_path_rendering and related extensions to implement driver level path rendering.",
+      "description": "NVIDIA drivers before 346 lack features in NV_path_rendering and related extensions to implement driver level path rendering.",
+      "vendor_id": "0x10de",
+      "os": {
+        "type": "linux"
+      },
       "driver_version": {
         "op": "<",
-        "value": "337"
+        "value": "346"
       },
-      "vendor_id": "0x10de",
       "features": [
         "disable_gl_path_rendering"
       ]
@@ -1568,6 +1569,22 @@ LONG_STRING_CONST(
     },
     {
       "id": 134,
+      "description": "glReadPixels fails on FBOs with SRGB_ALPHA textures",
+      "cr_bugs": [550292],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "5.0"
+        }
+      },
+      "gl_vendor": "Qualcomm.*",
+      "features": [
+        "disable_ext_srgb"
+      ]
+    },
+    {
+      "id": 135,
       "description": "Screen flickers on 2009 iMacs",
       "cr_bugs": [543324],
       "os": {

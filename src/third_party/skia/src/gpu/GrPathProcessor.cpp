@@ -8,8 +8,10 @@
 #include "GrPathProcessor.h"
 
 #include "gl/GrGLGpu.h"
-
 #include "glsl/GrGLSLCaps.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProcessorTypes.h"
+#include "glsl/GrGLSLProgramBuilder.h"
 
 class GrGLPathProcessor : public GrGLPrimitiveProcessor {
 public:
@@ -23,8 +25,8 @@ public:
     }
 
     void emitCode(EmitArgs& args) override {
-        GrGLGPBuilder* pb = args.fPB;
-        GrGLFragmentBuilder* fs = args.fPB->getFragmentShaderBuilder();
+        GrGLSLGPBuilder* pb = args.fPB;
+        GrGLSLFragmentBuilder* fs = args.fPB->getFragmentShaderBuilder();
         const GrPathProcessor& pathProc = args.fGP.cast<GrPathProcessor>();
 
         // emit transforms
@@ -33,7 +35,7 @@ public:
         // Setup uniform color
         if (pathProc.opts().readsColor()) {
             const char* stagedLocalVarName;
-            fColorUniform = pb->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+            fColorUniform = pb->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                            kVec4f_GrSLType,
                                            kDefault_GrSLPrecision,
                                            "Color",
@@ -47,7 +49,7 @@ public:
         }
     }
 
-    void emitTransforms(GrGLGPBuilder* pb, const TransformsIn& tin, TransformsOut* tout) {
+    void emitTransforms(GrGLSLGPBuilder* pb, const TransformsIn& tin, TransformsOut* tout) {
         tout->push_back_n(tin.count());
         fInstalledTransforms.push_back_n(tin.count());
         for (int i = 0; i < tin.count(); i++) {
@@ -60,21 +62,22 @@ public:
 
                 SkString strVaryingName("MatrixCoord");
                 strVaryingName.appendf("_%i_%i", i, t);
-                GrGLVertToFrag v(varyingType);
+                GrGLSLVertToFrag v(varyingType);
                 fInstalledTransforms[i][t].fHandle =
                         pb->addSeparableVarying(strVaryingName.c_str(), &v).toIndex();
                 fInstalledTransforms[i][t].fType = varyingType;
 
-                SkNEW_APPEND_TO_TARRAY(&(*tout)[i], GrGLProcessor::TransformedCoords,
+                SkNEW_APPEND_TO_TARRAY(&(*tout)[i], GrGLSLTransformedCoords,
                                        (SkString(v.fsIn()), varyingType));
             }
         }
     }
 
-    void setData(const GrGLProgramDataManager& pd, const GrPrimitiveProcessor& primProc) override {
+    void setData(const GrGLSLProgramDataManager& pd,
+                 const GrPrimitiveProcessor& primProc) override {
         const GrPathProcessor& pathProc = primProc.cast<GrPathProcessor>();
         if (pathProc.opts().readsColor() && pathProc.color() != fColor) {
-            GrGLfloat c[4];
+            float c[4];
             GrColorToRGBAFloat(pathProc.color(), c);
             pd.set4fv(fColorUniform, 1, c);
             fColor = pathProc.color();
@@ -82,7 +85,7 @@ public:
     }
 
     void setTransformData(const GrPrimitiveProcessor& primProc,
-                          const GrGLProgramDataManager& pdman,
+                          const GrGLSLProgramDataManager& pdman,
                           int index,
                           const SkTArray<const GrCoordTransform*, true>& coordTransforms) override {
         const GrPathProcessor& pathProc = primProc.cast<GrPathProcessor>();

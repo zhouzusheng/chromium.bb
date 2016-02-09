@@ -41,7 +41,7 @@ class GraphicsContext;
 class IntRect;
 class PlatformGestureEvent;
 class PlatformMouseEvent;
-class ScrollAnimator;
+class ScrollAnimatorBase;
 class ScrollableArea;
 class ScrollbarTheme;
 
@@ -107,7 +107,7 @@ public:
     void setProportion(int visibleSize, int totalSize);
     void setPressedPos(int p) { m_pressedPos = p; }
 
-    void paint(GraphicsContext*, const IntRect& damageRect) const final;
+    void paint(GraphicsContext*, const CullRect&) const final;
 
     bool isOverlayScrollbar() const override;
     bool shouldParticipateInHitTesting();
@@ -145,6 +145,11 @@ public:
 
     float elasticOverscroll() const override { return m_elasticOverscroll; }
     void setElasticOverscroll(float elasticOverscroll) override { m_elasticOverscroll = elasticOverscroll; }
+
+    bool trackNeedsRepaint() const override { return m_trackNeedsRepaint; }
+    void setTrackNeedsRepaint(bool trackNeedsRepaint) override { m_trackNeedsRepaint = trackNeedsRepaint; }
+    bool thumbNeedsRepaint() const override { return m_thumbNeedsRepaint; }
+    void setThumbNeedsRepaint(bool thumbNeedsRepaint) override { m_thumbNeedsRepaint = thumbNeedsRepaint; }
 
     bool overlapsResizer() const { return m_overlapsResizer; }
     void setOverlapsResizer(bool overlapsResizer) { m_overlapsResizer = overlapsResizer; }
@@ -205,6 +210,9 @@ private:
     bool isScrollbar() const override { return true; }
 
     float scrollableAreaCurrentPos() const;
+
+    bool m_trackNeedsRepaint;
+    bool m_thumbNeedsRepaint;
 };
 
 DEFINE_TYPE_CASTS(Scrollbar, Widget, widget, widget->isScrollbar(), widget.isScrollbar());

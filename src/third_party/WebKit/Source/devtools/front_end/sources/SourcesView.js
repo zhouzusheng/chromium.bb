@@ -291,8 +291,6 @@ WebInspector.SourcesView.prototype = {
         var project = event.data;
         var uiSourceCodes = project.uiSourceCodes();
         this._removeUISourceCodes(uiSourceCodes);
-        if (project.type() === WebInspector.projectTypes.Network)
-            this._editorContainer.reset();
     },
 
     _updateScriptViewToolbarItems: function()
@@ -810,16 +808,18 @@ WebInspector.SourcesView.SwitchFileActionDelegate.prototype = {
      * @override
      * @param {!WebInspector.Context} context
      * @param {string} actionId
+     * @return {boolean}
      */
     handleAction: function(context, actionId)
     {
         var sourcesView = WebInspector.context.flavor(WebInspector.SourcesView);
         var currentUISourceCode = sourcesView.currentUISourceCode();
         if (!currentUISourceCode)
-            return;
+            return false;
         var nextUISourceCode = WebInspector.SourcesView.SwitchFileActionDelegate._nextFile(currentUISourceCode);
         if (!nextUISourceCode)
-            return;
+            return false;
         sourcesView.showSourceLocation(nextUISourceCode);
+        return true;
     }
 }

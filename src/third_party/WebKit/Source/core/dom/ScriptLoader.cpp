@@ -50,6 +50,7 @@
 #include "core/svg/SVGScriptElement.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebFrameScheduler.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/StringHash.h"
@@ -259,7 +260,7 @@ bool ScriptLoader::prepareScript(const TextPosition& scriptStartPosition, Legacy
         if (frame) {
             ScriptState* scriptState = ScriptState::forMainWorld(frame);
             if (scriptState->contextIsValid())
-                ScriptStreamer::startStreaming(m_pendingScript, PendingScript::Async, frame->settings(), scriptState);
+                ScriptStreamer::startStreaming(m_pendingScript, PendingScript::Async, frame->settings(), scriptState, frame->frameScheduler()->loadingTaskRunner());
         }
         contextDocument->scriptRunner()->queueScriptForExecution(this, ScriptRunner::ASYNC_EXECUTION);
         // Note that watchForLoad can immediately call notifyFinished.
@@ -300,12 +301,13 @@ bool ScriptLoader::fetchScript(const String& sourceUrl, FetchRequest::DeferOptio
         request.setDefer(defer);
 
         String integrityAttr = m_element->fastGetAttribute(HTMLNames::integrityAttr);
-        if (!integrityAttr.isEmpty())
-            request.setIntegrityMetadata(integrityAttr);
+        IntegrityMetadataSet metadataSet;
+        if (!integrityAttr.isEmpty()) {
+            SubresourceIntegrity::parseIntegrityAttribute(integrityAttr, metadataSet, elementDocument.get());
+            request.setIntegrityMetadata(metadataSet);
+        }
 
         m_resource = ScriptResource::fetch(request, elementDocument->fetcher());
-        if (m_resource && !integrityAttr.isEmpty())
-            m_resource->setIntegrityMetadata(integrityAttr);
 
         m_isExternalScript = true;
     }
@@ -436,22 +438,19 @@ void ScriptLoader::notifyFinished(Resource* resource)
 
     ASSERT_UNUSED(resource, resource == m_resource);
 
+    ScriptRunner::ExecutionType runOrder = m_willExecuteInOrder ? ScriptRunner::IN_ORDER_EXECUTION : ScriptRunner::ASYNC_EXECUTION;
     if (m_resource->errorOccurred()) {
         dispatchErrorEvent();
-        // dispatchErrorEvent might move the HTMLScriptElement to a new
-        // document. In that case, we must notify the ScriptRunner of the new
-        // document, not the ScriptRunner of the old docuemnt.
+        // The error handler can move the HTMLScriptElement to a new document.
+        // In that case, we must notify the ScriptRunner of the new document,
+        // not the ScriptRunner of the old docuemnt.
         contextDocument = m_element->document().contextDocument().get();
         if (!contextDocument)
             return;
-        contextDocument->scriptRunner()->notifyScriptLoadError(this, m_willExecuteInOrder ? ScriptRunner::IN_ORDER_EXECUTION : ScriptRunner::ASYNC_EXECUTION);
+        contextDocument->scriptRunner()->notifyScriptLoadError(this, runOrder);
         return;
     }
-    if (m_willExecuteInOrder)
-        contextDocument->scriptRunner()->notifyScriptReady(this, ScriptRunner::IN_ORDER_EXECUTION);
-    else
-        contextDocument->scriptRunner()->notifyScriptReady(this, ScriptRunner::ASYNC_EXECUTION);
-
+    contextDocument->scriptRunner()->notifyScriptReady(this, runOrder);
     m_pendingScript.stopWatchingForLoad(this);
 }
 

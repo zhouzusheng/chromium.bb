@@ -1,7 +1,4 @@
-
-
-    Polymer({
-
+Polymer({
       is: 'paper-spinner',
 
       listeners: {
@@ -10,7 +7,6 @@
       },
 
       properties: {
-
         /**
          * Displays the spinner.
          *
@@ -53,7 +49,6 @@
           type: String,
           computed: '_computeSpinnerContainerClassName(active, _coolingDown)'
         }
-
       },
 
       _computeSpinnerContainerClassName: function(active, coolingDown) {
@@ -65,9 +60,7 @@
 
       _activeChanged: function(active, old) {
         this._setAriaHidden(!active);
-        if (!active && old) {
-          this._coolingDown = true;
-        }
+        this._coolingDown = !active && old;
       },
 
       _altChanged: function(alt) {
@@ -93,7 +86,4 @@
         this.active = false;
         this._coolingDown = false;
       }
-
     });
-
-  

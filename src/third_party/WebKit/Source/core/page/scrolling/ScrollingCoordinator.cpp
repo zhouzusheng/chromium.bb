@@ -53,7 +53,7 @@
 #if OS(MACOSX)
 #include "platform/mac/ScrollAnimatorMac.h"
 #endif
-#include "platform/scroll/ScrollAnimator.h"
+#include "platform/scroll/ScrollAnimatorBase.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorAnimationTimeline.h"
@@ -94,14 +94,7 @@ ScrollingCoordinator::ScrollingCoordinator(Page* page)
     , m_wasFrameScrollable(false)
     , m_lastMainThreadScrollingReasons(0)
 {
-    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled() && Platform::current()->isThreadedAnimationEnabled()) {
-        ASSERT(m_page);
-        if (m_page->mainFrame()->isLocalFrame()) {
-            ASSERT(Platform::current()->compositorSupport());
-            m_programmaticScrollAnimatorTimeline = adoptPtr(Platform::current()->compositorSupport()->createAnimationTimeline());
-            m_page->chromeClient().attachCompositorAnimationTimeline(m_programmaticScrollAnimatorTimeline.get(), toLocalFrame(m_page->mainFrame()));
-        }
-    }
+    createProgrammaticScrollAnimatorTimeline();
 }
 
 ScrollingCoordinator::~ScrollingCoordinator()
@@ -283,10 +276,10 @@ void ScrollingCoordinator::removeWebScrollbarLayer(ScrollableArea* scrollableAre
         GraphicsLayer::unregisterContentsLayer(scrollbarLayer->layer());
 }
 
-static PassOwnPtr<WebScrollbarLayer> createScrollbarLayer(Scrollbar* scrollbar)
+static PassOwnPtr<WebScrollbarLayer> createScrollbarLayer(Scrollbar* scrollbar, float deviceScaleFactor)
 {
     ScrollbarTheme* theme = scrollbar->theme();
-    WebScrollbarThemePainter painter(theme, scrollbar);
+    WebScrollbarThemePainter painter(theme, scrollbar, deviceScaleFactor);
     OwnPtr<WebScrollbarThemeGeometry> geometry(WebScrollbarThemeGeometryNative::create(theme));
 
     OwnPtr<WebScrollbarLayer> scrollbarLayer = adoptPtr(Platform::current()->compositorSupport()->createScrollbarLayer(WebScrollbarImpl::create(scrollbar), painter, geometry.leakPtr()));
@@ -310,7 +303,7 @@ static void detachScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer)
     scrollbarGraphicsLayer->setDrawsContent(true);
 }
 
-static void setupScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer, WebScrollbarLayer* scrollbarLayer, WebLayer* scrollLayer, WebLayer* containerLayer)
+static void setupScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer, WebScrollbarLayer* scrollbarLayer, WebLayer* scrollLayer)
 {
     ASSERT(scrollbarGraphicsLayer);
     ASSERT(scrollbarLayer);
@@ -320,7 +313,6 @@ static void setupScrollbarLayer(GraphicsLayer* scrollbarGraphicsLayer, WebScroll
         return;
     }
     scrollbarLayer->setScrollLayer(scrollLayer);
-    scrollbarLayer->setClipLayer(containerLayer);
     scrollbarGraphicsLayer->setContentsToPlatformLayer(scrollbarLayer->layer());
     scrollbarGraphicsLayer->setDrawsContent(false);
 }
@@ -375,14 +367,13 @@ void ScrollingCoordinator::scrollableAreaScrollbarLayerDidChange(ScrollableArea*
                 ASSERT(RuntimeEnabledFeatures::overlayScrollbarsEnabled());
                 webScrollbarLayer = createSolidColorScrollbarLayer(orientation, scrollbar->theme()->thumbThickness(scrollbar), scrollbar->theme()->trackPosition(scrollbar), scrollableArea->shouldPlaceVerticalScrollbarOnLeft());
             } else {
-                webScrollbarLayer = createScrollbarLayer(scrollbar);
+                webScrollbarLayer = createScrollbarLayer(scrollbar, m_page->deviceScaleFactor());
             }
             scrollbarLayer = addWebScrollbarLayer(scrollableArea, orientation, webScrollbarLayer.release());
         }
 
         WebLayer* scrollLayer = toWebLayer(scrollableArea->layerForScrolling());
-        WebLayer* scrollbarContainerLayer = toWebLayer(scrollableArea->layerForContainer());
-        setupScrollbarLayer(scrollbarGraphicsLayer, scrollbarLayer, scrollLayer, scrollbarContainerLayer);
+        setupScrollbarLayer(scrollbarGraphicsLayer, scrollbarLayer, scrollLayer);
 
         // Root layer non-overlay scrollbars should be marked opaque to disable
         // blending.
@@ -431,13 +422,13 @@ bool ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* sc
     if (WebScrollbarLayer* scrollbarLayer = getWebScrollbarLayer(scrollableArea, HorizontalScrollbar)) {
         GraphicsLayer* horizontalScrollbarLayer = scrollableArea->layerForHorizontalScrollbar();
         if (horizontalScrollbarLayer)
-            setupScrollbarLayer(horizontalScrollbarLayer, scrollbarLayer, webLayer, containerLayer);
+            setupScrollbarLayer(horizontalScrollbarLayer, scrollbarLayer, webLayer);
     }
     if (WebScrollbarLayer* scrollbarLayer = getWebScrollbarLayer(scrollableArea, VerticalScrollbar)) {
         GraphicsLayer* verticalScrollbarLayer = scrollableArea->layerForVerticalScrollbar();
 
         if (verticalScrollbarLayer)
-            setupScrollbarLayer(verticalScrollbarLayer, scrollbarLayer, webLayer, containerLayer);
+            setupScrollbarLayer(verticalScrollbarLayer, scrollbarLayer, webLayer);
     }
 
     // Update the viewport layer registration if the outer viewport may have changed.
@@ -455,7 +446,7 @@ using GraphicsLayerHitTestRects = WTF::HashMap<const GraphicsLayer*, Vector<Layo
 // Layers have child frames inside of them. This computes a mapping for the
 // current frame which we can consult while walking the layers of that frame.
 // Whenever we descend into a new frame, a new map will be created.
-using LayerFrameMap = HashMap<const PaintLayer*, Vector<const LocalFrame*>>;
+using LayerFrameMap = WillBeHeapHashMap<const PaintLayer*, WillBeHeapVector<RawPtrWillBeMember<const LocalFrame>>>;
 static void makeLayerChildFrameMap(const LocalFrame* currentFrame, LayerFrameMap* map)
 {
     map->clear();
@@ -469,7 +460,7 @@ static void makeLayerChildFrameMap(const LocalFrame* currentFrame, LayerFrameMap
         const PaintLayer* containingLayer = ownerLayoutObject->enclosingLayer();
         LayerFrameMap::iterator iter = map->find(containingLayer);
         if (iter == map->end())
-            map->add(containingLayer, Vector<const LocalFrame*>()).storedValue->value.append(toLocalFrame(child));
+            map->add(containingLayer, WillBeHeapVector<RawPtrWillBeMember<const LocalFrame>>()).storedValue->value.append(toLocalFrame(child));
         else
             iter->value.append(toLocalFrame(child));
     }
@@ -729,15 +720,16 @@ void ScrollingCoordinator::setShouldUpdateScrollLayerPositionOnMainThread(MainTh
     }
 }
 
+void ScrollingCoordinator::willCloseLayerTreeView()
+{
+    destroyProgrammaticScrollAnimatorTimeline();
+}
+
 void ScrollingCoordinator::willBeDestroyed()
 {
     ASSERT(m_page);
 
-    if (m_programmaticScrollAnimatorTimeline) {
-        ASSERT(m_page->mainFrame()->isLocalFrame());
-        m_page->chromeClient().detachCompositorAnimationTimeline(m_programmaticScrollAnimatorTimeline.get(), toLocalFrame(m_page->mainFrame()));
-        m_programmaticScrollAnimatorTimeline.clear();
-    }
+    destroyProgrammaticScrollAnimatorTimeline();
 
     m_page = nullptr;
     for (const auto& scrollbar : m_horizontalScrollbars)
@@ -1081,6 +1073,28 @@ bool ScrollingCoordinator::frameViewIsDirty() const
     if (WebLayer* scrollLayer = frameView ? toWebLayer(frameView->layerForScrolling()) : nullptr)
         return WebSize(frameView->contentsSize()) != scrollLayer->bounds();
     return false;
+}
+
+void ScrollingCoordinator::createProgrammaticScrollAnimatorTimeline()
+{
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled() && Platform::current()->isThreadedAnimationEnabled()) {
+        ASSERT(m_page);
+        if (m_page->mainFrame()->isLocalFrame()) {
+            ASSERT(Platform::current()->compositorSupport());
+            m_programmaticScrollAnimatorTimeline = adoptPtr(Platform::current()->compositorSupport()->createAnimationTimeline());
+            m_page->chromeClient().attachCompositorAnimationTimeline(m_programmaticScrollAnimatorTimeline.get(), toLocalFrame(m_page->mainFrame()));
+        }
+    }
+}
+
+void ScrollingCoordinator::destroyProgrammaticScrollAnimatorTimeline()
+{
+    if (m_programmaticScrollAnimatorTimeline) {
+        ASSERT(m_page);
+        ASSERT(m_page->mainFrame()->isLocalFrame());
+        m_page->chromeClient().detachCompositorAnimationTimeline(m_programmaticScrollAnimatorTimeline.get(), toLocalFrame(m_page->mainFrame()));
+        m_programmaticScrollAnimatorTimeline.clear();
+    }
 }
 
 } // namespace blink

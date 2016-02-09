@@ -33,10 +33,11 @@ class CONTENT_EXPORT BackgroundSyncNetworkObserver
   void OnNetworkChanged(
       net::NetworkChangeNotifier::ConnectionType connection_type) override;
 
- private:
-  friend class BackgroundSyncBrowserTest;
-  friend class BackgroundSyncManagerTest;
+  // Allow tests to call NotifyManagerIfNetworkChanged.
+  void NotifyManagerIfNetworkChangedForTesting(
+      net::NetworkChangeNotifier::ConnectionType connection_type);
 
+ private:
   // Calls NotifyNetworkChanged if the connection type has changed.
   void NotifyManagerIfNetworkChanged(
       net::NetworkChangeNotifier::ConnectionType connection_type);

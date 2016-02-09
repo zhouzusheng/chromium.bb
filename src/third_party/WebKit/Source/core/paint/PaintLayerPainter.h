@@ -17,6 +17,10 @@ class PaintLayer;
 class GraphicsContext;
 class LayoutPoint;
 
+// This class is responsible for painting self-painting PaintLayer.
+//
+// See PainterLayer SELF-PAINTING LAYER section about what 'self-painting'
+// means and how it impacts this class.
 class CORE_EXPORT PaintLayerPainter {
     STACK_ALLOCATED();
 public:
@@ -46,8 +50,6 @@ public:
 private:
     enum ClipState { HasNotClipped, HasClipped };
 
-    PaintResult paintLayerInternal(GraphicsContext*, const PaintLayerPaintingInfo&, PaintLayerFlags);
-    PaintResult paintLayerContentsInternal(GraphicsContext*, const PaintLayerPaintingInfo&, PaintLayerFlags, FragmentPolicy = AllowMultipleFragments);
     PaintResult paintLayerContentsAndReflection(GraphicsContext*, const PaintLayerPaintingInfo&, PaintLayerFlags, FragmentPolicy = AllowMultipleFragments);
     PaintResult paintLayerWithTransform(GraphicsContext*, const PaintLayerPaintingInfo&, PaintLayerFlags);
     PaintResult paintFragmentByApplyingTransform(GraphicsContext*, const PaintLayerPaintingInfo&, PaintLayerFlags, const LayoutPoint& fragmentTranslation);

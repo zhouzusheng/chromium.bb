@@ -29,6 +29,7 @@
 #include "core/html/HTMLOListElement.h"
 #include "core/layout/LayoutListMarker.h"
 #include "core/layout/LayoutView.h"
+#include "core/paint/ListItemPainter.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -53,8 +54,9 @@ void LayoutListItem::styleDidChange(StyleDifference diff, const ComputedStyle* o
 {
     LayoutBlockFlow::styleDidChange(diff, oldStyle);
 
+    StyleImage* currentImage = style()->listStyleImage();
     if (style()->listStyleType() != NoneListStyle
-        || (style()->listStyleImage() && !style()->listStyleImage()->errorOccurred())) {
+        || (currentImage && !currentImage->errorOccurred())) {
         if (!m_marker)
             m_marker = LayoutListMarker::createAnonymous(this);
         m_marker->listItemStyleDidChange();
@@ -65,11 +67,11 @@ void LayoutListItem::styleDidChange(StyleDifference diff, const ComputedStyle* o
     }
 
     StyleImage* oldImage = oldStyle ? oldStyle->listStyleImage() : nullptr;
-    if (oldImage != style()->listStyleImage()) {
+    if (oldImage != currentImage) {
         if (oldImage)
             oldImage->removeClient(this);
-        if (style()->listStyleImage())
-            style()->listStyleImage()->addClient(this);
+        if (currentImage)
+            currentImage->addClient(this);
     }
 }
 
@@ -218,7 +220,7 @@ inline int LayoutListItem::calcValue() const
         return m_explicitValue;
 
     Node* list = enclosingList(this);
-    HTMLOListElement* oListElement = isHTMLOListElement(list) ? toHTMLOListElement(list) : 0;
+    HTMLOListElement* oListElement = isHTMLOListElement(list) ? toHTMLOListElement(list) : nullptr;
     int valueStep = 1;
     if (oListElement && oListElement->isReversed())
         valueStep = -1;
@@ -375,6 +377,8 @@ void LayoutListItem::positionListMarker()
         LayoutUnit lineTop = root.lineTop();
         LayoutUnit lineBottom = root.lineBottom();
 
+        // TODO(jchaffraix): Propagating the overflow to the line boxes seems
+        // pretty wrong (https://crbug.com/554160).
         // FIXME: Need to account for relative positioning in the layout overflow.
         if (style()->isLeftToRightDirection()) {
             for (InlineFlowBox* box = m_marker->inlineBoxWrapper()->parent(); box; box = box->parent()) {
@@ -392,7 +396,7 @@ void LayoutListItem::positionListMarker()
                     if (box == root)
                         adjustOverflow = true;
                 }
-                box->setOverflowFromLogicalRects(newLogicalLayoutOverflowRect, newLogicalVisualOverflowRect, lineTop, lineBottom);
+                box->overrideOverflowFromLogicalRects(newLogicalLayoutOverflowRect, newLogicalVisualOverflowRect, lineTop, lineBottom);
                 if (box->boxModelObject().hasSelfPaintingLayer())
                     hitSelfPaintingLayer = true;
             }
@@ -410,7 +414,7 @@ void LayoutListItem::positionListMarker()
                     if (box == root)
                         adjustOverflow = true;
                 }
-                box->setOverflowFromLogicalRects(newLogicalLayoutOverflowRect, newLogicalVisualOverflowRect, lineTop, lineBottom);
+                box->overrideOverflowFromLogicalRects(newLogicalLayoutOverflowRect, newLogicalVisualOverflowRect, lineTop, lineBottom);
 
                 if (box->boxModelObject().hasSelfPaintingLayer())
                     hitSelfPaintingLayer = true;
@@ -446,10 +450,7 @@ void LayoutListItem::positionListMarker()
 
 void LayoutListItem::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
-    if (!logicalHeight() && hasOverflowClip())
-        return;
-
-    LayoutBlockFlow::paint(paintInfo, paintOffset);
+    ListItemPainter(*this).paint(paintInfo, paintOffset);
 }
 
 const String& LayoutListItem::markerText() const

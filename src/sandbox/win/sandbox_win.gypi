@@ -114,8 +114,6 @@
             'src/security_level.h',
             'src/service_resolver.cc',
             'src/service_resolver.h',
-            'src/shared_handles.cc',
-            'src/shared_handles.h',
             'src/sharedmem_ipc_client.cc',
             'src/sharedmem_ipc_client.h',
             'src/sharedmem_ipc_server.cc',
@@ -193,12 +191,6 @@
         'SANDBOX_DLL',
         'SANDBOX_EXPORTS',
       ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          'src',
-          '../..',
-        ],
-      },
       'target_conditions': [
         ['target_arch=="ia32"', {
           'copies': [
@@ -356,12 +348,6 @@
           'include_dirs': [
             '../..',
           ],
-          'direct_dependent_settings': {
-            'include_dirs': [
-              'src',
-              '../..',
-            ],
-          },
           'defines': [
             '<@(nacl_win64_defines)',
           ]

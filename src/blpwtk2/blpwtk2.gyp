@@ -259,6 +259,8 @@
         'public/blpwtk2_iatpatchfunction.h',
         'public/blpwtk2_newviewparams.cc',
         'public/blpwtk2_newviewparams.h',
+        'public/blpwtk2_pdfutil.cc',
+        'public/blpwtk2_pdfutil.h',
         'public/blpwtk2_profile.cc',
         'public/blpwtk2_profile.h',
         'public/blpwtk2_profilecreateparams.cc',

@@ -1011,16 +1011,20 @@ void Element::bbRequestSpellCheck()
             if (innerElement && innerElement->hasEditableStyle() && innerElement->isSpellCheckingEnabled()) {
                 VisiblePosition startPos = createVisiblePosition(firstPositionInNode(innerElement));
                 VisiblePosition endPos = createVisiblePosition(lastPositionInNode(innerElement));
-                EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
-                spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+                if (startPos.isNotNull() && endPos.isNotNull()) {
+                    EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
+                    spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+                }
             }
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->hasEditableStyle() && element->isSpellCheckingEnabled()) {
             VisiblePosition startPos = createVisiblePosition(firstPositionInNode(element));
             VisiblePosition endPos = createVisiblePosition(lastPositionInNode(element));
-            EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
-            spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            if (startPos.isNotNull() && endPos.isNotNull()) {
+                EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
+                spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            }
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else {

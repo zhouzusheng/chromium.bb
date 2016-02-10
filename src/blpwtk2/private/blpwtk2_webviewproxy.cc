@@ -79,19 +79,16 @@ float getScreenScaleFactor()
     return scale_x;  // Windows zooms are always symmetric
 }
 
-bool isXPScaling()
+bool disableResizeOptimization()
 {
     static bool scale_read = false;
-    static bool isXPScaling = false;
+    static bool resizeOptimizationDisabled = false;
 
     if (!scale_read) {
         HKEY userKey;
         if (ERROR_SUCCESS != ::RegOpenCurrentUser(KEY_QUERY_VALUE, &userKey)) {
             return false;
         }
-
-        unsigned long pvData;
-        unsigned long size = sizeof(pvData);
 
         HKEY dwmKey;
         long result = ::RegOpenKeyExW(userKey,
@@ -108,24 +105,35 @@ bool isXPScaling()
 
         scale_read = true;
 
+        unsigned long dpiScaling;
+        unsigned long size = sizeof(dpiScaling);
         result = ::RegQueryValueExW(dwmKey,
                                     L"UseDpiScaling",
                                     NULL,
                                     NULL,
-                                    reinterpret_cast<unsigned char*>(&pvData),
+                                    reinterpret_cast<unsigned char*>(&dpiScaling),
                                     &size);
+
+        unsigned long compPolicy;
+        long result2 = ::RegQueryValueExW(
+                                     dwmKey,
+                                     L"CompositionPolicy",
+                                     NULL,
+                                     NULL,
+                                     reinterpret_cast<unsigned char*>(&compPolicy),
+                                     &size);
 
         ::RegCloseKey(dwmKey);
 
-        if (ERROR_SUCCESS != result) {
-            isXPScaling = false;
+        if (ERROR_SUCCESS != result || ERROR_SUCCESS != result2) {
+            resizeOptimizationDisabled = false;
             return false;
         }
 
-        isXPScaling = pvData ? false : true;
+        resizeOptimizationDisabled = !dpiScaling || compPolicy ? true : false;
     }
 
-    return isXPScaling && getScreenScaleFactor() > 1.0;
+    return resizeOptimizationDisabled && getScreenScaleFactor() > 1.0;
 }
 
 }  // close anonymous namespace
@@ -576,7 +584,7 @@ void WebViewProxy::moveImpl(const gfx::Rect& rc)
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_moveAckPending);
 
-    if (d_gotRenderViewInfo && !rc.IsEmpty() && !isXPScaling()) {
+    if (d_gotRenderViewInfo && !rc.IsEmpty() && !disableResizeOptimization()) {
         // If we have renderer info (only happens if we are in-process), we can
         // start resizing the RenderView while we are in the main thread.  This
         // is to avoid a round-trip delay waiting for the resize to get to the

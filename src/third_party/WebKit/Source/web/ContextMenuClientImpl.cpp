@@ -554,11 +554,13 @@ static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data, 
     exposeString(isolate, detailObj, "srcURL", data.srcURL.string().utf8());
     exposeBool(isolate, detailObj, "fromContextMenuKey", fromContextMenuKey);
 
-    CustomEventInit eventInit;
-    eventInit.setBubbles(true);
-    eventInit.setCancelable(true);
-    eventInit.setDetail(ScriptValue(ScriptState::from(context), detailObj));
-    RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
+    RefPtr<CustomEvent> event = CustomEvent::create();
+    TrackExceptionState exceptionState;
+    RefPtr<SerializedScriptValue> detailScriptValue = SerializedScriptValueFactory::instance().create(v8::Isolate::GetCurrent(), detailObj, 0, 0, exceptionState);
+    if (exceptionState.hadException()) {
+        return false;
+    }
+    event->initCustomEvent("bbContextMenu", true, true, detailScriptValue);
 
     data.node.unwrap<Node>()->dispatchEvent(event);
     return event->defaultPrevented();

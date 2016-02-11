@@ -4,6 +4,10 @@
 
 #include "content/browser/compositor/delegated_frame_host.h"
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/time/default_tick_clock.h"
@@ -154,11 +158,11 @@ void DelegatedFrameHost::CopyFromCompositingSurface(
 }
 
 void DelegatedFrameHost::CopyFromCompositingSurfaceToVideoFrame(
-      const gfx::Rect& src_subrect,
-      const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback) {
+    const gfx::Rect& src_subrect,
+    const scoped_refptr<media::VideoFrame>& target,
+    const base::Callback<void(const gfx::Rect&, bool)>& callback) {
   if (!CanCopyToVideoFrame()) {
-    callback.Run(false);
+    callback.Run(gfx::Rect(), false);
     return;
   }
 
@@ -300,10 +304,9 @@ void DelegatedFrameHost::DidReceiveFrameFromRenderer(
   request->set_source(frame_subscriber());
   request->set_area(gfx::Rect(current_frame_size_in_dip_));
   if (subscriber_texture.get()) {
-    request->SetTextureMailbox(
-        cc::TextureMailbox(subscriber_texture->mailbox(),
-                           subscriber_texture->target(),
-                           subscriber_texture->sync_point()));
+    request->SetTextureMailbox(cc::TextureMailbox(
+        subscriber_texture->mailbox(), subscriber_texture->sync_token(),
+        subscriber_texture->target()));
   }
   RequestCopyOfOutput(request.Pass());
 }
@@ -536,6 +539,12 @@ void DelegatedFrameHost::ReturnResources(
     SendReturnedDelegatedResources(last_output_surface_id_);
 }
 
+void DelegatedFrameHost::SetBeginFrameSource(
+    cc::SurfaceId surface_id,
+    cc::BeginFrameSource* begin_frame_source) {
+  // TODO(tansell): Hook this up.
+}
+
 void DelegatedFrameHost::EvictDelegatedFrame() {
   client_->DelegatedFrameHostGetLayer()->SetShowSolidColorContent();
   frame_provider_ = NULL;
@@ -585,14 +594,14 @@ static void CopyFromCompositingSurfaceFinished(
     bool result) {
   bitmap_pixels_lock.reset();
 
-  uint32 sync_point = 0;
+  gpu::SyncToken sync_token;
   if (result) {
     GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
     if (gl_helper)
-      sync_point = gl_helper->InsertSyncPoint();
+      sync_token = gpu::SyncToken(gl_helper->InsertSyncPoint());
   }
-  bool lost_resource = sync_point == 0;
-  release_callback->Run(sync_point, lost_resource);
+  const bool lost_resource = !sync_token.HasData();
+  release_callback->Run(sync_token, lost_resource);
 
   callback.Run(*bitmap,
                result ? content::READBACK_SUCCESS : content::READBACK_FAILED);
@@ -637,17 +646,10 @@ void DelegatedFrameHost::PrepareTextureCopyOutputResult(
   ignore_result(scoped_callback_runner.Release());
 
   gl_helper->CropScaleReadbackAndCleanMailbox(
-      texture_mailbox.mailbox(),
-      texture_mailbox.sync_point(),
-      result->size(),
-      gfx::Rect(result->size()),
-      dst_size_in_pixel,
-      pixels,
-      color_type,
-      base::Bind(&CopyFromCompositingSurfaceFinished,
-                 callback,
-                 base::Passed(&release_callback),
-                 base::Passed(&bitmap),
+      texture_mailbox.mailbox(), texture_mailbox.sync_token(), result->size(),
+      gfx::Rect(result->size()), dst_size_in_pixel, pixels, color_type,
+      base::Bind(&CopyFromCompositingSurfaceFinished, callback,
+                 base::Passed(&release_callback), base::Passed(&bitmap),
                  base::Passed(&bitmap_pixels_lock)),
       GLHelper::SCALER_QUALITY_GOOD);
 }
@@ -707,13 +709,13 @@ void DelegatedFrameHost::PrepareBitmapCopyOutputResult(
 void DelegatedFrameHost::ReturnSubscriberTexture(
     base::WeakPtr<DelegatedFrameHost> dfh,
     scoped_refptr<OwnedMailbox> subscriber_texture,
-    uint32 sync_point) {
+    const gpu::SyncToken& sync_token) {
   if (!subscriber_texture.get())
     return;
   if (!dfh)
     return;
 
-  subscriber_texture->UpdateSyncPoint(sync_point);
+  subscriber_texture->UpdateSyncToken(sync_token);
 
   if (dfh->frame_subscriber_ && subscriber_texture->texture_id())
     dfh->idle_frame_subscriber_textures_.push_back(subscriber_texture);
@@ -728,19 +730,19 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceFinishedForVideo(
     bool result) {
   callback.Run(result);
 
-  uint32 sync_point = 0;
+  gpu::SyncToken sync_token;
   if (result) {
     GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
-    sync_point = gl_helper->InsertSyncPoint();
+    sync_token = gpu::SyncToken(gl_helper->InsertSyncPoint());
   }
   if (release_callback) {
     // A release callback means the texture came from the compositor, so there
     // should be no |subscriber_texture|.
     DCHECK(!subscriber_texture.get());
-    bool lost_resource = sync_point == 0;
-    release_callback->Run(sync_point, lost_resource);
+    const bool lost_resource = !sync_token.HasData();
+    release_callback->Run(sync_token, lost_resource);
   }
-  ReturnSubscriberTexture(dfh, subscriber_texture, sync_point);
+  ReturnSubscriberTexture(dfh, subscriber_texture, sync_token);
 }
 
 // static
@@ -748,11 +750,13 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo(
     base::WeakPtr<DelegatedFrameHost> dfh,
     scoped_refptr<OwnedMailbox> subscriber_texture,
     scoped_refptr<media::VideoFrame> video_frame,
-    const base::Callback<void(bool)>& callback,
+    const base::Callback<void(const gfx::Rect&, bool)>& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
-  base::ScopedClosureRunner scoped_callback_runner(base::Bind(callback, false));
+  base::ScopedClosureRunner scoped_callback_runner(
+      base::Bind(callback, gfx::Rect(), false));
   base::ScopedClosureRunner scoped_return_subscriber_texture(
-      base::Bind(&ReturnSubscriberTexture, dfh, subscriber_texture, 0));
+      base::Bind(&ReturnSubscriberTexture, dfh, subscriber_texture,
+      gpu::SyncToken()));
 
   if (!dfh)
     return;
@@ -801,7 +805,7 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo(
           video_frame.get());
     }
     ignore_result(scoped_callback_runner.Release());
-    callback.Run(true);
+    callback.Run(region_in_frame, true);
     return;
   }
 
@@ -854,14 +858,13 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo(
 
   ignore_result(scoped_callback_runner.Release());
   ignore_result(scoped_return_subscriber_texture.Release());
+
   base::Callback<void(bool result)> finished_callback = base::Bind(
       &DelegatedFrameHost::CopyFromCompositingSurfaceFinishedForVideo,
-      dfh->AsWeakPtr(),
-      callback,
-      subscriber_texture,
-      base::Passed(&release_callback));
+      dfh->AsWeakPtr(), base::Bind(callback, region_in_frame),
+      subscriber_texture, base::Passed(&release_callback));
   yuv_readback_pipeline->ReadbackYUV(texture_mailbox.mailbox(),
-                                     texture_mailbox.sync_point(),
+                                     texture_mailbox.sync_token(),
                                      video_frame.get(),
                                      region_in_frame.origin(),
                                      finished_callback);

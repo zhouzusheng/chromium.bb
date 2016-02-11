@@ -83,8 +83,12 @@ class NET_EXPORT URLRequestContextBuilder {
     std::string trusted_spdy_proxy;
     bool use_alternative_services;
     bool enable_quic;
-    bool enable_insecure_quic;
+    bool quic_store_server_configs_in_properties;
+    bool quic_delay_tcp_race;
+    int quic_max_number_of_lossy_connections;
+    float quic_packet_loss_threshold;
     QuicTagVector quic_connection_options;
+    std::string ssl_session_cache_shard;
   };
 
   URLRequestContextBuilder();
@@ -183,14 +187,36 @@ class NET_EXPORT URLRequestContextBuilder {
   void SetSpdyAndQuicEnabled(bool spdy_enabled,
                              bool quic_enabled);
 
-  void set_enable_insecure_quic(bool enable_insecure_quic) {
-    http_network_session_params_.enable_insecure_quic = enable_insecure_quic;
-  }
-
   void set_quic_connection_options(
       const QuicTagVector& quic_connection_options) {
     http_network_session_params_.quic_connection_options =
         quic_connection_options;
+  }
+
+  void set_ssl_session_cache_shard(const std::string& ssl_session_cache_shard) {
+    http_network_session_params_.ssl_session_cache_shard =
+        ssl_session_cache_shard;
+  }
+
+  void set_quic_store_server_configs_in_properties(
+      bool quic_store_server_configs_in_properties) {
+    http_network_session_params_.quic_store_server_configs_in_properties =
+        quic_store_server_configs_in_properties;
+  }
+
+  void set_quic_delay_tcp_race(bool quic_delay_tcp_race) {
+    http_network_session_params_.quic_delay_tcp_race = quic_delay_tcp_race;
+  }
+
+  void set_quic_max_number_of_lossy_connections(
+      int quic_max_number_of_lossy_connections) {
+    http_network_session_params_.quic_max_number_of_lossy_connections =
+        quic_max_number_of_lossy_connections;
+  }
+
+  void set_quic_packet_loss_threshold(float quic_packet_loss_threshold) {
+    http_network_session_params_.quic_packet_loss_threshold =
+        quic_packet_loss_threshold;
   }
 
   void set_throttling_enabled(bool throttling_enabled) {
@@ -200,6 +226,8 @@ class NET_EXPORT URLRequestContextBuilder {
   void set_backoff_enabled(bool backoff_enabled) {
     backoff_enabled_ = backoff_enabled;
   }
+
+  void SetCertVerifier(scoped_ptr<CertVerifier> cert_verifier);
 
   void SetInterceptors(
       ScopedVector<URLRequestInterceptor> url_request_interceptors);
@@ -273,6 +301,7 @@ class NET_EXPORT URLRequestContextBuilder {
   scoped_refptr<CookieStore> cookie_store_;
   scoped_ptr<FtpTransactionFactory> ftp_transaction_factory_;
   std::vector<SchemeFactory> extra_http_auth_handlers_;
+  scoped_ptr<CertVerifier> cert_verifier_;
   ScopedVector<URLRequestInterceptor> url_request_interceptors_;
   scoped_ptr<HttpServerProperties> http_server_properties_;
 

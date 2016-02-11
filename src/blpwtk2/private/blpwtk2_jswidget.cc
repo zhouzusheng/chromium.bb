@@ -24,10 +24,11 @@
 
 #include <base/bind.h>
 #include <base/message_loop/message_loop.h>
-#include <third_party/WebKit/public/web/WebDOMCustomEvent.h>
+#include <third_party/WebKit/public/web/WebDOMEvent.h>
 #include <third_party/WebKit/public/web/WebElement.h>
 #include <third_party/WebKit/public/web/WebLocalFrame.h>
 #include <third_party/WebKit/public/web/WebPluginContainer.h>
+#include <third_party/WebKit/public/web/WebSerializedScriptValue.h>
 #include <v8/include/v8.h>
 
 namespace blpwtk2 {
@@ -45,7 +46,7 @@ static v8::Handle<v8::Object> toV8(v8::Isolate* isolate, const blink::WebRect& r
 
 static void scheduleDispatchEvent(const tracked_objects::Location& location,
                                   JsWidget* widget,
-                                  const blink::WebDOMCustomEvent& event)
+                                  const blink::WebDOMEvent& event)
 {
     base::MessageLoop::current()->PostTask(
         location,
@@ -62,7 +63,7 @@ JsWidget::~JsWidget()
 {
 }
 
-void JsWidget::dispatchEvent(const blink::WebDOMCustomEvent& event)
+void JsWidget::dispatchEvent(const blink::WebDOMEvent& event)
 {
     d_webElement.dispatchEvent(event);
 }
@@ -73,14 +74,14 @@ bool JsWidget::initialize(blink::WebPluginContainer* container)
 {
     d_container = container;
     d_webElement = container->element();
-    blink::WebDOMCustomEvent event("bbOnInitialize", false, false, blink::WebSerializedScriptValue());
+    blink::WebDOMEvent event = blink::WebDOMEvent::createCustomEvent("bbOnInitialize", false, false, blink::WebSerializedScriptValue());
     scheduleDispatchEvent(FROM_HERE, this, event);
     return true;
 }
 
 void JsWidget::destroy()
 {
-    blink::WebDOMCustomEvent event("bbOnDestroy", false, false, blink::WebSerializedScriptValue());
+    blink::WebDOMEvent event = blink::WebDOMEvent::createCustomEvent("bbOnDestroy", false, false, blink::WebSerializedScriptValue());
     scheduleDispatchEvent(FROM_HERE, this, event);
     base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
@@ -112,8 +113,8 @@ void JsWidget::updateGeometry(
     // TODO: Remove once clients are updated.
     detailObj->Set(v8::String::NewFromUtf8(isolate, "frameRect"), toV8(isolate, windowRect));
 
-    blink::WebDOMCustomEvent event("bbOnUpdateGeometry", false, false,
-                                   blink::WebSerializedScriptValue::serialize(detailObj));
+    blink::WebDOMEvent event = blink::WebDOMEvent::createCustomEvent("bbOnUpdateGeometry", false, false,
+                                                                     blink::WebSerializedScriptValue::serialize(detailObj));
     scheduleDispatchEvent(FROM_HERE, this, event);
 }
 
@@ -129,8 +130,8 @@ void JsWidget::updateVisibility(bool isVisible)
     v8::Handle<v8::Object> detailObj = v8::Object::New(isolate);
     detailObj->Set(v8::String::NewFromUtf8(isolate, "isVisible"), v8::Boolean::New(isolate, isVisible));
 
-    blink::WebDOMCustomEvent event("bbOnUpdateVisibility", false, false,
-                                   blink::WebSerializedScriptValue::serialize(detailObj));
+    blink::WebDOMEvent event = blink::WebDOMEvent::createCustomEvent("bbOnUpdateVisibility", false, false,
+                                                                     blink::WebSerializedScriptValue::serialize(detailObj));
     scheduleDispatchEvent(FROM_HERE, this, event);
 }
 

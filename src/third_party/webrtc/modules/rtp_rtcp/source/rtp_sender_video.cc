@@ -16,15 +16,15 @@
 #include <vector>
 
 #include "webrtc/base/checks.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/trace_event.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/producer_fec.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_video_generic.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_vp8.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_format_vp9.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/trace_event.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
 
 namespace webrtc {
 enum { REDForFECHeaderLength = 1 };
@@ -176,26 +176,6 @@ void RTPSenderVideo::SendVideoPacketAsRed(uint8_t* data_buffer,
   }
 }
 
-int32_t RTPSenderVideo::SendRTPIntraRequest() {
-  // RFC 2032
-  // 5.2.1.  Full intra-frame Request (FIR) packet
-
-  size_t length = 8;
-  uint8_t data[8];
-  data[0] = 0x80;
-  data[1] = 192;
-  data[2] = 0;
-  data[3] = 1;  // length
-
-  ByteWriter<uint32_t>::WriteBigEndian(data + 4, _rtpSender.SSRC());
-
-  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
-                       "Video::IntraRequest", "seqnum",
-                       _rtpSender.SequenceNumber());
-  return _rtpSender.SendToNetwork(data, 0, length, -1, kDontStore,
-                                  RtpPacketSender::kNormalPriority);
-}
-
 void RTPSenderVideo::SetGenericFECStatus(const bool enable,
                                          const uint8_t payloadTypeRED,
                                          const uint8_t payloadTypeFEC) {
@@ -259,8 +239,8 @@ int32_t RTPSenderVideo::SendVideo(const RtpVideoCodecTypes videoType,
       RtpPacketizer::Create(videoType, _rtpSender.MaxDataPayloadLength(),
                             &(rtpHdr->codecHeader), frameType));
 
-  StorageType storage = kDontStore;
-  bool fec_enabled = false;
+  StorageType storage;
+  bool fec_enabled;
   {
     CriticalSectionScoped cs(crit_.get());
     FecProtectionParams* fec_params =

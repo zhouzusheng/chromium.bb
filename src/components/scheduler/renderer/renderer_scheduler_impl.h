@@ -12,6 +12,7 @@
 #include "components/scheduler/child/scheduler_helper.h"
 #include "components/scheduler/renderer/deadline_task_runner.h"
 #include "components/scheduler/renderer/idle_time_estimator.h"
+#include "components/scheduler/renderer/render_widget_signals.h"
 #include "components/scheduler/renderer/renderer_scheduler.h"
 #include "components/scheduler/renderer/task_cost_estimator.h"
 #include "components/scheduler/renderer/user_model.h"
@@ -24,17 +25,19 @@ class ConvertableToTraceFormat;
 }
 
 namespace scheduler {
+class RenderWidgetSchedulingState;
 
 class SCHEDULER_EXPORT RendererSchedulerImpl
     : public RendererScheduler,
       public IdleHelper::Delegate,
-      public SchedulerHelper::Observer {
+      public SchedulerHelper::Observer,
+      public RenderWidgetSignals::Observer {
  public:
-  RendererSchedulerImpl(
-      scoped_refptr<SchedulerTaskRunnerDelegate> main_task_runner);
+  RendererSchedulerImpl(scoped_refptr<SchedulerTqmDelegate> main_task_runner);
   ~RendererSchedulerImpl() override;
 
   // RendererScheduler implementation:
+  scoped_ptr<blink::WebThread> CreateMainThread() override;
   scoped_refptr<TaskQueue> DefaultTaskRunner() override;
   scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override;
@@ -42,6 +45,8 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   scoped_refptr<TaskQueue> TimerTaskRunner() override;
   scoped_refptr<TaskQueue> NewLoadingTaskRunner(const char* name) override;
   scoped_refptr<TaskQueue> NewTimerTaskRunner(const char* name) override;
+  scoped_ptr<RenderWidgetSchedulingState> NewRenderWidgetSchedulingState()
+      override;
   void WillBeginFrame(const cc::BeginFrameArgs& args) override;
   void BeginFrameNotExpectedSoon() override;
   void DidCommitFrameToCompositor() override;
@@ -51,8 +56,6 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   void DidHandleInputEventOnMainThread(
       const blink::WebInputEvent& web_input_event) override;
   void DidAnimateForInputOnCompositorThread() override;
-  void OnRendererHidden() override;
-  void OnRendererVisible() override;
   void OnRendererBackgrounded() override;
   void OnRendererForegrounded() override;
   void AddPendingNavigation() override;
@@ -68,6 +71,13 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   void SuspendTimerQueue() override;
   void ResumeTimerQueue() override;
   void SetTimerQueueSuspensionWhenBackgroundedEnabled(bool enabled) override;
+  double CurrentTimeSeconds() const override;
+  double MonotonicallyIncreasingTimeSeconds() const override;
+
+  // RenderWidgetSignals::Observer implementation:
+  void SetAllRenderWidgetsHidden(bool hidden) override;
+  void SetHasVisibleRenderWidgetWithTouchHandler(
+      bool has_visible_render_widget_with_touch_handler) override;
 
   // TaskQueueManager::Observer implementation:
   void OnUnregisterTaskQueue(const scoped_refptr<TaskQueue>& queue) override;
@@ -82,6 +92,7 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
  private:
   friend class RendererSchedulerImplTest;
   friend class RendererSchedulerImplForTest;
+  friend class RenderWidgetSchedulingState;
 
   struct Policy {
     Policy();
@@ -160,6 +171,10 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   // of shared timers is enabled.
   static const int kSuspendTimersWhenBackgroundedDelayMillis = 5 * 60 * 1000;
 
+  // The time we should stay in a priority-escalated mode after a call to
+  // DidAnimateForInputOnCompositorThread().
+  static const int kFlingEscalationLimitMillis = 100;
+
   // Schedules an immediate PolicyUpdate, if there isn't one already pending and
   // sets |policy_may_need_update_|. Note |any_thread_lock_| must be
   // locked.
@@ -218,6 +233,7 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
 
   SchedulerHelper helper_;
   IdleHelper idle_helper_;
+  RenderWidgetSignals render_widget_scheduler_signals_;
 
   const scoped_refptr<TaskQueue> control_task_runner_;
   const scoped_refptr<TaskQueue> compositor_task_runner_;
@@ -235,8 +251,8 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
   // (the accessors) for the following data members.
 
   struct MainThreadOnly {
-    explicit MainThreadOnly(
-        const scoped_refptr<TaskQueue>& compositor_task_runner);
+    MainThreadOnly(const scoped_refptr<TaskQueue>& compositor_task_runner,
+                   base::TickClock* time_source);
     ~MainThreadOnly();
 
     TaskCostEstimator loading_task_cost_estimator;
@@ -259,17 +275,22 @@ class SCHEDULER_EXPORT RendererSchedulerImpl
     bool timer_tasks_seem_expensive;
     bool touchstart_expected_soon;
     bool have_seen_a_begin_main_frame;
+    bool has_visible_render_widget_with_touch_handler;
   };
 
   struct AnyThread {
     AnyThread();
+    ~AnyThread();
 
     base::TimeTicks last_idle_period_end_time;
     base::TimeTicks rails_loading_priority_deadline;
+    base::TimeTicks fling_compositor_escalation_deadline;
     UserModel user_model;
     bool awaiting_touch_start_response;
     bool in_idle_period;
     bool begin_main_frame_on_critical_path;
+    bool last_gesture_was_compositor_driven;
+    bool have_seen_touchstart;
   };
 
   struct CompositorThreadOnly {

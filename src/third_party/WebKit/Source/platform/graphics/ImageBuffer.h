@@ -68,9 +68,9 @@ enum Multiply {
 };
 
 class PLATFORM_EXPORT ImageBuffer {
-    WTF_MAKE_NONCOPYABLE(ImageBuffer); WTF_MAKE_FAST_ALLOCATED(ImageBuffer);
+    WTF_MAKE_NONCOPYABLE(ImageBuffer); USING_FAST_MALLOC(ImageBuffer);
 public:
-    static PassOwnPtr<ImageBuffer> create(const IntSize&, OpacityMode = NonOpaque);
+    static PassOwnPtr<ImageBuffer> create(const IntSize&, OpacityMode = NonOpaque, ImageInitializationMode = InitializeImagePixels);
     static PassOwnPtr<ImageBuffer> create(PassOwnPtr<ImageBufferSurface>);
 
     ~ImageBuffer();
@@ -102,10 +102,6 @@ public:
     void didFinalizeFrame();
 
     bool isDirty();
-
-    // FIXME: crbug.com/485243
-    // Prefer writePixels() and canvas()->draw*() for writing, and newImageSnapshot() for reading
-    const SkBitmap& deprecatedBitmapForOverwrite() const;
 
     bool writePixels(const SkImageInfo&, const void* pixels, size_t rowBytes, int x, int y);
 
@@ -155,7 +151,7 @@ private:
 struct ImageDataBuffer {
     ImageDataBuffer(const IntSize& size, const unsigned char* data) : m_data(data), m_size(size) { }
     String PLATFORM_EXPORT toDataURL(const String& mimeType, const double& quality) const;
-    bool PLATFORM_EXPORT encodeImage(const String& mimeType, const double& quality, Vector<char>* output) const;
+    bool PLATFORM_EXPORT encodeImage(const String& mimeType, const double& quality, Vector<unsigned char>* encodedImage) const;
     const unsigned char* pixels() const { return m_data; }
     int height() const { return m_size.height(); }
     int width() const { return m_size.width(); }

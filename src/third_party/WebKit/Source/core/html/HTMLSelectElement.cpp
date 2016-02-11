@@ -42,6 +42,7 @@
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
+#include "core/events/ScopedEventQueue.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -65,6 +66,7 @@
 #include "core/page/SpatialNavigation.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/PopupMenu.h"
+#include "platform/TraceEvent.h"
 #include "platform/text/PlatformLocale.h"
 
 using namespace WTF::Unicode;
@@ -73,8 +75,10 @@ namespace blink {
 
 using namespace HTMLNames;
 
-// Upper limit agreed upon with representatives of Opera and Mozilla.
-static const unsigned maxSelectItems = 10000;
+// Upper limit of m_listItems. According to the HTML standard, options larger
+// than this limit doesn't work well because |selectedIndex| IDL attribute is
+// signed.
+static const unsigned maxListItems = INT_MAX;
 
 HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form)
     : HTMLFormControlElementWithState(selectTag, document, form)
@@ -83,7 +87,6 @@ HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form)
     , m_lastOnChangeOption(nullptr)
     , m_activeSelectionAnchorIndex(-1)
     , m_activeSelectionEndIndex(-1)
-    , m_isProcessingUserDrivenChange(false)
     , m_multiple(false)
     , m_activeSelectionState(false)
     , m_shouldRecalcListItems(false)
@@ -139,7 +142,7 @@ void HTMLSelectElement::optionSelectedByUser(int optionIndex, bool fireOnChangeN
     if (optionIndex == selectedIndex())
         return;
 
-    selectOption(optionIndex, DeselectOtherOptions | (fireOnChangeNow ? DispatchInputAndChangeEvent : 0) | UserDriven);
+    selectOption(optionIndex, DeselectOtherOptions | (fireOnChangeNow ? DispatchInputAndChangeEvent : 0));
 }
 
 bool HTMLSelectElement::hasPlaceholderLabelOption() const
@@ -280,7 +283,7 @@ void HTMLSelectElement::setValue(const String &value, bool sendEvents)
         setAutofilled(false);
     SelectOptionFlags flags = DeselectOtherOptions;
     if (sendEvents)
-        flags |= DispatchInputAndChangeEvent | UserDriven;
+        flags |= DispatchInputAndChangeEvent;
     selectOption(optionIndex, flags);
 
     if (sendEvents && previousSelectedIndex != selectedIndex() && !usesMenuList())
@@ -420,7 +423,6 @@ void HTMLSelectElement::childrenChanged(const ChildrenChange& change)
 
 void HTMLSelectElement::optionElementChildrenChanged()
 {
-    setRecalcListItems();
     setNeedsValidityCheck();
 
     if (layoutObject()) {
@@ -464,12 +466,13 @@ HTMLOptionElement* HTMLSelectElement::item(unsigned index)
 
 void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, ExceptionState& exceptionState)
 {
-    if (index >= length() && index >= maxSelectItems) {
+    int diff = index - length();
+    // We should check |index >= maxListItems| first to avoid integer overflow.
+    if (index >= maxListItems || listItems().size() + diff + 1 > maxListItems) {
         document().addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel,
-            String::format("Blocked to expand the option list and set an option at index=%u.  The maximum list length is %u.", index, maxSelectItems)));
+            String::format("Blocked to expand the option list and set an option at index=%u.  The maximum list length is %u.", index, maxListItems)));
         return;
     }
-    int diff = index - length();
     HTMLOptionElementOrHTMLOptGroupElement element;
     element.setHTMLOptionElement(option);
     HTMLElementOrLong before;
@@ -491,9 +494,10 @@ void HTMLSelectElement::setOption(unsigned index, HTMLOptionElement* option, Exc
 
 void HTMLSelectElement::setLength(unsigned newLen, ExceptionState& exceptionState)
 {
-    if (newLen > length() && newLen > maxSelectItems) {
+    // We should check |newLen > maxListItems| first to avoid integer overflow.
+    if (newLen > maxListItems || listItems().size() + newLen - length() > maxListItems) {
         document().addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel,
-            String::format("Blocked to expand the option list to %u items.  The maximum list length is %u.", newLen, maxSelectItems)));
+            String::format("Blocked to expand the option list to %u items.  The maximum list length is %u.", newLen, maxListItems)));
         return;
     }
     int diff = length() - newLen;
@@ -721,9 +725,8 @@ void HTMLSelectElement::dispatchInputAndChangeEventForMenuList()
     ASSERT(usesMenuList());
 
     HTMLOptionElement* selectedOption = this->selectedOption();
-    if (m_lastOnChangeOption.get() != selectedOption && m_isProcessingUserDrivenChange) {
+    if (m_lastOnChangeOption.get() != selectedOption) {
         m_lastOnChangeOption = selectedOption;
-        m_isProcessingUserDrivenChange = false;
         RefPtrWillBeRawPtr<HTMLSelectElement> protector(this);
         dispatchInputEvent();
         dispatchFormControlChangeEvent();
@@ -795,13 +798,14 @@ void HTMLSelectElement::setRecalcListItems()
 
 void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
 {
+    TRACE_EVENT0("blink", "HTMLSelectElement::recalcListItems");
     m_listItems.clear();
 
     m_shouldRecalcListItems = false;
 
     HTMLOptionElement* foundSelected = 0;
     HTMLOptionElement* firstOption = 0;
-    for (Element* currentElement = ElementTraversal::firstWithin(*this); currentElement; ) {
+    for (Element* currentElement = ElementTraversal::firstWithin(*this); currentElement && m_listItems.size() < maxListItems; ) {
         if (!currentElement->isHTMLElement()) {
             currentElement = ElementTraversal::nextSkippingChildren(*currentElement, this);
             continue;
@@ -960,6 +964,7 @@ void HTMLSelectElement::optionRemoved(const HTMLOptionElement& option)
 // operations.
 void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
 {
+    TRACE_EVENT0("blink", "HTMLSelectElement::selectOption");
     bool shouldDeselect = !m_multiple || (flags & DeselectOtherOptions);
 
     const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& items = listItems();
@@ -998,7 +1003,6 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
     setNeedsValidityCheck();
 
     if (usesMenuList()) {
-        m_isProcessingUserDrivenChange = flags & UserDriven;
         if (flags & DispatchInputAndChangeEvent)
             dispatchInputAndChangeEventForMenuList();
         else
@@ -1067,6 +1071,7 @@ void HTMLSelectElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusTy
     // This matches other browsers' behavior.
     if (usesMenuList())
         dispatchInputAndChangeEventForMenuList();
+    m_lastOnChangeSelection.clear();
     HTMLFormControlElementWithState::dispatchBlurEvent(newFocusedElement, type, sourceCapabilities);
 }
 
@@ -1208,9 +1213,12 @@ void HTMLSelectElement::resetImpl()
             firstOption = toHTMLOptionElement(element);
     }
 
-    if (!selectedOption && firstOption && !m_multiple && m_size <= 1)
+    if (!selectedOption && firstOption && !m_multiple && m_size <= 1) {
         firstOption->setSelectedState(true);
+        selectedOption = firstOption;
+    }
 
+    m_lastOnChangeOption = selectedOption;
     setOptionsChangedOnLayoutObject();
     setNeedsValidityCheck();
 }
@@ -1300,7 +1308,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
             handled = false;
 
         if (handled && static_cast<size_t>(listIndex) < listItems.size())
-            selectOption(listToOptionIndex(listIndex), DeselectOtherOptions | DispatchInputAndChangeEvent | UserDriven);
+            selectOption(listToOptionIndex(listIndex), DeselectOtherOptions | DispatchInputAndChangeEvent);
 
         if (handled)
             event->setDefaultHandled();
@@ -1334,7 +1342,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
 
     if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton) {
         InputDeviceCapabilities* sourceCapabilities = toMouseEvent(event)->fromTouch() ? InputDeviceCapabilities::firesTouchEventsSourceCapabilities() : InputDeviceCapabilities::doesntFireTouchEventsSourceCapabilities();
-        focus(true, WebFocusTypeNone, sourceCapabilities);
+        focus(FocusParams(SelectionBehaviorOnFocus::Restore, WebFocusTypeNone, sourceCapabilities));
         if (layoutObject() && layoutObject()->isMenuList() && !isDisabledFormControl()) {
             if (popupIsVisible()) {
                 hidePopup();
@@ -1493,6 +1501,9 @@ void HTMLSelectElement::listBoxDefaultEventHandler(Event* event)
 
         if (Page* page = document().page())
             page->autoscrollController().startAutoscrollForSelection(layoutObject());
+        // Mousedown didn't happen in this element.
+        if (m_lastOnChangeSelection.isEmpty())
+            return;
 
         int listIndex = listIndexForEventTargetOption(*mouseEvent);
         if (listIndex >= 0) {
@@ -1676,7 +1687,7 @@ String HTMLSelectElement::optionAtIndex(int index) const
     HTMLElement* element = items[index];
     if (!isHTMLOptionElement(*element) || toHTMLOptionElement(element)->isDisabledFormControl())
         return String();
-    return toHTMLOptionElement(element)->text();
+    return toHTMLOptionElement(element)->displayLabel();
 }
 
 void HTMLSelectElement::typeAheadFind(KeyboardEvent* event)
@@ -1684,7 +1695,7 @@ void HTMLSelectElement::typeAheadFind(KeyboardEvent* event)
     int index = m_typeAhead.handleEvent(event, TypeAhead::MatchPrefix | TypeAhead::CycleFirstChar);
     if (index < 0)
         return;
-    selectOption(listToOptionIndex(index), DeselectOtherOptions | DispatchInputAndChangeEvent | UserDriven);
+    selectOption(listToOptionIndex(index), DeselectOtherOptions | DispatchInputAndChangeEvent);
     if (!usesMenuList())
         listBoxOnChange();
 }
@@ -1705,24 +1716,27 @@ void HTMLSelectElement::accessKeySetSelectedIndex(int index)
     if (!focused())
         accessKeyAction(false);
 
-    // If this index is already selected, unselect. otherwise update the selected index.
     const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& items = listItems();
     int listIndex = optionToListIndex(index);
-    if (listIndex >= 0) {
-        HTMLElement* element = items[listIndex];
-        if (isHTMLOptionElement(*element)) {
-            if (toHTMLOptionElement(*element).selected())
-                toHTMLOptionElement(*element).setSelectedState(false);
-            else
-                selectOption(index, DispatchInputAndChangeEvent | UserDriven);
-        }
+    if (listIndex < 0)
+        return;
+    HTMLElement& element = *items[listIndex];
+    if (!isHTMLOptionElement(element))
+        return;
+    EventQueueScope scope;
+    // If this index is already selected, unselect. otherwise update the
+    // selected index.
+    if (toHTMLOptionElement(element).selected()) {
+        if (usesMenuList())
+            selectOption(-1, DispatchInputAndChangeEvent);
+        else
+            toHTMLOptionElement(element).setSelectedState(false);
+    } else {
+        selectOption(index, DispatchInputAndChangeEvent);
     }
-
     if (usesMenuList())
-        dispatchInputAndChangeEventForMenuList();
-    else
-        listBoxOnChange();
-
+        return;
+    listBoxOnChange();
     scrollToSelection();
 }
 

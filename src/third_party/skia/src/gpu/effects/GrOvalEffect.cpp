@@ -11,7 +11,9 @@
 #include "GrInvariantOutput.h"
 #include "SkRect.h"
 #include "gl/GrGLFragmentProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -98,12 +100,12 @@ public:
     static inline void GenKey(const GrProcessor&, const GrGLSLCaps&, GrProcessorKeyBuilder*);
 
 protected:
-    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
+    void onSetData(const GrGLSLProgramDataManager&, const GrProcessor&) override;
 
 private:
-    GrGLProgramDataManager::UniformHandle fCircleUniform;
-    SkPoint                               fPrevCenter;
-    SkScalar                              fPrevRadius;
+    GrGLSLProgramDataManager::UniformHandle fCircleUniform;
+    SkPoint                                 fPrevCenter;
+    SkScalar                                fPrevRadius;
 
     typedef GrGLFragmentProcessor INHERITED;
 };
@@ -117,12 +119,12 @@ void GLCircleEffect::emitCode(EmitArgs& args) {
     const char *circleName;
     // The circle uniform is (center.x, center.y, radius + 0.5, 1 / (radius + 0.5)) for regular
     // fills and (..., radius - 0.5, 1 / (radius - 0.5)) for inverse fills.
-    fCircleUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    fCircleUniform = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                          kVec4f_GrSLType, kDefault_GrSLPrecision,
                                          "circle",
                                          &circleName);
 
-    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+    GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
     const char* fragmentPos = fsBuilder->fragmentPosition();
 
     SkASSERT(kHairlineAA_GrProcessorEdgeType != ce.getEdgeType());
@@ -153,7 +155,8 @@ void GLCircleEffect::GenKey(const GrProcessor& processor, const GrGLSLCaps&,
     b->add32(ce.getEdgeType());
 }
 
-void GLCircleEffect::onSetData(const GrGLProgramDataManager& pdman, const GrProcessor& processor) {
+void GLCircleEffect::onSetData(const GrGLSLProgramDataManager& pdman,
+                               const GrProcessor& processor) {
     const CircleEffect& ce = processor.cast<CircleEffect>();
     if (ce.getRadius() != fPrevRadius || ce.getCenter() != fPrevCenter) {
         SkScalar radius = ce.getRadius();
@@ -269,12 +272,12 @@ public:
     static inline void GenKey(const GrProcessor&, const GrGLSLCaps&, GrProcessorKeyBuilder*);
 
 protected:
-    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
+    void onSetData(const GrGLSLProgramDataManager&, const GrProcessor&) override;
 
 private:
-    GrGLProgramDataManager::UniformHandle fEllipseUniform;
-    SkPoint                               fPrevCenter;
-    SkVector                              fPrevRadii;
+    GrGLSLProgramDataManager::UniformHandle fEllipseUniform;
+    SkPoint                                 fPrevCenter;
+    SkVector                                fPrevRadii;
 
     typedef GrGLFragmentProcessor INHERITED;
 };
@@ -288,12 +291,12 @@ void GLEllipseEffect::emitCode(EmitArgs& args) {
     const char *ellipseName;
     // The ellipse uniform is (center.x, center.y, 1 / rx^2, 1 / ry^2)
     // The last two terms can underflow on mediump, so we use highp.
-    fEllipseUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    fEllipseUniform = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                          kVec4f_GrSLType, kHigh_GrSLPrecision,
                                          "ellipse",
                                          &ellipseName);
 
-    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+    GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
     const char* fragmentPos = fsBuilder->fragmentPosition();
 
     // d is the offset to the ellipse center
@@ -334,7 +337,8 @@ void GLEllipseEffect::GenKey(const GrProcessor& effect, const GrGLSLCaps&,
     b->add32(ee.getEdgeType());
 }
 
-void GLEllipseEffect::onSetData(const GrGLProgramDataManager& pdman, const GrProcessor& effect) {
+void GLEllipseEffect::onSetData(const GrGLSLProgramDataManager& pdman,
+                                const GrProcessor& effect) {
     const EllipseEffect& ee = effect.cast<EllipseEffect>();
     if (ee.getRadii() != fPrevRadii || ee.getCenter() != fPrevCenter) {
         SkScalar invRXSqd = 1.f / (ee.getRadii().fX * ee.getRadii().fX);

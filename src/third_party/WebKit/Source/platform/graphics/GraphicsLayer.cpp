@@ -28,17 +28,19 @@
 
 #include "SkImageFilter.h"
 #include "SkMatrix44.h"
+#include "platform/DragImage.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
+#include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/FirstPaintInvalidationTracking.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayerFactory.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/LinkHighlight.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/text/TextStream.h"
 #include "public/platform/Platform.h"
@@ -99,8 +101,9 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_isRootForIsolatedGroup(false)
     , m_hasScrollParent(false)
     , m_hasClipParent(false)
-    , m_needsDisplay(true)
+    , m_painted(false)
     , m_textPainted(false)
+    , m_imagePainted(false)
     , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
     , m_parent(0)
     , m_maskLayer(0)
@@ -290,15 +293,18 @@ void GraphicsLayer::setOffsetDoubleFromLayoutObject(const DoubleSize& offset, Sh
         setNeedsDisplay();
 }
 
-void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const IntRect& clip)
+void GraphicsLayer::paint(GraphicsContext& context, const IntRect* clip)
 {
+    ASSERT(clip || RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
+    ASSERT(drawsContent());
+
     if (!m_client)
         return;
     if (firstPaintInvalidationTrackingEnabled())
         m_debugInfo.clearAnnotatedInvalidateRects();
     incrementPaintCount();
 #ifndef NDEBUG
-    if (m_displayItemList && contentsOpaque() && s_drawDebugRedFill) {
+    if (m_paintController && contentsOpaque() && s_drawDebugRedFill) {
         FloatRect rect(FloatPoint(), size());
         if (!DrawingRecorder::useCachedDrawingIfPossible(context, *this, DisplayItem::DebugRedFill)) {
             DrawingRecorder recorder(context, *this, DisplayItem::DebugRedFill, rect);
@@ -307,9 +313,22 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
     }
 #endif
     m_client->paintContents(this, context, m_paintingPhase, clip);
-    if (!m_textPainted && m_displayItemList->textPainted()) {
+    notifyFirstPaintToClient();
+}
+
+void GraphicsLayer::notifyFirstPaintToClient()
+{
+    if (!m_painted) {
+        m_painted = true;
+        m_client->notifyFirstPaint();
+    }
+    if (!m_textPainted && m_paintController->textPainted()) {
         m_textPainted = true;
-        m_client->notifyTextPainted();
+        m_client->notifyFirstTextPaint();
+    }
+    if (!m_imagePainted && m_paintController->imagePainted()) {
+        m_imagePainted = true;
+        m_client->notifyFirstImagePaint();
     }
 }
 
@@ -800,8 +819,8 @@ void GraphicsLayer::setSize(const FloatSize& size)
 
 #ifndef NDEBUG
     // The red debug fill needs to be invalidated if the layer resizes.
-    if (m_displayItemList)
-        m_displayItemList->invalidateUntracked(displayItemClient());
+    if (m_paintController)
+        m_paintController->invalidateUntracked(displayItemClient());
 #endif
 }
 
@@ -855,6 +874,9 @@ void GraphicsLayer::setDrawsContent(bool drawsContent)
 
     m_drawsContent = drawsContent;
     updateLayerIsDrawable();
+
+    if (!drawsContent && m_paintController)
+        m_paintController.clear();
 }
 
 void GraphicsLayer::setContentsVisible(bool contentsVisible)
@@ -968,60 +990,27 @@ void GraphicsLayer::setContentsNeedsDisplay()
     }
 }
 
-void GraphicsLayer::setNeedsDisplayWithoutInvalidateForTesting()
-{
-    ASSERT(RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
-    if (!drawsContent())
-        return;
-
-    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
-        m_needsDisplay = true;
-}
-
 void GraphicsLayer::setNeedsDisplay()
 {
     if (!drawsContent())
         return;
 
     // TODO(chrishtr): stop invalidating the rects once FrameView::paintRecursively does so.
-    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
-        m_needsDisplay = true;
-
     m_layer->layer()->invalidate();
     if (isTrackingPaintInvalidations())
         trackPaintInvalidationRect(FloatRect(FloatPoint(), m_size));
     for (size_t i = 0; i < m_linkHighlights.size(); ++i)
         m_linkHighlights[i]->invalidate();
 
-    displayItemList()->invalidateAll();
+    paintController()->invalidateAll();
     if (isTrackingPaintInvalidations())
         trackPaintInvalidationObject("##ALL##");
-}
-
-bool GraphicsLayer::needsDisplay() const
-{
-    ASSERT(RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
-    return m_needsDisplay;
-}
-
-bool GraphicsLayer::commitIfNeeded(DisplayListDiff& displayListDiff)
-{
-    ASSERT(RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled());
-    if (m_needsDisplay) {
-        displayItemList()->commitNewDisplayItems(&displayListDiff);
-        m_needsDisplay = false;
-        return true;
-    }
-    return false;
 }
 
 void GraphicsLayer::setNeedsDisplayInRect(const IntRect& rect, PaintInvalidationReason invalidationReason)
 {
     if (!drawsContent())
         return;
-
-    if (RuntimeEnabledFeatures::slimmingPaintSynchronizedPaintingEnabled())
-        m_needsDisplay = true;
 
     m_layer->layer()->invalidateRect(rect);
     if (firstPaintInvalidationTrackingEnabled())
@@ -1032,9 +1021,9 @@ void GraphicsLayer::setNeedsDisplayInRect(const IntRect& rect, PaintInvalidation
         m_linkHighlights[i]->invalidate();
 }
 
-void GraphicsLayer::invalidateDisplayItemClient(const DisplayItemClientWrapper& displayItemClient)
+void GraphicsLayer::invalidateDisplayItemClient(const DisplayItemClientWrapper& displayItemClient, PaintInvalidationReason paintInvalidationReason, const IntRect* visualRect)
 {
-    displayItemList()->invalidate(displayItemClient);
+    paintController()->invalidate(displayItemClient, paintInvalidationReason, visualRect);
     if (isTrackingPaintInvalidations())
         trackPaintInvalidationObject(displayItemClient.debugName());
 }
@@ -1048,9 +1037,17 @@ void GraphicsLayer::setContentsRect(const IntRect& rect)
     updateContentsRect();
 }
 
-void GraphicsLayer::setContentsToImage(Image* image)
+void GraphicsLayer::setContentsToImage(Image* image, RespectImageOrientationEnum respectImageOrientation)
 {
     RefPtr<SkImage> skImage = image ? image->imageForCurrentFrame() : nullptr;
+
+    if (image && skImage && image->isBitmapImage()) {
+        if (respectImageOrientation == RespectImageOrientation) {
+            ImageOrientation imageOrientation = toBitmapImage(image)->currentFrameOrientation();
+            skImage = DragImage::resizeAndOrientImage(skImage.release(), imageOrientation);
+        }
+    }
+
     if (image && skImage) {
         if (!m_imageLayer) {
             m_imageLayer = adoptPtr(Platform::current()->compositorSupport()->createImageLayer());
@@ -1158,12 +1155,6 @@ void GraphicsLayer::setScrollableArea(ScrollableArea* scrollableArea, bool isVie
         m_layer->layer()->setScrollClient(this);
 }
 
-void GraphicsLayer::paint(GraphicsContext& context, const IntRect& clip)
-{
-    paintGraphicsLayerContents(context, clip);
-}
-
-
 void GraphicsLayer::notifyAnimationStarted(double monotonicTime, int group)
 {
     if (m_client)
@@ -1187,11 +1178,11 @@ void GraphicsLayer::didScroll()
     }
 }
 
-DisplayItemList* GraphicsLayer::displayItemList()
+PaintController* GraphicsLayer::paintController()
 {
-    if (!m_displayItemList)
-        m_displayItemList = DisplayItemList::create();
-    return m_displayItemList.get();
+    if (!m_paintController)
+        m_paintController = PaintController::create();
+    return m_paintController.get();
 }
 
 } // namespace blink

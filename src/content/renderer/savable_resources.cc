@@ -9,6 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
+#include "content/renderer/web_frame_utils.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -17,7 +18,6 @@
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
 using blink::WebDocument;
@@ -27,7 +27,6 @@ using blink::WebFrame;
 using blink::WebInputElement;
 using blink::WebLocalFrame;
 using blink::WebNode;
-using blink::WebNodeList;
 using blink::WebString;
 using blink::WebVector;
 using blink::WebView;
@@ -42,9 +41,17 @@ void GetSavableResourceLinkForElement(
     const WebElement& element,
     const WebDocument& current_doc,
     SavableResourcesResult* result) {
-  // Skipping frame and iframe tag.
-  if (element.hasHTMLTagName("iframe") || element.hasHTMLTagName("frame"))
+  if (element.hasHTMLTagName("iframe") || element.hasHTMLTagName("frame")) {
+    GURL complete_url = current_doc.completeURL(element.getAttribute("src"));
+    WebFrame* web_frame = WebFrame::fromFrameOwnerElement(element);
+
+    SavableSubframe subframe;
+    subframe.original_url = complete_url;
+    subframe.routing_id = GetRoutingIdForFrameOrProxy(web_frame);
+
+    result->subframes->push_back(subframe);
     return;
+  }
 
   // Check whether the node has sub resource URL or not.
   WebString value = GetSubResourceLinkFromElement(element);
@@ -60,11 +67,8 @@ void GetSavableResourceLinkForElement(
   // sub-resources if they use FTP protocol.
   if (!u.SchemeIsHTTPOrHTTPS() && !u.SchemeIs(url::kFileScheme))
     return;
-  // Ignore duplicated resource link.
+
   result->resources_list->push_back(u);
-  // Insert referrer for above new resource link.
-  result->referrer_urls_list->push_back(GURL());
-  result->referrer_policies_list->push_back(blink::WebReferrerPolicyDefault);
 }
 
 }  // namespace

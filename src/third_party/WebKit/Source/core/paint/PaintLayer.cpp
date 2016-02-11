@@ -269,7 +269,7 @@ void PaintLayer::updateLayerPositionRecursive()
     // FIXME(400589): We would like to do this in PaintLayerScrollableArea::updateAfterLayout,
     // but it depends on the size computed by updateLayerPosition.
     if (m_scrollableArea) {
-        if (ScrollAnimator* scrollAnimator = m_scrollableArea->existingScrollAnimator())
+        if (ScrollAnimatorBase* scrollAnimator = m_scrollableArea->existingScrollAnimator())
             scrollAnimator->updateAfterLayout();
     }
 
@@ -427,17 +427,15 @@ TransformationMatrix PaintLayer::renderableTransform(GlobalPaintFlags globalPain
     return *m_transform;
 }
 
-// Convert a bounding box from flow thread coordinates, relative to |layer|, to visual coordinates, relative to |ancestorLayer|.
-// See http://www.chromium.org/developers/design-documents/multi-column-layout for more info on these coordinate types.
-static void convertFromFlowThreadToVisualBoundingBoxInAncestor(const PaintLayer* layer, const PaintLayer* ancestorLayer, LayoutRect& rect)
+void PaintLayer::convertFromFlowThreadToVisualBoundingBoxInAncestor(const PaintLayer* ancestorLayer, LayoutRect& rect) const
 {
-    PaintLayer* paginationLayer = layer->enclosingPaginationLayer();
+    PaintLayer* paginationLayer = enclosingPaginationLayer();
     ASSERT(paginationLayer);
     LayoutFlowThread* flowThread = toLayoutFlowThread(paginationLayer->layoutObject());
 
     // First make the flow thread rectangle relative to the flow thread, not to |layer|.
     LayoutPoint offsetWithinPaginationLayer;
-    layer->convertToLayerCoords(paginationLayer, offsetWithinPaginationLayer);
+    convertToLayerCoords(paginationLayer, offsetWithinPaginationLayer);
     rect.moveBy(offsetWithinPaginationLayer);
 
     // Then make the rectangle visual, relative to the fragmentation context. Split our box up into
@@ -903,6 +901,7 @@ PaintLayer* PaintLayer::enclosingLayerForPaintInvalidationCrossingFrameBoundarie
     while (!compositedLayer) {
         compositedLayer = layer->enclosingLayerForPaintInvalidation();
         if (!compositedLayer) {
+            RELEASE_ASSERT(layer->layoutObject()->frame());
             LayoutObject* owner = layer->layoutObject()->frame()->ownerLayoutObject();
             if (!owner)
                 break;
@@ -1060,7 +1059,7 @@ LayoutRect PaintLayer::transparencyClipBox(const PaintLayer* layer, const PaintL
         // paints unfragmented.
         LayoutRect clipRect = layer->physicalBoundingBox(layer);
         expandClipRectForDescendantsAndReflection(clipRect, layer, layer, transparencyBehavior, subPixelAccumulation, globalPaintFlags);
-        clipRect.expand(layer->layoutObject()->style()->filterOutsets());
+        clipRect.expand(layer->filterOutsets());
         LayoutRect result = transform.mapRect(clipRect);
         if (!paginationLayer)
             return result;
@@ -1079,14 +1078,14 @@ LayoutRect PaintLayer::transparencyClipBox(const PaintLayer* layer, const PaintL
 
     LayoutRect clipRect = layer->fragmentsBoundingBox(rootLayer);
     expandClipRectForDescendantsAndReflection(clipRect, layer, rootLayer, transparencyBehavior, subPixelAccumulation, globalPaintFlags);
-    clipRect.expand(layer->layoutObject()->style()->filterOutsets());
+    clipRect.expand(layer->filterOutsets());
     clipRect.move(subPixelAccumulation);
     return clipRect;
 }
 
-LayoutRect PaintLayer::paintingExtent(const PaintLayer* rootLayer, const LayoutRect& paintDirtyRect, const LayoutSize& subPixelAccumulation, GlobalPaintFlags globalPaintFlags)
+LayoutRect PaintLayer::paintingExtent(const PaintLayer* rootLayer, const LayoutSize& subPixelAccumulation, GlobalPaintFlags globalPaintFlags)
 {
-    return intersection(transparencyClipBox(this, rootLayer, PaintingTransparencyClipBox, RootOfTransparencyClipBox, subPixelAccumulation, globalPaintFlags), paintDirtyRect);
+    return transparencyClipBox(this, rootLayer, PaintingTransparencyClipBox, RootOfTransparencyClipBox, subPixelAccumulation, globalPaintFlags);
 }
 
 void* PaintLayer::operator new(size_t sz)
@@ -2102,7 +2101,7 @@ LayoutRect PaintLayer::fragmentsBoundingBox(const PaintLayer* ancestorLayer) con
         return physicalBoundingBox(ancestorLayer);
 
     LayoutRect result = flippedLogicalBoundingBox(logicalBoundingBox(), layoutObject());
-    convertFromFlowThreadToVisualBoundingBoxInAncestor(this, ancestorLayer, result);
+    convertFromFlowThreadToVisualBoundingBoxInAncestor(ancestorLayer, result);
     return result;
 }
 
@@ -2171,7 +2170,10 @@ LayoutRect PaintLayer::boundingBoxForCompositing(const PaintLayer* ancestorLayer
     if (layoutObject()->isLayoutFlowThread())
         return LayoutRect();
 
-    LayoutRect result = clipper().localClipRect();
+    // If there is a clip applied by an ancestor to this PaintLayer but below or equal to |ancestorLayer|,
+    // use that clip as the bounds rather than the recursive bounding boxes, since the latter may be larger than the
+    // actual size. See https://bugs.webkit.org/show_bug.cgi?id=80372 for examples.
+    LayoutRect result = clipper().localClipRect(ancestorLayer);
     // TODO(chrishtr): avoid converting to IntRect and back.
     if (result == LayoutRect(LayoutRect::infiniteIntRect())) {
         result = physicalBoundingBox(LayoutPoint());
@@ -2191,14 +2193,14 @@ LayoutRect PaintLayer::boundingBoxForCompositing(const PaintLayer* ancestorLayer
         // FIXME: We can optimize the size of the composited layers, by not enlarging
         // filtered areas with the outsets if we know that the filter is going to render in hardware.
         // https://bugs.webkit.org/show_bug.cgi?id=81239
-        result.expand(m_layoutObject->style()->filterOutsets());
+        result.expand(filterOutsets());
     }
 
     if (transform() && paintsWithTransform(GlobalPaintNormalPhase) && (this != ancestorLayer || options == MaybeIncludeTransformForAncestorLayer))
         result = transform()->mapRect(result);
 
     if (enclosingPaginationLayer()) {
-        convertFromFlowThreadToVisualBoundingBoxInAncestor(this, ancestorLayer, result);
+        convertFromFlowThreadToVisualBoundingBoxInAncestor(ancestorLayer, result);
         return result;
     }
     LayoutPoint delta;
@@ -2569,12 +2571,12 @@ FilterOperations computeFilterOperationsHandleReferenceFilters(const FilterOpera
 
 } // unnamed namespace
 
-FilterOperations PaintLayer::computeFilterOperations(const ComputedStyle& style)
+FilterOperations PaintLayer::computeFilterOperations(const ComputedStyle& style) const
 {
     return computeFilterOperationsHandleReferenceFilters(style.filter(), style.effectiveZoom(), enclosingElement());
 }
 
-FilterOperations PaintLayer::computeBackdropFilterOperations(const ComputedStyle& style)
+FilterOperations PaintLayer::computeBackdropFilterOperations(const ComputedStyle& style) const
 {
     return computeFilterOperationsHandleReferenceFilters(style.backdropFilter(), style.effectiveZoom(), enclosingElement());
 }
@@ -2592,6 +2594,48 @@ void PaintLayer::updateOrRemoveFilterClients()
         filterInfo()->removeReferenceFilterClients();
 }
 
+FilterEffectBuilder* PaintLayer::updateFilterEffectBuilder() const
+{
+    // TODO(chrishtr): ensure (and assert) that compositing is clean here.
+
+    if (!paintsWithFilters())
+        return nullptr;
+
+    PaintLayerFilterInfo* filterInfo = this->filterInfo();
+
+    // Should have been added by updateOrRemoveFilterEffectBuilder().
+    ASSERT(filterInfo);
+
+    if (filterInfo->builder())
+        return filterInfo->builder();
+
+    filterInfo->setBuilder(FilterEffectBuilder::create());
+
+    float zoom = layoutObject()->style() ? layoutObject()->style()->effectiveZoom() : 1.0f;
+    if (!filterInfo->builder()->build(toElement(enclosingElement()), computeFilterOperations(layoutObject()->styleRef()), zoom))
+        filterInfo->setBuilder(nullptr);
+
+    return filterInfo->builder();
+}
+
+FilterEffect* PaintLayer::lastFilterEffect() const
+{
+    FilterEffectBuilder* builder = updateFilterEffectBuilder();
+    if (!builder)
+        return nullptr;
+    return builder->lastEffect().get();
+}
+
+FilterOutsets PaintLayer::filterOutsets() const
+{
+    if (!layoutObject()->hasFilter())
+        return FilterOutsets();
+
+    // Ensure the filter-chain is refreshed wrt reference filters.
+    updateFilterEffectBuilder();
+    return layoutObject()->style()->filter().outsets();
+}
+
 void PaintLayer::updateOrRemoveFilterEffectBuilder()
 {
     // FilterEffectBuilder is only used to render the filters in software mode,
@@ -2606,15 +2650,7 @@ void PaintLayer::updateOrRemoveFilterEffectBuilder()
         return;
     }
 
-    PaintLayerFilterInfo* filterInfo = ensureFilterInfo();
-    if (!filterInfo->builder())
-        filterInfo->setBuilder(FilterEffectBuilder::create());
-
-    // If the filter fails to build, remove it from the layer. It will still attempt to
-    // go through regular processing (e.g. compositing), but never apply anything.
-    float zoom = layoutObject()->style() ? layoutObject()->style()->effectiveZoom() : 1.0f;
-    if (!filterInfo->builder()->build(toElement(enclosingElement()), computeFilterOperations(layoutObject()->styleRef()), zoom))
-        filterInfo->setBuilder(nullptr);
+    ensureFilterInfo()->setBuilder(nullptr);
 }
 
 void PaintLayer::filterNeedsPaintInvalidation()
@@ -2671,47 +2707,45 @@ void PaintLayer::computeSelfHitTestRects(LayerHitTestRects& rects) const
 
 void PaintLayer::setNeedsRepaint()
 {
-    PaintLayer* layer = this;
-    while (layer && !layer->isSelfPaintingLayer() && !layer->hasSelfPaintingLayerDescendant())
-        layer = layer->parent();
-
-    // This layer is in an orphaned layer tree. Will mark ancestor for repaint when
-    // the orphaned tree is added into another tree.
-    if (!layer)
-        return;
-
-    layer->m_needsRepaint = true;
+    m_needsRepaint = true;
 
     // Do this unconditionally to ensure container chain is marked when compositing status of the layer changes.
-    layer->markAncestorChainForNeedsRepaint();
+    markCompositingContainerChainForNeedsRepaint();
 }
 
-void PaintLayer::markAncestorChainForNeedsRepaint()
+void PaintLayer::markCompositingContainerChainForNeedsRepaint()
 {
     // Need to access compositingState(). We've ensured correct flag setting when compositingState() changes.
     DisableCompositingQueryAsserts disabler;
 
-    if (compositingState() != NotComposited)
-        return;
-
     PaintLayer* layer = this;
     while (true) {
-        PaintLayer* container = layer->parent();
+        if (layer->compositingState() == PaintsIntoOwnBacking)
+            return;
+        if (CompositedLayerMapping* groupedMapping = layer->groupedMapping()) {
+            groupedMapping->owningLayer().setNeedsRepaint();
+            return;
+        }
+
+        PaintLayer* container = layer->compositingContainer();
         if (!container) {
             LayoutObject* owner = layer->layoutObject()->frame()->ownerLayoutObject();
             if (!owner)
                 break;
             container = owner->enclosingLayer();
         }
-        if (container->isSelfPaintingLayer() || container->hasSelfPaintingLayerDescendant()) {
-            if (container->m_needsRepaint)
-                break;
-            container->m_needsRepaint = true;
-        }
-        if (container->compositingState() != NotComposited)
+        if (container->m_needsRepaint)
             break;
+        container->m_needsRepaint = true;
         layer = container;
     }
+}
+
+void PaintLayer::clearNeedsRepaintRecursively()
+{
+    for (PaintLayer* child = firstChild(); child; child = child->nextSibling())
+        child->clearNeedsRepaintRecursively();
+    m_needsRepaint = false;
 }
 
 DisableCompositingQueryAsserts::DisableCompositingQueryAsserts()

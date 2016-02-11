@@ -597,8 +597,7 @@ void LinkStyle::clearSheet()
 {
     ASSERT(m_sheet);
     ASSERT(m_sheet->ownerNode() == m_owner);
-    m_sheet->clearOwnerNode();
-    m_sheet = nullptr;
+    m_sheet.release()->clearOwnerNode();
 }
 
 bool LinkStyle::styleSheetIsLoading() const
@@ -719,6 +718,7 @@ void LinkStyle::process()
         if (resource()) {
             removePendingSheet();
             clearResource();
+            clearFetchFollowingCORS();
         }
 
         if (!m_owner->shouldLoadLink())

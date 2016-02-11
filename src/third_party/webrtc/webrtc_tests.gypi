@@ -39,6 +39,7 @@
         'video_loopback',
         'video_replay',
         'webrtc_perf_tests',
+        'webrtc_nonparallel_tests',
       ],
     },
     {
@@ -139,12 +140,15 @@
       ],
     },
     {
-      # TODO(pbos): Add separate target webrtc_audio_tests and move files there.
+      # TODO(solenberg): Rename to webrtc_call_tests.
       'target_name': 'video_engine_tests',
       'type': '<(gtest_target_type)',
       'sources': [
         'audio/audio_receive_stream_unittest.cc',
+        'audio/audio_send_stream_unittest.cc',
+        'audio/audio_state_unittest.cc',
         'call/bitrate_estimator_tests.cc',
+        'call/call_unittest.cc',
         'call/packet_injection_tests.cc',
         'test/common_unittest.cc',
         'test/testsupport/metrics/video_metrics_unittest.cc',
@@ -219,6 +223,56 @@
         }],
       ],
     },
+    {
+      'target_name': 'webrtc_nonparallel_tests',
+      'type': '<(gtest_target_type)',
+      'sources': [
+        'base/nullsocketserver_unittest.cc',
+        'base/physicalsocketserver_unittest.cc',
+        'base/socket_unittest.cc',
+        'base/socket_unittest.h',
+        'base/socketaddress_unittest.cc',
+        'base/virtualsocket_unittest.cc',
+      ],
+      'defines': [
+        'GTEST_RELATIVE_PATH',
+      ],
+      'dependencies': [
+        'base/base.gyp:rtc_base',
+        'test/test.gyp:test_main',
+      ],
+      'conditions': [
+        ['OS=="android"', {
+          'dependencies': [
+            '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
+          ],
+        }],
+        ['OS=="win"', {
+          'sources': [
+            'base/win32socketserver_unittest.cc',
+          ],
+          'sources!': [
+            # TODO(ronghuawu): Fix TestUdpReadyToSendIPv6 on windows bot
+            # then reenable these tests.
+            # TODO(pbos): Move test disabling to ifdefs within the test files
+            # instead of here.
+            'base/physicalsocketserver_unittest.cc',
+            'base/socket_unittest.cc',
+            'base/win32socketserver_unittest.cc',
+          ],
+        }],
+        ['OS=="mac"', {
+          'sources': [
+            'base/macsocketserver_unittest.cc',
+          ],
+        }],
+        ['OS=="ios" or (OS=="mac" and target_arch!="ia32")', {
+          'defines': [
+            'CARBON_DEPRECATED=YES',
+          ],
+        }],
+      ],
+    },
   ],
   'conditions': [
     ['OS=="android"', {
@@ -242,6 +296,13 @@
           'type': 'none',
           'dependencies': [
             '<(apk_tests_path):webrtc_perf_tests_apk',
+          ],
+        },
+        {
+          'target_name': 'webrtc_nonparallel_tests_apk_target',
+          'type': 'none',
+          'dependencies': [
+            '<(apk_tests_path):webrtc_nonparallel_tests_apk',
           ],
         },
       ],
@@ -272,6 +333,19 @@
           ],
           'sources': [
             'video_engine_tests.isolate',
+          ],
+        },
+        {
+          'target_name': 'webrtc_nonparallel_tests_run',
+          'type': 'none',
+          'dependencies': [
+            'webrtc_nonparallel_tests',
+          ],
+          'includes': [
+            'build/isolate.gypi',
+          ],
+          'sources': [
+            'webrtc_nonparallel_tests.isolate',
           ],
         },
         {

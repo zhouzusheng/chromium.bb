@@ -15,8 +15,8 @@
 #include "core/paint/TransformRecorder.h"
 #include "platform/graphics/paint/ClipPathDisplayItem.h"
 #include "platform/graphics/paint/CompositingDisplayItem.h"
-#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/graphics/paint/DrawingDisplayItem.h"
+#include "platform/graphics/paint/PaintController.h"
 
 namespace blink {
 
@@ -59,9 +59,7 @@ bool SVGClipPainter::prepareEffect(const LayoutObject& target, const FloatRect& 
     Path clipPath;
     if (m_clip.asPath(animatedLocalTransform, targetBoundingBox, clipPath)) {
         clipperState = ClipperAppliedPath;
-        ASSERT(context->displayItemList());
-        if (!context->displayItemList()->displayItemConstructionIsDisabled())
-            context->displayItemList()->createAndAppend<BeginClipPathDisplayItem>(target, clipPath);
+        context->paintController().createAndAppend<BeginClipPathDisplayItem>(target, clipPath);
         return true;
     }
 
@@ -100,13 +98,7 @@ void SVGClipPainter::finishEffect(const LayoutObject& target, GraphicsContext* c
     switch (clipperState) {
     case ClipperAppliedPath:
         // Path-only clipping, no layers to restore but we need to emit an end to the clip path display item.
-        ASSERT(context->displayItemList());
-        if (!context->displayItemList()->displayItemConstructionIsDisabled()) {
-            if (context->displayItemList()->lastDisplayItemIsNoopBegin())
-                context->displayItemList()->removeLastDisplayItem();
-            else
-                context->displayItemList()->createAndAppend<EndClipPathDisplayItem>(target);
-        }
+        context->paintController().endItem<EndClipPathDisplayItem>(target);
         break;
     case ClipperAppliedMask:
         // Transfer content -> clip mask (SrcIn)

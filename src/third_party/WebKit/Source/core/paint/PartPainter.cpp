@@ -17,6 +17,29 @@
 
 namespace blink {
 
+bool PartPainter::isSelected() const
+{
+    SelectionState s = m_layoutPart.selectionState();
+    if (s == SelectionNone)
+        return false;
+    if (s == SelectionInside)
+        return true;
+
+    int selectionStart, selectionEnd;
+    m_layoutPart.selectionStartEnd(selectionStart, selectionEnd);
+    if (s == SelectionStart)
+        return selectionStart == 0;
+
+    int end = m_layoutPart.node()->hasChildren() ? m_layoutPart.node()->countChildren() : 1;
+    if (s == SelectionEnd)
+        return selectionEnd == end;
+    if (s == SelectionBoth)
+        return selectionStart == 0 && selectionEnd == end;
+
+    ASSERT(0);
+    return false;
+}
+
 void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     if (!m_layoutPart.shouldPaint(paintInfo, paintOffset))
@@ -52,7 +75,7 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
                     -(m_layoutPart.paddingBottom() + m_layoutPart.borderBottom()),
                     -(m_layoutPart.paddingLeft() + m_layoutPart.borderLeft())),
                 true, true);
-            clipper.emplace(m_layoutPart, paintInfo, borderRect, roundedInnerRect, ApplyToDisplayListIfEnabled);
+            clipper.emplace(m_layoutPart, paintInfo, borderRect, roundedInnerRect, ApplyToDisplayList);
         }
 
         if (m_layoutPart.widget())
@@ -60,7 +83,7 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
     }
 
     // Paint a partially transparent wash over selected widgets.
-    if (m_layoutPart.isSelected() && !paintInfo.isPrinting() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutPart, paintInfo.phase, adjustedPaintOffset)) {
+    if (isSelected() && !paintInfo.isPrinting() && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, m_layoutPart, paintInfo.phase, adjustedPaintOffset)) {
         LayoutRect rect = m_layoutPart.localSelectionRect();
         rect.moveBy(adjustedPaintOffset);
         IntRect selectionRect = pixelSnappedIntRect(rect);
@@ -69,7 +92,7 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
     }
 
     if (m_layoutPart.canResize())
-        ScrollableAreaPainter(*m_layoutPart.layer()->scrollableArea()).paintResizer(paintInfo.context, roundedIntPoint(adjustedPaintOffset), paintInfo.rect);
+        ScrollableAreaPainter(*m_layoutPart.layer()->scrollableArea()).paintResizer(paintInfo.context, roundedIntPoint(adjustedPaintOffset), paintInfo.cullRect());
 }
 
 void PartPainter::paintContents(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -84,15 +107,15 @@ void PartPainter::paintContents(const PaintInfo& paintInfo, const LayoutPoint& p
     IntPoint widgetLocation = widget->frameRect().location();
     IntPoint paintLocation(roundToInt(adjustedPaintOffset.x() + m_layoutPart.borderLeft() + m_layoutPart.paddingLeft()),
         roundToInt(adjustedPaintOffset.y() + m_layoutPart.borderTop() + m_layoutPart.paddingTop()));
-    IntRect paintRect = paintInfo.rect;
 
     IntSize widgetPaintOffset = paintLocation - widgetLocation;
     // When painting widgets into compositing layers, tx and ty are relative to the enclosing compositing layer,
-    // not the root. In this case, shift the CTM and adjust the paintRect to be root-relative to fix plugin drawing.
+    // not the root. In this case, shift the CTM and adjust the CullRect to be root-relative to fix plugin drawing.
     TransformRecorder transform(*paintInfo.context, m_layoutPart,
         AffineTransform::translation(widgetPaintOffset.width(), widgetPaintOffset.height()));
-    paintRect.move(-widgetPaintOffset);
-    widget->paint(paintInfo.context, paintRect);
+
+    CullRect adjustedCullRect(paintInfo.cullRect(), -widgetPaintOffset);
+    widget->paint(paintInfo.context, adjustedCullRect);
 }
 
 } // namespace blink

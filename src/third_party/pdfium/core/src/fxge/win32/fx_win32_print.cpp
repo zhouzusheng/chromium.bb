@@ -4,14 +4,18 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fxge/fx_ge.h"
+#include "core/include/fxge/fx_ge.h"
+
 #if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
+
 #include <windows.h>
-#include "../../../include/fxge/fx_ge_win32.h"
-#include "win32_int.h"
-#include "../../../include/fxge/fx_freetype.h"
-#include "../ge/text_int.h"
+
 #include "../dib/dib_int.h"
+#include "../ge/text_int.h"
+#include "core/include/fxge/fx_freetype.h"
+#include "core/include/fxge/fx_ge_win32.h"
+#include "win32_int.h"
+
 #define SIZETHRESHOLD 1000
 #define OUTPUTPSLEN 4096
 CGdiPrinterDriver::CGdiPrinterDriver(HDC hDC)
@@ -136,10 +140,6 @@ static CFX_DIBitmap* Transform1bppBitmap(const CFX_DIBSource* pSrc,
   ASSERT(pSrc->GetFormat() == FXDIB_1bppRgb ||
          pSrc->GetFormat() == FXDIB_1bppMask ||
          pSrc->GetFormat() == FXDIB_1bppCmyk);
-  CFX_FloatRect unit_rect = pDestMatrix->GetUnitRect();
-  FX_RECT full_rect = unit_rect.GetOutterRect();
-  int full_left = full_rect.left;
-  int full_top = full_rect.top;
   CFX_DIBExtractor src_bitmap(pSrc);
   CFX_DIBitmap* pSrcBitmap = src_bitmap;
   if (pSrcBitmap == NULL) {
@@ -297,7 +297,7 @@ void CPSOutput::OutputPS(const FX_CHAR* string, int len) {
     int send_len = len > 1024 ? 1024 : len;
     *(FX_WORD*)m_pBuf = send_len;
     FXSYS_memcpy(m_pBuf + 2, string + sent_len, send_len);
-    int ret = ExtEscape(m_hDC, PASSTHROUGH, send_len + 2, m_pBuf, 0, NULL);
+    ExtEscape(m_hDC, PASSTHROUGH, send_len + 2, m_pBuf, 0, NULL);
     sent_len += send_len;
     len -= send_len;
   }

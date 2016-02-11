@@ -15,6 +15,7 @@ namespace internal {
 bool InitializeICU(const char* icu_data_file);
 bool InitializeICUWithData(const void* icu_data);
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8
 
 #endif  // V8_ICU_UTIL_H_

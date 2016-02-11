@@ -8,6 +8,7 @@
 #include "core/layout/LayoutView.h"
 #include "core/page/Page.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/PaintInfo.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/PaintLayerScrollableArea.h"
 #include "core/paint/ScrollbarPainter.h"
@@ -17,7 +18,7 @@
 
 namespace blink {
 
-void ScrollableAreaPainter::paintResizer(GraphicsContext* context, const IntPoint& paintOffset, const IntRect& damageRect)
+void ScrollableAreaPainter::paintResizer(GraphicsContext* context, const IntPoint& paintOffset, const CullRect& cullRect)
 {
     if (scrollableArea().box().style()->resize() == RESIZE_NONE)
         return;
@@ -28,7 +29,7 @@ void ScrollableAreaPainter::paintResizer(GraphicsContext* context, const IntPoin
     absRect.moveBy(paintOffset);
 
     if (scrollableArea().resizer()) {
-        if (!absRect.intersects(damageRect))
+        if (!cullRect.intersectsCullRect(absRect))
             return;
         ScrollbarPainter::paintIntoRect(*scrollableArea().resizer(), context, paintOffset, LayoutRect(absRect));
         return;
@@ -72,7 +73,7 @@ void ScrollableAreaPainter::drawPlatformResizerImage(GraphicsContext* context, I
         cornerResizerSize = resizeCornerImage->size();
     }
 
-    if (scrollableArea().box().style()->shouldPlaceBlockDirectionScrollbarOnLogicalLeft()) {
+    if (scrollableArea().box().shouldPlaceBlockDirectionScrollbarOnLogicalLeft()) {
         context->save();
         context->translate(resizerCornerRect.x() + cornerResizerSize.width(), resizerCornerRect.y() + resizerCornerRect.height() - cornerResizerSize.height());
         context->scale(-1.0, 1.0);
@@ -84,7 +85,7 @@ void ScrollableAreaPainter::drawPlatformResizerImage(GraphicsContext* context, I
     context->drawImage(resizeCornerImage.get(), imageRect);
 }
 
-void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, const IntPoint& paintOffset, const IntRect& damageRect, bool paintingOverlayControls)
+void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, const IntPoint& paintOffset, const CullRect& cullRect, bool paintingOverlayControls)
 {
     // Don't do anything if we have no overflow.
     if (!scrollableArea().box().hasOverflowClip())
@@ -94,8 +95,7 @@ void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, cons
     if (paintingOverlayControls)
         adjustedPaintOffset = scrollableArea().cachedOverlayScrollbarOffset();
 
-    IntRect localDamageRect = damageRect;
-    localDamageRect.moveBy(-adjustedPaintOffset);
+    CullRect adjustedCullRect(cullRect, -adjustedPaintOffset);
 
     // Overlay scrollbars paint in a second pass through the layer tree so that they will paint
     // on top of everything else. If this is the normal painting pass, paintingOverlayControls
@@ -108,7 +108,7 @@ void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, cons
         // It's not necessary to do the second pass if the scrollbars paint into layers.
         if ((scrollableArea().horizontalScrollbar() && scrollableArea().layerForHorizontalScrollbar()) || (scrollableArea().verticalScrollbar() && scrollableArea().layerForVerticalScrollbar()))
             return;
-        if (!overflowControlsIntersectRect(localDamageRect))
+        if (!overflowControlsIntersectRect(adjustedCullRect))
             return;
 
         LayoutView* layoutView = scrollableArea().box().view();
@@ -128,11 +128,11 @@ void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, cons
     {
         if (scrollableArea().horizontalScrollbar() && !scrollableArea().layerForHorizontalScrollbar()) {
             TransformRecorder translateRecorder(*context, *scrollableArea().horizontalScrollbar(), AffineTransform::translation(adjustedPaintOffset.x(), adjustedPaintOffset.y()));
-            scrollableArea().horizontalScrollbar()->paint(context, localDamageRect);
+            scrollableArea().horizontalScrollbar()->paint(context, adjustedCullRect);
         }
         if (scrollableArea().verticalScrollbar() && !scrollableArea().layerForVerticalScrollbar()) {
             TransformRecorder translateRecorder(*context, *scrollableArea().verticalScrollbar(), AffineTransform::translation(adjustedPaintOffset.x(), adjustedPaintOffset.y()));
-            scrollableArea().verticalScrollbar()->paint(context, localDamageRect);
+            scrollableArea().verticalScrollbar()->paint(context, adjustedCullRect);
         }
     }
 
@@ -141,33 +141,32 @@ void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, cons
 
     // We fill our scroll corner with white if we have a scrollbar that doesn't run all the way up to the
     // edge of the box.
-    paintScrollCorner(context, adjustedPaintOffset, damageRect);
+    paintScrollCorner(context, adjustedPaintOffset, cullRect);
 
     // Paint our resizer last, since it sits on top of the scroll corner.
-    paintResizer(context, adjustedPaintOffset, damageRect);
+    paintResizer(context, adjustedPaintOffset, cullRect);
 }
 
-bool ScrollableAreaPainter::overflowControlsIntersectRect(const IntRect& localRect) const
+bool ScrollableAreaPainter::overflowControlsIntersectRect(const CullRect& cullRect) const
 {
     const IntRect borderBox = scrollableArea().box().pixelSnappedBorderBoxRect();
 
-    if (scrollableArea().rectForHorizontalScrollbar(borderBox).intersects(localRect))
+    if (cullRect.intersectsCullRect(scrollableArea().rectForHorizontalScrollbar(borderBox)))
         return true;
 
-    if (scrollableArea().rectForVerticalScrollbar(borderBox).intersects(localRect))
+    if (cullRect.intersectsCullRect(scrollableArea().rectForVerticalScrollbar(borderBox)))
         return true;
 
-    if (scrollableArea().scrollCornerRect().intersects(localRect))
+    if (cullRect.intersectsCullRect(scrollableArea().scrollCornerRect()))
         return true;
 
-    if (scrollableArea().resizerCornerRect(borderBox, ResizerForPointer).intersects(localRect))
+    if (cullRect.intersectsCullRect(scrollableArea().resizerCornerRect(borderBox, ResizerForPointer)))
         return true;
 
     return false;
 }
 
-
-void ScrollableAreaPainter::paintScrollCorner(GraphicsContext* context, const IntPoint& paintOffset, const IntRect& damageRect)
+void ScrollableAreaPainter::paintScrollCorner(GraphicsContext* context, const IntPoint& paintOffset, const CullRect& adjustedCullRect)
 {
     IntRect absRect = scrollableArea().scrollCornerRect();
     if (absRect.isEmpty())
@@ -175,7 +174,7 @@ void ScrollableAreaPainter::paintScrollCorner(GraphicsContext* context, const In
     absRect.moveBy(paintOffset);
 
     if (scrollableArea().scrollCorner()) {
-        if (!absRect.intersects(damageRect))
+        if (!adjustedCullRect.intersectsCullRect(absRect))
             return;
         ScrollbarPainter::paintIntoRect(*scrollableArea().scrollCorner(), context, paintOffset, LayoutRect(absRect));
         return;

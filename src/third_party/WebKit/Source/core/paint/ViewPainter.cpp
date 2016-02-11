@@ -25,6 +25,10 @@ void ViewPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
     // LayoutViews should never be called to paint with an offset not on device pixels.
     ASSERT(LayoutPoint(IntPoint(paintOffset.x(), paintOffset.y())) == paintOffset);
 
+    const FrameView* frameView = m_layoutView.frameView();
+    if (frameView->shouldThrottleRendering())
+        return;
+
     m_layoutView.paintObject(paintInfo, paintOffset);
     BlockPainter(m_layoutView).paintOverflowControlsIfNeeded(paintInfo, paintOffset);
 }
@@ -138,7 +142,7 @@ void ViewPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo)
 
         bool shouldPaintInViewportSpace = (*it)->attachment() == FixedBackgroundAttachment;
         if (shouldPaintInViewportSpace) {
-            BoxPainter::paintFillLayerExtended(m_layoutView, paintInfo, Color(), **it, LayoutRect::infiniteRect(), BackgroundBleedNone);
+            BoxPainter::paintFillLayerExtended(m_layoutView, paintInfo, Color(), **it, LayoutRect(LayoutRect::infiniteIntRect()), BackgroundBleedNone);
         } else {
             context.save();
             // TODO(trchen): We should be able to handle 3D-transformed root

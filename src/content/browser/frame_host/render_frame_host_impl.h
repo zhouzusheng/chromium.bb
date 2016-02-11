@@ -15,6 +15,7 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/accessibility_mode_enums.h"
 #include "content/common/ax_content_node_data.h"
@@ -27,6 +28,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_message_type.h"
 #include "net/http/http_response_headers.h"
+#include "third_party/WebKit/public/web/WebFrameOwnerProperties.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "third_party/WebKit/public/web/WebTreeScopeType.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -90,7 +92,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
       public BrowserAccessibilityDelegate {
  public:
   using AXTreeSnapshotCallback =
-      base::Callback<void(const ui::AXTreeUpdate<ui::AXNodeData>&)>;
+      base::Callback<void(
+          const ui::AXTreeUpdate&)>;
 
   // Keeps track of the state of the RenderFrameHostImpl, particularly with
   // respect to swap out.
@@ -172,9 +175,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
                                   const gfx::Point& point) override;
   void AccessibilitySetScrollOffset(int acc_obj_id,
                                     const gfx::Point& offset) override;
-  void AccessibilitySetTextSelection(int acc_obj_id,
-                                     int start_offset,
-                                     int end_offset) override;
+  void AccessibilitySetSelection(int anchor_object_id,
+                                 int anchor_offset,
+                                 int focus_object_id,
+                                 int focus_offset) override;
   void AccessibilitySetValue(int acc_obj_id, const base::string16& value)
       override;
   bool AccessibilityViewHasFocus() const override;
@@ -203,10 +207,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void Init();
 
   int routing_id() const { return routing_id_; }
-  void OnCreateChildFrame(int new_routing_id,
-                          blink::WebTreeScopeType scope,
-                          const std::string& frame_name,
-                          blink::WebSandboxFlags sandbox_flags);
+  void OnCreateChildFrame(
+      int new_routing_id,
+      blink::WebTreeScopeType scope,
+      const std::string& frame_name,
+      blink::WebSandboxFlags sandbox_flags,
+      const blink::WebFrameOwnerProperties& frame_owner_properties);
 
   RenderViewHostImpl* render_view_host() { return render_view_host_; }
   RenderFrameHostDelegate* delegate() { return delegate_; }
@@ -248,6 +254,14 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // TODO(creis): Make bindings frame-specific, to support cases like <webview>.
   int GetEnabledBindings();
 
+  // The unique ID of the latest NavigationEntry that this RenderFrameHost is
+  // showing. This may change even when this frame hasn't committed a page,
+  // such as for a new subframe navigation in a different frame.
+  int nav_entry_id() const { return nav_entry_id_; }
+  void set_nav_entry_id(int nav_entry_id) { nav_entry_id_ = nav_entry_id; }
+
+  // A NavigationHandle for the pending navigation in this frame, if any. This
+  // is cleared when the navigation commits.
   NavigationHandleImpl* navigation_handle() const {
     return navigation_handle_.get();
   }
@@ -372,9 +386,6 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // opener being modified (e.g., with window.open or being set to null) in
   // another renderer process.
   void UpdateOpener();
-
-  // Clear focus from this frame in the renderer process.
-  void ClearFocus();
 
   // Deletes the current selection plus the specified number of characters
   // before and after the selection or caret.
@@ -514,6 +525,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       bool was_ignored_by_handler);
   void OnDidCommitProvisionalLoad(const IPC::Message& msg);
   void OnDidDropNavigation();
+  void OnUpdateState(const PageState& state);
   void OnBeforeUnloadACK(
       bool proceed,
       const base::TimeTicks& renderer_before_unload_start_time,
@@ -541,6 +553,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDidAssignPageId(int32 page_id);
   void OnDidChangeSandboxFlags(int32 frame_routing_id,
                                blink::WebSandboxFlags flags);
+  void OnDidChangeFrameOwnerProperties(
+      int32 frame_routing_id,
+      const blink::WebFrameOwnerProperties& frame_owner_properties);
   void OnUpdateTitle(const base::string16& title,
                      blink::WebTextDirection title_direction);
   void OnUpdateEncoding(const std::string& encoding);
@@ -557,7 +572,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
       const AccessibilityHostMsg_FindInPageResultParams& params);
   void OnAccessibilitySnapshotResponse(
       int callback_id,
-      const ui::AXTreeUpdate<AXContentNodeData>& snapshot);
+      const AXContentTreeUpdate& snapshot);
   void OnToggleFullscreen(bool enter_fullscreen);
   void OnDidStartLoading(bool to_different_document);
   void OnDidStopLoading();
@@ -608,10 +623,30 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void AXContentNodeDataToAXNodeData(const AXContentNodeData& src,
                                      ui::AXNodeData* dst);
 
+  // Convert the content-layer-specific AXContentTreeData to a general-purpose
+  // AXTreeData structure.
+  void AXContentTreeDataToAXTreeData(const AXContentTreeData& src,
+                                     ui::AXTreeData* dst);
+
   // Returns the RenderWidgetHostView used for accessibility. For subframes,
   // this function will return the platform view on the main frame; for main
   // frames, it will return the current frame's view.
   RenderWidgetHostViewBase* GetViewForAccessibility();
+
+  // Sends a navigate message to the RenderFrame and notifies DevTools about
+  // navigation happening. Should be used instead of sending the message
+  // directly.
+  void SendNavigateMessage(
+      const content::CommonNavigationParams& common_params,
+      const content::StartNavigationParams& start_params,
+      const content::RequestNavigationParams& request_params);
+
+  // Returns the child FrameTreeNode if |child_frame_routing_id| is an
+  // immediate child of this FrameTreeNode.  |child_frame_routing_id| is
+  // considered untrusted, so the renderer process is killed if it refers to a
+  // FrameTreeNode that is not a child of this node.
+  FrameTreeNode* FindAndVerifyChild(
+      int32 child_frame_routing_id, bad_message::BadMessageReason reason);
 
   // For now, RenderFrameHosts indirectly keep RenderViewHosts alive via a
   // refcount that calls Shutdown when it reaches zero.  This allows each
@@ -725,6 +760,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Used to track whether a commit is expected in this frame. Only used in
   // tests.
   bool pending_commit_;
+
+  // The unique ID of the latest NavigationEntry that this RenderFrameHost is
+  // showing. This may change even when this frame hasn't committed a page,
+  // such as for a new subframe navigation in a different frame.  Tracking this
+  // allows us to send things like title and state updates to the latest
+  // relevant NavigationEntry.
+  int nav_entry_id_;
 
   // Used to swap out or shut down this RFH when the unload event is taking too
   // long to execute, depending on the number of active frames in the

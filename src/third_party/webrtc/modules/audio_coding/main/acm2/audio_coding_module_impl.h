@@ -18,7 +18,6 @@
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
 #include "webrtc/engine_configurations.h"
-#include "webrtc/modules/audio_coding/main/acm2/acm_codec_database.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_receiver.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_resampler.h"
 #include "webrtc/modules/audio_coding/main/acm2/codec_manager.h"
@@ -48,7 +47,7 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
       AudioEncoder* external_speech_encoder) override;
 
   // Get current send codec.
-  int SendCodec(CodecInst* current_codec) const override;
+  rtc::Optional<CodecInst> SendCodec() const override;
 
   // Get current send frequency.
   int SendFrequency() const override;
@@ -149,10 +148,6 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
 
   // Smallest latency NetEq will maintain.
   int LeastRequiredDelayMs() const override;
-
-  // Impose an initial delay on playout. ACM plays silence until |delay_ms|
-  // audio is accumulated in NetEq buffer, then starts decoding payloads.
-  int SetInitialPlayoutDelay(int delay_ms) override;
 
   // Get playout timestamp.
   int PlayoutTimestamp(uint32_t* timestamp) override;
@@ -280,79 +275,6 @@ class AudioCodingModuleImpl final : public AudioCodingModule {
 };
 
 }  // namespace acm2
-
-class AudioCodingImpl : public AudioCoding {
- public:
-  AudioCodingImpl(const Config& config);
-  ~AudioCodingImpl() override;
-
-  bool RegisterSendCodec(AudioEncoder* send_codec) override;
-
-  bool RegisterSendCodec(int encoder_type,
-                         uint8_t payload_type,
-                         int frame_size_samples = 0) override;
-
-  const AudioEncoder* GetSenderInfo() const override;
-
-  const CodecInst* GetSenderCodecInst() override;
-
-  int Add10MsAudio(const AudioFrame& audio_frame) override;
-
-  const ReceiverInfo* GetReceiverInfo() const override;
-
-  bool RegisterReceiveCodec(AudioDecoder* receive_codec) override;
-
-  bool RegisterReceiveCodec(int decoder_type, uint8_t payload_type) override;
-
-  bool InsertPacket(const uint8_t* incoming_payload,
-                    size_t payload_len_bytes,
-                    const WebRtcRTPHeader& rtp_info) override;
-
-  bool InsertPayload(const uint8_t* incoming_payload,
-                     size_t payload_len_byte,
-                     uint8_t payload_type,
-                     uint32_t timestamp) override;
-
-  bool SetMinimumPlayoutDelay(int time_ms) override;
-
-  bool SetMaximumPlayoutDelay(int time_ms) override;
-
-  int LeastRequiredDelayMs() const override;
-
-  bool PlayoutTimestamp(uint32_t* timestamp) override;
-
-  bool Get10MsAudio(AudioFrame* audio_frame) override;
-
-  bool GetNetworkStatistics(NetworkStatistics* network_statistics) override;
-
-  bool EnableNack(size_t max_nack_list_size) override;
-
-  void DisableNack() override;
-
-  bool SetVad(bool enable_dtx, bool enable_vad, ACMVADMode vad_mode) override;
-
-  std::vector<uint16_t> GetNackList(int round_trip_time_ms) const override;
-
-  void GetDecodingCallStatistics(
-      AudioDecodingCallStats* call_stats) const override;
-
- private:
-  // Temporary method to be used during redesign phase.
-  // Maps |codec_type| (a value from the anonymous enum in acm2::ACMCodecDB) to
-  // |codec_name|, |sample_rate_hz|, and |channels|.
-  // TODO(henrik.lundin) Remove this when no longer needed.
-  static bool MapCodecTypeToParameters(int codec_type,
-                                       std::string* codec_name,
-                                       int* sample_rate_hz,
-                                       int* channels);
-
-  int playout_frequency_hz_;
-  // TODO(henrik.lundin): All members below this line are temporary and should
-  // be removed after refactoring is completed.
-  rtc::scoped_ptr<acm2::AudioCodingModuleImpl> acm_old_;
-  CodecInst current_send_codec_;
-};
-
 }  // namespace webrtc
 
 #endif  // WEBRTC_MODULES_AUDIO_CODING_MAIN_ACM2_AUDIO_CODING_MODULE_IMPL_H_

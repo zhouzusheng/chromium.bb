@@ -13,6 +13,7 @@
 #include "public/platform/WebFloatRect.h"
 #include "public/platform/WebRect.h"
 #include "public/web/WebDocument.h"
+#include "public/web/WebFrameOwnerProperties.h"
 #include "public/web/WebPerformance.h"
 #include "public/web/WebRange.h"
 #include "public/web/WebTreeScopeType.h"
@@ -719,11 +720,11 @@ void WebRemoteFrameImpl::drawInCanvas(const WebRect& rect, const WebString& styl
     ASSERT_NOT_REACHED();
 }
 
-WebLocalFrame* WebRemoteFrameImpl::createLocalChild(WebTreeScopeType scope, const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client, WebFrame* previousSibling)
+WebLocalFrame* WebRemoteFrameImpl::createLocalChild(WebTreeScopeType scope, const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client, WebFrame* previousSibling, const WebFrameOwnerProperties& frameOwnerProperties)
 {
     WebLocalFrameImpl* child = toWebLocalFrameImpl(WebLocalFrame::create(scope, client));
     WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>>::AddResult result =
-        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(child, static_cast<SandboxFlags>(sandboxFlags)));
+        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(child, static_cast<SandboxFlags>(sandboxFlags), frameOwnerProperties));
     insertAfter(child, previousSibling);
     // FIXME: currently this calls LocalFrame::init() on the created LocalFrame, which may
     // result in the browser observing two navigations to about:blank (one from the initial
@@ -748,7 +749,7 @@ WebRemoteFrame* WebRemoteFrameImpl::createRemoteChild(WebTreeScopeType scope, co
 {
     WebRemoteFrameImpl* child = toWebRemoteFrameImpl(WebRemoteFrame::create(scope, client));
     WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>>::AddResult result =
-        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(nullptr, static_cast<SandboxFlags>(sandboxFlags)));
+        m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(nullptr, static_cast<SandboxFlags>(sandboxFlags), WebFrameOwnerProperties()));
     appendChild(child);
     child->initializeCoreFrame(frame()->host(), result.storedValue->value.get(), name);
     return child;

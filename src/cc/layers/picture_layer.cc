@@ -32,7 +32,7 @@ PictureLayer::PictureLayer(const LayerSettings& settings,
 
 PictureLayer::PictureLayer(const LayerSettings& settings,
                            ContentLayerClient* client,
-                           scoped_ptr<RecordingSource> source)
+                           scoped_ptr<DisplayListRecordingSource> source)
     : PictureLayer(settings, client) {
   recording_source_ = source.Pass();
 }
@@ -57,8 +57,8 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
 
   // If update called, then recording source size must match bounds pushed to
   // impl layer.
-  DCHECK_IMPLIES(update_source_frame_number_ == source_frame_number,
-                 impl_bounds == recording_source_bounds)
+  DCHECK(update_source_frame_number_ != source_frame_number ||
+         impl_bounds == recording_source_bounds)
       << " bounds " << impl_bounds.ToString() << " recording source "
       << recording_source_bounds.ToString();
 
@@ -74,7 +74,7 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
 
   // Preserve lcd text settings from the current raster source.
   bool can_use_lcd_text = layer_impl->RasterSourceUsesLCDText();
-  scoped_refptr<RasterSource> raster_source =
+  scoped_refptr<DisplayListRasterSource> raster_source =
       recording_source_->CreateRasterSource(can_use_lcd_text);
   layer_impl->set_gpu_raster_max_texture_size(
       layer_tree_host()->device_viewport_size());
@@ -150,7 +150,7 @@ bool PictureLayer::Update() {
   DCHECK(client_);
   updated |= recording_source_->UpdateAndExpandInvalidation(
       client_, &recording_invalidation_, layer_size, update_rect,
-      update_source_frame_number_, RecordingSource::RECORD_NORMALLY);
+      update_source_frame_number_, DisplayListRecordingSource::RECORD_NORMALLY);
   last_updated_visible_layer_rect_ = visible_layer_rect();
 
   if (updated) {
@@ -169,20 +169,21 @@ void PictureLayer::SetIsMask(bool is_mask) {
 }
 
 skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
-  // We could either flatten the RecordingSource into a single SkPicture,
-  // or paint a fresh one depending on what we intend to do with the
+  // We could either flatten the DisplayListRecordingSource into a single
+  // SkPicture, or paint a fresh one depending on what we intend to do with the
   // picture. For now we just paint a fresh one to get consistent results.
   if (!DrawsContent())
     return skia::RefPtr<SkPicture>();
 
   gfx::Size layer_size = bounds();
-  scoped_ptr<RecordingSource> recording_source(new DisplayListRecordingSource);
+  scoped_ptr<DisplayListRecordingSource> recording_source(
+      new DisplayListRecordingSource);
   Region recording_invalidation;
   recording_source->UpdateAndExpandInvalidation(
       client_, &recording_invalidation, layer_size, gfx::Rect(layer_size),
-      update_source_frame_number_, RecordingSource::RECORD_NORMALLY);
+      update_source_frame_number_, DisplayListRecordingSource::RECORD_NORMALLY);
 
-  scoped_refptr<RasterSource> raster_source =
+  scoped_refptr<DisplayListRasterSource> raster_source =
       recording_source->CreateRasterSource(false);
 
   return raster_source->GetFlattenedPicture();

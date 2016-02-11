@@ -49,7 +49,7 @@ void InlineFlowBoxPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& 
         }
     }
 
-    if (!paintInfo.rect.intersects(pixelSnappedIntRect(overflowRect)))
+    if (!paintInfo.cullRect().intersectsCullRect(overflowRect))
         return;
 
     if (paintInfo.phase == PaintPhaseMask) {

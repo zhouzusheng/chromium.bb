@@ -26,16 +26,6 @@ PeerConnectionDependencyFactory* GetPeerConnectionDependencyFactory() {
   return RenderThreadImpl::current()->GetPeerConnectionDependencyFactory();
 }
 
-void GetDefaultOutputDeviceParams(
-    int* output_sample_rate, int* output_buffer_size) {
-  // Fetch the default audio output hardware config.
-  media::AudioHardwareConfig* hardware_config =
-      RenderThreadImpl::current()->GetAudioHardwareConfig();
-  *output_sample_rate = hardware_config->GetOutputSampleRate();
-  *output_buffer_size = hardware_config->GetOutputBufferSize();
-}
-
-
 // Returns a valid session id if a single capture device is currently open
 // (and then the matching session_id), otherwise -1.
 // This is used to pass on a session id to a webrtc audio renderer (either
@@ -43,22 +33,23 @@ void GetDefaultOutputDeviceParams(
 // device, should one exist.
 // Note that if there are more than one open capture devices the function
 // will not be able to pick an appropriate device and return false.
-bool GetAuthorizedDeviceInfoForAudioRenderer(
-    int* session_id,
-    int* output_sample_rate,
-    int* output_frames_per_buffer) {
+bool GetSessionIdForAudioRenderer(int* session_id) {
   WebRtcAudioDeviceImpl* audio_device =
       GetPeerConnectionDependencyFactory()->GetWebRtcAudioDevice();
   if (!audio_device)
     return false;
 
+  int sample_rate;        // ignored, read from output device
+  int frames_per_buffer;  // ignored, read from output device
   return audio_device->GetAuthorizedDeviceInfoForAudioRenderer(
-      session_id, output_sample_rate, output_frames_per_buffer);
+      session_id, &sample_rate, &frames_per_buffer);
 }
 
 scoped_refptr<WebRtcAudioRenderer> CreateRemoteAudioRenderer(
     webrtc::MediaStreamInterface* stream,
-    int render_frame_id) {
+    int render_frame_id,
+    const std::string& device_id,
+    const url::Origin& security_origin) {
   if (stream->GetAudioTracks().empty())
     return NULL;
 
@@ -67,38 +58,28 @@ scoped_refptr<WebRtcAudioRenderer> CreateRemoteAudioRenderer(
 
   // TODO(tommi): Change the default value of session_id to be
   // StreamDeviceInfo::kNoId.  Also update AudioOutputDevice etc.
-  int session_id = 0, sample_rate = 0, buffer_size = 0;
-  if (!GetAuthorizedDeviceInfoForAudioRenderer(&session_id,
-                                               &sample_rate,
-                                               &buffer_size)) {
-    GetDefaultOutputDeviceParams(&sample_rate, &buffer_size);
-  }
+  int session_id = 0;
+  GetSessionIdForAudioRenderer(&session_id);
 
   return new WebRtcAudioRenderer(
       GetPeerConnectionDependencyFactory()->GetWebRtcSignalingThread(), stream,
-      render_frame_id, session_id, sample_rate, buffer_size);
+      render_frame_id, session_id, device_id, security_origin);
 }
-
 
 scoped_refptr<WebRtcLocalAudioRenderer> CreateLocalAudioRenderer(
     const blink::WebMediaStreamTrack& audio_track,
-    int render_frame_id) {
+    int render_frame_id,
+    const std::string& device_id,
+    const url::Origin& security_origin) {
   DVLOG(1) << "MediaStreamRendererFactoryImpl::CreateLocalAudioRenderer";
 
-  int session_id = 0, sample_rate = 0, buffer_size = 0;
-  if (!GetAuthorizedDeviceInfoForAudioRenderer(&session_id,
-                                               &sample_rate,
-                                               &buffer_size)) {
-    GetDefaultOutputDeviceParams(&sample_rate, &buffer_size);
-  }
+  int session_id = 0;
+  GetSessionIdForAudioRenderer(&session_id);
 
   // Create a new WebRtcLocalAudioRenderer instance and connect it to the
   // existing WebRtcAudioCapturer so that the renderer can use it as source.
-  return new WebRtcLocalAudioRenderer(
-      audio_track,
-      render_frame_id,
-      session_id,
-      buffer_size);
+  return new WebRtcLocalAudioRenderer(audio_track, render_frame_id, session_id,
+                                      device_id, security_origin);
 }
 
 }  // namespace
@@ -114,7 +95,10 @@ scoped_refptr<VideoFrameProvider>
 MediaStreamRendererFactoryImpl::GetVideoFrameProvider(
     const GURL& url,
     const base::Closure& error_cb,
-    const VideoFrameProvider::RepaintCB& repaint_cb) {
+    const VideoFrameProvider::RepaintCB& repaint_cb,
+    const scoped_refptr<base::SingleThreadTaskRunner>& media_task_runner,
+    const scoped_refptr<base::TaskRunner>& worker_task_runner,
+    media::GpuVideoAcceleratorFactories* gpu_factories) {
   blink::WebMediaStream web_stream =
       blink::WebMediaStreamRegistry::lookupMediaStreamDescriptor(url);
   DCHECK(!web_stream.isNull());
@@ -129,13 +113,17 @@ MediaStreamRendererFactoryImpl::GetVideoFrameProvider(
     return NULL;
   }
 
-  return new MediaStreamVideoRendererSink(video_tracks[0], error_cb,
-                                          repaint_cb);
+  return new MediaStreamVideoRendererSink(video_tracks[0], error_cb, repaint_cb,
+                                          media_task_runner, worker_task_runner,
+                                          gpu_factories);
 }
 
 scoped_refptr<MediaStreamAudioRenderer>
-MediaStreamRendererFactoryImpl::GetAudioRenderer(const GURL& url,
-                                             int render_frame_id) {
+MediaStreamRendererFactoryImpl::GetAudioRenderer(
+    const GURL& url,
+    int render_frame_id,
+    const std::string& device_id,
+    const url::Origin& security_origin) {
   blink::WebMediaStream web_stream =
       blink::WebMediaStreamRegistry::lookupMediaStreamDescriptor(url);
 
@@ -165,7 +153,8 @@ MediaStreamRendererFactoryImpl::GetAudioRenderer(const GURL& url,
 
     // TODO(xians): Add support for the case where the media stream contains
     // multiple audio tracks.
-    return CreateLocalAudioRenderer(audio_tracks[0], render_frame_id);
+    return CreateLocalAudioRenderer(audio_tracks[0], render_frame_id, device_id,
+                                    security_origin);
   }
 
   webrtc::MediaStreamInterface* stream =
@@ -180,7 +169,8 @@ MediaStreamRendererFactoryImpl::GetAudioRenderer(const GURL& url,
   // Share the existing renderer if any, otherwise create a new one.
   scoped_refptr<WebRtcAudioRenderer> renderer(audio_device->renderer());
   if (!renderer.get()) {
-    renderer = CreateRemoteAudioRenderer(stream, render_frame_id);
+    renderer = CreateRemoteAudioRenderer(stream, render_frame_id, device_id,
+                                         security_origin);
 
     if (renderer.get() && !audio_device->SetAudioRenderer(renderer.get()))
       renderer = NULL;

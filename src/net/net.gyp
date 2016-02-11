@@ -62,11 +62,11 @@
             '<(SHARED_INTERMEDIATE_DIR)/net/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT)-inc.cc',
           ],
           'inputs': [
-            'tools/tld_cleanup/make_dafsa.py',
+            'tools/dafsa/make_dafsa.py',
           ],
           'action': [
             'python',
-            'tools/tld_cleanup/make_dafsa.py',
+            'tools/dafsa/make_dafsa.py',
             '<(RULE_INPUT_PATH)',
             '<(SHARED_INTERMEDIATE_DIR)/net/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT)-inc.cc',
           ],
@@ -357,6 +357,8 @@
                 'action_name': 'copy_test_data',
                 'variables': {
                   'test_data_files': [
+                    'data/certificate_policies_unittest/',
+                    'data/name_constraints_unittest/',
                     'data/ssl/certificates/',
                     'data/test.html',
                     'data/url_request_unittest/',
@@ -489,6 +491,7 @@
         {
           'action_name': 'net_resources',
           'variables': {
+            'grit_whitelist': '',
             'grit_grd_file': 'base/net_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
@@ -994,7 +997,6 @@
             'tools/flip_server/flip_config.h',
             'tools/flip_server/http_interface.cc',
             'tools/flip_server/http_interface.h',
-            'tools/flip_server/loadtime_measurement.h',
             'tools/flip_server/mem_cache.cc',
             'tools/flip_server/mem_cache.h',
             'tools/flip_server/output_ordering.cc',

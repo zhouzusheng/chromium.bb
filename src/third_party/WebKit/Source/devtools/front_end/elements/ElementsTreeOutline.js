@@ -495,19 +495,6 @@ WebInspector.ElementsTreeOutline.prototype = {
         element.updateSelection();
     },
 
-    /**
-     * @param {!WebInspector.DOMNode} node
-     */
-    updateOpenCloseTags: function(node)
-    {
-        var treeElement = this.findTreeElement(node);
-        if (treeElement)
-            treeElement.updateTitle(this._updateRecordForHighlight(node));
-        var closingTagElement = treeElement.lastChild();
-        if (closingTagElement && closingTagElement.isClosingTag())
-            closingTagElement.updateTitle(this._updateRecordForHighlight(node));
-    },
-
     _selectedNodeChanged: function()
     {
         this.dispatchEventToListeners(WebInspector.ElementsTreeOutline.Events.SelectedNodeChanged, this._selectedDOMNode);
@@ -723,10 +710,12 @@ WebInspector.ElementsTreeOutline.prototype = {
         element.select();
     },
 
-    _onmousemove: function(event)
+    /**
+     * @param {?TreeElement} treeElement
+     */
+    setHoverEffect: function (treeElement)
     {
-        var element = this._treeElementFromEvent(event);
-        if (element && this._previousHoveredElement === element)
+        if (this._previousHoveredElement === treeElement)
             return;
 
         if (this._previousHoveredElement) {
@@ -734,10 +723,19 @@ WebInspector.ElementsTreeOutline.prototype = {
             delete this._previousHoveredElement;
         }
 
-        if (element) {
-            element.hovered = true;
-            this._previousHoveredElement = element;
+        if (treeElement) {
+            treeElement.hovered = true;
+            this._previousHoveredElement = treeElement;
         }
+    },
+
+    _onmousemove: function(event)
+    {
+        var element = this._treeElementFromEvent(event);
+        if (element && this._previousHoveredElement === element)
+            return;
+
+        this.setHoverEffect(element);
 
         if (element instanceof WebInspector.ElementsTreeElement) {
             this._domModel.highlightDOMNodeWithConfig(element.node().id, { mode: "all", showInfo: !WebInspector.KeyboardShortcut.eventHasCtrlOrMeta(event) });
@@ -750,11 +748,7 @@ WebInspector.ElementsTreeOutline.prototype = {
 
     _onmouseleave: function(event)
     {
-        if (this._previousHoveredElement) {
-            this._previousHoveredElement.hovered = false;
-            delete this._previousHoveredElement;
-        }
-
+        this.setHoverEffect(null);
         WebInspector.DOMModel.hideDOMNodeHighlight();
     },
 
@@ -1770,7 +1764,7 @@ WebInspector.ElementsTreeOutline.Renderer.prototype = {
 WebInspector.ElementsTreeOutline.ShortcutTreeElement = function(nodeShortcut)
 {
     TreeElement.call(this, "");
-    this.listItemElement.createChild("div", "selection");
+    this.listItemElement.createChild("div", "selection fill");
     var title = this.listItemElement.createChild("span", "elements-tree-shortcut-title");
     var text = nodeShortcut.nodeName.toLowerCase();
     if (nodeShortcut.nodeType === Node.ELEMENT_NODE)

@@ -32,6 +32,7 @@
 #include "core/page/PageLifecycleNotifier.h"
 #include "core/page/PageLifecycleObserver.h"
 #include "core/page/PageVisibilityState.h"
+#include "platform/MemoryPurgeController.h"
 #include "platform/Supplementable.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/geometry/Region.h"
@@ -46,7 +47,6 @@ namespace blink {
 class AutoscrollController;
 class ChromeClient;
 class ClientRectList;
-class CompositedDisplayList;
 class ContextMenuClient;
 class ContextMenuController;
 class Document;
@@ -57,7 +57,6 @@ class EditorClient;
 class FocusController;
 class Frame;
 class FrameHost;
-class MemoryPurgeController;
 class PluginData;
 class PointerLockController;
 class ScrollingCoordinator;
@@ -70,9 +69,9 @@ typedef uint64_t LinkHash;
 
 float deviceScaleFactor(LocalFrame*);
 
-class CORE_EXPORT Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public PageLifecycleNotifier, public SettingsDelegate {
+class CORE_EXPORT Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public PageLifecycleNotifier, public SettingsDelegate, public MemoryPurgeClient {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Page);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(Page);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(Page);
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
 public:
@@ -100,9 +99,9 @@ public:
 
     // This method returns all pages, incl. private ones associated with
     // inspector overlay, popups, SVGImage, etc.
-    static HashSet<Page*>& allPages();
+    static WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<Page>>& allPages();
     // This method returns all ordinary pages.
-    static HashSet<Page*>& ordinaryPages();
+    static WillBePersistentHeapHashSet<RawPtrWillBeWeakMember<Page>>& ordinaryPages();
 
     FrameHost& frameHost() const { return *m_frameHost; }
 
@@ -200,14 +199,15 @@ public:
 
     void acceptLanguagesChanged();
 
-    void setCompositedDisplayList(PassOwnPtr<CompositedDisplayList>);
-    CompositedDisplayList* compositedDisplayListForTesting();
-
     static void networkStateChanged(bool online);
 
     MemoryPurgeController& memoryPurgeController();
 
+    void purgeMemory(MemoryPurgeMode, DeviceKind) override;
+
     DECLARE_TRACE();
+
+    void willCloseLayerTreeView();
     void willBeDestroyed();
 
 private:
@@ -222,7 +222,7 @@ private:
 
     RefPtrWillBeMember<PageAnimator> m_animator;
     const OwnPtrWillBeMember<AutoscrollController> m_autoscrollController;
-    ChromeClient* m_chromeClient;
+    RawPtrWillBeMember<ChromeClient> m_chromeClient;
     const OwnPtrWillBeMember<DragCaretController> m_dragCaretController;
     const OwnPtrWillBeMember<DragController> m_dragController;
     const OwnPtrWillBeMember<FocusController> m_focusController;

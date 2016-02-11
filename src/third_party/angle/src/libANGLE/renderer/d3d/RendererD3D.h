@@ -12,7 +12,7 @@
 #include "common/debug.h"
 #include "common/MemoryBuffer.h"
 #include "libANGLE/Data.h"
-#include "libANGLe/formatutils.h"
+#include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/Renderer.h"
 #include "libANGLE/renderer/d3d/VertexDataManager.h"
 #include "libANGLE/renderer/d3d/formatutilsD3D.h"
@@ -160,15 +160,18 @@ class RendererD3D : public Renderer, public BufferFactoryD3D
                              bool ignoreViewport) = 0;
 
     virtual gl::Error applyRenderTarget(const gl::Framebuffer *frameBuffer) = 0;
-    virtual gl::Error applyShaders(gl::Program *program,
-                                   const gl::Framebuffer *framebuffer,
-                                   bool rasterizerDiscard,
-                                   bool transformFeedbackActive) = 0;
     virtual gl::Error applyUniforms(const ProgramD3D &programD3D,
+                                    GLenum drawMode,
                                     const std::vector<D3DUniform *> &uniformArray) = 0;
     virtual bool applyPrimitiveType(GLenum primitiveType, GLsizei elementCount, bool usesPointSize) = 0;
     virtual gl::Error applyVertexBuffer(const gl::State &state, GLenum mode, GLint first, GLsizei count, GLsizei instances, SourceIndexData *sourceIndexInfo) = 0;
-    virtual gl::Error applyIndexBuffer(const GLvoid *indices, gl::Buffer *elementArrayBuffer, GLsizei count, GLenum mode, GLenum type, TranslatedIndexData *indexInfo, SourceIndexData *sourceIndexInfo) = 0;
+    virtual gl::Error applyIndexBuffer(const gl::Data &data,
+                                       const GLvoid *indices,
+                                       GLsizei count,
+                                       GLenum mode,
+                                       GLenum type,
+                                       TranslatedIndexData *indexInfo,
+                                       SourceIndexData *sourceIndexInfo) = 0;
     virtual void applyTransformFeedbackBuffers(const gl::State& state) = 0;
 
     virtual void markAllStateDirty() = 0;
@@ -246,6 +249,7 @@ class RendererD3D : public Renderer, public BufferFactoryD3D
 
   protected:
     virtual bool getLUID(LUID *adapterLuid) const = 0;
+    virtual gl::Error applyShadersImpl(const gl::Data &data, GLenum drawMode) = 0;
 
     void cleanup();
 
@@ -280,16 +284,14 @@ class RendererD3D : public Renderer, public BufferFactoryD3D
     virtual gl::Error drawArraysImpl(const gl::Data &data,
                                      GLenum mode,
                                      GLsizei count,
-                                     GLsizei instances,
-                                     bool usesPointSize) = 0;
-    virtual gl::Error drawElementsImpl(GLenum mode,
+                                     GLsizei instances) = 0;
+    virtual gl::Error drawElementsImpl(const gl::Data &data,
+                                       const TranslatedIndexData &indexInfo,
+                                       GLenum mode,
                                        GLsizei count,
                                        GLenum type,
                                        const GLvoid *indices,
-                                       gl::Buffer *elementArrayBuffer,
-                                       const TranslatedIndexData &indexInfo,
-                                       GLsizei instances,
-                                       bool usesPointSize) = 0;
+                                       GLsizei instances) = 0;
 
     //FIXME(jmadill): std::array is currently prohibited by Chromium style guide
     typedef std::array<gl::Texture*, gl::IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS> FramebufferTextureArray;
@@ -299,7 +301,7 @@ class RendererD3D : public Renderer, public BufferFactoryD3D
 
     gl::Error applyRenderTarget(const gl::Data &data, GLenum drawMode, bool ignoreViewport);
     gl::Error applyState(const gl::Data &data, GLenum drawMode);
-    gl::Error applyShaders(const gl::Data &data);
+    gl::Error applyShaders(const gl::Data &data, GLenum drawMode);
     gl::Error applyTextures(const gl::Data &data, gl::SamplerType shaderType,
                             const FramebufferTextureArray &framebufferTextures, size_t framebufferTextureCount);
     gl::Error applyTextures(const gl::Data &data);

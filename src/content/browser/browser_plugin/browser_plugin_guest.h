@@ -251,10 +251,10 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   // Find the given |search_text| in the page. Returns true if the find request
   // is handled by this browser plugin guest.
-  bool Find(int request_id,
-            const base::string16& search_text,
-            const blink::WebFindOptions& options);
-  bool StopFinding(StopFindAction action);
+  bool HandleFindForEmbedder(int request_id,
+                             const base::string16& search_text,
+                             const blink::WebFindOptions& options);
+  bool HandleStopFindingForEmbedder(StopFindAction action);
 
   void ResendEventToEmbedder(const blink::WebInputEvent& event);
 
@@ -385,6 +385,12 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   // Called when WillAttach is complete.
   void OnWillAttachComplete(WebContentsImpl* embedder_web_contents,
                             const BrowserPluginHostMsg_Attach_Params& params);
+
+  // Returns identical message with current browser_plugin_instance_id() if
+  // the input was created with browser_plugin::kInstanceIdNone, else it returns
+  // the input message unmodified. If no current browser_plugin_instance_id()
+  // is set, or anything goes wrong, the input message is returned.
+  IPC::Message* UpdateInstanceIdIfNecessary(IPC::Message* msg) const;
 
   // Forwards all messages from the |pending_messages_| queue to the embedder.
   void SendQueuedMessages();

@@ -100,14 +100,14 @@ public:
     void dispatchDidFinishLoad() override;
 
     void dispatchDidChangeThemeColor() override;
-    NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) override;
+    NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationType, NavigationPolicy, bool shouldReplaceCurrentEntry) override;
     bool hasPendingNavigation() override;
     void dispatchWillSendSubmitEvent(HTMLFormElement*) override;
     void dispatchWillSubmitForm(HTMLFormElement*) override;
     void didStartLoading(LoadStartType) override;
     void didStopLoading() override;
     void progressEstimateChanged(double progressEstimate) override;
-    void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName = String()) override;
+    void loadURLExternally(const ResourceRequest&, NavigationPolicy, const String& suggestedName, bool shouldReplaceCurrentEntry) override;
     bool navigateBackForward(int offset) const override;
     void didAccessInitialDocument() override;
     void didDisplayInsecureContent() override;
@@ -117,7 +117,7 @@ public:
     void didChangePerformanceTiming() override;
     void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors) override;
     PassRefPtrWillBeRawPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) override;
-    WTF::String userAgent(const KURL&) override;
+    WTF::String userAgent() override;
     WTF::String doNotTrackValue() override;
     void transitionToCommittedForNewPage() override;
     PassRefPtrWillBeRawPtr<LocalFrame> createFrame(const FrameLoadRequest&, const WTF::AtomicString& name, HTMLFrameOwnerElement*) override;
@@ -127,6 +127,7 @@ public:
         const Vector<WTF::String>&, const Vector<WTF::String>&,
         const WTF::String&, bool loadManually, DetachedPluginPolicy) override;
     PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) override;
+    PassOwnPtr<WebMediaSession> createWebMediaSession() override;
     ObjectContentType objectContentType(
         const KURL&, const WTF::String& mimeType, bool shouldPreferPlugInsForImages) override;
     void didChangeScrollOffset() override;
@@ -146,6 +147,7 @@ public:
     bool willCheckAndDispatchMessageEvent(SecurityOrigin* target, MessageEvent*, LocalFrame* sourceFrame) const override;
     void didChangeName(const String&) override;
     void didChangeSandboxFlags(Frame* childFrame, SandboxFlags) override;
+    void didChangeFrameOwnerProperties(HTMLFrameElementBase*) override;
 
     void dispatchWillOpenWebSocket(WebSocketHandle*) override;
 
@@ -180,7 +182,7 @@ private:
 
     bool isFrameLoaderClientImpl() const override { return true; }
 
-    PassOwnPtr<WebPluginLoadObserver> pluginLoadObserver(DocumentLoader*);
+    PassOwnPtrWillBeRawPtr<WebPluginLoadObserver> pluginLoadObserver(DocumentLoader*);
 
     // The WebFrame that owns this object and manages its lifetime. Therefore,
     // the web frame object is guaranteed to exist.

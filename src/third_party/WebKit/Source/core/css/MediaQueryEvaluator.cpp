@@ -221,6 +221,11 @@ static bool monochromeMediaFeatureEval(const MediaQueryExpValue& value, MediaFea
 
 static bool displayModeMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
 {
+    // isValid() is false if there is no parameter. Without parameter we should return true to indicate that
+    // displayModeMediaFeature is enabled in the browser.
+    if (!value.isValid())
+        return true;
+
     if (!value.isID)
         return false;
 

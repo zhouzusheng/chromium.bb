@@ -28,7 +28,9 @@ class Message;
 
 namespace content {
 class GeolocationServiceContext;
+class PageState;
 class RenderFrameHost;
+class WakeLockServiceContext;
 class WebContents;
 struct AXEventNotificationDetails;
 struct ContextMenuParams;
@@ -91,6 +93,10 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // level frame.
   virtual void DocumentOnLoadCompleted(RenderFrameHost* render_frame_host) {}
 
+  // The state for the page changed and should be updated in session history.
+  virtual void UpdateStateForFrame(RenderFrameHost* render_frame_host,
+                                   const PageState& page_state) {}
+
   // The page's title was changed and should be updated. Only called for the
   // top-level frame.
   virtual void UpdateTitle(RenderFrameHost* render_frame_host,
@@ -135,6 +141,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
 
   // Gets the GeolocationServiceContext associated with this delegate.
   virtual GeolocationServiceContext* GetGeolocationServiceContext();
+
+  // Gets the WakeLockServiceContext associated with this delegate.
+  virtual WakeLockServiceContext* GetWakeLockServiceContext();
 
   // Notification that the frame wants to go into fullscreen mode.
   // |origin| represents the origin of the frame that requests fullscreen.

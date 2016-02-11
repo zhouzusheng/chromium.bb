@@ -337,8 +337,7 @@ void VideoCaptureManager::HandleQueuedStartRequest() {
           entry->id,
           entry->stream_type,
           request->params(),
-          base::Passed(entry->video_capture_controller()->NewDeviceClient(
-              device_task_runner_))),
+          base::Passed(entry->video_capture_controller()->NewDeviceClient())),
       base::Bind(&VideoCaptureManager::OnDeviceStarted, this,
                  request->serial_id()));
 }
@@ -432,7 +431,7 @@ VideoCaptureManager::DoStartDeviceOnDeviceThread(
   }
 
   if (!video_capture_device) {
-    device_client->OnError("Could not create capture device");
+    device_client->OnError(FROM_HERE, "Could not create capture device");
     return nullptr;
   }
 

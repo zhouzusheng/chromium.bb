@@ -17,7 +17,7 @@
 class SkImage_Generator : public SkImage_Base {
 public:
     SkImage_Generator(SkImageCacherator* cache)
-        : INHERITED(cache->info().width(), cache->info().height(), cache->uniqueID(), NULL)
+        : INHERITED(cache->info().width(), cache->info().height(), cache->uniqueID())
         , fCache(cache) // take ownership
     {}
 
@@ -27,7 +27,7 @@ public:
     bool isOpaque() const override { return fCache->info().isOpaque(); }
     SkImage* onNewSubset(const SkIRect&) const override;
     bool getROPixels(SkBitmap*) const override;
-    GrTexture* asTextureRef(GrContext*, SkImageUsageType) const override;
+    GrTexture* asTextureRef(GrContext*, const GrTextureParams&) const override;
     bool onIsLazyGenerated() const override { return true; }
 
 private:
@@ -59,8 +59,8 @@ bool SkImage_Generator::getROPixels(SkBitmap* bitmap) const {
     return fCache->lockAsBitmap(bitmap, this);
 }
 
-GrTexture* SkImage_Generator::asTextureRef(GrContext* ctx, SkImageUsageType usage) const {
-    return fCache->lockAsTexture(ctx, usage, this);
+GrTexture* SkImage_Generator::asTextureRef(GrContext* ctx, const GrTextureParams& params) const {
+    return fCache->lockAsTexture(ctx, params, this);
 }
 
 SkImage* SkImage_Generator::onNewSubset(const SkIRect& subset) const {

@@ -45,8 +45,9 @@ class AnimationHost::ScrollOffsetAnimations : public AnimationDelegate {
                              const gfx::ScrollOffset& target_offset,
                              const gfx::ScrollOffset& current_offset) {
     scoped_ptr<ScrollOffsetAnimationCurve> curve =
-        ScrollOffsetAnimationCurve::Create(target_offset,
-                                           EaseInOutTimingFunction::Create());
+        ScrollOffsetAnimationCurve::Create(
+            target_offset, EaseInOutTimingFunction::Create(),
+            ScrollOffsetAnimationCurve::DurationBehavior::CONSTANT);
     curve->SetInitialValue(current_offset);
 
     scoped_ptr<Animation> animation = Animation::Create(
@@ -242,6 +243,11 @@ void AnimationHost::SetMutatorHostClient(MutatorHostClient* client) {
 void AnimationHost::SetNeedsCommit() {
   DCHECK(mutator_host_client_);
   mutator_host_client_->SetMutatorsNeedCommit();
+}
+
+void AnimationHost::SetNeedsRebuildPropertyTrees() {
+  DCHECK(mutator_host_client_);
+  mutator_host_client_->SetMutatorsNeedRebuildPropertyTrees();
 }
 
 void AnimationHost::PushPropertiesTo(AnimationHost* host_impl) {

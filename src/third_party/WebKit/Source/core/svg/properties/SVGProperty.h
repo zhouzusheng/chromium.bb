@@ -70,7 +70,7 @@ public:
     virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtrWillBeRawPtr<SVGPropertyBase> from, PassRefPtrWillBeRawPtr<SVGPropertyBase> to, PassRefPtrWillBeRawPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) = 0;
     virtual float calculateDistance(PassRefPtrWillBeRawPtr<SVGPropertyBase> to, SVGElement*) = 0;
 
-    AnimatedPropertyType type()
+    AnimatedPropertyType type() const
     {
         return m_type;
     }
@@ -106,6 +106,15 @@ private:
     GC_PLUGIN_IGNORE("528275")
     SVGPropertyBase* m_ownerList;
 };
+
+#define DEFINE_SVG_PROPERTY_TYPE_CASTS(thisType)\
+    DEFINE_TYPE_CASTS(thisType, SVGPropertyBase, value, value->type() == thisType::classType(), value.type() == thisType::classType());\
+    inline PassRefPtrWillBeRawPtr<thisType> to##thisType(PassRefPtrWillBeRawPtr<SVGPropertyBase> passBase)\
+    {\
+        RefPtrWillBeRawPtr<SVGPropertyBase> base = passBase;\
+        ASSERT(base->type() == thisType::classType());\
+        return static_pointer_cast<thisType>(base.release());\
+    }
 
 }
 

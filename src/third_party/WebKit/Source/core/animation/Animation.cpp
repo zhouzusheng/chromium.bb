@@ -750,7 +750,7 @@ void Animation::setCompositorPending(bool effectChanged)
 #endif
 
     if (!m_compositorState || m_compositorState->effectChanged
-        || !playing() || m_compositorState->playbackRate != m_playbackRate
+        || m_compositorState->playbackRate != m_playbackRate
         || m_compositorState->startTime != m_startTime) {
         m_compositorPending = true;
         timeline()->document()->compositorPendingAnimations().add(this);
@@ -994,11 +994,11 @@ Animation::PlayStateUpdateScope::~PlayStateUpdateScope()
         bool wasActive = oldPlayState == Pending || oldPlayState == Running;
         bool isActive = newPlayState == Pending || newPlayState == Running;
         if (!wasActive && isActive)
-            TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("blink.animations,devtools.timeline", "Animation", m_animation, "data", InspectorAnimationEvent::data(*m_animation));
+            TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("blink.animations,devtools.timeline,benchmark", "Animation", m_animation, "data", InspectorAnimationEvent::data(*m_animation));
         else if (wasActive && !isActive)
-            TRACE_EVENT_NESTABLE_ASYNC_END1("blink.animations,devtools.timeline", "Animation", m_animation, "endData", InspectorAnimationStateEvent::data(*m_animation));
+            TRACE_EVENT_NESTABLE_ASYNC_END1("blink.animations,devtools.timeline,benchmark", "Animation", m_animation, "endData", InspectorAnimationStateEvent::data(*m_animation));
         else
-            TRACE_EVENT_NESTABLE_ASYNC_INSTANT1("blink.animations,devtools.timeline", "Animation", m_animation, "data", InspectorAnimationStateEvent::data(*m_animation));
+            TRACE_EVENT_NESTABLE_ASYNC_INSTANT1("blink.animations,devtools.timeline,benchmark", "Animation", m_animation, "data", InspectorAnimationStateEvent::data(*m_animation));
     }
 
     // Ordering is important, the ready promise should resolve/reject before
@@ -1055,15 +1055,15 @@ Animation::PlayStateUpdateScope::~PlayStateUpdateScope()
     }
     m_animation->endUpdatingState();
 
-    if (oldPlayState != newPlayState && newPlayState == Running)
-        InspectorInstrumentation::didStartAnimation(m_animation->timeline()->document(), m_animation);
+    if (oldPlayState != newPlayState)
+        InspectorInstrumentation::animationPlayStateChanged(m_animation->timeline()->document(), m_animation, oldPlayState, newPlayState);
 }
 
-bool Animation::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
+bool Animation::addEventListenerInternal(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, const EventListenerOptions& options)
 {
     if (eventType == EventTypeNames::finish)
         UseCounter::count(executionContext(), UseCounter::AnimationFinishEvent);
-    return EventTargetWithInlineData::addEventListener(eventType, listener, useCapture);
+    return EventTargetWithInlineData::addEventListenerInternal(eventType, listener, options);
 }
 
 void Animation::pauseForTesting(double pauseTime)

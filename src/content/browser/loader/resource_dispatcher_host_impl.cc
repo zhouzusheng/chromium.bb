@@ -436,6 +436,15 @@ void LogResourceRequestTimeOnUI(
   }
 }
 
+bool IsUsingLoFi(LoFiState lofi_state,
+                 ResourceDispatcherHostDelegate* delegate,
+                 const net::URLRequest& request,
+                 ResourceContext* resource_context) {
+  if (lofi_state == LOFI_UNSPECIFIED && delegate)
+    return delegate->ShouldEnableLoFiMode(request, resource_context);
+  return lofi_state == LOFI_ON;
+}
+
 }  // namespace
 
 // static
@@ -1346,7 +1355,9 @@ void ResourceDispatcherHostImpl::BeginRequest(
       request_data.visiblity_state,
       resource_context, filter_->GetWeakPtr(),
       report_raw_headers,
-      !is_sync_load);
+      !is_sync_load,
+      IsUsingLoFi(request_data.lofi_state, delegate_,
+                  *new_request, resource_context));
   // Request takes ownership.
   extra_info->AssociateWithRequest(new_request.get());
 
@@ -1632,7 +1643,8 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       context,
       base::WeakPtr<ResourceMessageFilter>(),  // filter
       false,                                   // report_raw_headers
-      true);                                   // is_async
+      true,                                    // is_async
+      false);                                  // is_using_lofi
 }
 
 void ResourceDispatcherHostImpl::OnRenderViewHostCreated(int child_id,
@@ -1957,7 +1969,8 @@ void ResourceDispatcherHostImpl::FinishedWithResourcesForRequest(
 void ResourceDispatcherHostImpl::BeginNavigationRequest(
     ResourceContext* resource_context,
     const NavigationRequestInfo& info,
-    NavigationURLLoaderImplCore* loader) {
+    NavigationURLLoaderImplCore* loader,
+    ServiceWorkerNavigationHandleCore* service_worker_handle_core) {
   // PlzNavigate: BeginNavigationRequest currently should only be used for the
   // browser-side navigations project.
   CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -2022,10 +2035,11 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
 
   new_request->SetLoadFlags(load_flags);
 
+  storage::BlobStorageContext* blob_context = GetBlobStorageContext(
+      GetChromeBlobStorageContextForResourceContext(resource_context));
+
   // Resolve elements from request_body and prepare upload data.
   if (info.request_body.get()) {
-    storage::BlobStorageContext* blob_context = GetBlobStorageContext(
-        GetChromeBlobStorageContextForResourceContext(resource_context));
     AttachRequestBodyBlobDataHandles(
         info.request_body.get(),
         blob_context);
@@ -2054,18 +2068,15 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       -1,  // request_data.origin_pid,
       request_id_,
       -1,  // request_data.render_frame_id,
-      info.is_main_frame,
-      info.parent_is_main_frame,
+      info.is_main_frame, info.parent_is_main_frame,
       -1,  // request_data.parent_render_frame_id,
-      resource_type,
-      info.common_params.transition,
+      resource_type, info.common_params.transition,
       // should_replace_current_entry. This was only maintained at layer for
       // request transfers and isn't needed for browser-side navigations.
       false,
       false,  // is download
       false,  // is stream
-      info.common_params.allow_download,
-      info.begin_params.has_user_gesture,
+      info.common_params.allow_download, info.begin_params.has_user_gesture,
       true,   // enable_load_timing
       false,  // enable_upload_progress
       false,  // do_not_prompt_for_login
@@ -2073,26 +2084,31 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       // TODO(davidben): This is only used for prerenders. Replace
       // is_showing with something for that. Or maybe it just comes from the
       // same mechanism as the cookie one.
-      blink::WebPageVisibilityStateVisible,
-      resource_context,
+      blink::WebPageVisibilityStateVisible, resource_context,
       base::WeakPtr<ResourceMessageFilter>(),  // filter
       false,  // request_data.report_raw_headers
-      true);
+      true,
+      IsUsingLoFi(info.common_params.lofi_state, delegate_,
+                  *new_request, resource_context));
   // Request takes ownership.
   extra_info->AssociateWithRequest(new_request.get());
 
   if (new_request->url().SchemeIs(url::kBlobScheme)) {
     // Hang on to a reference to ensure the blob is not released prior
     // to the job being started.
-    ChromeBlobStorageContext* blob_context =
-        GetChromeBlobStorageContextForResourceContext(resource_context);
     storage::BlobProtocolHandler::SetRequestedBlobDataHandle(
         new_request.get(),
-        blob_context->context()->GetBlobDataFromPublicURL(new_request->url()));
+        blob_context->GetBlobDataFromPublicURL(new_request->url()));
   }
 
-  // TODO(davidben): Attach ServiceWorkerRequestHandler.
-  // TODO(michaeln): Help out with this and that.
+  RequestContextFrameType frame_type =
+      info.is_main_frame ? REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL
+                         : REQUEST_CONTEXT_FRAME_TYPE_NESTED;
+  ServiceWorkerRequestHandler::InitializeForNavigation(
+      new_request.get(), service_worker_handle_core, blob_context,
+      info.begin_params.skip_service_worker, resource_type,
+      info.begin_params.request_context_type, frame_type, info.request_body);
+
   // TODO(davidben): Attach AppCacheInterceptor.
 
   scoped_ptr<ResourceHandler> handler(new NavigationResourceHandler(

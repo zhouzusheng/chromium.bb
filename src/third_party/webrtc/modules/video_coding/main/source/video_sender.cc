@@ -18,8 +18,8 @@
 #include "webrtc/modules/video_coding/main/source/encoded_frame.h"
 #include "webrtc/modules/video_coding/main/source/video_coding_impl.h"
 #include "webrtc/modules/video_coding/utility/include/quality_scaler.h"
-#include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/include/clock.h"
+#include "webrtc/system_wrappers/include/logging.h"
 
 namespace webrtc {
 namespace vcm {
@@ -35,13 +35,13 @@ VideoSender::VideoSender(Clock* clock,
       _nextFrameTypes(1, kVideoFrameDelta),
       _mediaOpt(clock_),
       _sendStatsCallback(nullptr),
-      _codecDataBase(encoder_rate_observer),
+      _codecDataBase(encoder_rate_observer, &_encodedFrameCallback),
       frame_dropper_enabled_(true),
       _sendStatsTimer(1000, clock_),
       current_codec_(),
       qm_settings_callback_(qm_settings_callback),
-      protection_callback_(nullptr) {
-  encoder_params_ = {0, 0, 0, 0, false};
+      protection_callback_(nullptr),
+      encoder_params_({0, 0, 0, 0}) {
   // Allow VideoSender to be created on one thread but used on another, post
   // construction. This is currently how this class is being used by at least
   // one external project (diffractor).
@@ -70,7 +70,6 @@ int32_t VideoSender::Process() {
     // Force an encoder parameters update, so that incoming frame rate is
     // updated even if bandwidth hasn't changed.
     encoder_params_.input_frame_rate = _mediaOpt.InputFrameRate();
-    encoder_params_.updated = true;
   }
 
   return returnValue;
@@ -90,8 +89,8 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
     return VCM_PARAMETER_ERROR;
   }
 
-  bool ret = _codecDataBase.SetSendCodec(
-      sendCodec, numberOfCores, maxPayloadSize, &_encodedFrameCallback);
+  bool ret =
+      _codecDataBase.SetSendCodec(sendCodec, numberOfCores, maxPayloadSize);
 
   // Update encoder regardless of result to make sure that we're not holding on
   // to a deleted instance.
@@ -106,9 +105,15 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
     return VCM_CODEC_ERROR;
   }
 
-  int numLayers = (sendCodec->codecType != kVideoCodecVP8)
-                      ? 1
-                      : sendCodec->codecSpecific.VP8.numberOfTemporalLayers;
+  int numLayers;
+  if (sendCodec->codecType == kVideoCodecVP8) {
+    numLayers = sendCodec->codecSpecific.VP8.numberOfTemporalLayers;
+  } else if (sendCodec->codecType == kVideoCodecVP9) {
+    numLayers = sendCodec->codecSpecific.VP9.numberOfTemporalLayers;
+  } else {
+    numLayers = 1;
+  }
+
   // If we have screensharing and we have layers, we disable frame dropper.
   bool disable_frame_dropper =
       numLayers > 1 && sendCodec->mode == kScreensharing;
@@ -174,34 +179,15 @@ int32_t VideoSender::RegisterExternalEncoder(VideoEncoder* externalEncoder,
   return 0;
 }
 
-// Get codec config parameters
-int32_t VideoSender::CodecConfigParameters(uint8_t* buffer,
-                                           int32_t size) const {
-  rtc::CritScope lock(&send_crit_);
-  if (_encoder != nullptr) {
-    return _encoder->CodecConfigParameters(buffer, size);
-  }
-  return VCM_UNINITIALIZED;
-}
-
-// TODO(andresp): Make const once media_opt is thread-safe and this has a
-// pointer to it.
-int32_t VideoSender::SentFrameCount(VCMFrameCount* frameCount) {
-  *frameCount = _mediaOpt.SentFrameCount();
-  return VCM_OK;
-}
-
 // Get encode bitrate
 int VideoSender::Bitrate(unsigned int* bitrate) const {
   RTC_DCHECK(main_thread_.CalledOnValidThread());
   // Since we're running on the thread that's the only thread known to modify
   // the value of _encoder, we don't need to grab the lock here.
 
-  // return the bit rate which the encoder is set to
-  if (!_encoder) {
+  if (!_encoder)
     return VCM_UNINITIALIZED;
-  }
-  *bitrate = _encoder->BitRate();
+  *bitrate = _encoder->GetEncoderParameters().target_bitrate;
   return 0;
 }
 
@@ -211,11 +197,10 @@ int VideoSender::FrameRate(unsigned int* framerate) const {
   // Since we're running on the thread that's the only thread known to modify
   // the value of _encoder, we don't need to grab the lock here.
 
-  // input frame rate, not compensated
-  if (!_encoder) {
+  if (!_encoder)
     return VCM_UNINITIALIZED;
-  }
-  *framerate = _encoder->FrameRate();
+
+  *framerate = _encoder->GetEncoderParameters().input_frame_rate;
   return 0;
 }
 
@@ -229,25 +214,21 @@ int32_t VideoSender::SetChannelParameters(uint32_t target_bitrate,
   uint32_t input_frame_rate = _mediaOpt.InputFrameRate();
 
   rtc::CritScope cs(&params_lock_);
-  encoder_params_ =
-      EncoderParameters{target_rate, lossRate, rtt, input_frame_rate, true};
+  encoder_params_ = {target_rate, lossRate, rtt, input_frame_rate};
 
   return VCM_OK;
 }
 
 void VideoSender::SetEncoderParameters(EncoderParameters params) {
-  if (!params.updated || params.target_bitrate == 0)
+  if (params.target_bitrate == 0)
     return;
 
   if (params.input_frame_rate == 0) {
     // No frame rate estimate available, use default.
     params.input_frame_rate = current_codec_.maxFramerate;
   }
-  if (_encoder != nullptr) {
-    _encoder->SetChannelParameters(params.loss_rate, params.rtt);
-    _encoder->SetRates(params.target_bitrate, params.input_frame_rate);
-  }
-  return;
+  if (_encoder != nullptr)
+    _encoder->SetEncoderParameters(params);
 }
 
 int32_t VideoSender::RegisterTransportCallback(
@@ -305,16 +286,14 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
   {
     rtc::CritScope lock(&params_lock_);
     encoder_params = encoder_params_;
-    encoder_params_.updated = false;
   }
   rtc::CritScope lock(&send_crit_);
-  SetEncoderParameters(encoder_params);
-  if (_encoder == nullptr) {
+  if (_encoder == nullptr)
     return VCM_UNINITIALIZED;
-  }
+  SetEncoderParameters(encoder_params);
   // TODO(holmer): Add support for dropping frames per stream. Currently we
   // only have one frame dropper for all streams.
-  if (_nextFrameTypes[0] == kFrameEmpty) {
+  if (_nextFrameTypes[0] == kEmptyFrame) {
     return VCM_OK;
   }
   if (_mediaOpt.DropFrame()) {
@@ -390,7 +369,6 @@ void VideoSender::SuspendBelowMinBitrate() {
 }
 
 bool VideoSender::VideoSuspended() const {
-  rtc::CritScope lock(&send_crit_);
   return _mediaOpt.IsVideoSuspended();
 }
 }  // namespace vcm

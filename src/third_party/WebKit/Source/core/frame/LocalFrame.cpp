@@ -73,9 +73,9 @@
 #include "platform/graphics/paint/ClipRecorder.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
 #include "platform/text/TextStream.h"
-#include "public/platform/WebFrameHostScheduler.h"
 #include "public/platform/WebFrameScheduler.h"
 #include "public/platform/WebSecurityOrigin.h"
+#include "public/platform/WebViewScheduler.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
@@ -188,8 +188,8 @@ void LocalFrame::createView(const IntSize& viewportSize, const Color& background
             owner->setWidget(frameView);
     }
 
-    if (HTMLFrameOwnerElement* owner = deprecatedLocalOwner())
-        view()->setCanHaveScrollbars(owner->scrollingMode() != ScrollbarAlwaysOff);
+    if (owner())
+        view()->setCanHaveScrollbars(owner()->scrollingMode() != ScrollbarAlwaysOff);
 }
 
 LocalFrame::~LocalFrame()
@@ -285,6 +285,10 @@ void LocalFrame::detach(FrameDetachType type)
     // detached, so protect a reference to it.
     RefPtrWillBeRawPtr<LocalFrame> protect(this);
     m_loader.stopAllLoaders();
+    // Don't allow any new child frames to load in this frame: attaching a new
+    // child frame during or after detaching children results in an attached
+    // frame on a detached DOM tree, which is bad.
+    SubframeLoadingDisabler disabler(*document());
     m_loader.dispatchUnloadEvent();
     detachChildren();
     m_frameScheduler.clear();
@@ -844,7 +848,7 @@ void LocalFrame::unregisterPluginElement(HTMLPlugInElement* plugin)
 
 void LocalFrame::clearWeakMembers(Visitor* visitor)
 {
-    Vector<HTMLPlugInElement*> deadPlugins;
+    Vector<UntracedMember<HTMLPlugInElement>> deadPlugins;
     for (const auto& pluginElement : m_pluginElements) {
         if (!Heap::isHeapObjectAlive(pluginElement)) {
             pluginElement->shouldDisposePlugin();
@@ -862,6 +866,11 @@ String LocalFrame::localLayerTreeAsText(unsigned flags) const
         return String();
 
     return contentLayoutObject()->compositor()->layerTreeAsText(static_cast<LayerTreeFlags>(flags));
+}
+
+bool LocalFrame::shouldThrottleRendering() const
+{
+    return view() && view()->shouldThrottleRendering();
 }
 
 inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameOwner* owner)
@@ -889,7 +898,7 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameO
 WebFrameScheduler* LocalFrame::frameScheduler()
 {
     if (!m_frameScheduler.get())
-        m_frameScheduler = adoptPtr(host()->frameHostScheduler()->createFrameScheduler());
+        m_frameScheduler = page()->chromeClient().createFrameScheduler();
 
     ASSERT(m_frameScheduler.get());
     return m_frameScheduler.get();

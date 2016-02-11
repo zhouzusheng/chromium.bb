@@ -105,6 +105,7 @@ class BrowserContextImpl : public content::BrowserContext,
     content::SSLHostStateDelegate* GetSSLHostStateDelegate() override;
     bool AllowDictionaryDownloads() override;
     content::PermissionManager* GetPermissionManager() override;
+    content::BackgroundSyncController* GetBackgroundSyncController() override;
 
   private:
     scoped_ptr<ResourceContextImpl> d_resourceContext;

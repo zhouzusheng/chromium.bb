@@ -36,10 +36,13 @@
 #include "platform/graphics/ContentLayerDelegate.h"
 #include "platform/graphics/GraphicsLayerClient.h"
 #include "platform/graphics/GraphicsLayerDebugInfo.h"
+#include "platform/graphics/ImageOrientation.h"
 #include "platform/graphics/PaintInvalidationReason.h"
 #include "platform/graphics/filters/FilterOperations.h"
+#include "platform/graphics/paint/CachedDisplayItem.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
+#include "platform/heap/Handle.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebCompositorAnimationDelegate.h"
 #include "public/platform/WebContentLayer.h"
@@ -54,7 +57,6 @@
 
 namespace blink {
 
-class DisplayItemList;
 class FloatRect;
 class GraphicsContext;
 class GraphicsLayer;
@@ -63,6 +65,7 @@ class GraphicsLayerFactoryChromium;
 class Image;
 class LinkHighlight;
 class JSONObject;
+class PaintController;
 class ScrollableArea;
 class WebCompositorAnimation;
 class WebLayer;
@@ -73,7 +76,7 @@ typedef Vector<GraphicsLayer*, 64> GraphicsLayerVector;
 // which may have associated transformation and animations.
 
 class PLATFORM_EXPORT GraphicsLayer : public GraphicsContextPainter, public WebCompositorAnimationDelegate, public WebLayerScrollClient, public WebLayerClient {
-    WTF_MAKE_NONCOPYABLE(GraphicsLayer); WTF_MAKE_FAST_ALLOCATED(GraphicsLayer);
+    WTF_MAKE_NONCOPYABLE(GraphicsLayer); USING_FAST_MALLOC(GraphicsLayer);
 public:
     static PassOwnPtr<GraphicsLayer> create(GraphicsLayerFactory*, GraphicsLayerClient*);
 
@@ -190,11 +193,10 @@ public:
 
     void setContentsNeedsDisplay();
 
-    bool needsDisplay() const;
-    // Commites new display items only if m_needsDisplay is true.
-    bool commitIfNeeded(DisplayListDiff&);
-
-    void invalidateDisplayItemClient(const DisplayItemClientWrapper&);
+    // If |visualRect| is not nullptr, it contains all pixels within the GraphicsLayer which might be painted into by
+    // the display item client, in coordinate space of the GraphicsLayer.
+    // |visualRect| can be nullptr if we know it's unchanged and PaintController has cached the previous value.
+    void invalidateDisplayItemClient(const DisplayItemClientWrapper&, PaintInvalidationReason, const IntRect* visualRect);
 
     // Set that the position/size of the contents (image or video).
     void setContentsRect(const IntRect&);
@@ -207,7 +209,7 @@ public:
     void removeAnimation(int animationId);
 
     // Layer contents
-    void setContentsToImage(Image*);
+    void setContentsToImage(Image*, RespectImageOrientationEnum = DoNotRespectImageOrientation);
     void setContentsToPlatformLayer(WebLayer* layer) { setContentsTo(layer); }
     bool hasContentsLayer() const { return m_contentsLayer; }
 
@@ -244,7 +246,7 @@ public:
     static void unregisterContentsLayer(WebLayer*);
 
     // GraphicsContextPainter implementation.
-    void paint(GraphicsContext&, const IntRect& clip) override;
+    void paint(GraphicsContext&, const IntRect* clip) override;
 
     // WebCompositorAnimationDelegate implementation.
     void notifyAnimationStarted(double monotonicTime, int group) override;
@@ -253,10 +255,10 @@ public:
     // WebLayerScrollClient implementation.
     void didScroll() override;
 
-    DisplayItemList* displayItemList() override;
+    PaintController* paintController() override;
 
     // Exposed for tests.
-    virtual WebLayer* contentsLayer() const { return m_contentsLayer; }
+    WebLayer* contentsLayer() const { return m_contentsLayer; }
 
     static void setDrawDebugRedFillForTesting(bool);
     ContentLayerDelegate* contentLayerDelegateForTesting() const { return m_contentLayerDelegate.get(); }
@@ -276,14 +278,6 @@ protected:
     friend class FakeGraphicsLayerFactory;
 
 private:
-    // Callback from the underlying graphics system to draw layer contents.
-    void paintGraphicsLayerContents(GraphicsContext&, const IntRect& clip);
-
-    // Sets m_needsDisplay, but without invalidating the DisplayItemList. This allows us to test
-    // scenarios where paint needs to be re-calculated, but no DisplayItemClients were invalidated
-    // (such as re-paints due to change of interest rect).
-    void setNeedsDisplayWithoutInvalidateForTesting();
-
     // Adds a child without calling updateChildList(), so that adding children
     // can be batched before updating.
     void addChildInternal(GraphicsLayer*);
@@ -295,6 +289,8 @@ private:
     void setReplicatedLayer(GraphicsLayer* layer) { m_replicatedLayer = layer; }
 
     void incrementPaintCount() { ++m_paintCount; }
+
+    void notifyFirstPaintToClient();
 
     // Helper functions used by settors to keep layer's the state consistent.
     void updateChildList();
@@ -337,9 +333,9 @@ private:
     bool m_hasScrollParent : 1;
     bool m_hasClipParent : 1;
 
-    bool m_needsDisplay : 1;
-
+    bool m_painted : 1;
     bool m_textPainted : 1;
+    bool m_imagePainted : 1;
 
     GraphicsLayerPaintingPhase m_paintingPhase;
 
@@ -351,7 +347,7 @@ private:
 
     // A layer that replicates this layer. We only allow one, for now.
     // The replica is not parented; this is the primary reference to it.
-    GraphicsLayer* m_replicaLayer; 
+    GraphicsLayer* m_replicaLayer;
     GraphicsLayer* m_replicatedLayer; // For a replica layer, a reference to the original layer.
     FloatPoint m_replicatedLayerPosition; // For a replica layer, the position of the replica.
 
@@ -372,13 +368,12 @@ private:
 
     OwnPtr<ContentLayerDelegate> m_contentLayerDelegate;
 
+    GC_PLUGIN_IGNORE("509911")
     ScrollableArea* m_scrollableArea;
     GraphicsLayerDebugInfo m_debugInfo;
     int m_3dRenderingContext;
 
-    OwnPtr<DisplayItemList> m_displayItemList;
-
-    friend class DisplayItemListPaintTestForSlimmingPaintV2;
+    OwnPtr<PaintController> m_paintController;
 };
 
 } // namespace blink

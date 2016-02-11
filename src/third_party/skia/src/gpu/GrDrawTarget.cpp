@@ -32,21 +32,83 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-GrDrawTarget::GrDrawTarget(GrGpu* gpu, GrResourceProvider* resourceProvider)
+GrDrawTarget::GrDrawTarget(GrRenderTarget* rt, GrGpu* gpu, GrResourceProvider* resourceProvider)
     : fGpu(SkRef(gpu))
     , fResourceProvider(resourceProvider)
     , fFlushing(false)
-    , fLastFlushToken(0) {
+    , fFlags(0)
+    , fRenderTarget(rt) {
     // TODO: Stop extracting the context (currently needed by GrClipMaskManager)
     fContext = fGpu->getContext();
     fClipMaskManager.reset(new GrClipMaskManager(this));
+
+#ifdef SK_DEBUG
+    static int debugID = 0;
+    fDebugID = debugID++;
+#endif
 }
 
 GrDrawTarget::~GrDrawTarget() {
+    if (fRenderTarget && this == fRenderTarget->getLastDrawTarget()) {
+        fRenderTarget->setLastDrawTarget(nullptr);
+    }
+
     fGpu->unref();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+// Add a GrDrawTarget-based dependency
+void GrDrawTarget::addDependency(GrDrawTarget* dependedOn) {
+    SkASSERT(!dependedOn->dependsOn(this));  // loops are bad
+
+    if (this->dependsOn(dependedOn)) {
+        return;  // don't add duplicate dependencies
+    }
+
+    *fDependencies.push() = dependedOn;
+}
+
+// Convert from a GrSurface-based dependency to a GrDrawTarget one
+void GrDrawTarget::addDependency(GrSurface* dependedOn) {
+    if (dependedOn->asRenderTarget() && dependedOn->asRenderTarget()->getLastDrawTarget()) {
+        // If it is still receiving dependencies, this DT shouldn't be closed
+        SkASSERT(!this->isClosed());
+
+        GrDrawTarget* dt = dependedOn->asRenderTarget()->getLastDrawTarget();
+        if (dt == this) {
+            // self-read - presumably for dst reads
+        } else {
+            this->addDependency(dt);
+
+            // Can't make it closed in the self-read case
+            dt->makeClosed();
+        }
+    }
+}
+
+#ifdef SK_DEBUG
+void GrDrawTarget::dump() const {
+    SkDebugf("--------------------------------------------------------------\n");
+    SkDebugf("node: %d\n");
+    SkDebugf("relies On (%d): ", fDependencies.count());
+    for (int i = 0; i < fDependencies.count(); ++i) {
+        SkDebugf("%d, ", fDependencies[i]->fDebugID);
+    }
+    SkDebugf("\n");
+    SkDebugf("batches (%d):\n", fBatches.count());
+    for (int i = 0; i < fBatches.count(); ++i) {
+#if 0
+        SkDebugf("*******************************\n");
+#endif
+        SkDebugf("%d: %s\n", i, fBatches[i]->name());
+#if 0
+        SkString str = fBatches[i]->dumpInfo();
+        SkDebugf("%s\n", str.c_str());
+#endif
+    }
+}
+#endif
 
 bool GrDrawTarget::setupDstReadIfNecessary(const GrPipelineBuilder& pipelineBuilder,
                                            const GrProcOptInfo& colorPOI,
@@ -111,31 +173,31 @@ bool GrDrawTarget::setupDstReadIfNecessary(const GrPipelineBuilder& pipelineBuil
     return true;
 }
 
-void GrDrawTarget::flush() {
+void GrDrawTarget::prepareBatches(GrBatchFlushState* flushState) {
     if (fFlushing) {
         return;
     }
     fFlushing = true;
 
-    GrBatchFlushState flushState(fGpu, fResourceProvider, fLastFlushToken);
+    // Semi-usually the drawTargets are already closed at this point, but sometimes Ganesh
+    // needs to flush mid-draw. In that case, the SkGpuDevice's drawTargets won't be closed
+    // but need to be flushed anyway. Closing such drawTargets here will mean new
+    // drawTargets will be created to replace them if the SkGpuDevice(s) write to them again.
+    this->makeClosed();
 
-    // Loop over all batches and generate geometry
+    // Loop over the batches that haven't yet generated their geometry
     for (int i = 0; i < fBatches.count(); ++i) {
-        fBatches[i]->prepare(&flushState);
+        fBatches[i]->prepare(flushState);
     }
+}
 
-    // Upload all data to the GPU
-    flushState.preIssueDraws();
-
+void GrDrawTarget::drawBatches(GrBatchFlushState* flushState) {
     // Draw all the generated geometry.
     for (int i = 0; i < fBatches.count(); ++i) {
-        fBatches[i]->draw(&flushState);
+        fBatches[i]->draw(flushState);
     }
 
-    fLastFlushToken = flushState.lastFlushedToken();
-
     fFlushing = false;
-    this->reset();
 }
 
 void GrDrawTarget::reset() {
@@ -144,18 +206,26 @@ void GrDrawTarget::reset() {
 
 void GrDrawTarget::drawBatch(const GrPipelineBuilder& pipelineBuilder, GrDrawBatch* batch) {
     // Setup clip
-    GrScissorState scissorState;
-    GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps;
     GrPipelineBuilder::AutoRestoreStencil ars;
-    if (!fClipMaskManager->setupClipping(pipelineBuilder, &arfps, &ars, &scissorState,
-                                         &batch->bounds())) {
+    GrAppliedClip clip;
+    if (!fClipMaskManager->setupClipping(pipelineBuilder, &ars, &batch->bounds(), &clip)) {
         return;
+    }
+    GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps;
+    if (clip.clipCoverageFragmentProcessor()) {
+        arfps.set(&pipelineBuilder);
+        arfps.addCoverageFragmentProcessor(clip.clipCoverageFragmentProcessor());
     }
 
     GrPipeline::CreateArgs args;
-    if (!this->installPipelineInDrawBatch(&pipelineBuilder, &scissorState, batch)) {
+    if (!this->installPipelineInDrawBatch(&pipelineBuilder, &clip.scissorState(), batch)) {
         return;
     }
+
+#ifdef ENABLE_MDB
+    SkASSERT(fRenderTarget);
+    batch->pipeline()->addDependenciesTo(fRenderTarget);
+#endif
 
     this->recordBatch(batch);
 }
@@ -204,12 +274,16 @@ void GrDrawTarget::stencilPath(const GrPipelineBuilder& pipelineBuilder,
     SkASSERT(this->caps()->shaderCaps()->pathRenderingSupport());
 
     // Setup clip
-    GrScissorState scissorState;
-    GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps;
     GrPipelineBuilder::AutoRestoreStencil ars;
-
-    if (!fClipMaskManager->setupClipping(pipelineBuilder, &arfps, &ars, &scissorState, nullptr)) {
+    GrAppliedClip clip;
+    if (!fClipMaskManager->setupClipping(pipelineBuilder, &ars, nullptr, &clip)) {
         return;
+    }
+
+    GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps;
+    if (clip.clipCoverageFragmentProcessor()) {
+        arfps.set(&pipelineBuilder);
+        arfps.addCoverageFragmentProcessor(clip.clipCoverageFragmentProcessor());
     }
 
     // set stencil settings for path
@@ -220,7 +294,7 @@ void GrDrawTarget::stencilPath(const GrPipelineBuilder& pipelineBuilder,
 
     GrBatch* batch = GrStencilPathBatch::Create(viewMatrix,
                                                 pipelineBuilder.isHWAntialias(),
-                                                stencilSettings, scissorState,
+                                                stencilSettings, clip.scissorState(),
                                                 pipelineBuilder.getRenderTarget(),
                                                 path);
     this->recordBatch(batch);
@@ -244,9 +318,11 @@ void GrDrawTarget::drawPathsFromRange(const GrPipelineBuilder& pipelineBuilder,
                                       const SkMatrix& viewMatrix,
                                       const SkMatrix& localMatrix,
                                       GrColor color,
+                                      GrPathRange* range,
                                       GrPathRangeDraw* draw,
                                       GrPathRendering::FillType fill) {
-    GrDrawPathBatchBase* batch = GrDrawPathRangeBatch::Create(viewMatrix, localMatrix, color, draw);
+    GrDrawPathBatchBase* batch = GrDrawPathRangeBatch::Create(viewMatrix, localMatrix, color,
+                                                              range, draw);
     this->drawPathBatch(pipelineBuilder, batch, fill);
     batch->unref();
 }
@@ -259,12 +335,16 @@ void GrDrawTarget::drawPathBatch(const GrPipelineBuilder& pipelineBuilder,
     // handling stencil settings WRT interactions between pipeline(builder), clipmaskmanager, and
     // batches.
 
-    GrScissorState scissorState;
-    GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps;
     GrPipelineBuilder::AutoRestoreStencil ars;
-    if (!fClipMaskManager->setupClipping(pipelineBuilder, &arfps, &ars, &scissorState,
-                                         &batch->bounds())) {
+    GrAppliedClip clip;
+    if (!fClipMaskManager->setupClipping(pipelineBuilder, &ars, &batch->bounds(), &clip)) {
         return;
+    }
+
+    GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps;
+    if (clip.clipCoverageFragmentProcessor()) {
+        arfps.set(&pipelineBuilder);
+        arfps.addCoverageFragmentProcessor(clip.clipCoverageFragmentProcessor());
     }
 
     // Ensure the render target has a stencil buffer and get the stencil settings.
@@ -275,7 +355,7 @@ void GrDrawTarget::drawPathBatch(const GrPipelineBuilder& pipelineBuilder,
     batch->setStencilSettings(stencilSettings);
 
     GrPipeline::CreateArgs args;
-    if (!this->installPipelineInDrawBatch(&pipelineBuilder, &scissorState, batch)) {
+    if (!this->installPipelineInDrawBatch(&pipelineBuilder, &clip.scissorState(), batch)) {
         return;
     }
 
@@ -375,6 +455,10 @@ void GrDrawTarget::copySurface(GrSurface* dst,
                                const SkIPoint& dstPoint) {
     GrBatch* batch = GrCopySurfaceBatch::Create(dst, src, srcRect, dstPoint);
     if (batch) {
+#ifdef ENABLE_MDB
+        this->addDependency(src);
+#endif
+
         this->recordBatch(batch);
         batch->unref();
     }
@@ -387,6 +471,9 @@ template <class Left, class Right> static bool intersect(const Left& a, const Ri
 }
 
 void GrDrawTarget::recordBatch(GrBatch* batch) {
+    // A closed drawTarget should never receive new/more batches
+    SkASSERT(!this->isClosed());
+
     // Check if there is a Batch Draw we can batch with by linearly searching back until we either
     // 1) check every draw
     // 2) intersect with something

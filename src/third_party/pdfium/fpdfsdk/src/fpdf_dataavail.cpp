@@ -4,8 +4,34 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../public/fpdf_dataavail.h"
+#include "public/fpdf_dataavail.h"
+
 #include "../include/fsdk_define.h"
+#include "public/fpdf_formfill.h"
+
+// These checks are here because core/ and public/ cannot depend on each other.
+static_assert(IPDF_DataAvail::DataError == PDF_DATA_ERROR,
+              "IPDF_DataAvail::DataError value mismatch");
+static_assert(IPDF_DataAvail::DataNotAvailable == PDF_DATA_NOTAVAIL,
+              "IPDF_DataAvail::DataNotAvailable value mismatch");
+static_assert(IPDF_DataAvail::DataAvailable == PDF_DATA_AVAIL,
+              "IPDF_DataAvail::DataAvailable value mismatch");
+
+static_assert(IPDF_DataAvail::LinearizationUnknown == PDF_LINEARIZATION_UNKNOWN,
+              "IPDF_DataAvail::LinearizationUnknown value mismatch");
+static_assert(IPDF_DataAvail::NotLinearized == PDF_NOT_LINEARIZED,
+              "IPDF_DataAvail::NotLinearized value mismatch");
+static_assert(IPDF_DataAvail::Linearized == PDF_LINEARIZED,
+              "IPDF_DataAvail::Linearized value mismatch");
+
+static_assert(IPDF_DataAvail::FormError == PDF_FORM_ERROR,
+              "IPDF_DataAvail::FormError value mismatch");
+static_assert(IPDF_DataAvail::FormNotAvailable == PDF_FORM_NOTAVAIL,
+              "IPDF_DataAvail::FormNotAvailable value mismatch");
+static_assert(IPDF_DataAvail::FormAvailable == PDF_FORM_AVAIL,
+              "IPDF_DataAvail::FormAvailable value mismatch");
+static_assert(IPDF_DataAvail::FormNotExist == PDF_FORM_NOTEXIST,
+              "IPDF_DataAvail::FormNotExist value mismatch");
 
 class CFPDF_FileAvailWrap : public IFX_FileAvail {
  public:
@@ -86,10 +112,10 @@ DLLEXPORT void STDCALL FPDFAvail_Destroy(FPDF_AVAIL avail) {
   delete (CFPDF_DataAvail*)avail;
 }
 
-DLLEXPORT int STDCALL FPDFAvail_IsDocAvail(FPDF_AVAIL avail,
-                                           FX_DOWNLOADHINTS* hints) {
-  if (avail == NULL || hints == NULL)
-    return 0;
+DLLEXPORT int STDCALL
+FPDFAvail_IsDocAvail(FPDF_AVAIL avail, FX_DOWNLOADHINTS* hints) {
+  if (!avail || !hints)
+    return PDF_DATA_ERROR;
   CFPDF_DownloadHintsWrap hints_wrap(hints);
   return ((CFPDF_DataAvail*)avail)->m_pDataAvail->IsDocAvail(&hints_wrap);
 }
@@ -110,21 +136,21 @@ FPDFAvail_GetDocument(FPDF_AVAIL avail, FPDF_BYTESTRING password) {
   }
   ((CFPDF_DataAvail*)avail)->m_pDataAvail->SetDocument(pParser->GetDocument());
   CheckUnSupportError(pParser->GetDocument(), FPDF_ERR_SUCCESS);
-  return pParser->GetDocument();
+  return FPDFDocumentFromCPDFDocument(pParser->GetDocument());
 }
 
 DLLEXPORT int STDCALL FPDFAvail_GetFirstPageNum(FPDF_DOCUMENT doc) {
-  if (doc == NULL)
+  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(doc);
+  if (!doc)
     return 0;
-  CPDF_Document* pDoc = (CPDF_Document*)doc;
   return ((CPDF_Parser*)pDoc->GetParser())->GetFirstPageNo();
 }
 
 DLLEXPORT int STDCALL FPDFAvail_IsPageAvail(FPDF_AVAIL avail,
                                             int page_index,
                                             FX_DOWNLOADHINTS* hints) {
-  if (avail == NULL || hints == NULL)
-    return 0;
+  if (!avail || !hints)
+    return PDF_DATA_ERROR;
   CFPDF_DownloadHintsWrap hints_wrap(hints);
   return ((CFPDF_DataAvail*)avail)
       ->m_pDataAvail->IsPageAvail(page_index, &hints_wrap);
@@ -132,14 +158,14 @@ DLLEXPORT int STDCALL FPDFAvail_IsPageAvail(FPDF_AVAIL avail,
 
 DLLEXPORT int STDCALL FPDFAvail_IsFormAvail(FPDF_AVAIL avail,
                                             FX_DOWNLOADHINTS* hints) {
-  if (avail == NULL || hints == NULL)
-    return -1;
+  if (!avail || !hints)
+    return PDF_FORM_ERROR;
   CFPDF_DownloadHintsWrap hints_wrap(hints);
   return ((CFPDF_DataAvail*)avail)->m_pDataAvail->IsFormAvail(&hints_wrap);
 }
 
-DLLEXPORT FPDF_BOOL STDCALL FPDFAvail_IsLinearized(FPDF_AVAIL avail) {
-  if (avail == NULL)
-    return -1;
+DLLEXPORT int STDCALL FPDFAvail_IsLinearized(FPDF_AVAIL avail) {
+  if (!avail)
+    return PDF_LINEARIZATION_UNKNOWN;
   return ((CFPDF_DataAvail*)avail)->m_pDataAvail->IsLinearizedPDF();
 }

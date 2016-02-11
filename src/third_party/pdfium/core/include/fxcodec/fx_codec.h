@@ -9,13 +9,14 @@
 
 #include <vector>
 
-#include "../../../third_party/base/nonstd_unique_ptr.h"
 #include "../fxcrt/fx_basic.h"
 #include "fx_codec_def.h"
-#include "fx_codec_provider.h"
+#include "third_party/base/nonstd_unique_ptr.h"
 
 class CFX_DIBSource;
 class CJPX_Decoder;
+class CPDF_PrivateData;
+class CPDF_StreamAcc;
 class ICodec_ScanlineDecoder;
 class ICodec_BasicModule;
 class ICodec_FaxModule;
@@ -30,7 +31,7 @@ class ICodec_ScanlineDecoder;
 class CCodec_ModuleMgr {
  public:
   CCodec_ModuleMgr();
-  ICodec_Jbig2Encoder* CreateJbig2Encoder();
+
   ICodec_BasicModule* GetBasicModule() const { return m_pBasicModule.get(); }
   ICodec_FaxModule* GetFaxModule() const { return m_pFaxModule.get(); }
   ICodec_JpegModule* GetJpegModule() const { return m_pJpegModule.get(); }
@@ -155,8 +156,6 @@ class ICodec_JpegModule {
  public:
   virtual ~ICodec_JpegModule() {}
 
-  virtual void SetPovider(IFX_JpegProvider* pJP) = 0;
-
   virtual ICodec_ScanlineDecoder* CreateDecoder(const uint8_t* src_buf,
                                                 FX_DWORD src_size,
                                                 int width,
@@ -230,12 +229,11 @@ class ICodec_Jbig2Module {
   virtual void* CreateJbig2Context() = 0;
 
   virtual FXCODEC_STATUS StartDecode(void* pJbig2Context,
+                                     CFX_PrivateData* pPrivateData,
                                      FX_DWORD width,
                                      FX_DWORD height,
-                                     const uint8_t* src_buf,
-                                     FX_DWORD src_size,
-                                     const uint8_t* global_data,
-                                     FX_DWORD global_size,
+                                     CPDF_StreamAcc* src_stream,
+                                     CPDF_StreamAcc* global_stream,
                                      uint8_t* dest_buf,
                                      FX_DWORD dest_pitch,
                                      IFX_Pause* pPause) = 0;

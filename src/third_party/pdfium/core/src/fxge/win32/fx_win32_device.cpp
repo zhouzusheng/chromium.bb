@@ -4,20 +4,29 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fxge/fx_ge.h"
+#include "core/include/fxge/fx_ge.h"
 
 #if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
 #include <crtdbg.h>
 
-#include "../../../include/fxcodec/fx_codec.h"
-#include "../../../include/fxge/fx_freetype.h"
-#include "../../../include/fxge/fx_ge_win32.h"
-#include "../agg/include/fx_agg_driver.h"
 #include "../dib/dib_int.h"
 #include "../ge/text_int.h"
+#include "core/include/fxcodec/fx_codec.h"
+#include "core/include/fxge/fx_freetype.h"
+#include "core/include/fxge/fx_ge_win32.h"
+#include "core/src/fxge/agg/include/fx_agg_driver.h"
 #include "dwrite_int.h"
 #include "win32_int.h"
 
+class CFX_Win32FallbackFontInfo final : public CFX_FolderFontInfo {
+ public:
+  void* MapFont(int weight,
+                FX_BOOL bItalic,
+                int charset,
+                int pitch_family,
+                const FX_CHAR* family,
+                int& iExact) override;
+};
 class CFX_Win32FontInfo final : public IFX_SystemFontInfo {
  public:
   CFX_Win32FontInfo();
@@ -113,7 +122,7 @@ FX_BOOL CFX_Win32FontInfo::IsSupportFontFormDiv(const LOGFONTA* plf) {
 }
 void CFX_Win32FontInfo::AddInstalledFont(const LOGFONTA* plf,
                                          FX_DWORD FontType) {
-  CFX_ByteString name(plf->lfFaceName, -1);
+  CFX_ByteString name(plf->lfFaceName);
   if (name[0] == '@') {
     return;
   }
@@ -198,6 +207,29 @@ CFX_ByteString CFX_Win32FontInfo::FindFont(const CFX_ByteString& name) {
     }
   }
   return CFX_ByteString();
+}
+void* CFX_Win32FallbackFontInfo::MapFont(int weight,
+                                         FX_BOOL bItalic,
+                                         int charset,
+                                         int pitch_family,
+                                         const FX_CHAR* cstr_face,
+                                         int& iExact) {
+  void* font = GetSubstFont(cstr_face);
+  if (font) {
+    iExact = 1;
+    return font;
+  }
+  FX_BOOL bCJK = TRUE;
+  switch (charset) {
+    case FXFONT_SHIFTJIS_CHARSET:
+    case FXFONT_GB2312_CHARSET:
+    case FXFONT_CHINESEBIG5_CHARSET:
+    case FXFONT_HANGEUL_CHARSET:
+    default:
+      bCJK = FALSE;
+      break;
+  }
+  return FindFont(weight, bItalic, charset, pitch_family, cstr_face, !bCJK);
 }
 struct _FontNameMap {
   const FX_CHAR* m_pSubFontName;
@@ -326,7 +358,7 @@ void* CFX_Win32FontInfo::MapFont(int weight,
                     OUT_TT_ONLY_PRECIS, 0, 0, subst_pitch_family, face);
   char facebuf[100];
   HFONT hOldFont = (HFONT)::SelectObject(m_hDC, hFont);
-  int ret = ::GetTextFaceA(m_hDC, 100, facebuf);
+  ::GetTextFaceA(m_hDC, 100, facebuf);
   ::SelectObject(m_hDC, hOldFont);
   if (face.EqualNoCase(facebuf)) {
     return hFont;
@@ -406,7 +438,24 @@ FX_BOOL CFX_Win32FontInfo::GetFontCharset(void* hFont, int& charset) {
   return TRUE;
 }
 IFX_SystemFontInfo* IFX_SystemFontInfo::CreateDefault(const char** pUnused) {
-  return new CFX_Win32FontInfo;
+  HDC hdc = ::GetDC(NULL);
+  if (hdc) {
+    ::ReleaseDC(NULL, hdc);
+    return new CFX_Win32FontInfo;
+  }
+  // If GDI is disabled then GetDC for the desktop will fail. Select the
+  // fallback font information class if GDI is disabled.
+  CFX_Win32FallbackFontInfo* pInfoFallback = new CFX_Win32FallbackFontInfo;
+  // Construct the font path manually, SHGetKnownFolderPath won't work under
+  // a restrictive sandbox.
+  CHAR windows_path[MAX_PATH] = {};
+  DWORD path_len = ::GetWindowsDirectoryA(windows_path, MAX_PATH);
+  if (path_len > 0 && path_len < MAX_PATH) {
+    CFX_ByteString fonts_path(windows_path);
+    fonts_path += "\\Fonts";
+    pInfoFallback->AddPath(fonts_path);
+  }
+  return pInfoFallback;
 }
 void CFX_GEModule::InitPlatform() {
   CWin32Platform* pPlatformData = new CWin32Platform;
@@ -487,7 +536,6 @@ FX_BOOL CGdiDeviceDriver::GDI_SetDIBits(const CFX_DIBitmap* pBitmap1,
       return FALSE;
     }
     int width = pSrcRect->Width(), height = pSrcRect->Height();
-    int pitch = pBitmap->GetPitch();
     LPBYTE pBuffer = pBitmap->GetBuffer();
     CFX_ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
     ((BITMAPINFOHEADER*)info.c_str())->biHeight *= -1;
@@ -507,7 +555,6 @@ FX_BOOL CGdiDeviceDriver::GDI_SetDIBits(const CFX_DIBitmap* pBitmap1,
       return FALSE;
     }
     int width = pSrcRect->Width(), height = pSrcRect->Height();
-    int pitch = pBitmap->GetPitch();
     LPBYTE pBuffer = pBitmap->GetBuffer();
     CFX_ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
     ::SetDIBitsToDevice(m_hDC, left, top, width, height, pSrcRect->left,

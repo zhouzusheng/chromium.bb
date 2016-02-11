@@ -4,7 +4,8 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../public/fpdf_flatten.h"
+#include "public/fpdf_flatten.h"
+
 #include "../include/fsdk_define.h"
 
 typedef CFX_ArrayTemplate<CPDF_Dictionary*> CPDF_ObjectArray;
@@ -94,11 +95,10 @@ int ParserAnnots(CPDF_Document* pSourceDoc,
 
   FX_DWORD dwSize = pAnnots->GetCount();
   for (int i = 0; i < (int)dwSize; i++) {
-    CPDF_Object* pObj = pAnnots->GetElementValue(i);
-    if (!pObj || pObj->GetType() != PDFOBJ_DICTIONARY)
+    CPDF_Dictionary* pAnnotDic = ToDictionary(pAnnots->GetElementValue(i));
+    if (!pAnnotDic)
       continue;
 
-    CPDF_Dictionary* pAnnotDic = (CPDF_Dictionary*)pObj;
     CFX_ByteString sSubtype = pAnnotDic->GetString("Subtype");
     if (sSubtype == "Popup")
       continue;
@@ -212,7 +212,7 @@ void SetPageContents(CFX_ByteString key,
   switch (iType) {
     case PDFOBJ_STREAM: {
       pContentsArray = new CPDF_Array;
-      CPDF_Stream* pContents = (CPDF_Stream*)pContentsObj;
+      CPDF_Stream* pContents = pContentsObj->AsStream();
       FX_DWORD dwObjNum = pDocument->AddIndirectObject(pContents);
       CPDF_StreamAcc acc;
       acc.LoadAllData(pContents);
@@ -227,7 +227,7 @@ void SetPageContents(CFX_ByteString key,
     }
 
     case PDFOBJ_ARRAY: {
-      pContentsArray = (CPDF_Array*)pContentsObj;
+      pContentsArray = pContentsObj->AsArray();
       break;
     }
     default:
@@ -310,11 +310,11 @@ void GetOffset(FX_FLOAT& fa,
 }
 
 DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!page) {
     return FLATTEN_FAIL;
   }
 
-  CPDF_Page* pPage = (CPDF_Page*)(page);
   CPDF_Document* pDocument = pPage->m_pDocument;
   CPDF_Dictionary* pPageDict = pPage->m_pFormDict;
 
@@ -445,18 +445,15 @@ DLLEXPORT int STDCALL FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
           CFX_ByteString sKey;
           CPDF_Object* pFirstObj = pAPDic->GetNextElement(pos, sKey);
           if (pFirstObj) {
-            if (pFirstObj->GetType() == PDFOBJ_REFERENCE)
+            if (pFirstObj->IsReference())
               pFirstObj = pFirstObj->GetDirect();
-
-            if (pFirstObj->GetType() != PDFOBJ_STREAM)
+            if (!pFirstObj->IsStream())
               continue;
-
-            pAPStream = (CPDF_Stream*)pFirstObj;
+            pAPStream = pFirstObj->AsStream();
           }
         }
       }
     }
-
     if (!pAPStream)
       continue;
 

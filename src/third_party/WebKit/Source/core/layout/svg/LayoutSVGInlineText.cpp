@@ -217,11 +217,12 @@ PositionWithAffinity LayoutSVGInlineText::positionForPoint(const LayoutPoint& po
 
 void LayoutSVGInlineText::updateScaledFont()
 {
-    computeNewScaledFontForStyle(this, style(), m_scalingFactor, m_scaledFont);
+    computeNewScaledFontForStyle(this, m_scalingFactor, m_scaledFont);
 }
 
-void LayoutSVGInlineText::computeNewScaledFontForStyle(LayoutObject* layoutObject, const ComputedStyle* style, float& scalingFactor, Font& scaledFont)
+void LayoutSVGInlineText::computeNewScaledFontForStyle(LayoutObject* layoutObject, float& scalingFactor, Font& scaledFont)
 {
+    const ComputedStyle* style = layoutObject->style();
     ASSERT(style);
     ASSERT(layoutObject);
 

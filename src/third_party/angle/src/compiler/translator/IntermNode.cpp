@@ -311,17 +311,26 @@ bool TIntermAggregate::replaceChildNodeWithMultiple(TIntermNode *original, TInte
 
 bool TIntermAggregate::insertChildNodes(TIntermSequence::size_type position, TIntermSequence insertions)
 {
-    TIntermSequence::size_type itPosition = 0;
-    for (auto it = mSequence.begin(); it < mSequence.end(); ++it)
+    if (position > mSequence.size())
     {
-        if (itPosition == position)
-        {
-            mSequence.insert(it, insertions.begin(), insertions.end());
-            return true;
-        }
-        ++itPosition;
+        return false;
     }
-    return false;
+    auto it = mSequence.begin() + position;
+    mSequence.insert(it, insertions.begin(), insertions.end());
+    return true;
+}
+
+bool TIntermAggregate::areChildrenConstQualified()
+{
+    for (TIntermNode *&child : mSequence)
+    {
+        TIntermTyped *typed = child->getAsTyped();
+        if (typed && typed->getQualifier() != EvqConst)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 void TIntermAggregate::setPrecisionFromChildren()
@@ -591,7 +600,10 @@ void TIntermUnary::promote(const TType *funcReturnType)
         }
     }
 
-    mType.setQualifier(EvqTemporary);
+    if (mOperand->getQualifier() == EvqConst)
+        mType.setQualifier(EvqConst);
+    else
+        mType.setQualifier(EvqTemporary);
 }
 
 //
@@ -616,10 +628,12 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
         mLeft->getPrecision(), mRight->getPrecision());
     getTypePointer()->setPrecision(higherPrecision);
 
+    TQualifier resultQualifier = EvqConst;
     // Binary operations results in temporary variables unless both
     // operands are const.
     if (mLeft->getQualifier() != EvqConst || mRight->getQualifier() != EvqConst)
     {
+        resultQualifier = EvqTemporary;
         getTypePointer()->setQualifier(EvqTemporary);
     }
 
@@ -674,14 +688,15 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
             if (mLeft->isVector())
             {
                 mOp = EOpVectorTimesMatrix;
-                setType(TType(basicType, higherPrecision, EvqTemporary,
+                setType(TType(basicType, higherPrecision, resultQualifier,
                               static_cast<unsigned char>(mRight->getCols()), 1));
             }
             else
             {
                 mOp = EOpMatrixTimesScalar;
-                setType(TType(basicType, higherPrecision, EvqTemporary,
-                              static_cast<unsigned char>(mRight->getCols()), static_cast<unsigned char>(mRight->getRows())));
+                setType(TType(basicType, higherPrecision, resultQualifier,
+                              static_cast<unsigned char>(mRight->getCols()),
+                              static_cast<unsigned char>(mRight->getRows())));
             }
         }
         else if (mLeft->isMatrix() && !mRight->isMatrix())
@@ -689,7 +704,7 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
             if (mRight->isVector())
             {
                 mOp = EOpMatrixTimesVector;
-                setType(TType(basicType, higherPrecision, EvqTemporary,
+                setType(TType(basicType, higherPrecision, resultQualifier,
                               static_cast<unsigned char>(mLeft->getRows()), 1));
             }
             else
@@ -700,8 +715,9 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
         else if (mLeft->isMatrix() && mRight->isMatrix())
         {
             mOp = EOpMatrixTimesMatrix;
-            setType(TType(basicType, higherPrecision, EvqTemporary,
-                          static_cast<unsigned char>(mRight->getCols()), static_cast<unsigned char>(mLeft->getRows())));
+            setType(TType(basicType, higherPrecision, resultQualifier,
+                          static_cast<unsigned char>(mRight->getCols()),
+                          static_cast<unsigned char>(mLeft->getRows())));
         }
         else if (!mLeft->isMatrix() && !mRight->isMatrix())
         {
@@ -712,7 +728,7 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
             else if (mLeft->isVector() || mRight->isVector())
             {
                 mOp = EOpVectorTimesScalar;
-                setType(TType(basicType, higherPrecision, EvqTemporary,
+                setType(TType(basicType, higherPrecision, resultQualifier,
                               static_cast<unsigned char>(nominalSize), 1));
             }
         }
@@ -755,8 +771,9 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
         else if (mLeft->isMatrix() && mRight->isMatrix())
         {
             mOp = EOpMatrixTimesMatrixAssign;
-            setType(TType(basicType, higherPrecision, EvqTemporary,
-                          static_cast<unsigned char>(mRight->getCols()), static_cast<unsigned char>(mLeft->getRows())));
+            setType(TType(basicType, higherPrecision, resultQualifier,
+                          static_cast<unsigned char>(mRight->getCols()),
+                          static_cast<unsigned char>(mLeft->getRows())));
         }
         else if (!mLeft->isMatrix() && !mRight->isMatrix())
         {
@@ -769,7 +786,7 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
                 if (!mLeft->isVector())
                     return false;
                 mOp = EOpVectorTimesScalarAssign;
-                setType(TType(basicType, higherPrecision, EvqTemporary,
+                setType(TType(basicType, higherPrecision, resultQualifier,
                               static_cast<unsigned char>(mLeft->getNominalSize()), 1));
             }
         }
@@ -839,8 +856,9 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
         {
             const int secondarySize = std::max(
                 mLeft->getSecondarySize(), mRight->getSecondarySize());
-            setType(TType(basicType, higherPrecision, EvqTemporary,
-                          static_cast<unsigned char>(nominalSize), static_cast<unsigned char>(secondarySize)));
+            setType(TType(basicType, higherPrecision, resultQualifier,
+                          static_cast<unsigned char>(nominalSize),
+                          static_cast<unsigned char>(secondarySize)));
             if (mLeft->isArray())
             {
                 ASSERT(mLeft->getArraySize() == mRight->getArraySize());
@@ -2548,9 +2566,20 @@ void TIntermTraverser::updateTree()
     {
         const NodeInsertMultipleEntry &insertion = mInsertions[ii];
         ASSERT(insertion.parent);
-        bool inserted = insertion.parent->insertChildNodes(insertion.position, insertion.insertions);
-        ASSERT(inserted);
-        UNUSED_ASSERTION_VARIABLE(inserted);
+        if (!insertion.insertionsAfter.empty())
+        {
+            bool inserted = insertion.parent->insertChildNodes(insertion.position + 1,
+                                                               insertion.insertionsAfter);
+            ASSERT(inserted);
+            UNUSED_ASSERTION_VARIABLE(inserted);
+        }
+        if (!insertion.insertionsBefore.empty())
+        {
+            bool inserted =
+                insertion.parent->insertChildNodes(insertion.position, insertion.insertionsBefore);
+            ASSERT(inserted);
+            UNUSED_ASSERTION_VARIABLE(inserted);
+        }
     }
     for (size_t ii = 0; ii < mReplacements.size(); ++ii)
     {

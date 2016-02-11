@@ -38,6 +38,7 @@
 #include "core/InputTypeNames.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/Document.h"
+#include "core/dom/ExecutionContextTask.h"
 #include "core/dom/IdTargetObserver.h"
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -80,7 +81,7 @@ namespace blink {
 using namespace HTMLNames;
 
 class ListAttributeTargetObserver : public IdTargetObserver {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ListAttributeTargetObserver);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(ListAttributeTargetObserver);
 public:
     static PassOwnPtrWillBeRawPtr<ListAttributeTargetObserver> create(const AtomicString& id, HTMLInputElement*);
     DECLARE_VIRTUAL_TRACE();
@@ -340,17 +341,26 @@ bool HTMLInputElement::shouldShowFocusRingOnMouseFocus() const
     return m_inputType->shouldShowFocusRingOnMouseFocus();
 }
 
-void HTMLInputElement::updateFocusAppearance(bool restorePreviousSelection)
+void HTMLInputElement::updateFocusAppearance(SelectionBehaviorOnFocus selectionBehavior)
 {
     if (isTextField()) {
-        if (!restorePreviousSelection)
+        switch (selectionBehavior) {
+        case SelectionBehaviorOnFocus::Reset:
             select(NotDispatchSelectEvent);
-        else
+            break;
+        case SelectionBehaviorOnFocus::Restore:
             restoreCachedSelection();
+            break;
+        case SelectionBehaviorOnFocus::None:
+            // |None| is used only for FocusController::setFocusedElement and
+            // Document::setFocusedElement, and they don't call
+            // updateFocusAppearance().
+            ASSERT_NOT_REACHED();
+        }
         if (document().frame())
             document().frame()->selection().revealSelection();
     } else {
-        HTMLTextFormControlElement::updateFocusAppearance(restorePreviousSelection);
+        HTMLTextFormControlElement::updateFocusAppearance(selectionBehavior);
     }
 }
 
@@ -418,8 +428,8 @@ void HTMLInputElement::updateTouchEventHandlerRegistry()
             registry.didAddEventHandler(*this, EventHandlerRegistry::TouchEvent);
         else
             registry.didRemoveEventHandler(*this, EventHandlerRegistry::TouchEvent);
+        m_hasTouchEventHandler = hasTouchEventHandler;
     }
-    m_hasTouchEventHandler = hasTouchEventHandler;
 }
 
 void HTMLInputElement::initializeTypeInParsing()
@@ -504,7 +514,7 @@ void HTMLInputElement::updateType()
     }
 
     if (document().focusedElement() == this)
-        document().updateFocusAppearanceSoon(true /* restore selection */);
+        document().updateFocusAppearanceSoon(SelectionBehaviorOnFocus::Restore);
 
     setTextAsOfLastFormControlChangeEvent(value());
     setChangedSinceLastFormControlChangeEvent(false);
@@ -831,7 +841,7 @@ void HTMLInputElement::attach(const AttachContext& context)
     m_inputType->countUsage();
 
     if (document().focusedElement() == this)
-        document().updateFocusAppearanceSoon(true /* restore selection */);
+        document().updateFocusAppearanceSoon(SelectionBehaviorOnFocus::Restore);
 }
 
 void HTMLInputElement::detach(const AttachContext& context)
@@ -1142,7 +1152,7 @@ void HTMLInputElement::setValueFromRenderer(const String& value)
     m_suggestedValue = String();
 
     // Renderer and our event handler are responsible for sanitizing values.
-    ASSERT(value == sanitizeValue(value) || sanitizeValue(value).isEmpty());
+    ASSERT(value == m_inputType->sanitizeUserInputValue(value) || m_inputType->sanitizeUserInputValue(value).isEmpty());
 
     m_valueIfDirty = value;
     m_needsToUpdateViewValue = false;
@@ -1242,7 +1252,7 @@ void HTMLInputElement::defaultEventHandler(Event* evt)
     if (m_inputTypeView->shouldSubmitImplicitly(evt)) {
         // FIXME: Remove type check.
         if (type() == InputTypeNames::search)
-            onSearch();
+            document().postTask(BLINK_FROM_HERE, createSameThreadTask(&HTMLInputElement::onSearch, PassRefPtrWillBeRawPtr<HTMLInputElement>(this)));
         // Form submission finishes editing, just as loss of focus does.
         // If there was a change, send the event now.
         if (wasChangedSinceLastFormControlChangeEvent())
@@ -1488,11 +1498,7 @@ bool HTMLInputElement::matchesReadWritePseudoClass() const
 
 void HTMLInputElement::onSearch()
 {
-    // FIXME: Remove type check, and static_cast.
-    ASSERT(type() == InputTypeNames::search);
-    if (m_inputType)
-        static_cast<SearchInputType*>(m_inputType.get())->stopSearchEventTimer();
-    dispatchEvent(Event::createBubble(EventTypeNames::search));
+    m_inputType->dispatchSearchEvent();
 }
 
 void HTMLInputElement::updateClearButtonVisibility()
@@ -1549,6 +1555,8 @@ void HTMLInputElement::didMoveToNewDocument(Document& oldDocument)
     // FIXME: Remove type check.
     if (type() == InputTypeNames::radio)
         oldDocument.formController().radioButtonGroupScope().removeButton(this);
+
+    updateTouchEventHandlerRegistry();
 
     HTMLTextFormControlElement::didMoveToNewDocument(oldDocument);
 }

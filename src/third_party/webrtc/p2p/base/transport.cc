@@ -22,8 +22,6 @@
 
 namespace cricket {
 
-using rtc::Bind;
-
 static bool VerifyIceParams(const TransportDescription& desc) {
   // For legacy protocols.
   if (desc.ice_ufrag.empty() && desc.ice_pwd.empty())
@@ -270,7 +268,7 @@ void Transport::CallChannels(TransportChannelFunc func) {
 
 bool Transport::VerifyCandidate(const Candidate& cand, std::string* error) {
   // No address zero.
-  if (cand.address().IsNil() || cand.address().IsAny()) {
+  if (cand.address().IsNil() || cand.address().IsAnyIP()) {
     *error = "candidate has address of zero";
     return false;
   }

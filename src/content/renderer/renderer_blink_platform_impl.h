@@ -137,6 +137,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   void sampleGamepads(blink::WebGamepads&) override;
   blink::WebRTCPeerConnectionHandler* createRTCPeerConnectionHandler(
       blink::WebRTCPeerConnectionHandlerClient* client) override;
+  blink::WebRTCCertificateGenerator* createRTCCertificateGenerator() override;
   blink::WebMediaRecorderHandler* createMediaRecorderHandler() override;
   blink::WebMediaStreamCenter* createMediaStreamCenter(
       blink::WebMediaStreamCenterClient* client) override;
@@ -150,7 +151,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const blink::WebGraphicsContext3D::Attributes& attributes,
       blink::WebGraphicsContext3D* share_context,
-      blink::WebGLInfo* gl_info) override;
+      blink::WebGraphicsContext3D::WebGraphicsInfo* gl_info) override;
   blink::WebGraphicsContext3DProvider*
   createSharedOffscreenGraphicsContext3DProvider() override;
   blink::WebCompositorSupport* compositorSupport() override;
@@ -169,6 +170,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   void recordRappor(const char* metric,
                     const blink::WebString& sample) override;
   void recordRapporURL(const char* metric, const blink::WebURL& url) override;
+  double currentTimeSeconds() override;
+  double monotonicallyIncreasingTimeSeconds() override;
 
   // Set the PlatformEventObserverBase in |platform_event_observers_| associated
   // with |type| to |observer|. If there was already an observer associated to
@@ -205,6 +208,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
     return web_database_observer_impl_.get();
   }
 
+  blink::WebURLLoader* createURLLoader() override;
+
  private:
   bool CheckPreparsedJsCachingEnabled() const;
 
@@ -218,7 +223,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   void SendFakeDeviceEventDataForTesting(blink::WebPlatformEventType type);
   device::VibrationManagerPtr& GetConnectedVibrationManagerService();
 
-  scoped_ptr<scheduler::WebThreadImplForRendererScheduler> main_thread_;
+  scoped_ptr<blink::WebThread> main_thread_;
 
   scoped_ptr<RendererClipboardDelegate> clipboard_delegate_;
   scoped_ptr<WebClipboardImpl> clipboard_;
@@ -254,6 +259,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   scoped_ptr<DeviceOrientationEventPump> device_orientation_event_pump_;
 
   scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;
   scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
   scoped_refptr<QuotaMessageFilter> quota_message_filter_;
@@ -270,6 +276,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   device::VibrationManagerPtr vibration_manager_;
 
   IDMap<PlatformEventObserverBase, IDMapOwnPointer> platform_event_observers_;
+
+  scheduler::RendererScheduler* renderer_scheduler_;  // NOT OWNED
 
   DISALLOW_COPY_AND_ASSIGN(RendererBlinkPlatformImpl);
 };

@@ -28,7 +28,7 @@ base::LazyInstance<base::ThreadLocalPointer<GLSurface> >::Leaky
 bool GLSurface::InitializeOneOff() {
   DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
 
-  TRACE_EVENT0("gpu", "GLSurface::InitializeOneOff");
+  TRACE_EVENT0("gpu,startup", "GLSurface::InitializeOneOff");
 
   std::vector<GLImplementation> allowed_impls;
   GetAllowedGLImplementations(&allowed_impls);
@@ -99,7 +99,7 @@ bool GLSurface::Initialize() {
   return true;
 }
 
-bool GLSurface::Resize(const gfx::Size& size) {
+bool GLSurface::Resize(const gfx::Size& size, float scale_factor) {
   NOTIMPLEMENTED();
   return false;
 }
@@ -182,9 +182,19 @@ VSyncProvider* GLSurface::GetVSyncProvider() {
 
 bool GLSurface::ScheduleOverlayPlane(int z_order,
                                      OverlayTransform transform,
-                                     GLImage* image,
+                                     gl::GLImage* image,
                                      const Rect& bounds_rect,
                                      const RectF& crop_rect) {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+bool GLSurface::ScheduleCALayer(gl::GLImage* contents_image,
+                                const RectF& contents_rect,
+                                float opacity,
+                                unsigned background_color,
+                                const SizeF& bounds_size,
+                                const gfx::Transform& transform) {
   NOTIMPLEMENTED();
   return false;
 }
@@ -232,8 +242,8 @@ void GLSurfaceAdapter::Destroy() {
   surface_->Destroy();
 }
 
-bool GLSurfaceAdapter::Resize(const gfx::Size& size) {
-  return surface_->Resize(size);
+bool GLSurfaceAdapter::Resize(const gfx::Size& size, float scale_factor) {
+  return surface_->Resize(size, scale_factor);
 }
 
 bool GLSurfaceAdapter::Recreate() {
@@ -320,7 +330,7 @@ VSyncProvider* GLSurfaceAdapter::GetVSyncProvider() {
 
 bool GLSurfaceAdapter::ScheduleOverlayPlane(int z_order,
                                             OverlayTransform transform,
-                                            GLImage* image,
+                                            gl::GLImage* image,
                                             const Rect& bounds_rect,
                                             const RectF& crop_rect) {
   return surface_->ScheduleOverlayPlane(

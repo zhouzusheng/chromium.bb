@@ -43,6 +43,10 @@
 
 namespace blink {
 
+template<typename T> class Member;
+template<typename T> class WeakMember;
+template<typename T> class UntracedMember;
+
 template<typename T, bool = NeedsAdjustAndMark<T>::value> class ObjectAliveTrait;
 
 template<typename T>
@@ -71,7 +75,7 @@ public:
     static void shutdown();
     static void doShutdown();
 
-#if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
+#if ENABLE(ASSERT)
     static BasePage* findPageFromAddress(Address);
     static BasePage* findPageFromAddress(const void* pointer) { return findPageFromAddress(reinterpret_cast<Address>(const_cast<void*>(pointer))); }
 #endif
@@ -96,6 +100,11 @@ public:
     }
     template<typename T>
     static inline bool isHeapObjectAlive(const WeakMember<T>& member)
+    {
+        return isHeapObjectAlive(member.get());
+    }
+    template<typename T>
+    static inline bool isHeapObjectAlive(const UntracedMember<T>& member)
     {
         return isHeapObjectAlive(member.get());
     }
@@ -186,17 +195,8 @@ public:
     template<typename T> static Address allocate(size_t, bool eagerlySweep = false);
     template<typename T> static Address reallocate(void* previous, size_t);
 
-    enum GCReason {
-        IdleGC,
-        PreciseGC,
-        ConservativeGC,
-        ForcedGC,
-        MemoryPressureGC,
-        PageNavigationGC,
-        NumberOfGCReason,
-    };
-    static const char* gcReasonString(GCReason);
-    static void collectGarbage(ThreadState::StackState, ThreadState::GCType, GCReason);
+    static const char* gcReasonString(BlinkGC::GCReason);
+    static void collectGarbage(BlinkGC::StackState, BlinkGC::GCType, BlinkGC::GCReason);
     static void collectGarbageForTerminatingThread(ThreadState*);
     static void collectAllGarbage();
 
@@ -206,24 +206,11 @@ public:
     static void setForcePreciseGCForTesting();
 
     static void preGC();
-    static void postGC(ThreadState::GCType);
+    static void postGC(BlinkGC::GCType);
 
     // Conservatively checks whether an address is a pointer in any of the
     // thread heaps.  If so marks the object pointed to as live.
     static Address checkAndMarkPointer(Visitor*, Address);
-
-#if ENABLE(GC_PROFILING)
-    // Dump the path to specified object on the next GC.  This method is to be
-    // invoked from GDB.
-    static void dumpPathToObjectOnNextGC(void* p);
-
-    // Forcibly find GCInfo of the object at Address.  This is slow and should
-    // only be used for debug purposes.  It involves finding the heap page and
-    // scanning the heap page for an object header.
-    static const GCInfo* findGCInfo(Address);
-
-    static String createBacktraceString();
-#endif
 
     static size_t objectPayloadSizeForTesting();
 
@@ -272,6 +259,10 @@ public:
     static void reportMemoryUsageHistogram();
     static void reportMemoryUsageForTracing();
 
+#if ENABLE(ASSERT)
+    static uint16_t gcGeneration() { return s_gcGeneration; }
+#endif
+
 private:
     // A RegionTree is a simple binary search tree of PageMemoryRegions sorted
     // by base addresses.
@@ -317,6 +308,9 @@ private:
     static size_t s_collectedWrapperCount;
     static size_t s_partitionAllocSizeAtLastGC;
     static double s_estimatedMarkingTimePerByte;
+#if ENABLE(ASSERT)
+    static uint16_t s_gcGeneration;
+#endif
 
     friend class ThreadState;
 };
@@ -337,6 +331,7 @@ public:
 };
 
 template<typename T> class GarbageCollected {
+    IS_GARBAGE_COLLECTED_TYPE();
     WTF_MAKE_NONCOPYABLE(GarbageCollected);
 
     // For now direct allocation of arrays on the heap is not allowed.
@@ -356,7 +351,7 @@ protected:
 #endif
 
 public:
-    using GarbageCollectedBase = T;
+    using GarbageCollectedType = T;
 
     void* operator new(size_t size)
     {
@@ -402,17 +397,17 @@ inline int Heap::heapIndexForObjectSize(size_t size)
 {
     if (size < 64) {
         if (size < 32)
-            return ThreadState::NormalPage1HeapIndex;
-        return ThreadState::NormalPage2HeapIndex;
+            return BlinkGC::NormalPage1HeapIndex;
+        return BlinkGC::NormalPage2HeapIndex;
     }
     if (size < 128)
-        return ThreadState::NormalPage3HeapIndex;
-    return ThreadState::NormalPage4HeapIndex;
+        return BlinkGC::NormalPage3HeapIndex;
+    return BlinkGC::NormalPage4HeapIndex;
 }
 
 inline bool Heap::isNormalHeapIndex(int index)
 {
-    return index >= ThreadState::NormalPage1HeapIndex && index <= ThreadState::NormalPage4HeapIndex;
+    return index >= BlinkGC::NormalPage1HeapIndex && index <= BlinkGC::NormalPage4HeapIndex;
 }
 
 #define DECLARE_EAGER_FINALIZATION_OPERATOR_NEW() \
@@ -423,7 +418,7 @@ public:                                           \
         return allocateObject(size, true);        \
     }
 
-#define IS_EAGERLY_FINALIZED() (pageFromObject(this)->heap()->heapIndex() == ThreadState::EagerSweepHeapIndex)
+#define IS_EAGERLY_FINALIZED() (pageFromObject(this)->heap()->heapIndex() == BlinkGC::EagerSweepHeapIndex)
 #if ENABLE(ASSERT) && ENABLE(OILPAN)
 class VerifyEagerFinalization {
 public:
@@ -458,7 +453,7 @@ public:                                                \
 inline Address Heap::allocateOnHeapIndex(ThreadState* state, size_t size, int heapIndex, size_t gcInfoIndex)
 {
     ASSERT(state->isAllocationAllowed());
-    ASSERT(heapIndex != ThreadState::LargeObjectHeapIndex);
+    ASSERT(heapIndex != BlinkGC::LargeObjectHeapIndex);
     NormalPageHeap* heap = static_cast<NormalPageHeap*>(state->heap(heapIndex));
     return heap->allocateObject(allocationSizeFromSize(size), gcInfoIndex);
 }
@@ -467,7 +462,7 @@ template<typename T>
 Address Heap::allocate(size_t size, bool eagerlySweep)
 {
     ThreadState* state = ThreadStateFor<ThreadingTrait<T>::Affinity>::state();
-    return Heap::allocateOnHeapIndex(state, size, eagerlySweep ? ThreadState::EagerSweepHeapIndex : Heap::heapIndexForObjectSize(size), GCInfoTrait<T>::index());
+    return Heap::allocateOnHeapIndex(state, size, eagerlySweep ? BlinkGC::EagerSweepHeapIndex : Heap::heapIndexForObjectSize(size), GCInfoTrait<T>::index());
 }
 
 template<typename T>
@@ -489,7 +484,7 @@ Address Heap::reallocate(void* previous, size_t size)
     int heapIndex = page->heap()->heapIndex();
     // Recompute the effective heap index if previous allocation
     // was on the normal heaps or a large object.
-    if (isNormalHeapIndex(heapIndex) || heapIndex == ThreadState::LargeObjectHeapIndex)
+    if (isNormalHeapIndex(heapIndex) || heapIndex == BlinkGC::LargeObjectHeapIndex)
         heapIndex = heapIndexForObjectSize(size);
 
     // TODO(haraken): We don't support reallocate() for finalizable objects.

@@ -362,5 +362,10 @@ content::PermissionManager* BrowserContextImpl::GetPermissionManager()
     return 0;
 }
 
+content::BackgroundSyncController* BrowserContextImpl::GetBackgroundSyncController()
+{
+    return 0;
+}
+
 }  // close namespace blpwtk2
 

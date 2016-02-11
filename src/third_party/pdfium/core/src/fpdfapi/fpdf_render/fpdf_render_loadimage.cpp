@@ -4,17 +4,18 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#include "render_int.h"
+
 #include <vector>
 
-#include "../../../../third_party/base/nonstd_unique_ptr.h"
-#include "../../../include/fpdfapi/fpdf_module.h"
-#include "../../../include/fpdfapi/fpdf_pageobj.h"
-#include "../../../include/fpdfapi/fpdf_render.h"
-#include "../../../include/fxcodec/fx_codec.h"
-#include "../../../include/fxcrt/fx_safe_types.h"
-#include "../../../include/fxge/fx_ge.h"
 #include "../fpdf_page/pageint.h"
-#include "render_int.h"
+#include "core/include/fpdfapi/fpdf_module.h"
+#include "core/include/fpdfapi/fpdf_pageobj.h"
+#include "core/include/fpdfapi/fpdf_render.h"
+#include "core/include/fxcodec/fx_codec.h"
+#include "core/include/fxcrt/fx_safe_types.h"
+#include "core/include/fxge/fx_ge.h"
+#include "third_party/base/nonstd_unique_ptr.h"
 
 namespace {
 
@@ -40,16 +41,12 @@ unsigned int GetBits8(const uint8_t* pData, uint64_t bitpos, size_t nbits) {
   return 0;
 }
 
-FX_SAFE_DWORD CalculatePitch8(FX_DWORD bpc,
-                              FX_DWORD components,
-                              int width,
-                              int height) {
+FX_SAFE_DWORD CalculatePitch8(FX_DWORD bpc, FX_DWORD components, int width) {
   FX_SAFE_DWORD pitch = bpc;
   pitch *= components;
   pitch *= width;
   pitch += 7;
   pitch /= 8;
-  pitch *= height;
   return pitch;
 }
 
@@ -57,7 +54,8 @@ FX_SAFE_DWORD CalculatePitch32(int bpp, int width) {
   FX_SAFE_DWORD pitch = bpp;
   pitch *= width;
   pitch += 31;
-  pitch /= 8;
+  pitch /= 32;  // quantized to number of 32-bit words.
+  pitch *= 4;   // and then back to bytes, (not just /8 in one step).
   return pitch;
 }
 
@@ -234,13 +232,13 @@ FX_BOOL CPDF_DIBSource::Load(CPDF_Document* pDoc,
   if (m_bDoBpcCheck && (m_bpc == 0 || m_nComponents == 0)) {
     return FALSE;
   }
-  FX_SAFE_DWORD src_pitch =
-      CalculatePitch8(m_bpc, m_nComponents, m_Width, m_Height);
-  if (!src_pitch.IsValid()) {
+  FX_SAFE_DWORD src_size =
+      CalculatePitch8(m_bpc, m_nComponents, m_Width) * m_Height;
+  if (!src_size.IsValid()) {
     return FALSE;
   }
   m_pStreamAcc = new CPDF_StreamAcc;
-  m_pStreamAcc->LoadAllData(pStream, FALSE, src_pitch.ValueOrDie(), TRUE);
+  m_pStreamAcc->LoadAllData(pStream, FALSE, src_size.ValueOrDie(), TRUE);
   if (m_pStreamAcc->GetSize() == 0 || m_pStreamAcc->GetData() == NULL) {
     return FALSE;
   }
@@ -354,13 +352,13 @@ int CPDF_DIBSource::StartLoadDIBSource(CPDF_Document* pDoc,
   if (m_bDoBpcCheck && (m_bpc == 0 || m_nComponents == 0)) {
     return 0;
   }
-  FX_SAFE_DWORD src_pitch =
-      CalculatePitch8(m_bpc, m_nComponents, m_Width, m_Height);
-  if (!src_pitch.IsValid()) {
+  FX_SAFE_DWORD src_size =
+      CalculatePitch8(m_bpc, m_nComponents, m_Width) * m_Height;
+  if (!src_size.IsValid()) {
     return 0;
   }
   m_pStreamAcc = new CPDF_StreamAcc;
-  m_pStreamAcc->LoadAllData(pStream, FALSE, src_pitch.ValueOrDie(), TRUE);
+  m_pStreamAcc->LoadAllData(pStream, FALSE, src_size.ValueOrDie(), TRUE);
   if (m_pStreamAcc->GetSize() == 0 || m_pStreamAcc->GetData() == NULL) {
     return 0;
   }
@@ -409,12 +407,10 @@ int CPDF_DIBSource::ContinueLoadDIBSource(IFX_Pause* pPause) {
           m_pGlobalStream->LoadAllData(pGlobals, FALSE);
         }
       }
-      ret = pJbig2Module->StartDecode(
-          m_pJbig2Context, m_Width, m_Height, m_pStreamAcc->GetData(),
-          m_pStreamAcc->GetSize(),
-          m_pGlobalStream ? m_pGlobalStream->GetData() : NULL,
-          m_pGlobalStream ? m_pGlobalStream->GetSize() : 0,
-          m_pCachedBitmap->GetBuffer(), m_pCachedBitmap->GetPitch(), pPause);
+      ret = pJbig2Module->StartDecode(m_pJbig2Context, m_pDocument, m_Width,
+                                      m_Height, m_pStreamAcc, m_pGlobalStream,
+                                      m_pCachedBitmap->GetBuffer(),
+                                      m_pCachedBitmap->GetPitch(), pPause);
       if (ret < 0) {
         m_pCachedBitmap.reset();
         delete m_pGlobalStream;
@@ -480,14 +476,13 @@ FX_BOOL CPDF_DIBSource::LoadColorInfo(CPDF_Dictionary* pFormResources,
       CPDF_Object* pFilter = m_pDict->GetElementValue(FX_BSTRC("Filter"));
       if (pFilter) {
         CFX_ByteString filter;
-        if (pFilter->GetType() == PDFOBJ_NAME) {
+        if (pFilter->IsName()) {
           filter = pFilter->GetString();
           if (filter == FX_BSTRC("JPXDecode")) {
             m_bDoBpcCheck = FALSE;
             return TRUE;
           }
-        } else if (pFilter->GetType() == PDFOBJ_ARRAY) {
-          CPDF_Array* pArray = (CPDF_Array*)pFilter;
+        } else if (CPDF_Array* pArray = pFilter->AsArray()) {
           if (pArray->GetString(pArray->GetCount() - 1) ==
               FX_BSTRC("JPXDecode")) {
             m_bDoBpcCheck = FALSE;
@@ -518,7 +513,7 @@ FX_BOOL CPDF_DIBSource::LoadColorInfo(CPDF_Dictionary* pFormResources,
   }
   m_Family = m_pColorSpace->GetFamily();
   m_nComponents = m_pColorSpace->CountComponents();
-  if (m_Family == PDFCS_ICCBASED && pCSObj->GetType() == PDFOBJ_NAME) {
+  if (m_Family == PDFCS_ICCBASED && pCSObj->IsName()) {
     CFX_ByteString cs = pCSObj->GetString();
     if (cs == FX_BSTRC("DeviceGray")) {
       m_nComponents = 1;
@@ -574,8 +569,7 @@ DIB_COMP_DATA* CPDF_DIBSource::GetDecodeAndMaskArray(FX_BOOL& bDefaultDecode,
     if (pMask == NULL) {
       return pCompData;
     }
-    if (pMask->GetType() == PDFOBJ_ARRAY) {
-      CPDF_Array* pArray = (CPDF_Array*)pMask;
+    if (CPDF_Array* pArray = pMask->AsArray()) {
       if (pArray->GetCount() >= m_nComponents * 2) {
         for (FX_DWORD i = 0; i < m_nComponents; i++) {
           int min_num = pArray->GetInteger(i * 2);
@@ -670,13 +664,12 @@ int CPDF_DIBSource::CreateDecoder() {
     return 0;
 
   FX_SAFE_DWORD requested_pitch =
-      CalculatePitch8(m_bpc, m_nComponents, m_Width, 1);
+      CalculatePitch8(m_bpc, m_nComponents, m_Width);
   if (!requested_pitch.IsValid()) {
     return 0;
   }
-  FX_SAFE_DWORD provided_pitch =
-      CalculatePitch8(m_pDecoder->GetBPC(), m_pDecoder->CountComps(),
-                      m_pDecoder->GetWidth(), 1);
+  FX_SAFE_DWORD provided_pitch = CalculatePitch8(
+      m_pDecoder->GetBPC(), m_pDecoder->CountComps(), m_pDecoder->GetWidth());
   if (!provided_pitch.IsValid()) {
     return 0;
   }
@@ -742,7 +735,7 @@ void CPDF_DIBSource::LoadJpxBitmap() {
   }
   m_pCachedBitmap->Clear(0xFFFFFFFF);
   std::vector<uint8_t> output_offsets(components);
-  for (int i = 0; i < components; ++i)
+  for (FX_DWORD i = 0; i < components; ++i)
     output_offsets[i] = i;
   if (bSwapRGB) {
     output_offsets[0] = 2;
@@ -771,7 +764,7 @@ CPDF_DIBSource* CPDF_DIBSource::LoadMask(FX_DWORD& MatteColor) {
   CPDF_Stream* pSoftMask = m_pDict->GetStream(FX_BSTRC("SMask"));
   if (pSoftMask) {
     CPDF_Array* pMatte = pSoftMask->GetDict()->GetArray(FX_BSTRC("Matte"));
-    if (pMatte != NULL && m_pColorSpace &&
+    if (pMatte && m_pColorSpace &&
         (FX_DWORD)m_pColorSpace->CountComponents() <= m_nComponents) {
       FX_FLOAT* pColor = FX_Alloc(FX_FLOAT, m_nComponents);
       for (FX_DWORD i = 0; i < m_nComponents; i++) {
@@ -785,14 +778,12 @@ CPDF_DIBSource* CPDF_DIBSource::LoadMask(FX_DWORD& MatteColor) {
     }
     return LoadMaskDIB(pSoftMask);
   }
-  CPDF_Object* pMask = m_pDict->GetElementValue(FX_BSTRC("Mask"));
-  if (pMask == NULL) {
-    return NULL;
-  }
-  if (pMask->GetType() == PDFOBJ_STREAM) {
-    return LoadMaskDIB((CPDF_Stream*)pMask);
-  }
-  return NULL;
+
+  if (CPDF_Stream* pStream =
+          ToStream(m_pDict->GetElementValue(FX_BSTRC("Mask"))))
+    return LoadMaskDIB(pStream);
+
+  return nullptr;
 }
 int CPDF_DIBSource::StratLoadMask() {
   m_MatteColor = 0XFFFFFFFF;
@@ -813,14 +804,9 @@ int CPDF_DIBSource::StratLoadMask() {
     }
     return StartLoadMaskDIB();
   }
-  m_pMaskStream = m_pDict->GetElementValue(FX_BSTRC("Mask"));
-  if (m_pMaskStream == NULL) {
-    return 1;
-  }
-  if (m_pMaskStream->GetType() == PDFOBJ_STREAM) {
-    return StartLoadMaskDIB();
-  }
-  return 1;
+
+  m_pMaskStream = ToStream(m_pDict->GetElementValue(FX_BSTRC("Mask")));
+  return m_pMaskStream ? StartLoadMaskDIB() : 1;
 }
 int CPDF_DIBSource::ContinueLoadMaskDIB(IFX_Pause* pPause) {
   if (m_pMask == NULL) {
@@ -855,17 +841,16 @@ CPDF_DIBSource* CPDF_DIBSource::LoadMaskDIB(CPDF_Stream* pMask) {
 }
 int CPDF_DIBSource::StartLoadMaskDIB() {
   m_pMask = new CPDF_DIBSource;
-  int ret = m_pMask->StartLoadDIBSource(
-      m_pDocument, (CPDF_Stream*)m_pMaskStream, FALSE, NULL, NULL, TRUE);
+  int ret = m_pMask->StartLoadDIBSource(m_pDocument, m_pMaskStream, FALSE,
+                                        nullptr, nullptr, TRUE);
   if (ret == 2) {
-    if (m_Status == 0) {
+    if (m_Status == 0)
       m_Status = 2;
-    }
     return 2;
   }
   if (!ret) {
     delete m_pMask;
-    m_pMask = NULL;
+    m_pMask = nullptr;
     return 1;
   }
   return 1;
@@ -943,7 +928,7 @@ void CPDF_DIBSource::ValidateDictParam() {
   m_bpc = m_bpc_orig;
   CPDF_Object* pFilter = m_pDict->GetElementValue(FX_BSTRC("Filter"));
   if (pFilter) {
-    if (pFilter->GetType() == PDFOBJ_NAME) {
+    if (pFilter->IsName()) {
       CFX_ByteString filter = pFilter->GetString();
       if (filter == FX_BSTRC("CCITTFaxDecode") ||
           filter == FX_BSTRC("JBIG2Decode")) {
@@ -957,8 +942,7 @@ void CPDF_DIBSource::ValidateDictParam() {
       } else if (filter == FX_BSTRC("DCTDecode")) {
         m_bpc = 8;
       }
-    } else if (pFilter->GetType() == PDFOBJ_ARRAY) {
-      CPDF_Array* pArray = (CPDF_Array*)pFilter;
+    } else if (CPDF_Array* pArray = pFilter->AsArray()) {
       if (pArray->GetString(pArray->GetCount() - 1) ==
               FX_BSTRC("CCITTFaxDecode") ||
           pArray->GetString(pArray->GetCount() - 1) ==
@@ -1102,7 +1086,7 @@ const uint8_t* CPDF_DIBSource::GetScanline(int line) const {
   if (m_bpc == 0) {
     return nullptr;
   }
-  FX_SAFE_DWORD src_pitch = CalculatePitch8(m_bpc, m_nComponents, m_Width, 1);
+  FX_SAFE_DWORD src_pitch = CalculatePitch8(m_bpc, m_nComponents, m_Width);
   if (!src_pitch.IsValid())
     return nullptr;
   FX_DWORD src_pitch_value = src_pitch.ValueOrDie();
@@ -1248,7 +1232,7 @@ void CPDF_DIBSource::DownSampleScanline(int line,
   }
 
   FX_DWORD src_width = m_Width;
-  FX_SAFE_DWORD pitch = CalculatePitch8(m_bpc, m_nComponents, m_Width, 1);
+  FX_SAFE_DWORD pitch = CalculatePitch8(m_bpc, m_nComponents, m_Width);
   if (!pitch.IsValid())
     return;
 

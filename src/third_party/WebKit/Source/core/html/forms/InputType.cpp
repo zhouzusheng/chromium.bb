@@ -489,7 +489,7 @@ void InputType::disableSecureTextInput()
 
 void InputType::accessKeyAction(bool)
 {
-    element().focus(false);
+    element().focus(FocusParams(SelectionBehaviorOnFocus::Reset, WebFocusTypeNone, nullptr));
 }
 
 void InputType::countUsage()
@@ -559,6 +559,10 @@ bool InputType::shouldDispatchFormControlChangeEvent(String& oldValue, String& n
     return !equalIgnoringNullity(oldValue, newValue);
 }
 
+void InputType::dispatchSearchEvent()
+{
+}
+
 void InputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
     element().setValueInternal(sanitizedValue, eventBehavior);
@@ -596,6 +600,11 @@ String InputType::visibleValue() const
 String InputType::sanitizeValue(const String& proposedValue) const
 {
     return proposedValue;
+}
+
+String InputType::sanitizeUserInputValue(const String& proposedValue) const
+{
+    return sanitizeValue(proposedValue);
 }
 
 void InputType::warnIfValueIsInvalidAndElementIsVisible(const String& value) const
@@ -684,7 +693,7 @@ bool InputType::supportsReadOnly() const
 
 String InputType::defaultToolTip() const
 {
-    return String();
+    return validationMessage();
 }
 
 Decimal InputType::findClosestTickMarkValue(const Decimal&)

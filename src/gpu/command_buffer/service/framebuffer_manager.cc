@@ -87,8 +87,6 @@ class RenderbufferAttachment
     renderbuffer_->AddToSignature(signature);
   }
 
-  void OnWillRenderTo() const override {}
-  void OnDidRenderTo() const override {}
   bool FormsFeedbackLoop(TextureRef* /* texture */,
                          GLint /*level */) const override {
     return false;
@@ -107,11 +105,13 @@ class TextureAttachment
     : public Framebuffer::Attachment {
  public:
   TextureAttachment(
-      TextureRef* texture_ref, GLenum target, GLint level, GLsizei samples)
+      TextureRef* texture_ref, GLenum target, GLint level,
+      GLsizei samples, GLint layer)
       : texture_ref_(texture_ref),
         target_(target),
         level_(level),
-        samples_(samples) {
+        samples_(samples),
+        layer_(layer) {
   }
 
   GLsizei width() const override {
@@ -148,6 +148,8 @@ class TextureAttachment
 
   GLsizei samples() const override { return samples_; }
 
+  GLint layer() const { return layer_; }
+
   GLuint object_name() const override { return texture_ref_->client_id(); }
 
   bool cleared() const override {
@@ -179,7 +181,6 @@ class TextureAttachment
 
   void DetachFromFramebuffer(Framebuffer* framebuffer) const override {
     texture_ref_->texture()->DetachFromFramebuffer();
-    framebuffer->OnTextureRefDetached(texture_ref_.get());
   }
 
   bool ValidForAttachmentType(GLenum attachment_type,
@@ -214,14 +215,6 @@ class TextureAttachment
         texture_ref_.get(), target_, level_, signature);
   }
 
-  void OnWillRenderTo() const override {
-    texture_ref_->texture()->OnWillModifyPixels();
-  }
-
-  void OnDidRenderTo() const override {
-    texture_ref_->texture()->OnDidModifyPixels();
-  }
-
   bool FormsFeedbackLoop(TextureRef* texture, GLint level) const override {
     return texture == texture_ref_.get() && level == level_;
   }
@@ -234,13 +227,10 @@ class TextureAttachment
   GLenum target_;
   GLint level_;
   GLsizei samples_;
+  GLint layer_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureAttachment);
 };
-
-FramebufferManager::TextureDetachObserver::TextureDetachObserver() {}
-
-FramebufferManager::TextureDetachObserver::~TextureDetachObserver() {}
 
 FramebufferManager::FramebufferManager(
     uint32 max_draw_buffers,
@@ -689,7 +679,23 @@ void Framebuffer::AttachTexture(
     a->DetachFromFramebuffer(this);
   if (texture_ref) {
     attachments_[attachment] = scoped_refptr<Attachment>(
-        new TextureAttachment(texture_ref, target, level, samples));
+        new TextureAttachment(texture_ref, target, level, samples, 0));
+    texture_ref->texture()->AttachToFramebuffer();
+  } else {
+    attachments_.erase(attachment);
+  }
+  framebuffer_complete_state_count_id_ = 0;
+}
+
+void Framebuffer::AttachTextureLayer(
+    GLenum attachment, TextureRef* texture_ref, GLenum target,
+    GLint level, GLint layer) {
+  const Attachment* a = GetAttachment(attachment);
+  if (a)
+    a->DetachFromFramebuffer(this);
+  if (texture_ref) {
+    attachments_[attachment] = scoped_refptr<Attachment>(
+        new TextureAttachment(texture_ref, target, level, 0, layer));
     texture_ref->texture()->AttachToFramebuffer();
   } else {
     attachments_.erase(attachment);
@@ -711,28 +717,6 @@ const Framebuffer::Attachment* Framebuffer::GetReadBufferAttachment() const {
   if (read_buffer_ == GL_NONE)
     return nullptr;
   return GetAttachment(read_buffer_);
-}
-
-void Framebuffer::OnTextureRefDetached(TextureRef* texture) {
-  manager_->OnTextureRefDetached(texture);
-}
-
-void Framebuffer::OnWillRenderTo(GLenum attachment) const {
-  for (AttachmentMap::const_iterator it = attachments_.begin();
-       it != attachments_.end(); ++it) {
-    if (attachment == 0 || attachment == it->first) {
-      it->second->OnWillRenderTo();
-    }
-  }
-}
-
-void Framebuffer::OnDidRenderTo(GLenum attachment) const {
-  for (AttachmentMap::const_iterator it = attachments_.begin();
-       it != attachments_.end(); ++it) {
-    if (attachment == 0 || attachment == it->first) {
-      it->second->OnDidRenderTo();
-    }
-  }
 }
 
 bool FramebufferManager::GetClientId(
@@ -770,16 +754,6 @@ bool FramebufferManager::IsComplete(
   DCHECK(framebuffer);
   return framebuffer->framebuffer_complete_state_count_id() ==
       framebuffer_state_change_count_;
-}
-
-void FramebufferManager::OnTextureRefDetached(TextureRef* texture) {
-  for (TextureDetachObserverVector::iterator it =
-           texture_detach_observers_.begin();
-       it != texture_detach_observers_.end();
-       ++it) {
-    TextureDetachObserver* observer = *it;
-    observer->OnTextureRefDetachedFromFramebuffer(texture);
-  }
 }
 
 }  // namespace gles2

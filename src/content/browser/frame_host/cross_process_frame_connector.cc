@@ -7,6 +7,7 @@
 #include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_manager.h"
 #include "content/browser/compositor/surface_utils.h"
+#include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/render_frame_host_manager.h"
 #include "content/browser/frame_host/render_frame_proxy_host.h"
@@ -163,6 +164,19 @@ void CrossProcessFrameConnector::GetScreenInfo(blink::WebScreenInfo* results) {
     static_cast<RenderWidgetHostViewBase*>(rwhv)->GetScreenInfo(results);
 }
 
+void CrossProcessFrameConnector::UpdateCursor(const WebCursor& cursor) {
+  RenderWidgetHostViewBase* root_view = GetRootRenderWidgetHostView();
+  if (root_view)
+    root_view->UpdateCursor(cursor);
+}
+
+bool CrossProcessFrameConnector::HasFocus() {
+  RenderWidgetHostViewBase* root_view = GetRootRenderWidgetHostView();
+  if (root_view)
+    return root_view->HasFocus();
+  return false;
+}
+
 void CrossProcessFrameConnector::OnForwardInputEvent(
     const blink::WebInputEvent* event) {
   if (!view_)
@@ -173,7 +187,7 @@ void CrossProcessFrameConnector::OnForwardInputEvent(
   RenderWidgetHostImpl* parent_widget =
       manager->ForInnerDelegate()
           ? manager->GetOuterRenderWidgetHostForKeyboardInput()
-          : frame_proxy_in_parent_renderer_->GetRenderViewHost();
+          : frame_proxy_in_parent_renderer_->GetRenderViewHost()->GetWidget();
 
   if (blink::WebInputEvent::isKeyboardEventType(event->type)) {
     if (!parent_widget->GetLastKeyboardEvent())
@@ -216,6 +230,21 @@ void CrossProcessFrameConnector::SetSize(gfx::Rect frame_rect) {
   child_frame_rect_ = frame_rect;
   if (view_)
     view_->SetSize(frame_rect.size());
+}
+
+RenderWidgetHostViewBase*
+CrossProcessFrameConnector::GetRootRenderWidgetHostView() {
+  RenderFrameHostImpl* top_host = frame_proxy_in_parent_renderer_->
+      frame_tree_node()->frame_tree()->root()->current_frame_host();
+
+  // This method should return the root RWHV from the top-level WebContents,
+  // in the case of nested WebContents.
+  while (top_host->frame_tree_node()->render_manager()->ForInnerDelegate()) {
+    top_host = top_host->frame_tree_node()->render_manager()->
+        GetOuterDelegateNode()->frame_tree()->root()->current_frame_host();
+  }
+
+  return static_cast<RenderWidgetHostViewBase*>(top_host->GetView());
 }
 
 }  // namespace content

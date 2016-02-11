@@ -56,10 +56,12 @@
 #include "modules/push_messaging/PushMessageData.h"
 #include "modules/serviceworkers/ExtendableEvent.h"
 #include "modules/serviceworkers/FetchEvent.h"
+#include "modules/serviceworkers/InstallEvent.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScope.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebCrossOriginServiceWorkerClient.h"
+#include "public/platform/modules/background_sync/WebSyncRegistration.h"
 #include "public/platform/modules/notifications/WebNotificationData.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerEventResult.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
@@ -122,7 +124,12 @@ void ServiceWorkerGlobalScopeProxy::dispatchInstallEvent(int eventID)
 {
     ASSERT(m_workerGlobalScope);
     WaitUntilObserver* observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Install, eventID);
-    RefPtrWillBeRawPtr<Event> event(ExtendableEvent::create(EventTypeNames::install, ExtendableEventInit(), observer));
+    RefPtrWillBeRawPtr<Event> event;
+    if (RuntimeEnabledFeatures::foreignFetchEnabled()) {
+        event = InstallEvent::create(EventTypeNames::install, ExtendableEventInit(), observer);
+    } else {
+        event = ExtendableEvent::create(EventTypeNames::install, ExtendableEventInit(), observer);
+    }
     m_workerGlobalScope->dispatchExtendableEvent(event.release(), observer);
 }
 
@@ -163,7 +170,7 @@ void ServiceWorkerGlobalScopeProxy::dispatchServicePortConnectEvent(WebServicePo
     collection->dispatchConnectEvent(callbacks.release(), targetURL, origin, portID);
 }
 
-void ServiceWorkerGlobalScopeProxy::dispatchSyncEvent(int eventID, const WebSyncRegistration& registration)
+void ServiceWorkerGlobalScopeProxy::dispatchSyncEvent(int eventID, const WebSyncRegistration& registration, LastChanceOption lastChance)
 {
     ASSERT(m_workerGlobalScope);
     if (!RuntimeEnabledFeatures::backgroundSyncEnabled()) {
@@ -171,7 +178,7 @@ void ServiceWorkerGlobalScopeProxy::dispatchSyncEvent(int eventID, const WebSync
         return;
     }
     WaitUntilObserver* observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Sync, eventID);
-    RefPtrWillBeRawPtr<Event> event(SyncEvent::create(EventTypeNames::sync, SyncRegistration::create(registration, m_workerGlobalScope->registration()), observer));
+    RefPtrWillBeRawPtr<Event> event(SyncEvent::create(EventTypeNames::sync, registration.tag, lastChance == IsLastChance, observer));
     m_workerGlobalScope->dispatchExtendableEvent(event.release(), observer);
 }
 
@@ -198,7 +205,7 @@ void ServiceWorkerGlobalScopeProxy::reportConsoleMessage(PassRefPtrWillBeRawPtr<
 
 void ServiceWorkerGlobalScopeProxy::postMessageToPageInspector(const String& message)
 {
-    m_document.postInspectorTask(FROM_HERE, createCrossThreadTask(&WebEmbeddedWorkerImpl::postMessageToPageInspector, &m_embeddedWorker, message));
+    m_document.postInspectorTask(BLINK_FROM_HERE, createCrossThreadTask(&WebEmbeddedWorkerImpl::postMessageToPageInspector, &m_embeddedWorker, message));
 }
 
 void ServiceWorkerGlobalScopeProxy::didEvaluateWorkerScript(bool success)
@@ -222,7 +229,7 @@ void ServiceWorkerGlobalScopeProxy::workerGlobalScopeStarted(WorkerGlobalScope* 
 
 void ServiceWorkerGlobalScopeProxy::workerGlobalScopeClosed()
 {
-    m_document.postTask(FROM_HERE, createCrossThreadTask(&WebEmbeddedWorkerImpl::terminateWorkerContext, &m_embeddedWorker));
+    m_document.postTask(BLINK_FROM_HERE, createCrossThreadTask(&WebEmbeddedWorkerImpl::terminateWorkerContext, &m_embeddedWorker));
 }
 
 void ServiceWorkerGlobalScopeProxy::willDestroyWorkerGlobalScope()

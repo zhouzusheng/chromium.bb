@@ -14,33 +14,34 @@
 #include <vector>
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/logging.h"
 #include "webrtc/common.h"
 #include "webrtc/common_video/interface/incoming_video_stream.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/frame_callback.h"
 #include "webrtc/modules/pacing/include/paced_sender.h"
 #include "webrtc/modules/pacing/include/packet_router.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_receiver.h"
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
-#include "webrtc/modules/utility/interface/process_thread.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_receiver.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
+#include "webrtc/modules/utility/include/process_thread.h"
 #include "webrtc/modules/video_coding/main/interface/video_coding.h"
 #include "webrtc/modules/video_processing/main/interface/video_processing.h"
-#include "webrtc/modules/video_render/include/video_render_defines.h"
-#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/metrics.h"
-#include "webrtc/system_wrappers/interface/thread_wrapper.h"
+#include "webrtc/modules/video_render/video_render_defines.h"
+#include "webrtc/system_wrappers/include/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/include/metrics.h"
+#include "webrtc/system_wrappers/include/thread_wrapper.h"
 #include "webrtc/video/receive_statistics_proxy.h"
 #include "webrtc/video_engine/call_stats.h"
 #include "webrtc/video_engine/payload_router.h"
 #include "webrtc/video_engine/report_block_stats.h"
-#include "webrtc/video_engine/vie_defines.h"
 
 namespace webrtc {
 
 const int kMaxDecodeWaitTimeMs = 50;
 static const int kMaxTargetDelayMs = 10000;
-static const float kMaxIncompleteTimeMultiplier = 3.5f;
+const int kMinSendSidePacketHistorySize = 600;
+const int kMaxPacketAgeToNack = 450;
+const int kMaxNackListSize = 250;
 
 // Helper class receiving statistics callbacks.
 class ChannelStatsObserver : public CallStatsObserver {
@@ -109,12 +110,13 @@ ViEChannel::ViEChannel(uint32_t number_of_cores,
       packet_router_(packet_router),
       bandwidth_observer_(bandwidth_observer),
       transport_feedback_observer_(transport_feedback_observer),
-      nack_history_size_sender_(kSendSidePacketHistorySize),
+      nack_history_size_sender_(kMinSendSidePacketHistorySize),
       max_nack_reordering_threshold_(kMaxPacketAgeToNack),
       pre_render_callback_(NULL),
       report_block_stats_sender_(new ReportBlockStats()),
       time_of_first_rtt_ms_(-1),
       rtt_sum_ms_(0),
+      last_rtt_ms_(0),
       num_rtts_(0),
       rtp_rtcp_modules_(
           CreateRtpRtcpModules(!sender,
@@ -138,12 +140,13 @@ ViEChannel::ViEChannel(uint32_t number_of_cores,
 }
 
 int32_t ViEChannel::Init() {
+  static const int kDefaultRenderDelayMs = 10;
   module_process_thread_->RegisterModule(vie_receiver_.GetReceiveStatistics());
 
   // RTP/RTCP initialization.
   module_process_thread_->RegisterModule(rtp_rtcp_modules_[0]);
 
-  rtp_rtcp_modules_[0]->SetKeyFrameRequestMethod(kKeyFrameReqFirRtp);
+  rtp_rtcp_modules_[0]->SetKeyFrameRequestMethod(kKeyFrameReqPliRtcp);
   if (paced_sender_) {
     for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_)
       rtp_rtcp->SetStorePacketsStatus(true, nack_history_size_sender_);
@@ -160,7 +163,7 @@ int32_t ViEChannel::Init() {
   vcm_->RegisterFrameTypeCallback(this);
   vcm_->RegisterReceiveStatisticsCallback(this);
   vcm_->RegisterDecoderTimingCallback(this);
-  vcm_->SetRenderDelay(kViEDefaultRenderDelayMs);
+  vcm_->SetRenderDelay(kDefaultRenderDelayMs);
 
   module_process_thread_->RegisterModule(vcm_);
   module_process_thread_->RegisterModule(&vie_sync_);
@@ -561,43 +564,16 @@ int ViEChannel::SetSenderBufferingMode(int target_delay_ms) {
   }
   if (target_delay_ms == 0) {
     // Real-time mode.
-    nack_history_size_sender_ = kSendSidePacketHistorySize;
+    nack_history_size_sender_ = kMinSendSidePacketHistorySize;
   } else {
     nack_history_size_sender_ = GetRequiredNackListSize(target_delay_ms);
     // Don't allow a number lower than the default value.
-    if (nack_history_size_sender_ < kSendSidePacketHistorySize) {
-      nack_history_size_sender_ = kSendSidePacketHistorySize;
+    if (nack_history_size_sender_ < kMinSendSidePacketHistorySize) {
+      nack_history_size_sender_ = kMinSendSidePacketHistorySize;
     }
   }
   for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_)
     rtp_rtcp->SetStorePacketsStatus(true, nack_history_size_sender_);
-  return 0;
-}
-
-int ViEChannel::SetReceiverBufferingMode(int target_delay_ms) {
-  if ((target_delay_ms < 0) || (target_delay_ms > kMaxTargetDelayMs)) {
-    LOG(LS_ERROR) << "Invalid receive buffer delay value.";
-    return -1;
-  }
-  int max_nack_list_size;
-  int max_incomplete_time_ms;
-  if (target_delay_ms == 0) {
-    // Real-time mode - restore default settings.
-    max_nack_reordering_threshold_ = kMaxPacketAgeToNack;
-    max_nack_list_size = kMaxNackListSize;
-    max_incomplete_time_ms = 0;
-  } else {
-    max_nack_list_size =  3 * GetRequiredNackListSize(target_delay_ms) / 4;
-    max_nack_reordering_threshold_ = max_nack_list_size;
-    // Calculate the max incomplete time and round to int.
-    max_incomplete_time_ms = static_cast<int>(kMaxIncompleteTimeMultiplier *
-        target_delay_ms + 0.5f);
-  }
-  vcm_->SetNackSettings(max_nack_list_size, max_nack_reordering_threshold_,
-                       max_incomplete_time_ms);
-  vcm_->SetMinReceiverDelay(target_delay_ms);
-  if (vie_sync_.SetTargetBufferingDelay(target_delay_ms) < 0)
-    return -1;
   return 0;
 }
 
@@ -606,15 +582,6 @@ int ViEChannel::GetRequiredNackListSize(int target_delay_ms) {
   // the number of packets (frames) resulting from the increased delay.
   // Roughly estimating for ~40 packets per frame @ 30fps.
   return target_delay_ms * 40 * 30 / 1000;
-}
-
-int32_t ViEChannel::SetKeyFrameRequestMethod(
-    const KeyFrameRequestMethod method) {
-  return rtp_rtcp_modules_[0]->SetKeyFrameRequestMethod(method);
-}
-
-void ViEChannel::EnableRemb(bool enable) {
-  rtp_rtcp_modules_[0]->SetREMBStatus(enable);
 }
 
 int ViEChannel::SetSendTimestampOffsetStatus(bool enable, int id) {
@@ -701,11 +668,6 @@ void ViEChannel::SetRtcpXrRrtrStatus(bool enable) {
   rtp_rtcp_modules_[0]->SetRtcpXrRrtrStatus(enable);
 }
 
-void ViEChannel::SetTransmissionSmoothingStatus(bool enable) {
-  RTC_DCHECK(paced_sender_ && "No paced sender registered.");
-  paced_sender_->SetStatus(enable);
-}
-
 void ViEChannel::EnableTMMBR(bool enable) {
   rtp_rtcp_modules_[0]->SetTMMBRStatus(enable);
 }
@@ -734,9 +696,8 @@ int32_t ViEChannel::GetLocalSSRC(uint8_t idx, unsigned int* ssrc) {
   return 0;
 }
 
-int32_t ViEChannel::GetRemoteSSRC(uint32_t* ssrc) {
-  *ssrc = vie_receiver_.GetRemoteSsrc();
-  return 0;
+uint32_t ViEChannel::GetRemoteSSRC() {
+  return vie_receiver_.GetRemoteSsrc();
 }
 
 int ViEChannel::SetRtxSendPayloadType(int payload_type,
@@ -757,6 +718,10 @@ void ViEChannel::SetRtxSendStatus(bool enable) {
 void ViEChannel::SetRtxReceivePayloadType(int payload_type,
                                           int associated_payload_type) {
   vie_receiver_.SetRtxPayloadType(payload_type, associated_payload_type);
+}
+
+void ViEChannel::SetUseRtxPayloadMappingOnRestore(bool val) {
+  vie_receiver_.SetUseRtxPayloadMappingOnRestore(val);
 }
 
 void ViEChannel::SetRtpStateForSsrc(uint32_t ssrc, const RtpState& rtp_state) {
@@ -1068,7 +1033,7 @@ void ViEChannel::OnDecoderTiming(int decode_ms,
     return;
   receive_stats_callback_->OnDecoderTiming(
       decode_ms, max_decode_ms, current_delay_ms, target_delay_ms,
-      jitter_buffer_ms, min_playout_delay_ms, render_delay_ms);
+      jitter_buffer_ms, min_playout_delay_ms, render_delay_ms, last_rtt_ms_);
 }
 
 int32_t ViEChannel::RequestKeyFrame() {
@@ -1102,6 +1067,7 @@ void ViEChannel::OnRttUpdate(int64_t avg_rtt_ms, int64_t max_rtt_ms) {
   if (time_of_first_rtt_ms_ == -1)
     time_of_first_rtt_ms_ = Clock::GetRealTimeClock()->TimeInMilliseconds();
   rtt_sum_ms_ += avg_rtt_ms;
+  last_rtt_ms_ = avg_rtt_ms;
   ++num_rtts_;
 }
 

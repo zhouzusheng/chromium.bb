@@ -44,7 +44,9 @@ class ChromeContentClient : public content::ContentClient {
       content::PepperPluginInfo::PPP_InitializeModuleFunc initialize_module,
       content::PepperPluginInfo::PPP_ShutdownModuleFunc shutdown_module);
 
-  // This returns the most recent plugin based on the plugin versions.
+  // This returns the most recent plugin based on the plugin versions. In the
+  // event of a tie, a debug plugin will be considered more recent than a
+  // non-debug plugin.
   // It does not make sense to call this on a vector that contains more than one
   // plugin type. This function may return a nullptr if given an empty vector.
   // The method is only visible for testing purposes.
@@ -81,7 +83,7 @@ class ChromeContentClient : public content::ContentClient {
 
   void AddServiceWorkerSchemes(std::set<std::string>* schemes) override;
 
-  void AddIsolatedSchemes(std::set<std::string>* schemes) override;
+  bool IsSupplementarySiteIsolationModeEnabled() override;
 };
 
 #endif  // CHROME_COMMON_CHROME_CONTENT_CLIENT_H_

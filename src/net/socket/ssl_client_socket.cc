@@ -15,6 +15,10 @@
 #include "net/ssl/ssl_config_service.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 
+#if defined(USE_OPENSSL)
+#include "net/socket/ssl_client_socket_openssl.h"
+#endif
+
 namespace net {
 
 SSLClientSocket::SSLClientSocket()
@@ -78,6 +82,15 @@ const char* SSLClientSocket::NextProtoStatusToString(
   return NULL;
 }
 
+// static
+void SSLClientSocket::SetSSLKeyLogFile(const std::string& ssl_keylog_file) {
+#if defined(USE_OPENSSL)
+  SSLClientSocketOpenSSL::SetSSLKeyLogFile(ssl_keylog_file);
+#else
+  NOTIMPLEMENTED();
+#endif
+}
+
 bool SSLClientSocket::WasNpnNegotiated() const {
   std::string unused_proto;
   return GetNextProto(&unused_proto) == kNextProtoNegotiated;
@@ -127,14 +140,13 @@ void SSLClientSocket::RecordNegotiationExtension() {
 void SSLClientSocket::RecordChannelIDSupport(
     ChannelIDService* channel_id_service,
     bool negotiated_channel_id,
-    bool channel_id_enabled,
-    bool supports_ecc) {
+    bool channel_id_enabled) {
   // Since this enum is used for a histogram, do not change or re-use values.
   enum {
     DISABLED = 0,
     CLIENT_ONLY = 1,
     CLIENT_AND_SERVER = 2,
-    CLIENT_NO_ECC = 3,
+    // CLIENT_NO_ECC is unused now.
     // CLIENT_BAD_SYSTEM_TIME is unused now.
     CLIENT_BAD_SYSTEM_TIME = 4,
     CLIENT_NO_CHANNEL_ID_SERVICE = 5,
@@ -145,8 +157,6 @@ void SSLClientSocket::RecordChannelIDSupport(
   } else if (channel_id_enabled) {
     if (!channel_id_service)
       supported = CLIENT_NO_CHANNEL_ID_SERVICE;
-    else if (!supports_ecc)
-      supported = CLIENT_NO_ECC;
     else
       supported = CLIENT_ONLY;
   }
@@ -164,10 +174,6 @@ bool SSLClientSocket::IsChannelIDEnabled(
     DVLOG(1) << "NULL channel_id_service_, not enabling channel ID.";
     return false;
   }
-  if (!crypto::ECPrivateKey::IsSupported()) {
-    DVLOG(1) << "Elliptic Curve not supported, not enabling channel ID.";
-    return false;
-  }
   return true;
 }
 
@@ -175,7 +181,7 @@ bool SSLClientSocket::IsChannelIDEnabled(
 bool SSLClientSocket::HasCipherAdequateForHTTP2(
     const std::vector<uint16>& cipher_suites) {
   for (uint16 cipher : cipher_suites) {
-    if (IsSecureTLSCipherSuite(cipher))
+    if (IsTLSCipherSuiteAllowedByHTTP2(cipher))
       return true;
   }
   return false;

@@ -15,8 +15,7 @@
     'webrtc_xmpp': "../webrtc/libjingle/xmpp",
   },
   # Most of these settings have been split according to their scope into
-  # :jingle_unexported_configs, :jingle_public_configs,
-  # :jingle_all_dependent_configs in the GN build.
+  # :jingle_unexported_configs and :jingle_public_config in the GN build.
   'target_defaults': {
     'defines': [
       'ENABLE_EXTERNAL_AUTH',
@@ -35,15 +34,6 @@
       'USE_WEBRTC_DEV_BRANCH',
       'WEBRTC_CHROMIUM_BUILD',
     ],
-    'configurations': {
-      'Debug': {
-        'defines': [
-          # TODO(sergeyu): Fix libjingle to use NDEBUG instead of
-          # _DEBUG and remove this define. See below as well.
-          '_DEBUG',
-        ],
-      }
-    },
     'include_dirs': [
       './overrides',
       '../../third_party/webrtc_overrides',
@@ -157,17 +147,6 @@
         }],
       ],
     },
-    'all_dependent_settings': {
-      'configurations': {
-        'Debug': {
-          'defines': [
-            # TODO(sergeyu): Fix libjingle to use NDEBUG instead of _DEBUG and
-            # remove this define. See above and GN file as well.
-            '_DEBUG',
-          ],
-        }
-      },
-    },
     'variables': {
       'clang_warning_flags_unset': [
         # Don't warn about string->bool used in asserts.
@@ -279,8 +258,6 @@
           'sources': [
             '<(libjingle_source)/talk/app/webrtc/audiotrack.cc',
             '<(libjingle_source)/talk/app/webrtc/audiotrack.h',
-            '<(libjingle_source)/talk/app/webrtc/audiotrackrenderer.cc',
-            '<(libjingle_source)/talk/app/webrtc/audiotrackrenderer.h',
             '<(libjingle_source)/talk/app/webrtc/datachannel.cc',
             '<(libjingle_source)/talk/app/webrtc/datachannel.h',
             '<(libjingle_source)/talk/app/webrtc/dtlsidentitystore.cc',

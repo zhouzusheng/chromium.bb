@@ -43,7 +43,7 @@ template <typename T, size_t inlineCapacity, typename Allocator> class DequeIter
 template <typename T, size_t inlineCapacity, typename Allocator> class DequeIterator;
 template <typename T, size_t inlineCapacity, typename Allocator> class DequeConstIterator;
 
-template <typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator>
+template <typename T, size_t inlineCapacity = 0, typename Allocator = PartitionAllocator>
 class Deque : public ConditionalDestructor<Deque<T, INLINE_CAPACITY, Allocator>, (INLINE_CAPACITY == 0) && Allocator::isGarbageCollected> {
     WTF_USE_ALLOCATOR(Deque, Allocator);
 public:
@@ -158,7 +158,7 @@ private:
     friend class Deque<T, inlineCapacity, Allocator>;
 };
 
-template <typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator>
+template <typename T, size_t inlineCapacity = 0, typename Allocator = PartitionAllocator>
 class DequeIterator : public DequeIteratorBase<T, inlineCapacity, Allocator> {
 private:
     typedef DequeIteratorBase<T, inlineCapacity, Allocator> Base;
@@ -188,7 +188,7 @@ public:
     // postfix -- intentionally omitted
 };
 
-template <typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator>
+template <typename T, size_t inlineCapacity = 0, typename Allocator = PartitionAllocator>
 class DequeConstIterator : public DequeIteratorBase<T, inlineCapacity, Allocator> {
 private:
     typedef DequeIteratorBase<T, inlineCapacity, Allocator> Base;
@@ -214,7 +214,7 @@ public:
 
     bool operator==(const Iterator& other) const { return Base::isEqual(other); }
     bool operator!=(const Iterator& other) const { return !Base::isEqual(other); }
-    
+
     Iterator& operator++() { Base::increment(); return *this; }
     // postfix ++ intentionally omitted
     Iterator& operator--() { Base::decrement(); return *this; }
@@ -228,8 +228,9 @@ inline Deque<T, inlineCapacity, Allocator>::Deque()
 {
     static_assert(!IsPolymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
 #if ENABLE(OILPAN)
-    static_assert(Allocator::isGarbageCollected || !IsAllowOnlyInlineAllocation<T>::value || !NeedsTracing<T>::value, "Cannot put ALLOW_ONLY_INLINE_ALLOCATION objects that have trace methods into an off-heap Deque");
+    static_assert(Allocator::isGarbageCollected || !AllowsOnlyPlacementNew<T>::value || !NeedsTracing<T>::value, "Cannot put DISALLOW_NEW_EXCEPT_PLACEMENT_NEW objects that have trace methods into an off-heap Deque");
 #endif
+    static_assert(Allocator::isGarbageCollected || !IsPointerToGarbageCollectedType<T>::value, "Cannot put raw pointers to garbage-collected classes into a Deque. Use HeapDeque<Member<T>> instead.");
 }
 
 template <typename T, size_t inlineCapacity, typename Allocator>
@@ -547,7 +548,7 @@ void Deque<T, inlineCapacity, Allocator>::trace(VisitorDispatcher visitor)
     ASSERT(Allocator::isGarbageCollected); // Garbage collector must be enabled.
     const T* bufferBegin = m_buffer.buffer();
     const T* end = bufferBegin + m_end;
-    if (ShouldBeTraced<VectorTraits<T>>::value) {
+    if (NeedsTracingTrait<VectorTraits<T>>::value) {
         if (m_start <= m_end) {
             for (const T* bufferEntry = bufferBegin + m_start; bufferEntry != end; bufferEntry++)
                 Allocator::template trace<VisitorDispatcher, T, VectorTraits<T>>(visitor, *const_cast<T*>(bufferEntry));

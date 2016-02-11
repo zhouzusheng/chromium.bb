@@ -4,11 +4,13 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fpdfapi/fpdf_page.h"
-#include "../../../include/fpdfapi/fpdf_module.h"
-#include "../../../include/fxcodec/fx_codec.h"
 #include "pageint.h"
+
 #include <limits.h>
+
+#include "core/include/fpdfapi/fpdf_page.h"
+#include "core/include/fpdfapi/fpdf_module.h"
+#include "core/include/fxcodec/fx_codec.h"
 
 namespace {
 
@@ -327,6 +329,9 @@ class CPDF_CalGray : public CPDF_ColorSpace {
 
 FX_BOOL CPDF_CalGray::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray) {
   CPDF_Dictionary* pDict = pArray->GetDict(1);
+  if (!pDict)
+    return FALSE;
+
   CPDF_Array* pParam = pDict->GetArray(FX_BSTRC("WhitePoint"));
   int i;
   for (i = 0; i < 3; i++) {
@@ -762,10 +767,9 @@ FX_BOOL CPDF_ICCBasedCS::GetRGB(FX_FLOAT* pBuf,
   ICodec_IccModule* pIccModule = CPDF_ModuleMgr::Get()->GetIccModule();
   if (m_pProfile->m_pTransform == NULL || pIccModule == NULL) {
     if (m_pAlterCS) {
-      m_pAlterCS->GetRGB(pBuf, R, G, B);
-    } else {
-      R = G = B = 0.0f;
+      return m_pAlterCS->GetRGB(pBuf, R, G, B);
     }
+    R = G = B = 0.0f;
     return TRUE;
   }
   FX_FLOAT rgb[3];
@@ -907,15 +911,16 @@ FX_BOOL CPDF_IndexedCS::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray) {
     m_pCompMinMax[i * 2 + 1] -= m_pCompMinMax[i * 2];
   }
   m_MaxIndex = pArray->GetInteger(2);
+
   CPDF_Object* pTableObj = pArray->GetElementValue(3);
-  if (pTableObj == NULL) {
+  if (!pTableObj)
     return FALSE;
-  }
-  if (pTableObj->GetType() == PDFOBJ_STRING) {
-    m_Table = ((CPDF_String*)pTableObj)->GetString();
-  } else if (pTableObj->GetType() == PDFOBJ_STREAM) {
+
+  if (CPDF_String* pString = pTableObj->AsString()) {
+    m_Table = pString->GetString();
+  } else if (CPDF_Stream* pStream = pTableObj->AsStream()) {
     CPDF_StreamAcc acc;
-    acc.LoadAllData((CPDF_Stream*)pTableObj, FALSE);
+    acc.LoadAllData(pStream, FALSE);
     m_Table = CFX_ByteStringC(acc.GetData(), acc.GetSize());
   }
   return TRUE;
@@ -944,8 +949,7 @@ FX_BOOL CPDF_IndexedCS::GetRGB(FX_FLOAT* pBuf,
         m_pCompMinMax[i * 2] +
         m_pCompMinMax[i * 2 + 1] * pTable[index * m_nBaseComponents + i] / 255;
   }
-  m_pBaseCS->GetRGB(comps, R, G, B);
-  return TRUE;
+  return m_pBaseCS->GetRGB(comps, R, G, B);
 }
 CPDF_ColorSpace* CPDF_IndexedCS::GetBaseCS() const {
   return m_pBaseCS;
@@ -1058,9 +1062,9 @@ FX_BOOL CPDF_SeparationCS::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray) {
       return FALSE;
     }
     CPDF_Object* pFuncObj = pArray->GetElementValue(3);
-    if (pFuncObj && pFuncObj->GetType() != PDFOBJ_NAME) {
+    if (pFuncObj && !pFuncObj->IsName())
       m_pFunc = CPDF_Function::Load(pFuncObj);
-    }
+
     if (m_pFunc && m_pFunc->CountOutputs() < m_pAltCS->CountComponents()) {
       delete m_pFunc;
       m_pFunc = NULL;
@@ -1084,8 +1088,7 @@ FX_BOOL CPDF_SeparationCS::GetRGB(FX_FLOAT* pBuf,
     for (int i = 0; i < nComps; i++) {
       results[i] = *pBuf;
     }
-    m_pAltCS->GetRGB(results, R, G, B);
-    return TRUE;
+    return m_pAltCS->GetRGB(results, R, G, B);
   }
   CFX_FixedBufGrow<FX_FLOAT, 16> results(m_pFunc->CountOutputs());
   int nresults = 0;
@@ -1094,8 +1097,7 @@ FX_BOOL CPDF_SeparationCS::GetRGB(FX_FLOAT* pBuf,
     return FALSE;
   }
   if (m_pAltCS) {
-    m_pAltCS->GetRGB(results, R, G, B);
-    return TRUE;
+    return m_pAltCS->GetRGB(results, R, G, B);
   }
   R = G = B = 0;
   return FALSE;
@@ -1142,14 +1144,11 @@ void CPDF_DeviceNCS::GetDefaultValue(int iComponent,
   max = 1.0f;
 }
 FX_BOOL CPDF_DeviceNCS::v_Load(CPDF_Document* pDoc, CPDF_Array* pArray) {
-  CPDF_Object* pObj = pArray->GetElementValue(1);
-  if (!pObj) {
+  CPDF_Array* pObj = ToArray(pArray->GetElementValue(1));
+  if (!pObj)
     return FALSE;
-  }
-  if (pObj->GetType() != PDFOBJ_ARRAY) {
-    return FALSE;
-  }
-  m_nComponents = ((CPDF_Array*)pObj)->GetCount();
+
+  m_nComponents = pObj->GetCount();
   CPDF_Object* pAltCS = pArray->GetElementValue(2);
   if (!pAltCS || pAltCS == m_pArray) {
     return FALSE;
@@ -1177,8 +1176,7 @@ FX_BOOL CPDF_DeviceNCS::GetRGB(FX_FLOAT* pBuf,
   if (nresults == 0) {
     return FALSE;
   }
-  m_pAltCS->GetRGB(results, R, G, B);
-  return TRUE;
+  return m_pAltCS->GetRGB(results, R, G, B);
 }
 void CPDF_DeviceNCS::EnableStdConversion(FX_BOOL bEnabled) {
   CPDF_ColorSpace::EnableStdConversion(bEnabled);
@@ -1206,46 +1204,41 @@ CPDF_ColorSpace* _CSFromName(const CFX_ByteString& name) {
   return NULL;
 }
 CPDF_ColorSpace* CPDF_ColorSpace::Load(CPDF_Document* pDoc, CPDF_Object* pObj) {
-  if (pObj == NULL) {
-    return NULL;
-  }
-  if (pObj->GetType() == PDFOBJ_NAME) {
+  if (!pObj)
+    return nullptr;
+  if (pObj->IsName())
     return _CSFromName(pObj->GetString());
-  }
-  if (pObj->GetType() == PDFOBJ_STREAM) {
-    CPDF_Dictionary* pDict = ((CPDF_Stream*)pObj)->GetDict();
-    if (!pDict) {
-      return NULL;
-    }
-    CPDF_ColorSpace* pRet = NULL;
+
+  if (CPDF_Stream* pStream = pObj->AsStream()) {
+    CPDF_Dictionary* pDict = pStream->GetDict();
+    if (!pDict)
+      return nullptr;
+
+    CPDF_ColorSpace* pRet = nullptr;
     FX_POSITION pos = pDict->GetStartPos();
     while (pos) {
       CFX_ByteString bsKey;
       CPDF_Object* pValue = pDict->GetNextElement(pos, bsKey);
-      if (pValue && pValue->GetType() == PDFOBJ_NAME) {
+      if (ToName(pValue))
         pRet = _CSFromName(pValue->GetString());
-      }
-      if (pRet) {
+      if (pRet)
         return pRet;
-      }
     }
-    return NULL;
+    return nullptr;
   }
-  if (pObj->GetType() != PDFOBJ_ARRAY) {
-    return NULL;
-  }
-  CPDF_Array* pArray = (CPDF_Array*)pObj;
-  if (pArray->GetCount() == 0) {
-    return NULL;
-  }
+
+  CPDF_Array* pArray = pObj->AsArray();
+  if (!pArray || pArray->GetCount() == 0)
+    return nullptr;
+
   CPDF_Object* pFamilyObj = pArray->GetElementValue(0);
-  if (!pFamilyObj) {
-    return NULL;
-  }
+  if (!pFamilyObj)
+    return nullptr;
+
   CFX_ByteString familyname = pFamilyObj->GetString();
-  if (pArray->GetCount() == 1) {
+  if (pArray->GetCount() == 1)
     return _CSFromName(familyname);
-  }
+
   CPDF_ColorSpace* pCS = NULL;
   FX_DWORD id = familyname.GetID();
   if (id == FXBSTR_ID('C', 'a', 'l', 'G')) {

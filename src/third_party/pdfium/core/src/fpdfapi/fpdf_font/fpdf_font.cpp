@@ -4,13 +4,14 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../include/fpdfapi/fpdf_module.h"
-#include "../../../include/fpdfapi/fpdf_page.h"
-#include "../../../include/fpdfapi/fpdf_pageobj.h"
-#include "../../../include/fpdfapi/fpdf_resource.h"
-#include "../../../include/fxge/fx_freetype.h"
-#include "../fpdf_page/pageint.h"
 #include "font_int.h"
+
+#include "../fpdf_page/pageint.h"
+#include "core/include/fpdfapi/fpdf_module.h"
+#include "core/include/fpdfapi/fpdf_page.h"
+#include "core/include/fpdfapi/fpdf_pageobj.h"
+#include "core/include/fpdfapi/fpdf_resource.h"
+#include "core/include/fxge/fx_freetype.h"
 
 FX_BOOL FT_UseTTCharmap(FXFT_Face face, int platform_id, int encoding_id) {
   for (int i = 0; i < FXFT_Get_Face_CharmapCount(face); i++) {
@@ -38,7 +39,7 @@ class CFX_StockFontArray {
     FXSYS_memset(m_pStockFonts, 0, sizeof(m_pStockFonts));
   }
   ~CFX_StockFontArray() {
-    for (int i = 0; i < FX_ArraySize(m_pStockFonts); i++) {
+    for (size_t i = 0; i < FX_ArraySize(m_pStockFonts); i++) {
       if (!m_pStockFonts[i])
         continue;
       CPDF_Dictionary* pFontDict = m_pStockFonts[i]->GetFontDict();
@@ -119,7 +120,7 @@ CPDF_Font::~CPDF_Font() {
 
   if (m_pFontFile) {
     m_pDocument->GetPageData()->ReleaseFontFileStreamAcc(
-        (CPDF_Stream*)m_pFontFile->GetStream());
+        const_cast<CPDF_Stream*>(m_pFontFile->GetStream()->AsStream()));
   }
 }
 FX_BOOL CPDF_Font::IsVertWriting() const {
@@ -275,7 +276,7 @@ void CPDF_Font::LoadFontDescriptor(CPDF_Dictionary* pFontDesc) {
   FX_DWORD dwFontSize = m_pFontFile->GetSize();
   if (!m_Font.LoadEmbedded(pFontData, dwFontSize)) {
     m_pDocument->GetPageData()->ReleaseFontFileStreamAcc(
-        (CPDF_Stream*)m_pFontFile->GetStream());
+        const_cast<CPDF_Stream*>(m_pFontFile->GetStream()->AsStream()));
     m_pFontFile = nullptr;
   }
 }
@@ -370,13 +371,13 @@ int CPDF_Font::GetCharTypeWidth(FX_DWORD charcode) {
   }
   return m_Font.GetGlyphWidth(glyph_index);
 }
-int _PDF_GetStandardFontName(CFX_ByteString& name);
+
 CPDF_Font* CPDF_Font::GetStockFont(CPDF_Document* pDoc,
                                    const CFX_ByteStringC& name) {
   CFX_ByteString fontname(name);
-  int font_id = _PDF_GetStandardFontName(fontname);
+  int font_id = PDF_GetStandardFontName(&fontname);
   if (font_id < 0) {
-    return NULL;
+    return nullptr;
   }
   CPDF_FontGlobals* pFontGlobals =
       CPDF_ModuleMgr::Get()->GetPageModule()->GetFontGlobals();
@@ -508,7 +509,9 @@ FX_DWORD CPDF_ToUnicodeMap::ReverseLookup(FX_WCHAR unicode) {
   }
   return 0;
 }
-static FX_DWORD _StringToCode(const CFX_ByteStringC& str) {
+
+// Static.
+FX_DWORD CPDF_ToUnicodeMap::StringToCode(const CFX_ByteStringC& str) {
   const FX_CHAR* buf = str.GetCStr();
   int len = str.GetLength();
   if (len == 0) {
@@ -539,7 +542,7 @@ static FX_DWORD _StringToCode(const CFX_ByteStringC& str) {
   }
   return result;
 }
-static CFX_WideString _StringDataAdd(CFX_WideString str) {
+static CFX_WideString StringDataAdd(CFX_WideString str) {
   CFX_WideString ret;
   int len = str.GetLength();
   FX_WCHAR value = 1;
@@ -557,7 +560,10 @@ static CFX_WideString _StringDataAdd(CFX_WideString str) {
   }
   return ret;
 }
-static CFX_WideString _StringToWideString(const CFX_ByteStringC& str) {
+
+// Static.
+CFX_WideString CPDF_ToUnicodeMap::StringToWideString(
+    const CFX_ByteStringC& str) {
   const FX_CHAR* buf = str.GetCStr();
   int len = str.GetLength();
   if (len == 0) {
@@ -579,6 +585,7 @@ static CFX_WideString _StringToWideString(const CFX_ByteStringC& str) {
         break;
       }
       ch = ch * 16 + digit;
+
       byte_pos++;
       if (byte_pos == 4) {
         result += ch;
@@ -593,7 +600,7 @@ static CFX_WideString _StringToWideString(const CFX_ByteStringC& str) {
   return result;
 }
 void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
-  int CIDSet = 0;
+  CIDSet cid_set = CIDSET_UNKNOWN;
   CPDF_StreamAcc stream;
   stream.LoadAllData(pStream, FALSE);
   CPDF_SimpleParser parser(stream.GetData(), stream.GetSize());
@@ -608,9 +615,9 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
         if (word.IsEmpty() || word == FX_BSTRC("endbfchar")) {
           break;
         }
-        FX_DWORD srccode = _StringToCode(word);
+        FX_DWORD srccode = StringToCode(word);
         word = parser.GetWord();
-        CFX_WideString destcode = _StringToWideString(word);
+        CFX_WideString destcode = StringToWideString(word);
         int len = destcode.GetLength();
         if (len == 0) {
           continue;
@@ -631,9 +638,9 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
           break;
         }
         high = parser.GetWord();
-        FX_DWORD lowcode = _StringToCode(low);
+        FX_DWORD lowcode = StringToCode(low);
         FX_DWORD highcode =
-            (lowcode & 0xffffff00) | (_StringToCode(high) & 0xff);
+            (lowcode & 0xffffff00) | (StringToCode(high) & 0xff);
         if (highcode == (FX_DWORD)-1) {
           break;
         }
@@ -641,7 +648,7 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
         if (start == FX_BSTRC("[")) {
           for (FX_DWORD code = lowcode; code <= highcode; code++) {
             CFX_ByteString dest = parser.GetWord();
-            CFX_WideString destcode = _StringToWideString(dest);
+            CFX_WideString destcode = StringToWideString(dest);
             int len = destcode.GetLength();
             if (len == 0) {
               continue;
@@ -656,11 +663,11 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
           }
           parser.GetWord();
         } else {
-          CFX_WideString destcode = _StringToWideString(start);
+          CFX_WideString destcode = StringToWideString(start);
           int len = destcode.GetLength();
           FX_DWORD value = 0;
           if (len == 1) {
-            value = _StringToCode(start);
+            value = StringToCode(start);
             for (FX_DWORD code = lowcode; code <= highcode; code++) {
               m_Map[code] = value++;
             }
@@ -670,7 +677,7 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
               if (code == lowcode) {
                 retcode = destcode;
               } else {
-                retcode = _StringDataAdd(destcode);
+                retcode = StringDataAdd(destcode);
               }
               m_Map[code] = m_MultiCharBuf.GetLength() * 0x10000 + 0xffff;
               m_MultiCharBuf.AppendChar(retcode.GetLength());
@@ -681,20 +688,20 @@ void CPDF_ToUnicodeMap::Load(CPDF_Stream* pStream) {
         }
       }
     } else if (word == FX_BSTRC("/Adobe-Korea1-UCS2")) {
-      CIDSet = CIDSET_KOREA1;
+      cid_set = CIDSET_KOREA1;
     } else if (word == FX_BSTRC("/Adobe-Japan1-UCS2")) {
-      CIDSet = CIDSET_JAPAN1;
+      cid_set = CIDSET_JAPAN1;
     } else if (word == FX_BSTRC("/Adobe-CNS1-UCS2")) {
-      CIDSet = CIDSET_CNS1;
+      cid_set = CIDSET_CNS1;
     } else if (word == FX_BSTRC("/Adobe-GB1-UCS2")) {
-      CIDSet = CIDSET_GB1;
+      cid_set = CIDSET_GB1;
     }
   }
-  if (CIDSet) {
+  if (cid_set) {
     m_pBaseMap = CPDF_ModuleMgr::Get()
                      ->GetPageModule()
                      ->GetFontGlobals()
-                     ->m_CMapManager.GetCID2UnicodeMap(CIDSet, FALSE);
+                     ->m_CMapManager.GetCID2UnicodeMap(cid_set, FALSE);
   } else {
     m_pBaseMap = NULL;
   }
@@ -728,7 +735,7 @@ void CPDF_Font::LoadPDFEncoding(CPDF_Object* pEncoding,
     }
     return;
   }
-  if (pEncoding->GetType() == PDFOBJ_NAME) {
+  if (pEncoding->IsName()) {
     if (iBaseEncoding == PDFFONT_ENCODING_ADOBE_SYMBOL ||
         iBaseEncoding == PDFFONT_ENCODING_ZAPFDINGBATS) {
       return;
@@ -746,10 +753,11 @@ void CPDF_Font::LoadPDFEncoding(CPDF_Object* pEncoding,
     GetPredefinedEncoding(iBaseEncoding, bsEncoding);
     return;
   }
-  if (pEncoding->GetType() != PDFOBJ_DICTIONARY) {
+
+  CPDF_Dictionary* pDict = pEncoding->AsDictionary();
+  if (!pDict)
     return;
-  }
-  CPDF_Dictionary* pDict = (CPDF_Dictionary*)pEncoding;
+
   if (iBaseEncoding != PDFFONT_ENCODING_ADOBE_SYMBOL &&
       iBaseEncoding != PDFFONT_ENCODING_ZAPFDINGBATS) {
     CFX_ByteString bsEncoding = pDict->GetString(FX_BSTRC("BaseEncoding"));
@@ -769,19 +777,19 @@ void CPDF_Font::LoadPDFEncoding(CPDF_Object* pEncoding,
   FX_DWORD cur_code = 0;
   for (FX_DWORD i = 0; i < pDiffs->GetCount(); i++) {
     CPDF_Object* pElement = pDiffs->GetElementValue(i);
-    if (pElement == NULL) {
+    if (!pElement)
       continue;
-    }
-    if (pElement->GetType() == PDFOBJ_NAME) {
-      if (cur_code < 256) {
-        pCharNames[cur_code] = ((CPDF_Name*)pElement)->GetString();
-      }
+
+    if (CPDF_Name* pName = pElement->AsName()) {
+      if (cur_code < 256)
+        pCharNames[cur_code] = pName->GetString();
       cur_code++;
     } else {
       cur_code = pElement->GetInteger();
     }
   }
 }
+
 FX_BOOL CPDF_Font::IsStandardFont() const {
   if (m_FontType != PDFFONT_TYPE1)
     return FALSE;
@@ -1001,7 +1009,7 @@ CPDF_Type1Font::CPDF_Type1Font() : CPDF_SimpleFont(PDFFONT_TYPE1) {
   m_Base14Font = -1;
 }
 FX_BOOL CPDF_Type1Font::_Load() {
-  m_Base14Font = _PDF_GetStandardFontName(m_BaseFont);
+  m_Base14Font = PDF_GetStandardFontName(&m_BaseFont);
   if (m_Base14Font >= 0) {
     CPDF_Dictionary* pFontDesc =
         m_pFontDict->GetDict(FX_BSTRC("FontDescriptor"));
@@ -1636,27 +1644,20 @@ void CPDF_TrueTypeFont::LoadGlyphMap() {
     m_GlyphIndex[charcode] = charcode;
   }
 }
-CPDF_Type3Font::CPDF_Type3Font() : CPDF_SimpleFont(PDFFONT_TYPE3) {
-  m_pPageResources = NULL;
-  FXSYS_memset(m_CharWidthL, 0, sizeof m_CharWidthL);
+
+CPDF_Type3Font::CPDF_Type3Font()
+    : CPDF_SimpleFont(PDFFONT_TYPE3),
+      m_pCharProcs(nullptr),
+      m_pPageResources(nullptr),
+      m_pFontResources(nullptr) {
+  FXSYS_memset(m_CharWidthL, 0, sizeof(m_CharWidthL));
 }
+
 CPDF_Type3Font::~CPDF_Type3Font() {
-  FX_POSITION pos = m_CacheMap.GetStartPosition();
-  while (pos) {
-    void* key;
-    void* value;
-    m_CacheMap.GetNextAssoc(pos, key, value);
-    delete (CPDF_Type3Char*)value;
-  }
-  m_CacheMap.RemoveAll();
-  pos = m_DeletedMap.GetStartPosition();
-  while (pos) {
-    void* key;
-    void* value;
-    m_DeletedMap.GetNextAssoc(pos, key, value);
-    delete (CPDF_Type3Char*)key;
-  }
+  for (auto it : m_CacheMap)
+    delete it.second;
 }
+
 FX_BOOL CPDF_Type3Font::_Load() {
   m_pFontResources = m_pFontDict->GetDict(FX_BSTRC("Resources"));
   CPDF_Array* pMatrix = m_pFontDict->GetArray(FX_BSTRC("FontMatrix"));
@@ -1707,82 +1708,89 @@ FX_BOOL CPDF_Type3Font::_Load() {
 void CPDF_Type3Font::CheckType3FontMetrics() {
   CheckFontMetrics();
 }
+
 CPDF_Type3Char* CPDF_Type3Font::LoadChar(FX_DWORD charcode, int level) {
-  if (level >= _FPDF_MAX_TYPE3_FORM_LEVEL_) {
-    return NULL;
-  }
-  CPDF_Type3Char* pChar = NULL;
-  if (m_CacheMap.Lookup((void*)(uintptr_t)charcode, (void*&)pChar)) {
-    if (pChar->m_bPageRequired && m_pPageResources) {
-      delete pChar;
-      m_CacheMap.RemoveKey((void*)(uintptr_t)charcode);
-      return LoadChar(charcode, level + 1);
-    }
-    return pChar;
-  }
+  if (level >= _FPDF_MAX_TYPE3_FORM_LEVEL_)
+    return nullptr;
+
+  auto it = m_CacheMap.find(charcode);
+  if (it != m_CacheMap.end())
+    return it->second;
+
   const FX_CHAR* name =
       GetAdobeCharName(m_BaseEncoding, m_pCharNames, charcode);
-  if (name == NULL) {
-    return NULL;
-  }
+  if (!name)
+    return nullptr;
+
   CPDF_Stream* pStream =
-      (CPDF_Stream*)(m_pCharProcs ? m_pCharProcs->GetElementValue(name) : NULL);
-  if (pStream == NULL || pStream->GetType() != PDFOBJ_STREAM) {
-    return NULL;
-  }
-  pChar = new CPDF_Type3Char;
-  pChar->m_pForm = new CPDF_Form(
+      ToStream(m_pCharProcs ? m_pCharProcs->GetElementValue(name) : nullptr);
+  if (!pStream)
+    return nullptr;
+
+  nonstd::unique_ptr<CPDF_Type3Char> pNewChar(new CPDF_Type3Char(new CPDF_Form(
       m_pDocument, m_pFontResources ? m_pFontResources : m_pPageResources,
-      pStream, NULL);
-  pChar->m_pForm->ParseContent(NULL, NULL, pChar, NULL, level + 1);
+      pStream, nullptr)));
+
+  // This can trigger recursion into this method. The content of |m_CacheMap|
+  // can change as a result. Thus after it returns, check the cache again for
+  // a cache hit.
+  pNewChar->m_pForm->ParseContent(nullptr, nullptr, pNewChar.get(), nullptr,
+                                  level + 1);
+  it = m_CacheMap.find(charcode);
+  if (it != m_CacheMap.end())
+    return it->second;
+
   FX_FLOAT scale = m_FontMatrix.GetXUnit();
-  pChar->m_Width = (int32_t)(pChar->m_Width * scale + 0.5f);
-  FX_RECT& rcBBox = pChar->m_BBox;
+  pNewChar->m_Width = (int32_t)(pNewChar->m_Width * scale + 0.5f);
+  FX_RECT& rcBBox = pNewChar->m_BBox;
   CFX_FloatRect char_rect(
       (FX_FLOAT)rcBBox.left / 1000.0f, (FX_FLOAT)rcBBox.bottom / 1000.0f,
       (FX_FLOAT)rcBBox.right / 1000.0f, (FX_FLOAT)rcBBox.top / 1000.0f);
-  if (rcBBox.right <= rcBBox.left || rcBBox.bottom >= rcBBox.top) {
-    char_rect = pChar->m_pForm->CalcBoundingBox();
-  }
+  if (rcBBox.right <= rcBBox.left || rcBBox.bottom >= rcBBox.top)
+    char_rect = pNewChar->m_pForm->CalcBoundingBox();
+
   char_rect.Transform(&m_FontMatrix);
   rcBBox.left = FXSYS_round(char_rect.left * 1000);
   rcBBox.right = FXSYS_round(char_rect.right * 1000);
   rcBBox.top = FXSYS_round(char_rect.top * 1000);
   rcBBox.bottom = FXSYS_round(char_rect.bottom * 1000);
-  m_CacheMap.SetAt((void*)(uintptr_t)charcode, pChar);
-  if (pChar->m_pForm->CountObjects() == 0) {
-    delete pChar->m_pForm;
-    pChar->m_pForm = NULL;
+
+  FXSYS_assert(m_CacheMap.find(charcode) == m_CacheMap.end());
+  CPDF_Type3Char* pCachedChar = pNewChar.release();
+  m_CacheMap[charcode] = pCachedChar;
+  if (pCachedChar->m_pForm->CountObjects() == 0) {
+    delete pCachedChar->m_pForm;
+    pCachedChar->m_pForm = nullptr;
   }
-  return pChar;
+  return pCachedChar;
 }
+
 int CPDF_Type3Font::GetCharWidthF(FX_DWORD charcode, int level) {
-  if (charcode > 0xff) {
+  if (charcode >= FX_ArraySize(m_CharWidthL))
     charcode = 0;
-  }
-  if (m_CharWidthL[charcode]) {
+
+  if (m_CharWidthL[charcode])
     return m_CharWidthL[charcode];
-  }
-  CPDF_Type3Char* pChar = LoadChar(charcode, level);
-  if (pChar == NULL) {
-    return 0;
-  }
-  return pChar->m_Width;
+
+  const CPDF_Type3Char* pChar = LoadChar(charcode, level);
+  return pChar ? pChar->m_Width : 0;
 }
+
 void CPDF_Type3Font::GetCharBBox(FX_DWORD charcode, FX_RECT& rect, int level) {
-  CPDF_Type3Char* pChar = LoadChar(charcode, level);
-  if (pChar == NULL) {
-    rect.left = rect.right = rect.top = rect.bottom = 0;
+  const CPDF_Type3Char* pChar = LoadChar(charcode, level);
+  if (!pChar) {
+    rect.left = 0;
+    rect.right = 0;
+    rect.top = 0;
+    rect.bottom = 0;
     return;
   }
   rect = pChar->m_BBox;
 }
-CPDF_Type3Char::CPDF_Type3Char() {
-  m_pForm = NULL;
-  m_pBitmap = NULL;
-  m_bPageRequired = FALSE;
-  m_bColored = FALSE;
-}
+
+CPDF_Type3Char::CPDF_Type3Char(CPDF_Form* pForm)
+    : m_pForm(pForm), m_pBitmap(nullptr), m_bColored(FALSE) {}
+
 CPDF_Type3Char::~CPDF_Type3Char() {
   delete m_pForm;
   delete m_pBitmap;

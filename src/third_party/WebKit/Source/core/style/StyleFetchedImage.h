@@ -34,7 +34,7 @@ class Document;
 class ImageResource;
 
 class StyleFetchedImage final : public StyleImage, private ImageResourceClient {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleFetchedImage);
+    USING_FAST_MALLOC_WILL_BE_REMOVED(StyleFetchedImage);
 public:
     static PassRefPtrWillBeRawPtr<StyleFetchedImage> create(ImageResource* image, Document* document)
     {
@@ -59,6 +59,7 @@ public:
     void addClient(LayoutObject*) override;
     void removeClient(LayoutObject*) override;
     void notifyFinished(Resource*) override;
+    String debugName() const override { return "StyleFetchedImage"; }
     PassRefPtr<Image> image(const LayoutObject*, const IntSize&) const override;
     bool knownToBeOpaque(const LayoutObject*) const override;
     ImageResource* cachedImage() const override;

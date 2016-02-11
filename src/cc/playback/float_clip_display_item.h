@@ -23,12 +23,12 @@ class CC_EXPORT FloatClipDisplayItem : public DisplayItem {
 
   void SetNew(const gfx::RectF& clip_rect);
 
+  void ToProtobuf(proto::DisplayItem* proto) const override;
+  void FromProtobuf(const proto::DisplayItem& proto) override;
   void Raster(SkCanvas* canvas,
               const gfx::Rect& canvas_target_playback_rect,
               SkPicture::AbortCallback* callback) const override;
   void AsValueInto(base::trace_event::TracedValue* array) const override;
-  void ProcessForBounds(
-      DisplayItemListBoundsCalculator* calculator) const override;
 
  private:
   gfx::RectF clip_rect_;
@@ -43,12 +43,12 @@ class CC_EXPORT EndFloatClipDisplayItem : public DisplayItem {
     return make_scoped_ptr(new EndFloatClipDisplayItem());
   }
 
+  void ToProtobuf(proto::DisplayItem* proto) const override;
+  void FromProtobuf(const proto::DisplayItem& proto) override;
   void Raster(SkCanvas* canvas,
               const gfx::Rect& canvas_target_playback_rect,
               SkPicture::AbortCallback* callback) const override;
   void AsValueInto(base::trace_event::TracedValue* array) const override;
-  void ProcessForBounds(
-      DisplayItemListBoundsCalculator* calculator) const override;
 };
 
 }  // namespace cc

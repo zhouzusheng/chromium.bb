@@ -43,7 +43,7 @@ struct SSLConfig;
 enum DefaultMaxValues {
     kDefaultMaxSocketsPerProxyServer = 32,
     kDefaultMaxSocketsPerGroupNormal = 6,
-    kDefaultMaxSocketsPerGroupWebSocket = 30,
+    kDefaultMaxSocketsPerGroupWebSocket = 255,
 };
 
 class NET_EXPORT_PRIVATE ClientSocketPoolManager {

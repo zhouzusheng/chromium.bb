@@ -42,15 +42,17 @@ class TRACING_EXPORT ChildTraceMessageFilter : public IPC::MessageFilter {
   ~ChildTraceMessageFilter() override;
 
  private:
+  friend class ChildTraceMessageFilterTest;
+
   // Message handlers.
   void OnBeginTracing(const std::string& trace_config_str,
-                      base::TraceTicks browser_time,
+                      base::TimeTicks browser_time,
                       uint64 tracing_process_id);
   void OnEndTracing();
   void OnCancelTracing();
-  void OnEnableMonitoring(const std::string& trace_config_str,
-                          base::TraceTicks browser_time);
-  void OnDisableMonitoring();
+  void OnStartMonitoring(const std::string& trace_config_str,
+                          base::TimeTicks browser_time);
+  void OnStopMonitoring();
   void OnCaptureMonitoringSnapshot();
   void OnGetTraceLogStatus();
   void OnSetWatchEvent(const std::string& category_name,
@@ -62,13 +64,16 @@ class TRACING_EXPORT ChildTraceMessageFilter : public IPC::MessageFilter {
   void OnGlobalMemoryDumpResponse(uint64 dump_guid, bool success);
   void OnSetUMACallback(const std::string& histogram_name,
                         int histogram_lower_value,
-                        int histogram_upper_value);
+                        int histogram_upper_value,
+                        bool repeat);
   void OnClearUMACallback(const std::string& histogram_name);
   void OnHistogramChanged(const std::string& histogram_name,
                           base::Histogram::Sample reference_lower_value,
                           base::Histogram::Sample reference_upper_value,
+                          bool repeat,
                           base::Histogram::Sample actual_value);
   void SendTriggerMessage(const std::string& histogram_name);
+  void SendAbortBackgroundTracingMessage();
 
   // Callback from trace subsystem.
   void OnTraceDataCollected(
@@ -80,6 +85,8 @@ class TRACING_EXPORT ChildTraceMessageFilter : public IPC::MessageFilter {
       bool has_more_events);
 
   void OnProcessMemoryDumpDone(uint64 dump_guid, bool success);
+
+  void SetSenderForTesting(IPC::Sender* sender);
 
   IPC::Sender* sender_;
   base::SingleThreadTaskRunner* ipc_task_runner_;

@@ -5,6 +5,7 @@
 #include "media/base/audio_renderer_mixer_input.h"
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "media/base/audio_renderer_mixer.h"
 
 namespace media {
@@ -14,8 +15,8 @@ AudioRendererMixerInput::AudioRendererMixerInput(
     const RemoveMixerCB& remove_mixer_cb,
     const std::string& device_id,
     const url::Origin& security_origin)
-    : playing_(false),
-      initialized_(false),
+    : initialized_(false),
+      playing_(false),
       volume_(1.0f),
       get_mixer_cb_(get_mixer_cb),
       remove_mixer_cb_(remove_mixer_cb),
@@ -27,15 +28,14 @@ AudioRendererMixerInput::AudioRendererMixerInput(
                            base::Unretained(this))) {}
 
 AudioRendererMixerInput::~AudioRendererMixerInput() {
-  DCHECK(!playing_);
   DCHECK(!mixer_);
 }
 
 void AudioRendererMixerInput::Initialize(
     const AudioParameters& params,
     AudioRendererSink::RenderCallback* callback) {
+  DCHECK(!mixer_);
   DCHECK(callback);
-  DCHECK(!initialized_);
 
   params_ = params;
   callback_ = callback;
@@ -44,7 +44,6 @@ void AudioRendererMixerInput::Initialize(
 
 void AudioRendererMixerInput::Start() {
   DCHECK(initialized_);
-  DCHECK(!playing_);
   DCHECK(!mixer_);
   mixer_ = get_mixer_cb_.Run(params_, device_id_, security_origin_, nullptr);
   if (!mixer_) {
@@ -54,6 +53,12 @@ void AudioRendererMixerInput::Start() {
 
   // Note: OnRenderError() may be called immediately after this call returns.
   mixer_->AddErrorCallback(error_cb_);
+
+  if (!pending_switch_callback_.is_null()) {
+    SwitchOutputDevice(pending_switch_device_id_,
+                       pending_switch_security_origin_,
+                       base::ResetAndReturn(&pending_switch_callback_));
+  }
 }
 
 void AudioRendererMixerInput::Stop() {
@@ -72,13 +77,15 @@ void AudioRendererMixerInput::Stop() {
     remove_mixer_cb_.Run(params_, device_id_, security_origin_);
     mixer_ = NULL;
   }
+
+  if (!pending_switch_callback_.is_null()) {
+    base::ResetAndReturn(&pending_switch_callback_)
+        .Run(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL);
+  }
 }
 
 void AudioRendererMixerInput::Play() {
-  DCHECK(initialized_);
-  DCHECK(mixer_);
-
-  if (playing_)
+  if (playing_ || !mixer_)
     return;
 
   mixer_->AddMixerInput(this);
@@ -86,10 +93,7 @@ void AudioRendererMixerInput::Play() {
 }
 
 void AudioRendererMixerInput::Pause() {
-  DCHECK(initialized_);
-  DCHECK(mixer_);
-
-  if (!playing_)
+  if (!playing_ || !mixer_)
     return;
 
   mixer_->RemoveMixerInput(this);
@@ -110,10 +114,18 @@ void AudioRendererMixerInput::SwitchOutputDevice(
     const url::Origin& security_origin,
     const SwitchOutputDeviceCB& callback) {
   if (!mixer_) {
-    callback.Run(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL);
+    if (pending_switch_callback_.is_null()) {
+      pending_switch_callback_ = callback;
+      pending_switch_device_id_ = device_id;
+      pending_switch_security_origin_ = security_origin;
+    } else {
+      callback.Run(OUTPUT_DEVICE_STATUS_ERROR_INTERNAL);
+    }
+
     return;
   }
 
+  DCHECK(pending_switch_callback_.is_null());
   if (device_id == device_id_) {
     callback.Run(OUTPUT_DEVICE_STATUS_OK);
     return;

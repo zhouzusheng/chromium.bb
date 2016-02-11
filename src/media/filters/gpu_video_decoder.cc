@@ -60,8 +60,7 @@ GpuVideoDecoder::BufferData::BufferData(
 
 GpuVideoDecoder::BufferData::~BufferData() {}
 
-GpuVideoDecoder::GpuVideoDecoder(
-    const scoped_refptr<GpuVideoAcceleratorFactories>& factories)
+GpuVideoDecoder::GpuVideoDecoder(GpuVideoAcceleratorFactories* factories)
     : needs_bitstream_conversion_(false),
       factories_(factories),
       state_(kNormal),
@@ -70,7 +69,7 @@ GpuVideoDecoder::GpuVideoDecoder(
       next_bitstream_buffer_id_(0),
       available_pictures_(0),
       weak_factory_(this) {
-  DCHECK(factories_.get());
+  DCHECK(factories_);
 }
 
 void GpuVideoDecoder::Reset(const base::Closure& closure)  {
@@ -129,11 +128,18 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
   DVLOG(3) << "Initialize()";
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DCHECK(config.IsValidConfig());
-  DCHECK(!config.is_encrypted());
 
   InitCB bound_init_cb =
       base::Bind(&ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB,
                  BindToCurrentLoop(init_cb));
+
+#if !defined(OS_ANDROID)
+  if (config.is_encrypted()) {
+    DVLOG(1) << "Encrypted stream not supported.";
+    bound_init_cb.Run(false);
+    return;
+  }
+#endif
 
   bool previously_initialized = config_.IsValidConfig();
   DVLOG(1) << "(Re)initializing GVD with config: "
@@ -205,6 +211,8 @@ void GpuVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
   DCHECK(pending_reset_cb_.is_null());
 
+  DVLOG(3) << __FUNCTION__ << " " << buffer->AsHumanReadableString();
+
   DecodeCB bound_decode_cb = BindToCurrentLoop(decode_cb);
 
   if (state_ == kError || !vda_) {
@@ -246,6 +254,10 @@ void GpuVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
   BitstreamBuffer bitstream_buffer(next_bitstream_buffer_id_,
                                    shm_buffer->shm->handle(), size,
                                    buffer->timestamp());
+
+  if (buffer->decrypt_config())
+    bitstream_buffer.SetDecryptConfig(*buffer->decrypt_config());
+
   // Mask against 30 bits, to avoid (undefined) wraparound on signed integer.
   next_bitstream_buffer_id_ = (next_bitstream_buffer_id_ + 1) & 0x3FFFFFFF;
   DCHECK(!ContainsKey(bitstream_buffers_in_decoder_, bitstream_buffer.id()));
@@ -404,8 +416,8 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
 
   scoped_refptr<VideoFrame> frame(VideoFrame::WrapNativeTexture(
       PIXEL_FORMAT_ARGB,
-      gpu::MailboxHolder(pb.texture_mailbox(), decoder_texture_target_,
-                         0 /* sync_point */),
+      gpu::MailboxHolder(pb.texture_mailbox(), gpu::SyncToken(),
+                         decoder_texture_target_),
       BindToCurrentLoop(base::Bind(
           &GpuVideoDecoder::ReleaseMailbox, weak_factory_.GetWeakPtr(),
           factories_, picture.picture_buffer_id(), pb.texture_id())),
@@ -443,12 +455,12 @@ void GpuVideoDecoder::DeliverFrame(
 // static
 void GpuVideoDecoder::ReleaseMailbox(
     base::WeakPtr<GpuVideoDecoder> decoder,
-    const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
+    media::GpuVideoAcceleratorFactories* factories,
     int64 picture_buffer_id,
     uint32 texture_id,
-    uint32 release_sync_point) {
+    const gpu::SyncToken& release_sync_token) {
   DCHECK(factories->GetTaskRunner()->BelongsToCurrentThread());
-  factories->WaitSyncPoint(release_sync_point);
+  factories->WaitSyncToken(release_sync_token);
 
   if (decoder) {
     decoder->ReusePictureBuffer(picture_buffer_id);

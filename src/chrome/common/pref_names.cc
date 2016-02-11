@@ -423,6 +423,15 @@ const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
 const char kInstantUIZeroSuggestUrlPrefix[] =
     "instant_ui.zero_suggest_url_prefix";
 
+// A boolean pref set to true if prediction of network actions is allowed.
+// Actions include DNS prefetching, TCP and SSL preconnection, prerendering
+// of web pages, and resource prefetching.
+// NOTE: The "dns_prefetching.enabled" value is used so that historical user
+// preferences are not lost.
+// TODO(bnc): Remove kNetworkPredictionEnabled once kNetworkPredictionOptions
+// is functioning as per crbug.com/334602.
+const char kNetworkPredictionEnabled[] = "dns_prefetching.enabled";
+
 // A preference of enum chrome_browser_net::NetworkPredictionOptions shows
 // if prediction of network actions is allowed, depending on network type.
 // Actions include DNS prefetching, TCP and SSL preconnection, prerendering
@@ -790,8 +799,15 @@ const char kFileSystemProviderMounted[] = "file_system_provider.mounted";
 // A boolean pref set to true if the virtual keyboard should be enabled.
 const char kTouchVirtualKeyboardEnabled[] = "ui.touch_virtual_keyboard_enabled";
 
-// A boolean pref that controls whether wake on SSID is enabled.
-const char kWakeOnWifiSsid[] = "settings.internet.wake_on_wifi_ssid";
+// Boolean prefs for the status of the touch screen and the touchpad.
+const char kTouchScreenEnabled[] = "events.touch_screen.enabled";
+const char kTouchPadEnabled[] = "events.touch_pad.enabled";
+
+// A boolean pref that controls whether the dark connect feature is enabled.
+// The dark connect feature allows a Chrome OS device to periodically wake
+// from suspend in a low-power state to maintain WiFi connectivity.
+const char kWakeOnWifiDarkConnect[] =
+    "settings.internet.wake_on_wifi_darkconnect";
 
 // This is the policy CaptivePortalAuthenticationIgnoresProxy that allows to
 // open captive portal authentication pages in a separate window under
@@ -1098,6 +1114,11 @@ const char kPrintingEnabled[] = "printing.enabled";
 // Boolean controlling whether print preview is disabled.
 const char kPrintPreviewDisabled[] = "printing.print_preview_disabled";
 
+// A pref holding the value of the policy used to control default destination
+// selection in the Print Preview. See DefaultPrinterSelection policy.
+const char kPrintPreviewDefaultDestinationSelectionRules[] =
+    "printing.default_destination_selection_rules";
+
 // An integer pref specifying the fallback behavior for sites outside of content
 // packs. One of:
 // 0: Allow (does nothing)
@@ -1158,10 +1179,6 @@ const char kFullscreenAllowed[] = "fullscreen.allowed";
 const char kLocalDiscoveryNotificationsEnabled[] =
     "local_discovery.notifications_enabled";
 
-// How many Service Workers are registered with the Push API (could be zero).
-const char kPushMessagingRegistrationCount[] =
-    "gcm.push_messaging_registration_count";
-
 // Maps from app ids to origin + Service Worker registration ID.
 const char kPushMessagingAppIdentifierMap[] =
     "gcm.push_messaging_application_id_map";
@@ -1197,14 +1214,19 @@ const char kToolbarIconSurfacingBubbleLastShowTime[] =
 
 #if defined(ENABLE_WEBRTC)
 // Whether WebRTC should bind to individual NICs to explore all possible routing
-// options. Default is true.
+// options. Default is true. This has become obsoleted and replaced by
+// kWebRTCIPHandlingPolicy. TODO(guoweis): Remove this at M50.
 const char kWebRTCMultipleRoutesEnabled[] = "webrtc.multiple_routes_enabled";
 // Whether WebRTC should use non-proxied UDP. If false, WebRTC will not send UDP
 // unless it goes through a proxy (i.e RETURN when it's available).  If no UDP
 // proxy is configured, it will not send UDP.  If true, WebRTC will send UDP
-// regardless of whether or not a proxy is configured.
+// regardless of whether or not a proxy is configured. TODO(guoweis): Remove
+// this at M50.
 const char kWebRTCNonProxiedUdpEnabled[] =
     "webrtc.nonproxied_udp_enabled";
+// Define the IP handling policy override that WebRTC should follow. When not
+// set, it defaults to "default".
+const char kWebRTCIPHandlingPolicy[] = "webrtc.ip_handling_policy";
 #endif
 
 // *************** LOCAL STATE ***************
@@ -1244,15 +1266,6 @@ const char kProfileInfoCache[] = "profile.info_cache";
 // explanation of why this redundancy is needed.
 const char kProfileResetPromptMementosInLocalState[] =
     "profile.reset_prompt_mementos";
-
-// Prefs for SSLConfigServicePref.
-const char kCertRevocationCheckingEnabled[] = "ssl.rev_checking.enabled";
-const char kCertRevocationCheckingRequiredLocalAnchors[] =
-    "ssl.rev_checking.required_for_local_anchors";
-const char kSSLVersionMin[] = "ssl.version_min";
-const char kSSLVersionMax[] = "ssl.version_max";
-const char kSSLVersionFallbackMin[] = "ssl.version_fallback_min";
-const char kCipherSuiteBlacklist[] = "ssl.cipher_suites.blacklist";
 
 // Boolean that specifies whether or not crash reports are sent
 // over the network for analysis.
@@ -1309,14 +1322,6 @@ const char kStabilityPluginLaunches[] = "launches";
 const char kStabilityPluginInstances[] = "instances";
 const char kStabilityPluginCrashes[] = "crashes";
 const char kStabilityPluginLoadingErrors[] = "loading_errors";
-
-// The keys below are strictly increasing counters over the lifetime of
-// a chrome installation. They are (optionally) sent up to the uninstall
-// survey in the event of uninstallation.
-const char kUninstallLastLaunchTimeSec[] =
-    "uninstall_metrics.last_launch_time_sec";
-const char kUninstallLastObservedRunTimeSec[] =
-    "uninstall_metrics.last_observed_running_time_sec";
 
 // String containing the version of Chrome for which Chrome will not prompt the
 // user about setting Chrome as the default browser.
@@ -1426,8 +1431,10 @@ const char kShutdownNumProcessesSlow[] = "shutdown.num_processes_slow";
 // before shutting everything down.
 const char kRestartLastSessionOnShutdown[] = "restart.last.session.on.shutdown";
 
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 // Set before autorestarting Chrome, cleared on clean exit.
 const char kWasRestarted[] = "was.restarted";
+#endif
 
 #if defined(OS_WIN)
 // Preference to be used while relaunching Chrome. This preference dictates if
@@ -1513,11 +1520,6 @@ const char kDevToolsPreferences[] = "devtools.preferences";
 // A boolean specifying whether remote dev tools debugging is enabled.
 const char kDevToolsRemoteEnabled[] = "devtools.remote_enabled";
 #endif
-
-// Boolean indicating that TiclInvalidationService should use GCM channel.
-// False or lack of settings means XMPPPushClient channel.
-const char kInvalidationServiceUseGCMChannel[] =
-    "invalidation_service.use_gcm_channel";
 
 // Local hash of authentication password, used for off-line authentication
 // when on-line authentication is not available.
@@ -1611,10 +1613,6 @@ const char kRegisteredBackgroundContents[] = "background_contents.registered";
 #if defined(OS_WIN)
 // The "major.minor" OS version for which the welcome page was last shown.
 const char kLastWelcomedOSVersion[] = "browser.last_welcomed_os_version";
-
-// An int that stores how often we've shown the "Chrome is configured to
-// auto-launch" infobar.
-const char kShownAutoLaunchInfobar[] = "browser.shown_autolaunch_infobar";
 
 // Boolean that specifies whether or not showing the welcome page following an
 // OS upgrade is enabled. True by default. May be set by master_preferences or
@@ -1972,6 +1970,7 @@ const char kCustomHandlersEnabled[] = "custom_handlers.enabled";
 // by the cloud policy subsystem.
 const char kDevicePolicyRefreshRate[] = "policy.device_refresh_rate";
 
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
 // A boolean where true means that the browser has previously attempted to
 // enable autoupdate and failed, so the next out-of-date browser start should
 // not prompt the user to enable autoupdate, it should offer to reinstall Chrome
@@ -1989,6 +1988,7 @@ const char kMediaGalleriesRememberedGalleries[] =
 
 // The last time a media scan completed.
 const char kMediaGalleriesLastScanTime[] = "media_galleries.last_scan_time";
+#endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
 #if defined(USE_ASH)
 // |kShelfAlignment| and |kShelfAutoHideBehavior| have a local variant. The
@@ -2199,5 +2199,8 @@ const char kAnimationPolicy[] = "settings.a11y.animation_policy";
 #endif
 
 const char kBackgroundTracingLastUpload[] = "background_tracing.last_upload";
+
+const char kAllowDinosaurEasterEgg[] =
+    "allow_dinosaur_easter_egg";
 
 }  // namespace prefs

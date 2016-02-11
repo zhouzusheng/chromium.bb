@@ -147,6 +147,7 @@ const QuicTag kCFCW = TAG('C', 'F', 'C', 'W');   // Initial session/connection
                                                  // flow control receive window.
 const QuicTag kUAID = TAG('U', 'A', 'I', 'D');   // Client's User Agent ID.
 const QuicTag kXLCT = TAG('X', 'L', 'C', 'T');   // Expected leaf certificate.
+const QuicTag kTBKP = TAG('T', 'B', 'K', 'P');   // Token Binding key params.
 
 // Rejection tags
 const QuicTag kRREJ = TAG('R', 'R', 'E', 'J');   // Reasons for server sending
@@ -191,6 +192,8 @@ const QuicTag kSourceAddressTokenTag =
     TAG('S', 'T', 'K', 0);  // Source-address token
 const QuicTag kCertificateTag =
     TAG('C', 'R', 'T', 255);  // Certificate chain
+const QuicTag kCertificateSCTTag =
+    TAG('C', 'S', 'C', 'T');  // Signed cert timestamp (RFC6962) of leaf cert.
 
 #undef TAG
 

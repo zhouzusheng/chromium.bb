@@ -66,6 +66,7 @@
 #elif defined(OS_MACOSX)
 #include "content/browser/compositor/browser_compositor_overlay_candidate_validator_mac.h"
 #include "content/browser/compositor/software_output_device_mac.h"
+#include "ui/base/cocoa/remote_layer_api.h"
 #endif
 
 using cc::ContextProvider;
@@ -132,11 +133,16 @@ GpuProcessTransportFactory::~GpuProcessTransportFactory() {
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
 GpuProcessTransportFactory::CreateOffscreenCommandBufferContext() {
+#if defined(OS_ANDROID)
+  // TODO(mfomitchev): crbug.com/546716
+  return CreateContextCommon(scoped_refptr<GpuChannelHost>(nullptr), 0);
+#else
   CauseForGpuLaunch cause =
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE;
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       BrowserGpuChannelHostFactory::instance()->EstablishGpuChannelSync(cause));
   return CreateContextCommon(gpu_channel_host, 0);
+#endif  // OS_ANDROID
 }
 
 scoped_ptr<cc::SoftwareOutputDevice>
@@ -176,8 +182,11 @@ CreateOverlayCandidateValidator(gfx::AcceleratedWidget widget) {
             widget, overlay_candidates.Pass()));
   }
 #elif defined(OS_MACOSX)
-  return make_scoped_ptr(
-      new BrowserCompositorOverlayCandidateValidatorMac(widget));
+  // Overlays are only supported through the remote layer API.
+  if (ui::RemoteLayerAPISupported()) {
+    return make_scoped_ptr(
+        new BrowserCompositorOverlayCandidateValidatorMac(widget));
+  }
 #endif
   return scoped_ptr<BrowserCompositorOverlayCandidateValidator>();
 }
@@ -230,7 +239,14 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
     int num_attempts) {
   if (!compositor)
     return;
-  PerCompositorData* data = per_compositor_data_[compositor.get()];
+
+  // The widget might have been released in the meantime.
+  PerCompositorDataMap::iterator it =
+      per_compositor_data_.find(compositor.get());
+  if (it == per_compositor_data_.end())
+    return;
+
+  PerCompositorData* data = it->second;
   DCHECK(data);
 
   if (num_attempts > kNumRetriesBeforeSoftwareFallback) {
@@ -494,11 +510,14 @@ void GpuProcessTransportFactory::RemoveObserver(
 }
 
 #if defined(OS_MACOSX)
-void GpuProcessTransportFactory::OnSurfaceDisplayed(int surface_id) {
+void GpuProcessTransportFactory::OnGpuSwapBuffersCompleted(
+    int surface_id,
+    const std::vector<ui::LatencyInfo>& latency_info,
+    gfx::SwapResult result) {
   BrowserCompositorOutputSurface* surface = output_surface_map_.Lookup(
       surface_id);
   if (surface)
-    surface->OnSurfaceDisplayed();
+    surface->OnGpuSwapBuffersCompleted(latency_info, result);
 }
 
 void GpuProcessTransportFactory::SetCompositorSuspendedForRecycle(

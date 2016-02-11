@@ -11,7 +11,7 @@
 
 namespace blink {
 
-void BeginTransform3DDisplayItem::replay(GraphicsContext& context)
+void BeginTransform3DDisplayItem::replay(GraphicsContext& context) const
 {
     TransformationMatrix transform(m_transform);
     transform.applyTransformOrigin(m_transformOrigin);
@@ -19,12 +19,12 @@ void BeginTransform3DDisplayItem::replay(GraphicsContext& context)
     context.concatCTM(transform.toAffineTransform());
 }
 
-void BeginTransform3DDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void BeginTransform3DDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
     // TODO(jbroman): The compositor will need the transform origin separately.
     TransformationMatrix transform(m_transform);
     transform.applyTransformOrigin(m_transformOrigin);
-    list->appendTransformItem(TransformationMatrix::toSkMatrix44(transform));
+    list->appendTransformItem(visualRect, TransformationMatrix::toSkMatrix44(transform));
 }
 
 #ifndef NDEBUG
@@ -45,14 +45,14 @@ void BeginTransform3DDisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder
 }
 #endif
 
-void EndTransform3DDisplayItem::replay(GraphicsContext& context)
+void EndTransform3DDisplayItem::replay(GraphicsContext& context) const
 {
     context.restore();
 }
 
-void EndTransform3DDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
+void EndTransform3DDisplayItem::appendToWebDisplayItemList(const IntRect& visualRect, WebDisplayItemList* list) const
 {
-    list->appendEndTransformItem();
+    list->appendEndTransformItem(visualRect);
 }
 
 } // namespace blink

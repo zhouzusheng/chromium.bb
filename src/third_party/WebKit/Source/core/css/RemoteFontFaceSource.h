@@ -29,6 +29,7 @@ public:
     void didStartFontLoad(FontResource*) override;
     void fontLoaded(FontResource*) override;
     void fontLoadWaitLimitExceeded(FontResource*) override;
+    String debugName() const override { return "RemoteFontFaceSource"; }
 
     // For UMA reporting
     bool hadBlankText() override { return m_histograms.hadBlankText(); }
@@ -43,7 +44,7 @@ protected:
 
 private:
     class FontLoadHistograms {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         FontLoadHistograms() : m_loadStartTime(0), m_fallbackPaintTime(0) { }
         void loadStarted();

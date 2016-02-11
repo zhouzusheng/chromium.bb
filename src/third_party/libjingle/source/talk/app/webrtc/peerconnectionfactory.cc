@@ -29,6 +29,7 @@
 
 #include "talk/app/webrtc/audiotrack.h"
 #include "talk/app/webrtc/localaudiosource.h"
+#include "talk/app/webrtc/mediastream.h"
 #include "talk/app/webrtc/mediastreamproxy.h"
 #include "talk/app/webrtc/mediastreamtrackproxy.h"
 #include "talk/app/webrtc/peerconnection.h"
@@ -217,6 +218,21 @@ bool PeerConnectionFactory::StartAecDump(rtc::PlatformFile file) {
   return channel_manager_->StartAecDump(file);
 }
 
+void PeerConnectionFactory::StopAecDump() {
+  RTC_DCHECK(signaling_thread_->IsCurrent());
+  channel_manager_->StopAecDump();
+}
+
+bool PeerConnectionFactory::StartRtcEventLog(rtc::PlatformFile file) {
+  RTC_DCHECK(signaling_thread_->IsCurrent());
+  return channel_manager_->StartRtcEventLog(file);
+}
+
+void PeerConnectionFactory::StopRtcEventLog() {
+  RTC_DCHECK(signaling_thread_->IsCurrent());
+  channel_manager_->StopRtcEventLog();
+}
+
 rtc::scoped_refptr<PeerConnectionInterface>
 PeerConnectionFactory::CreatePeerConnection(
     const PeerConnectionInterface::RTCConfiguration& configuration,
@@ -278,9 +294,11 @@ PeerConnectionFactory::CreateAudioTrack(const std::string& id,
   return AudioTrackProxy::Create(signaling_thread_, track);
 }
 
-cricket::ChannelManager* PeerConnectionFactory::channel_manager() {
+webrtc::MediaControllerInterface* PeerConnectionFactory::CreateMediaController()
+    const {
   RTC_DCHECK(signaling_thread_->IsCurrent());
-  return channel_manager_.get();
+  return MediaControllerInterface::Create(worker_thread_,
+                                          channel_manager_.get());
 }
 
 rtc::Thread* PeerConnectionFactory::signaling_thread() {

@@ -66,16 +66,6 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
       NetLog::TYPE_HTTP_STREAM_REQUEST_BOUND_TO_QUIC_SESSION,
       session_->net_log().source().ToEventParametersCallback());
 
-  if (request_info->url.SchemeIsCryptographic()) {
-    SSLInfo ssl_info;
-    bool secure_session =
-        session_->GetSSLInfo(&ssl_info) && ssl_info.cert.get();
-    UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.SecureResourceSecureSession",
-                          secure_session);
-    if (!secure_session)
-      return ERR_REQUEST_FOR_SECURE_RESOURCE_OVER_INSECURE_QUIC;
-  }
-
   stream_net_log_ = stream_net_log;
   request_info_ = request_info;
   request_time_ = base::Time::Now();
@@ -133,8 +123,7 @@ int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
   QuicPriority priority = ConvertRequestPriorityToQuicPriority(priority_);
   stream_->set_priority(priority);
   // Store the serialized request headers.
-  CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers,
-                                   GetSpdyVersion(),
+  CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers, HTTP2,
                                    /*direct=*/true, &request_headers_);
 
   // Store the request body.
@@ -522,7 +511,7 @@ int QuicHttpStream::ProcessResponseHeaders(const SpdyHeaderBlock& headers) {
       NetLog::TYPE_QUIC_HTTP_STREAM_READ_RESPONSE_HEADERS,
       base::Bind(&SpdyHeaderBlockNetLogCallback, &headers));
 
-  if (!SpdyHeadersToHttpResponse(headers, GetSpdyVersion(), response_info_)) {
+  if (!SpdyHeadersToHttpResponse(headers, HTTP2, response_info_)) {
     DLOG(WARNING) << "Invalid headers";
     return ERR_QUIC_PROTOCOL_ERROR;
   }
@@ -550,10 +539,6 @@ int QuicHttpStream::ReadAvailableData(IOBuffer* buf, int buf_len) {
     ResetStream();
   }
   return rv;
-}
-
-SpdyMajorVersion QuicHttpStream::GetSpdyVersion() {
-  return SpdyUtils::GetSpdyVersionForQuicVersion(stream_->version());
 }
 
 void QuicHttpStream::ResetStream() {

@@ -34,13 +34,17 @@
 
 namespace gpu {
 struct Mailbox;
+struct SyncToken;
 class SyncPointClient;
+class SyncPointManager;
 class ValueStateMap;
 namespace gles2 {
 class MailboxManager;
 class SubscriptionRefSet;
 }
 }
+
+struct GpuCommandBufferMsg_CreateImage_Params;
 
 namespace content {
 
@@ -70,6 +74,7 @@ class GpuCommandBufferStub
 
   GpuCommandBufferStub(
       GpuChannel* channel,
+      gpu::SyncPointManager* sync_point_manager,
       base::SingleThreadTaskRunner* task_runner,
       GpuCommandBufferStub* share_group,
       const gfx::GLSurfaceHandle& handle,
@@ -98,7 +103,6 @@ class GpuCommandBufferStub
   // GpuMemoryManagerClient implementation:
   gfx::Size GetSurfaceSize() const override;
   gpu::gles2::MemoryTracker* GetMemoryTracker() const override;
-  void SetMemoryAllocation(const gpu::MemoryAllocation& allocation) override;
   void SuggestHaveFrontBuffer(bool suggest_have_frontbuffer) override;
   bool GetTotalGpuMemory(uint64* bytes) override;
 
@@ -138,7 +142,7 @@ class GpuCommandBufferStub
 
   // Associates a sync point to this stub. When the stub is destroyed, it will
   // retire all sync points that haven't been previously retired.
-  void AddSyncPoint(uint32 sync_point, bool retire);
+  void InsertSyncPoint(uint32 sync_point, bool retire);
 
   void SetLatencyInfoCallback(const LatencyInfoCallback& callback);
 
@@ -200,16 +204,19 @@ class GpuCommandBufferStub
   bool OnWaitSyncPoint(uint32 sync_point);
   void OnWaitSyncPointCompleted(uint32 sync_point);
   void OnSignalSyncPoint(uint32 sync_point, uint32 id);
-  void OnSignalSyncPointAck(uint32 id);
+  void OnSignalSyncToken(const gpu::SyncToken& sync_token, uint32 id);
+  void OnSignalAck(uint32 id);
   void OnSignalQuery(uint32 query, uint32 id);
 
-  void OnSetClientHasMemoryAllocationChangedCallback(bool has_callback);
+  void OnFenceSyncRelease(uint64_t release);
+  bool OnWaitFenceSync(gpu::CommandBufferNamespace namespace_id,
+                       uint64_t command_buffer_id,
+                       uint64_t release);
+  void OnWaitFenceSyncCompleted(gpu::CommandBufferNamespace namespace_id,
+                                uint64_t command_buffer_id,
+                                uint64_t release);
 
-  void OnCreateImage(int32 id,
-                     gfx::GpuMemoryBufferHandle handle,
-                     gfx::Size size,
-                     gfx::BufferFormat format,
-                     uint32 internalformat);
+  void OnCreateImage(const GpuCommandBufferMsg_CreateImage_Params& params);
   void OnDestroyImage(int32 id);
   void OnCreateStreamTexture(uint32 texture_id,
                              int32 stream_id,
@@ -236,12 +243,17 @@ class GpuCommandBufferStub
 
   bool CheckContextLost();
   void CheckCompleteWaits();
-  void PullTextureUpdates(uint32 sync_point);
+  void PullTextureUpdates(gpu::CommandBufferNamespace namespace_id,
+                          uint64_t command_buffer_id,
+                          uint32_t release);
 
   // The lifetime of objects of this class is managed by a GpuChannel. The
   // GpuChannels destroy all the GpuCommandBufferStubs that they own when they
   // are destroyed. So a raw pointer is safe.
   GpuChannel* channel_;
+
+  // Outlives the stub.
+  gpu::SyncPointManager* sync_point_manager_;
 
   // Task runner for main thread.
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
@@ -267,12 +279,6 @@ class GpuCommandBufferStub
   scoped_ptr<gpu::GpuScheduler> scheduler_;
   scoped_ptr<gpu::SyncPointClient> sync_point_client_;
   scoped_refptr<gfx::GLSurface> surface_;
-
-  scoped_ptr<GpuMemoryManagerClientState> memory_manager_client_state_;
-  // The last memory allocation received from the GpuMemoryManager (used to
-  // elide redundant work).
-  bool last_memory_allocation_valid_;
-  gpu::MemoryAllocation last_memory_allocation_;
 
   GpuWatchdog* watchdog_;
 

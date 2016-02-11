@@ -14,6 +14,7 @@
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
@@ -42,12 +43,8 @@ base::TimeTicks MojoDeadlineToTimeTicks(MojoDeadline deadline) {
 // Tracks the data for a single call to Start().
 struct WatchData {
   WatchData()
-      : location(0),
-        id(0),
-        handle_signals(MOJO_HANDLE_SIGNAL_NONE),
-        task_runner(NULL) {}
+      : id(0), handle_signals(MOJO_HANDLE_SIGNAL_NONE), task_runner(NULL) {}
 
-  int location;
   WatcherID id;
   Handle handle;
   MojoHandleSignals handle_signals;
@@ -103,8 +100,9 @@ void WatcherBackend::StartWatching(const WatchData& data) {
   DCHECK_EQ(0u, handle_to_data_.count(data.handle));
 
   handle_to_data_[data.handle] = data;
-  MessagePumpMojo::current()->AddHandler(data.location, this, data.handle,
-                                         data.handle_signals, data.deadline);
+  MessagePumpMojo::current()->AddHandler(this, data.handle,
+                                         data.handle_signals,
+                                         data.deadline);
 }
 
 void WatcherBackend::StopWatching(WatcherID watcher_id) {
@@ -166,8 +164,7 @@ class WatcherThreadManager {
   // stop watching the handle. When the handle is ready |callback| is notified
   // on the thread StartWatching() was invoked on.
   // This may be invoked on any thread.
-  WatcherID StartWatching(int location,
-                          const Handle& handle,
+  WatcherID StartWatching(const Handle& handle,
                           MojoHandleSignals handle_signals,
                           base::TimeTicks deadline,
                           const base::Callback<void(MojoResult)>& callback);
@@ -226,18 +223,22 @@ WatcherThreadManager::~WatcherThreadManager() {
 }
 
 WatcherThreadManager* WatcherThreadManager::GetInstance() {
-  return base::Singleton<WatcherThreadManager>::get();
+  // We need to leak this because otherwise when the process dies, AtExitManager
+  // waits for destruction which waits till the handle watcher thread is joined.
+  // But that can't happen since the pump uses mojo message pipes to wake up the
+  // pump. Since mojo EDK has been shutdown already, this never completes.
+  return base::Singleton<WatcherThreadManager,
+                         base::LeakySingletonTraits<WatcherThreadManager>>::
+      get();
 }
 
 WatcherID WatcherThreadManager::StartWatching(
-    int location,
     const Handle& handle,
     MojoHandleSignals handle_signals,
     base::TimeTicks deadline,
     const base::Callback<void(MojoResult)>& callback) {
   RequestData request_data;
   request_data.type = REQUEST_START;
-  request_data.start_data.location = location;
   request_data.start_data.id = watcher_id_generator_.GetNext();
   request_data.start_data.handle = handle;
   request_data.start_data.callback = callback;
@@ -262,6 +263,11 @@ void WatcherThreadManager::StopWatching(WatcherID watcher_id) {
     }
   }
 
+  // TODO(amistry): Remove ScopedTracker below once http://crbug.com/554761 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "554761 WatcherThreadManager::StopWatching"));
   base::ThreadRestrictions::ScopedAllowWait allow_wait;
   base::WaitableEvent event(true, false);
   RequestData request_data;
@@ -378,9 +384,8 @@ class HandleWatcher::SameThreadWatchingState : public StateBase,
         handle_(handle) {
     DCHECK(MessagePumpMojo::IsCurrent());
 
-    MessagePumpMojo::current()->AddHandler(watcher->location(), this, handle,
-                                           handle_signals,
-                                           MojoDeadlineToTimeTicks(deadline));
+    MessagePumpMojo::current()->AddHandler(
+        this, handle, handle_signals, MojoDeadlineToTimeTicks(deadline));
   }
 
   ~SameThreadWatchingState() override {
@@ -422,7 +427,8 @@ class HandleWatcher::SecondaryThreadWatchingState : public StateBase {
       : StateBase(watcher, callback),
         weak_factory_(this) {
     watcher_id_ = WatcherThreadManager::GetInstance()->StartWatching(
-        watcher->location(), handle, handle_signals,
+        handle,
+        handle_signals,
         MojoDeadlineToTimeTicks(deadline),
         base::Bind(&SecondaryThreadWatchingState::NotifyHandleReady,
                    weak_factory_.GetWeakPtr()));
@@ -449,7 +455,8 @@ class HandleWatcher::SecondaryThreadWatchingState : public StateBase {
 
 // HandleWatcher ---------------------------------------------------------------
 
-HandleWatcher::HandleWatcher(int location) : location_(location) {}
+HandleWatcher::HandleWatcher() {
+}
 
 HandleWatcher::~HandleWatcher() {
 }

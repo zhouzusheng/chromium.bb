@@ -47,7 +47,6 @@
 #include "core/page/Page.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/NotImplemented.h"
-#include "public/web/WebBeginFrameArgs.h"
 #include "public/web/WebWidgetClient.h"
 #include "web/ContextMenuAllowedScope.h"
 #include "web/WebDevToolsAgentImpl.h"
@@ -83,9 +82,9 @@ WebFrameWidgetImpl* WebFrameWidgetImpl::create(WebWidgetClient* client, WebLocal
 }
 
 // static
-HashSet<WebFrameWidgetImpl*>& WebFrameWidgetImpl::allInstances()
+WebFrameWidgetsSet& WebFrameWidgetImpl::allInstances()
 {
-    DEFINE_STATIC_LOCAL(HashSet<WebFrameWidgetImpl*>, allInstances, ());
+    DEFINE_STATIC_LOCAL(WebFrameWidgetsSet, allInstances, ());
     return allInstances;
 }
 
@@ -200,11 +199,6 @@ void WebFrameWidgetImpl::sendResizeEventAndRepaint()
     }
 }
 
-void WebFrameWidgetImpl::resizePinchViewport(const WebSize& newSize)
-{
-    // TODO(bokan): To Remove.
-}
-
 void WebFrameWidgetImpl::resizeVisualViewport(const WebSize& newSize)
 {
     // FIXME: Implement visual viewport for out-of-process iframes.
@@ -246,20 +240,20 @@ void WebFrameWidgetImpl::didExitFullScreen()
     // FIXME: Implement full screen for out-of-process iframes.
 }
 
-void WebFrameWidgetImpl::beginFrame(const WebBeginFrameArgs& frameTime)
+void WebFrameWidgetImpl::beginFrame(double lastFrameTimeMonotonic)
 {
-    TRACE_EVENT1("blink", "WebFrameWidgetImpl::beginFrame", "frameTime", frameTime.lastFrameTimeMonotonic);
-    ASSERT(frameTime.lastFrameTimeMonotonic);
-    PageWidgetDelegate::animate(*page(), frameTime.lastFrameTimeMonotonic);
+    TRACE_EVENT1("blink", "WebFrameWidgetImpl::beginFrame", "frameTime", lastFrameTimeMonotonic);
+    ASSERT(lastFrameTimeMonotonic);
+    PageWidgetDelegate::animate(*page(), lastFrameTimeMonotonic);
 }
 
-void WebFrameWidgetImpl::layout()
+void WebFrameWidgetImpl::updateAllLifecyclePhases()
 {
-    TRACE_EVENT0("blink", "WebFrameWidgetImpl::layout");
+    TRACE_EVENT0("blink", "WebFrameWidgetImpl::updateAllLifecyclePhases");
     if (!m_localRoot)
         return;
 
-    PageWidgetDelegate::layout(*page(), *m_localRoot->frame());
+    PageWidgetDelegate::updateAllLifecyclePhases(*page(), *m_localRoot->frame());
     updateLayerTreeBackgroundColor();
 }
 
@@ -322,60 +316,10 @@ void WebFrameWidgetImpl::themeChanged()
 
 const WebInputEvent* WebFrameWidgetImpl::m_currentInputEvent = nullptr;
 
-// FIXME: autogenerate this kind of code, and use it throughout Blink rather than
-// the one-offs for subsets of these values.
-static String inputTypeToName(WebInputEvent::Type type)
-{
-    switch (type) {
-    case WebInputEvent::MouseDown:
-        return EventTypeNames::mousedown;
-    case WebInputEvent::MouseUp:
-        return EventTypeNames::mouseup;
-    case WebInputEvent::MouseMove:
-        return EventTypeNames::mousemove;
-    case WebInputEvent::MouseEnter:
-        return EventTypeNames::mouseenter;
-    case WebInputEvent::MouseLeave:
-        return EventTypeNames::mouseleave;
-    case WebInputEvent::ContextMenu:
-        return EventTypeNames::contextmenu;
-    case WebInputEvent::MouseWheel:
-        return EventTypeNames::mousewheel;
-    case WebInputEvent::KeyDown:
-        return EventTypeNames::keydown;
-    case WebInputEvent::KeyUp:
-        return EventTypeNames::keyup;
-    case WebInputEvent::GestureScrollBegin:
-        return EventTypeNames::gesturescrollstart;
-    case WebInputEvent::GestureScrollEnd:
-        return EventTypeNames::gesturescrollend;
-    case WebInputEvent::GestureScrollUpdate:
-        return EventTypeNames::gesturescrollupdate;
-    case WebInputEvent::GestureTapDown:
-        return EventTypeNames::gesturetapdown;
-    case WebInputEvent::GestureShowPress:
-        return EventTypeNames::gestureshowpress;
-    case WebInputEvent::GestureTap:
-        return EventTypeNames::gesturetap;
-    case WebInputEvent::GestureTapUnconfirmed:
-        return EventTypeNames::gesturetapunconfirmed;
-    case WebInputEvent::TouchStart:
-        return EventTypeNames::touchstart;
-    case WebInputEvent::TouchMove:
-        return EventTypeNames::touchmove;
-    case WebInputEvent::TouchEnd:
-        return EventTypeNames::touchend;
-    case WebInputEvent::TouchCancel:
-        return EventTypeNames::touchcancel;
-    default:
-        return String("unknown");
-    }
-}
-
 bool WebFrameWidgetImpl::handleInputEvent(const WebInputEvent& inputEvent)
 {
 
-    TRACE_EVENT1("input", "WebFrameWidgetImpl::handleInputEvent", "type", inputTypeToName(inputEvent.type).ascii());
+    TRACE_EVENT1("input", "WebFrameWidgetImpl::handleInputEvent", "type", inputTypeToName(inputEvent.type));
 
     // Report the event to be NOT processed by WebKit, so that the browser can handle it appropriately.
     if (m_ignoreInputEvents)
@@ -468,23 +412,22 @@ void WebFrameWidgetImpl::setFocus(bool enable)
     page()->focusController().setFocused(enable);
     if (enable) {
         page()->focusController().setActive(true);
-        RefPtrWillBeRawPtr<Frame> focusedFrame = page()->focusController().focusedFrame();
-        if (focusedFrame && focusedFrame->isLocalFrame()) {
-            LocalFrame* localFrame = toLocalFrame(focusedFrame.get());
-            Element* element = localFrame->document()->focusedElement();
-            if (element && localFrame->selection().selection().isNone()) {
+        RefPtrWillBeRawPtr<LocalFrame> focusedFrame = page()->focusController().focusedFrame();
+        if (focusedFrame) {
+            Element* element = focusedFrame->document()->focusedElement();
+            if (element && focusedFrame->selection().selection().isNone()) {
                 // If the selection was cleared while the WebView was not
                 // focused, then the focus element shows with a focus ring but
                 // no caret and does respond to keyboard inputs.
                 if (element->isTextFormControl()) {
-                    element->updateFocusAppearance(true);
+                    element->updateFocusAppearance(SelectionBehaviorOnFocus::Restore);
                 } else if (element->isContentEditable()) {
                     // updateFocusAppearance() selects all the text of
                     // contentseditable DIVs. So we set the selection explicitly
                     // instead. Note that this has the side effect of moving the
                     // caret back to the beginning of the text.
                     Position position(element, 0);
-                    localFrame->selection().setSelection(VisibleSelection(position, SEL_DEFAULT_AFFINITY));
+                    focusedFrame->selection().setSelection(VisibleSelection(position, SEL_DEFAULT_AFFINITY));
                 }
             }
         }
@@ -1013,11 +956,11 @@ Frame* WebFrameWidgetImpl::focusedCoreFrame() const
 
 Element* WebFrameWidgetImpl::focusedElement() const
 {
-    Frame* frame = page()->focusController().focusedFrame();
-    if (!frame || !frame->isLocalFrame())
+    LocalFrame* frame = page()->focusController().focusedFrame();
+    if (!frame)
         return nullptr;
 
-    Document* document = toLocalFrame(frame)->document();
+    Document* document = frame->document();
     if (!document)
         return nullptr;
 
@@ -1069,8 +1012,6 @@ void WebFrameWidgetImpl::setIsAcceleratedCompositingActive(bool active)
         updateLayerTreeViewport();
         m_isAcceleratedCompositingActive = true;
     }
-    if (m_localRoot->frameView())
-        m_localRoot->frameView()->setClipsRepaints(!m_isAcceleratedCompositingActive);
 }
 
 PaintLayerCompositor* WebFrameWidgetImpl::compositor() const
@@ -1089,20 +1030,13 @@ void WebFrameWidgetImpl::setRootGraphicsLayer(GraphicsLayer* layer)
 
     setIsAcceleratedCompositingActive(layer);
 
-    if (m_layerTreeView) {
-        if (m_rootLayer) {
-            m_layerTreeView->setRootLayer(*m_rootLayer);
-            // We register viewport layers here since there may not be a layer
-            // tree view prior to this point.
-            GraphicsLayer* rootScrollLayer = compositor()->scrollLayer();
-            ASSERT(rootScrollLayer);
-            WebLayer* pageScaleLayer = rootScrollLayer->parent() ? rootScrollLayer->parent()->platformLayer() : nullptr;
-            m_layerTreeView->registerViewportLayers(nullptr, pageScaleLayer, rootScrollLayer->platformLayer(), nullptr);
-        } else {
-            m_layerTreeView->clearRootLayer();
-            m_layerTreeView->clearViewportLayers();
-        }
-    }
+    if (!m_layerTreeView)
+        return;
+
+    if (m_rootLayer)
+        m_layerTreeView->setRootLayer(*m_rootLayer);
+    else
+        m_layerTreeView->clearRootLayer();
 }
 
 void WebFrameWidgetImpl::attachCompositorAnimationTimeline(WebCompositorAnimationTimeline* compositorTimeline)

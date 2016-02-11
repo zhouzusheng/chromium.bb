@@ -48,6 +48,7 @@
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrameWidget.h"
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
 #include "third_party/WebKit/public/web/WebIconURL.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
@@ -232,6 +233,15 @@ class CONTENT_EXPORT RenderViewImpl
   // as that is only for changes that aren't initiated by the client.
   void SetZoomLevel(double zoom_level);
 
+  // Indicates whether this page has been focused by the browser.
+  bool has_focus() const { return has_focus_; }
+
+  // Sets page-level focus in this view and notifies plugins and Blink's
+  // FocusController.
+  void SetFocus(bool enable);
+
+  void AttachWebFrameWidget(blink::WebWidget* frame_widget);
+
   // Plugin-related functions --------------------------------------------------
 
 #if defined(ENABLE_PLUGINS)
@@ -319,7 +329,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Most methods are handled by RenderWidget.
   void didFocus() override;
-  void didBlur() override;
   void show(blink::WebNavigationPolicy policy) override;
   bool requestPointerLock() override;
   void requestPointerUnlock() override;
@@ -399,7 +408,8 @@ class CONTENT_EXPORT RenderViewImpl
   void pageImportanceSignalsChanged() override;
 
 #if defined(OS_ANDROID)
-  void scheduleContentIntent(const blink::WebURL& intent) override;
+  void scheduleContentIntent(const blink::WebURL& intent,
+                             bool is_main_frame) override;
   void cancelScheduledContentIntents() override;
   blink::WebContentDetectionResult detectContentAround(
       const blink::WebHitTestResult& touch_hit) override;
@@ -418,7 +428,6 @@ class CONTENT_EXPORT RenderViewImpl
   int GetRoutingID() const override;
   gfx::Size GetSize() const override;
   void SetSize(const gfx::Size& new_size) override;
-  void SetFocus(bool focused) override;
   WebPreferences& GetWebkitPreferences() override;
   void SetWebkitPreferences(const WebPreferences& preferences) override;
   blink::WebView* GetWebView() override;
@@ -447,6 +456,7 @@ class CONTENT_EXPORT RenderViewImpl
 
  protected:
   // RenderWidget overrides:
+  void CloseForFrame() override;
   void Close() override;
   void OnResize(const ViewMsg_Resize_Params& params) override;
   void DidInitiatePaint() override;
@@ -655,7 +665,7 @@ class CONTENT_EXPORT RenderViewImpl
   void OnThemeChanged();
   void OnUpdateTargetURLAck();
   void OnUpdateWebPreferences(const WebPreferences& prefs);
-  void OnResetPageScale();
+  void OnSetPageScale(float page_scale_factor);
   void OnZoom(PageZoom zoom);
   void OnEnableAltDragRubberbanding(bool enable);
   void OnEnableViewSourceMode();
@@ -695,7 +705,9 @@ class CONTENT_EXPORT RenderViewImpl
 
 #if defined(OS_ANDROID)
   // Launch an Android content intent with the given URL.
-  void LaunchAndroidContentIntent(const GURL& intent_url, size_t request_id);
+  void LaunchAndroidContentIntent(const GURL& intent_url,
+                                  size_t request_id,
+                                  bool is_main_frame);
 #endif
 
   // Sends a reply to the current find operation handling if it was a
@@ -756,6 +768,8 @@ class CONTENT_EXPORT RenderViewImpl
 #else
   void UpdateThemePrefs() {}
 #endif
+
+  void UpdateDeviceScaleFactor();
 
   // ---------------------------------------------------------------------------
   // ADDING NEW FUNCTIONS? Please keep private functions alphabetized and put
@@ -878,6 +892,9 @@ class CONTENT_EXPORT RenderViewImpl
   TopControlsState top_controls_constraints_;
 #endif
 
+  // Indicates whether this page has been focused/unfocused by the browser.
+  bool has_focus_;
+
   // View ----------------------------------------------------------------------
 
   // Cache the preferred size of the page in order to prevent sending the IPC
@@ -896,6 +913,10 @@ class CONTENT_EXPORT RenderViewImpl
   // Helper objects ------------------------------------------------------------
 
   RenderFrameImpl* main_render_frame_;
+
+  // Note: RenderViewImpl is pulling double duty: it's the RenderWidget for the
+  // "view", but it's also the RenderWidget for the main frame.
+  blink::WebWidget* frame_widget_;
 
   // The next group of objects all implement RenderViewObserver, so are deleted
   // along with the RenderView automatically.  This is why we just store
@@ -998,8 +1019,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   typedef std::map<cc::SharedBitmapId, cc::SharedBitmap*> BitmapMap;
   BitmapMap disambiguation_bitmaps_;
-
-  bool page_scale_factor_is_one_;
 
   // ---------------------------------------------------------------------------
   // ADDING NEW DATA? Please see if it fits appropriately in one of the above

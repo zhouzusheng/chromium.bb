@@ -7,7 +7,7 @@
 
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/ClipPathDisplayItem.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/PaintController.h"
 
 namespace blink {
 
@@ -15,21 +15,12 @@ ClipPathRecorder::ClipPathRecorder(GraphicsContext& context, const DisplayItemCl
     : m_context(context)
     , m_client(client)
 {
-    ASSERT(m_context.displayItemList());
-    if (m_context.displayItemList()->displayItemConstructionIsDisabled())
-        return;
-    m_context.displayItemList()->createAndAppend<BeginClipPathDisplayItem>(m_client, clipPath);
+    m_context.paintController().createAndAppend<BeginClipPathDisplayItem>(m_client, clipPath);
 }
 
 ClipPathRecorder::~ClipPathRecorder()
 {
-    ASSERT(m_context.displayItemList());
-    if (!m_context.displayItemList()->displayItemConstructionIsDisabled()) {
-        if (m_context.displayItemList()->lastDisplayItemIsNoopBegin())
-            m_context.displayItemList()->removeLastDisplayItem();
-        else
-            m_context.displayItemList()->createAndAppend<EndClipPathDisplayItem>(m_client);
-    }
+    m_context.paintController().endItem<EndClipPathDisplayItem>(m_client);
 }
 
 } // namespace blink

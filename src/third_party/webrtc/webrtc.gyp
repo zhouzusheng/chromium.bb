@@ -95,6 +95,7 @@
       'sources': [
         'audio_receive_stream.h',
         'audio_send_stream.h',
+        'audio_state.h',
         'call.h',
         'config.h',
         'frame_callback.h',
@@ -116,8 +117,8 @@
         'rtc_event_log',
       ],
       'conditions': [
-        # TODO(andresp): Chromium libpeerconnection should link directly with
-        # this and no if conditions should be needed on webrtc build files.
+        # TODO(andresp): Chromium should link directly with this and no if
+        # conditions should be needed on webrtc build files.
         ['build_with_chromium==1', {
           'dependencies': [
             '<(webrtc_root)/modules/modules.gyp:video_capture',

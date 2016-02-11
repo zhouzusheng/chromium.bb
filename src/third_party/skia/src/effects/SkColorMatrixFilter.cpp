@@ -386,7 +386,9 @@ SkColorFilter* SkColorMatrixFilter::newComposed(const SkColorFilter* innerFilter
 #include "GrFragmentProcessor.h"
 #include "GrInvariantOutput.h"
 #include "gl/GrGLFragmentProcessor.h"
-#include "gl/builders/GrGLProgramBuilder.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLProgramBuilder.h"
+#include "glsl/GrGLSLProgramDataManager.h"
 
 class ColorMatrixEffect : public GrFragmentProcessor {
 public:
@@ -406,10 +408,10 @@ public:
         GLProcessor(const GrProcessor&) {}
 
         virtual void emitCode(EmitArgs& args) override {
-            fMatrixHandle = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+            fMatrixHandle = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                                 kMat44f_GrSLType, kDefault_GrSLPrecision,
                                                 "ColorMatrix");
-            fVectorHandle = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+            fVectorHandle = args.fBuilder->addUniform(GrGLSLProgramBuilder::kFragment_Visibility,
                                                 kVec4f_GrSLType, kDefault_GrSLPrecision,
                                                 "ColorMatrixVector");
 
@@ -417,7 +419,7 @@ public:
                 // could optimize this case, but we aren't for now.
                 args.fInputColor = "vec4(1)";
             }
-            GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+            GrGLSLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
             // The max() is to guard against 0 / 0 during unpremul when the incoming color is
             // transparent black.
             fsBuilder->codeAppendf("\tfloat nonZeroAlpha = max(%s.a, 0.00001);\n",
@@ -433,19 +435,19 @@ public:
         }
 
     protected:
-        virtual void onSetData(const GrGLProgramDataManager& uniManager,
-                             const GrProcessor& proc) override {
+        virtual void onSetData(const GrGLSLProgramDataManager& uniManager,
+                               const GrProcessor& proc) override {
             const ColorMatrixEffect& cme = proc.cast<ColorMatrixEffect>();
             const float* m = cme.fMatrix.fMat;
             // The GL matrix is transposed from SkColorMatrix.
-            GrGLfloat mt[]  = {
+            float mt[]  = {
                 m[0], m[5], m[10], m[15],
                 m[1], m[6], m[11], m[16],
                 m[2], m[7], m[12], m[17],
                 m[3], m[8], m[13], m[18],
             };
             static const float kScale = 1.0f / 255.0f;
-            GrGLfloat vec[] = {
+            float vec[] = {
                 m[4] * kScale, m[9] * kScale, m[14] * kScale, m[19] * kScale,
             };
             uniManager.setMatrix4fv(fMatrixHandle, 1, mt);
@@ -453,8 +455,8 @@ public:
         }
 
     private:
-        GrGLProgramDataManager::UniformHandle fMatrixHandle;
-        GrGLProgramDataManager::UniformHandle fVectorHandle;
+        GrGLSLProgramDataManager::UniformHandle fMatrixHandle;
+        GrGLSLProgramDataManager::UniformHandle fVectorHandle;
 
         typedef GrGLFragmentProcessor INHERITED;
     };
@@ -536,8 +538,7 @@ const GrFragmentProcessor* ColorMatrixEffect::TestCreate(GrProcessorTestData* d)
     return ColorMatrixEffect::Create(colorMatrix);
 }
 
-const GrFragmentProcessor* SkColorMatrixFilter::asFragmentProcessor(GrContext*,
-                                                                    GrProcessorDataManager*) const {
+const GrFragmentProcessor* SkColorMatrixFilter::asFragmentProcessor(GrContext*) const {
     return ColorMatrixEffect::Create(fMatrix);
 }
 

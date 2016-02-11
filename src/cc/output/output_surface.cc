@@ -216,8 +216,6 @@ bool OutputSurface::BindToClient(OutputSurfaceClient* client) {
     if (success) {
       context_provider_->SetLostContextCallback(base::Bind(
           &OutputSurface::DidLoseOutputSurface, base::Unretained(this)));
-      context_provider_->SetMemoryPolicyChangedCallback(
-          base::Bind(&OutputSurface::SetMemoryPolicy, base::Unretained(this)));
     }
   }
 
@@ -232,7 +230,7 @@ bool OutputSurface::BindToClient(OutputSurfaceClient* client) {
     // thread's task runner. This will overwrite any previous dump provider
     // registered.
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        this, base::ThreadTaskRunnerHandle::Get());
+        this, "OutputSurface", base::ThreadTaskRunnerHandle::Get());
   }
 
   return success;
@@ -365,8 +363,6 @@ void OutputSurface::DetachFromClientInternal() {
   if (context_provider_.get()) {
     context_provider_->SetLostContextCallback(
         ContextProvider::LostContextCallback());
-    context_provider_->SetMemoryPolicyChangedCallback(
-        ContextProvider::MemoryPolicyChangedCallback());
   }
   context_provider_ = nullptr;
   client_ = nullptr;

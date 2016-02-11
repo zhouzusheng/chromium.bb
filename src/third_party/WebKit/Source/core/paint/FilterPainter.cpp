@@ -13,8 +13,8 @@
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/filters/FilterEffect.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/graphics/paint/FilterDisplayItem.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebFilterOperations.h"
@@ -27,13 +27,16 @@ FilterPainter::FilterPainter(PaintLayer& layer, GraphicsContext* context, const 
     , m_context(context)
     , m_layoutObject(layer.layoutObject())
 {
-    if (!layer.filterEffectBuilder() || !layer.paintsWithFilters())
+    if (!layer.paintsWithFilters())
+        return;
+
+    RefPtrWillBeRawPtr<FilterEffect> lastEffect = layer.lastFilterEffect();
+    if (!lastEffect)
         return;
 
     ASSERT(layer.filterInfo());
 
     SkiaImageFilterBuilder builder;
-    RefPtrWillBeRawPtr<FilterEffect> lastEffect = layer.filterEffectBuilder()->lastEffect();
     lastEffect->determineFilterPrimitiveSubregion(MapRectForward);
     RefPtr<SkImageFilter> imageFilter = builder.build(lastEffect.get(), ColorSpaceDeviceRGB);
     if (!imageFilter)
@@ -57,8 +60,7 @@ FilterPainter::FilterPainter(PaintLayer& layer, GraphicsContext* context, const 
     }
 
     ASSERT(m_layoutObject);
-    ASSERT(context->displayItemList());
-    if (!context->displayItemList()->displayItemConstructionIsDisabled()) {
+    if (!context->paintController().displayItemConstructionIsDisabled()) {
         FilterOperations filterOperations(layer.computeFilterOperations(m_layoutObject->styleRef()));
         OwnPtr<WebFilterOperations> webFilterOperations = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
         builder.buildFilterOperations(filterOperations, webFilterOperations.get());
@@ -68,7 +70,13 @@ FilterPainter::FilterPainter(PaintLayer& layer, GraphicsContext* context, const 
         // the layer's filter. See crbug.com/502026.
         if (webFilterOperations->isEmpty())
             return;
-        context->displayItemList()->createAndAppend<BeginFilterDisplayItem>(*m_layoutObject, imageFilter, FloatRect(rootRelativeBounds), webFilterOperations.release());
+        LayoutRect visualBounds(rootRelativeBounds);
+        if (layer.enclosingPaginationLayer()) {
+            // Filters are set up before pagination, so we need to make the bounding box visual on our own.
+            visualBounds.moveBy(-offsetFromRoot);
+            layer.convertFromFlowThreadToVisualBoundingBoxInAncestor(paintingInfo.rootLayer, visualBounds);
+        }
+        context->paintController().createAndAppend<BeginFilterDisplayItem>(*m_layoutObject, imageFilter, FloatRect(visualBounds), webFilterOperations.release());
     }
 
     m_filterInProgress = true;
@@ -79,13 +87,7 @@ FilterPainter::~FilterPainter()
     if (!m_filterInProgress)
         return;
 
-    ASSERT(m_context->displayItemList());
-    if (!m_context->displayItemList()->displayItemConstructionIsDisabled()) {
-        if (m_context->displayItemList()->lastDisplayItemIsNoopBegin())
-            m_context->displayItemList()->removeLastDisplayItem();
-        else
-            m_context->displayItemList()->createAndAppend<EndFilterDisplayItem>(*m_layoutObject);
-    }
+    m_context->paintController().endItem<EndFilterDisplayItem>(*m_layoutObject);
 }
 
 } // namespace blink

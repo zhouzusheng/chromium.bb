@@ -15,6 +15,7 @@
 #include "content/common/navigation_gesture.h"
 #include "content/common/navigation_params.h"
 #include "content/common/resource_request_body.h"
+#include "content/common/savable_subframe.h"
 #include "content/public/common/color_suggestion.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/console_message_level.h"
@@ -28,6 +29,7 @@
 #include "content/public/common/three_d_api_types.h"
 #include "content/public/common/transition_element.h"
 #include "ipc/ipc_message_macros.h"
+#include "third_party/WebKit/public/web/WebFrameOwnerProperties.h"
 #include "third_party/WebKit/public/web/WebTreeScopeType.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
 #include "url/gurl.h"
@@ -56,10 +58,15 @@ IPC_ENUM_TRAITS_MAX_VALUE(blink::WebContextMenuData::MediaType,
                           blink::WebContextMenuData::MediaTypeLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebContextMenuData::InputFieldType,
                           blink::WebContextMenuData::InputFieldTypeLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebFrameOwnerProperties::ScrollingMode,
+                          blink::WebFrameOwnerProperties::ScrollingMode::Last)
 IPC_ENUM_TRAITS(blink::WebSandboxFlags)  // Bitmask.
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebTreeScopeType,
                           blink::WebTreeScopeType::Last)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::MenuSourceType, ui::MENU_SOURCE_TYPE_LAST)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(content::LoFiState,
+                              content::LOFI_UNSPECIFIED,
+                              content::LOFI_ON)
 
 IPC_STRUCT_TRAITS_BEGIN(content::ColorSuggestion)
   IPC_STRUCT_TRAITS_MEMBER(color)
@@ -113,6 +120,12 @@ IPC_STRUCT_TRAITS_BEGIN(content::CustomContextMenuContext)
   IPC_STRUCT_TRAITS_MEMBER(link_followed)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(blink::WebFrameOwnerProperties)
+  IPC_STRUCT_TRAITS_MEMBER(scrollingMode)
+  IPC_STRUCT_TRAITS_MEMBER(marginWidth)
+  IPC_STRUCT_TRAITS_MEMBER(marginHeight)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(content::TransitionElement)
   IPC_STRUCT_TRAITS_MEMBER(id)
   IPC_STRUCT_TRAITS_MEMBER(rect)
@@ -141,6 +154,7 @@ IPC_STRUCT_END()
 IPC_STRUCT_TRAITS_BEGIN(content::FrameNavigateParams)
   IPC_STRUCT_TRAITS_MEMBER(page_id)
   IPC_STRUCT_TRAITS_MEMBER(nav_entry_id)
+  IPC_STRUCT_TRAITS_MEMBER(frame_unique_name)
   IPC_STRUCT_TRAITS_MEMBER(item_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(document_sequence_number)
   IPC_STRUCT_TRAITS_MEMBER(url)
@@ -270,6 +284,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::CommonNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(report_type)
   IPC_STRUCT_TRAITS_MEMBER(base_url_for_data_url)
   IPC_STRUCT_TRAITS_MEMBER(history_url_for_data_url)
+  IPC_STRUCT_TRAITS_MEMBER(lofi_state)
+  IPC_STRUCT_TRAITS_MEMBER(navigation_start)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::BeginNavigationParams)
@@ -277,6 +293,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::BeginNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(headers)
   IPC_STRUCT_TRAITS_MEMBER(load_flags)
   IPC_STRUCT_TRAITS_MEMBER(has_user_gesture)
+  IPC_STRUCT_TRAITS_MEMBER(skip_service_worker)
+  IPC_STRUCT_TRAITS_MEMBER(request_context_type)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::StartNavigationParams)
@@ -292,7 +310,6 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::RequestNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(is_overriding_user_agent)
-  IPC_STRUCT_TRAITS_MEMBER(browser_navigation_start)
   IPC_STRUCT_TRAITS_MEMBER(redirects)
   IPC_STRUCT_TRAITS_MEMBER(can_load_local_resources)
   IPC_STRUCT_TRAITS_MEMBER(request_time)
@@ -306,6 +323,8 @@ IPC_STRUCT_TRAITS_BEGIN(content::RequestNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(current_history_list_offset)
   IPC_STRUCT_TRAITS_MEMBER(current_history_list_length)
   IPC_STRUCT_TRAITS_MEMBER(should_clear_history_list)
+  IPC_STRUCT_TRAITS_MEMBER(should_create_service_worker)
+  IPC_STRUCT_TRAITS_MEMBER(service_worker_provider_id)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::FrameReplicationState)
@@ -352,6 +371,12 @@ IPC_STRUCT_BEGIN(FrameMsg_NewFrame_Params)
   // the new frame's sandbox flags.
   IPC_STRUCT_MEMBER(content::FrameReplicationState, replication_state)
 
+  // When the new frame has a parent, |frame_owner_properties| holds the
+  // properties of the HTMLFrameOwnerElement from the parent process.
+  // Note that unlike FrameReplicationState, this is not replicated for remote
+  // frames.
+  IPC_STRUCT_MEMBER(blink::WebFrameOwnerProperties, frame_owner_properties)
+
   // Specifies properties for a new RenderWidget that will be attached to the
   // new RenderFrame (if one is needed).
   IPC_STRUCT_MEMBER(FrameMsg_NewFrame_WidgetParams, widget_params)
@@ -390,6 +415,11 @@ IPC_STRUCT_BEGIN(FrameMsg_TextTrackSettings_Params)
   // Size of the text track text.
   IPC_STRUCT_MEMBER(std::string, text_track_text_size)
 IPC_STRUCT_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SavableSubframe)
+  IPC_STRUCT_TRAITS_MEMBER(original_url)
+  IPC_STRUCT_TRAITS_MEMBER(routing_id)
+IPC_STRUCT_TRAITS_END()
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
 // This message is used for supporting popup menus on Mac OS X and Android using
@@ -625,8 +655,9 @@ IPC_MESSAGE_ROUTED1(FrameMsg_DidUpdateName, std::string /* name */)
 // new origin.
 IPC_MESSAGE_ROUTED1(FrameMsg_DidUpdateOrigin, url::Origin /* origin */)
 
-// Notifies this frame that it lost focus to a frame in another process.
-IPC_MESSAGE_ROUTED0(FrameMsg_ClearFocus)
+// Notifies this frame or proxy that it is now focused.  This is used to
+// support cross-process focused frame changes.
+IPC_MESSAGE_ROUTED0(FrameMsg_SetFocusedFrame)
 
 // Send to the RenderFrame to set text tracks state and style settings.
 // Sent for top-level frames.
@@ -681,6 +712,9 @@ IPC_MESSAGE_ROUTED3(FrameMsg_GetSerializedHtmlWithLocalLinks,
                     std::vector<base::FilePath> /* paths of local copy */,
                     base::FilePath /* local directory path */)
 
+IPC_MESSAGE_ROUTED1(FrameMsg_SetFrameOwnerProperties,
+                    blink::WebFrameOwnerProperties /* frame_owner_properties */)
+
 #if defined(ENABLE_PLUGINS)
 // Notifies the renderer of updates to the Plugin Power Saver origin whitelist.
 IPC_MESSAGE_ROUTED1(FrameMsg_UpdatePluginContentOriginWhitelist,
@@ -702,12 +736,14 @@ IPC_MESSAGE_ROUTED4(FrameHostMsg_AddMessageToConsole,
 //
 // Each of these messages will have a corresponding FrameHostMsg_Detach message
 // sent when the frame is detached from the DOM.
-IPC_SYNC_MESSAGE_CONTROL4_1(FrameHostMsg_CreateChildFrame,
-                            int32 /* parent_routing_id */,
-                            blink::WebTreeScopeType /* scope */,
-                            std::string /* frame_name */,
-                            blink::WebSandboxFlags /* sandbox flags */,
-                            int32 /* new_routing_id */)
+IPC_SYNC_MESSAGE_CONTROL5_1(
+    FrameHostMsg_CreateChildFrame,
+    int32 /* parent_routing_id */,
+    blink::WebTreeScopeType /* scope */,
+    std::string /* frame_name */,
+    blink::WebSandboxFlags /* sandbox flags */,
+    blink::WebFrameOwnerProperties /* frame_owner_properties */,
+    int32 /* new_routing_id */)
 
 // Sent by the renderer to the parent RenderFrameHost when a child frame is
 // detached from the DOM.
@@ -757,6 +793,9 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_DidStartLoading,
 // Sent when the renderer is done loading a page.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidStopLoading)
 
+// Notifies the browser that this frame has new session history information.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_UpdateState, content::PageState /* state */)
+
 // Sent when the frame changes its window.name.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidChangeName, std::string /* name */)
 
@@ -799,6 +838,12 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_DidAssignPageId,
 IPC_MESSAGE_ROUTED2(FrameHostMsg_DidChangeSandboxFlags,
                     int32 /* subframe_routing_id */,
                     blink::WebSandboxFlags /* updated_flags */)
+
+// Notifies the browser that frame owner properties have changed for a subframe
+// of this frame.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_DidChangeFrameOwnerProperties,
+                    int32 /* subframe_routing_id */,
+                    blink::WebFrameOwnerProperties /* frame_owner_properties */)
 
 // Changes the title for the page in the UI when the page is navigated or the
 // title changes. Sent for top-level frames.
@@ -1168,9 +1213,9 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_DidRunInsecureContent,
 
 // Response to FrameMsg_GetSavableResourceLinks.
 IPC_MESSAGE_ROUTED3(FrameHostMsg_SavableResourceLinksResponse,
-                    GURL /* frame URL */,
                     std::vector<GURL> /* savable resource links */,
-                    std::vector<content::Referrer> /* referrers */)
+                    content::Referrer /* referrer for all the links above */,
+                    std::vector<content::SavableSubframe> /* subframes */)
 
 // Response to FrameMsg_GetSavableResourceLinks in case the frame contains
 // non-savable content (i.e. from a non-savable scheme) or if there were
@@ -1178,10 +1223,9 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_SavableResourceLinksResponse,
 IPC_MESSAGE_ROUTED0(FrameHostMsg_SavableResourceLinksError)
 
 // Response to FrameMsg_GetSerializedHtmlWithLocalLinks.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_SerializedHtmlWithLocalLinksResponse,
-                    GURL /* frame URL */,
+IPC_MESSAGE_ROUTED2(FrameHostMsg_SerializedHtmlWithLocalLinksResponse,
                     std::string /* data buffer */,
-                    int32 /* complete status */)
+                    bool /* end of data? */)
 
 // Sent when the renderer updates hint for importance of a tab.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_UpdatePageImportanceSignals,

@@ -24,7 +24,6 @@ namespace test {
 class QuicPacketCreatorPeer;
 }
 
-class QuicAckNotifier;
 class QuicRandom;
 class QuicRandomBoolSource;
 
@@ -84,12 +83,12 @@ class NET_EXPORT_PRIVATE QuicPacketCreator {
   // fin but return 0.  If any data is consumed, it will be copied into a
   // new buffer that |frame| will point to and will be stored in |buffer|.
   size_t CreateStreamFrame(QuicStreamId id,
-                           const QuicIOVector& iov,
+                           QuicIOVector iov,
                            size_t iov_offset,
                            QuicStreamOffset offset,
                            bool fin,
                            QuicFrame* frame,
-                           scoped_ptr<char[]>* buffer);
+                           UniqueStreamBuffer* buffer);
 
   // Serializes all frames into a single packet. All frames must fit into a
   // single packet. Also, sets the entropy hash of the serialized packet to a
@@ -151,13 +150,12 @@ class NET_EXPORT_PRIVATE QuicPacketCreator {
   // Returns false if the frame doesn't fit into the current packet.
   bool AddSavedFrame(const QuicFrame& frame);
 
-  // Identical to AddSavedFrame, but takes ownership of the buffer if it returns
-  // true.
-  bool AddSavedFrame(const QuicFrame& frame, char* buffer);
+  // Identical to AddSavedFrame, but takes ownership of the buffer.
+  bool AddSavedFrame(const QuicFrame& frame, UniqueStreamBuffer buffer);
 
-  // Identical to AddSavedFrame, but takes ownership of the buffer if it returns
-  // true, and allows to cause the packet to be padded.
-  bool AddPaddedSavedFrame(const QuicFrame& frame, char* buffer);
+  // Identical to AddSavedFrame, but takes ownership of the buffer, and allows
+  // to cause the packet to be padded.
+  bool AddPaddedSavedFrame(const QuicFrame& frame, UniqueStreamBuffer buffer);
 
   // Serializes all frames which have been added and adds any which should be
   // retransmitted to |retransmittable_frames| if it's not nullptr. All frames
@@ -228,10 +226,9 @@ class NET_EXPORT_PRIVATE QuicPacketCreator {
   // To turn off FEC protection, use StopFecProtectingPackets().
   void set_max_packets_per_fec_group(size_t max_packets_per_fec_group);
 
-  // Returns the currently open FEC group's number. If there isn't an open FEC
-  // group, returns the last closed FEC group number. Returns 0 when FEC is
-  // disabled or no FEC group has been created yet.
-  QuicFecGroupNumber fec_group_number() { return fec_group_number_; }
+  // Returns the currently open FEC group's number.  Returns 0 when FEC is
+  // disabled or no FEC group is open.
+  QuicFecGroupNumber fec_group_number();
 
  private:
   friend class test::QuicPacketCreatorPeer;
@@ -241,7 +238,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator {
   // Copies |length| bytes from iov starting at offset |iov_offset| into buffer.
   // |iov| must be at least iov_offset+length total length and buffer must be
   // at least |length| long.
-  static void CopyToBuffer(const QuicIOVector& iov,
+  static void CopyToBuffer(QuicIOVector iov,
                            size_t iov_offset,
                            size_t length,
                            char* buffer);
@@ -264,7 +261,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator {
   bool AddFrame(const QuicFrame& frame,
                 bool save_retransmittable_frames,
                 bool needs_padding,
-                char* buffer);
+                UniqueStreamBuffer buffer);
 
   // Adds a padding frame to the current packet only if the current packet
   // contains a handshake message, and there is sufficient room to fit a
@@ -278,7 +275,6 @@ class NET_EXPORT_PRIVATE QuicPacketCreator {
   QuicPacketNumber packet_number_;
   // If true, any created packets will be FEC protected.
   bool should_fec_protect_;
-  QuicFecGroupNumber fec_group_number_;
   scoped_ptr<QuicFecGroup> fec_group_;
   // Controls whether protocol version should be included while serializing the
   // packet.

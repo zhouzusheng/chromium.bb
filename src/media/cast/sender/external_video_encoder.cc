@@ -7,11 +7,15 @@
 #include <cmath>
 
 #include "base/bind.h"
+#include "base/debug/crash_logging.h"
+#include "base/debug/dump_without_crashing.h"
+#include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/stringprintf.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_types.h"
 #include "media/base/video_util.h"
@@ -19,20 +23,12 @@
 #include "media/cast/logging/logging_defines.h"
 #include "media/cast/net/cast_transport_config.h"
 #include "media/cast/sender/vp8_quantizer_parser.h"
+#include "media/filters/h264_parser.h"
 
 namespace {
 
+enum { MAX_H264_QUANTIZER = 51 };
 static const size_t kOutputBufferCount = 3;
-
-void LogFrameEncodedEvent(
-    const scoped_refptr<media::cast::CastEnvironment>& cast_environment,
-    base::TimeTicks event_time,
-    media::cast::RtpTimestamp rtp_timestamp,
-    uint32 frame_id) {
-  cast_environment->Logging()->InsertFrameEvent(
-      event_time, media::cast::FRAME_ENCODED, media::cast::VIDEO_EVENT,
-      rtp_timestamp, frame_id);
-}
 
 }  // namespace
 
@@ -94,8 +90,9 @@ class ExternalVideoEncoder::VEAClientImpl
         next_frame_id_(0u),
         key_frame_encountered_(false),
         codec_profile_(media::VIDEO_CODEC_PROFILE_UNKNOWN),
-        vp8_key_frame_parsable_(false),
-        requested_bit_rate_(-1) {}
+        key_frame_quantizer_parsable_(false),
+        requested_bit_rate_(-1),
+        has_seen_zero_length_encoded_frame_(false) {}
 
   base::SingleThreadTaskRunner* task_runner() const {
     return task_runner_.get();
@@ -258,59 +255,74 @@ class ExternalVideoEncoder::VEAClientImpl
         const double bitrate_utilization =
             actual_bit_rate / request.target_bit_rate;
         double quantizer = QuantizerEstimator::NO_RESULT;
-        if (codec_profile_ == media::VP8PROFILE_ANY) {
-          // If the quantizer can be parsed from the key frame, try to parse
-          // the following delta frames as well.
-          // Otherwise, switch back to entropy estimation for the key frame
-          // and all the following delta frames.
-          if (key_frame || vp8_key_frame_parsable_) {
+        // If the quantizer can be parsed from the key frame, try to parse
+        // the following delta frames as well.
+        // Otherwise, switch back to entropy estimation for the key frame
+        // and all the following delta frames.
+        if (key_frame || key_frame_quantizer_parsable_) {
+          if (codec_profile_ == media::VP8PROFILE_ANY) {
             quantizer = ParseVp8HeaderQuantizer(
                 reinterpret_cast<const uint8*>(encoded_frame->data.data()),
                 encoded_frame->data.size());
-            if (quantizer < 0) {
-              LOG(ERROR) << "Unable to parse VP8 quantizer from encoded "
-                         << (key_frame ? "key" : "delta")
-                         << " frame, id=" << encoded_frame->frame_id;
-              if (key_frame) {
-                vp8_key_frame_parsable_ = false;
-                quantizer = quantizer_estimator_.EstimateForKeyFrame(
-                    *request.video_frame);
-              } else {
-                quantizer = QuantizerEstimator::NO_RESULT;
-              }
-            } else {
-              if (key_frame) {
-                vp8_key_frame_parsable_ = true;
-              }
+          } else if (codec_profile_ == media::H264PROFILE_MAIN) {
+            quantizer = GetH264FrameQuantizer(
+                reinterpret_cast<const uint8*>(encoded_frame->data.data()),
+                encoded_frame->data.size());
+          } else {
+            NOTIMPLEMENTED();
+          }
+          if (quantizer < 0) {
+            LOG(ERROR) << "Unable to parse quantizer from encoded "
+                       << (key_frame ? "key" : "delta")
+                       << " frame, id=" << encoded_frame->frame_id;
+            if (key_frame) {
+              key_frame_quantizer_parsable_ = false;
+              quantizer = quantizer_estimator_.EstimateForKeyFrame(
+                  *request.video_frame);
             }
           } else {
-            quantizer = quantizer_estimator_.EstimateForDeltaFrame(
-                *request.video_frame);
+            if (key_frame) {
+              key_frame_quantizer_parsable_ = true;
+            }
           }
         } else {
-          quantizer = (encoded_frame->dependency == EncodedFrame::KEY)
-                          ? quantizer_estimator_.EstimateForKeyFrame(
-                                *request.video_frame)
-                          : quantizer_estimator_.EstimateForDeltaFrame(
-                                *request.video_frame);
+          quantizer =
+              quantizer_estimator_.EstimateForDeltaFrame(*request.video_frame);
         }
-        if (quantizer != QuantizerEstimator::NO_RESULT) {
-          encoded_frame->lossy_utilization = bitrate_utilization *
-              (quantizer / QuantizerEstimator::MAX_VP8_QUANTIZER);
+        if (quantizer >= 0) {
+          const double max_quantizer =
+              codec_profile_ == media::VP8PROFILE_ANY
+                  ? static_cast<int>(QuantizerEstimator::MAX_VP8_QUANTIZER)
+                  : static_cast<int>(MAX_H264_QUANTIZER);
+          encoded_frame->lossy_utilization =
+              bitrate_utilization * (quantizer / max_quantizer);
         }
       } else {
         quantizer_estimator_.Reset();
       }
 
-      cast_environment_->PostTask(
-          CastEnvironment::MAIN,
-          FROM_HERE,
-          base::Bind(&LogFrameEncodedEvent,
-                     cast_environment_,
-                     cast_environment_->Clock()->NowTicks(),
-                     encoded_frame->rtp_timestamp,
-                     encoded_frame->frame_id));
+      // TODO(miu): Determine when/why encoding can produce zero-length data,
+      // which causes crypto crashes.  http://crbug.com/519022
+      if (!has_seen_zero_length_encoded_frame_ && encoded_frame->data.empty()) {
+        has_seen_zero_length_encoded_frame_ = true;
 
+        const char kZeroEncodeDetails[] = "zero-encode-details";
+        const std::string details = base::StringPrintf(
+            ("%c/%c,id=%" PRIu32 ",rtp=%" PRIu32 ",br=%d,q=%" PRIuS
+             ",act=%c,ref=%d"),
+            codec_profile_ == media::VP8PROFILE_ANY ? 'V' : 'H',
+            key_frame ? 'K' : 'D', encoded_frame->frame_id,
+            encoded_frame->rtp_timestamp, request.target_bit_rate / 1000,
+            in_progress_frame_encodes_.size(), encoder_active_ ? 'Y' : 'N',
+            static_cast<int>(encoded_frame->referenced_frame_id % 1000));
+        base::debug::SetCrashKeyValue(kZeroEncodeDetails, details);
+        // Please forward crash reports to http://crbug.com/519022:
+        base::debug::DumpWithoutCrashing();
+        base::debug::ClearCrashKey(kZeroEncodeDetails);
+      }
+
+      encoded_frame->encode_completion_time =
+          cast_environment_->Clock()->NowTicks();
       cast_environment_->PostTask(
           CastEnvironment::MAIN,
           FROM_HERE,
@@ -368,6 +380,65 @@ class ExternalVideoEncoder::VEAClientImpl
     }
   }
 
+  // Parse H264 SPS, PPS, and Slice header, and return the averaged frame
+  // quantizer in the range of [0, 51], or -1 on parse error.
+  double GetH264FrameQuantizer(const uint8* encoded_data, off_t size) {
+    DCHECK(encoded_data);
+    if (!size)
+      return -1;
+    h264_parser_.SetStream(encoded_data, size);
+    double total_quantizer = 0;
+    int num_slices = 0;
+
+    while (true) {
+      H264NALU nalu;
+      H264Parser::Result res = h264_parser_.AdvanceToNextNALU(&nalu);
+      if (res == H264Parser::kEOStream)
+        break;
+      if (res != H264Parser::kOk)
+        return -1;
+      switch (nalu.nal_unit_type) {
+        case H264NALU::kIDRSlice:
+        case H264NALU::kNonIDRSlice: {
+          H264SliceHeader slice_header;
+          if (h264_parser_.ParseSliceHeader(nalu, &slice_header) !=
+              H264Parser::kOk)
+            return -1;
+          const H264PPS* pps =
+              h264_parser_.GetPPS(slice_header.pic_parameter_set_id);
+          if (!pps)
+            return -1;
+          ++num_slices;
+          int slice_quantizer =
+              26 +
+              ((slice_header.IsSPSlice() || slice_header.IsSISlice())
+                   ? pps->pic_init_qs_minus26 + slice_header.slice_qs_delta
+                   : pps->pic_init_qp_minus26 + slice_header.slice_qp_delta);
+          DCHECK_GE(slice_quantizer, 0);
+          DCHECK_LE(slice_quantizer, MAX_H264_QUANTIZER);
+          total_quantizer += slice_quantizer;
+          break;
+        }
+        case H264NALU::kSPS: {
+          int id;
+          if (h264_parser_.ParseSPS(&id) != H264Parser::kOk)
+            return -1;
+          break;
+        }
+        case H264NALU::kPPS: {
+          int id;
+          if (h264_parser_.ParsePPS(&id) != H264Parser::kOk)
+            return -1;
+          break;
+        }
+        default:
+          // Skip other NALUs.
+          break;
+      }
+    }
+    return (num_slices == 0) ? -1 : (total_quantizer / num_slices);
+  }
+
   const scoped_refptr<CastEnvironment> cast_environment_;
   const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   const int max_frame_rate_;
@@ -379,7 +450,8 @@ class ExternalVideoEncoder::VEAClientImpl
   bool key_frame_encountered_;
   std::string stream_header_;
   VideoCodecProfile codec_profile_;
-  bool vp8_key_frame_parsable_;
+  bool key_frame_quantizer_parsable_;
+  H264Parser h264_parser_;
 
   // Shared memory buffers for output with the VideoAccelerator.
   ScopedVector<base::SharedMemory> output_buffers_;
@@ -392,6 +464,11 @@ class ExternalVideoEncoder::VEAClientImpl
 
   // Used to compute utilization metrics for each frame.
   QuantizerEstimator quantizer_estimator_;
+
+  // Set to true once a frame with zero-length encoded data has been
+  // encountered.
+  // TODO(miu): Remove after discovering cause.  http://crbug.com/519022
+  bool has_seen_zero_length_encoded_frame_;
 
   DISALLOW_COPY_AND_ASSIGN(VEAClientImpl);
 };

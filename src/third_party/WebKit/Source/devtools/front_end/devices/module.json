@@ -8,7 +8,8 @@
         },
         {
             "type": "context-menu-item",
-            "location": "mainMenu/navigate",
+            "location": "mainMenu/tools/open",
+            "order": 50,
             "actionId": "devices.dialog.show"
         }
     ],
@@ -19,7 +20,6 @@
         "DevicesDialog.js"
     ],
     "resources": [
-        "devicesView.css",
-        "sidebar.css"
+        "devicesView.css"
     ]
 }

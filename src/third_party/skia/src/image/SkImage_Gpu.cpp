@@ -10,7 +10,7 @@
 #include "GrCaps.h"
 #include "GrContext.h"
 #include "GrDrawContext.h"
-#include "GrTextureMaker.h"
+#include "GrTextureParamsAdjuster.h"
 #include "effects/GrYUVtoRGBEffect.h"
 #include "SkCanvas.h"
 #include "SkGpuDevice.h"
@@ -19,12 +19,15 @@
 
 SkImage_Gpu::SkImage_Gpu(int w, int h, uint32_t uniqueID, SkAlphaType at, GrTexture* tex,
                          SkSurface::Budgeted budgeted)
-    : INHERITED(w, h, uniqueID, nullptr)
+    : INHERITED(w, h, uniqueID)
     , fTexture(SkRef(tex))
     , fAlphaType(at)
     , fBudgeted(budgeted)
     , fAddedRasterVersionToCache(false)
-    {}
+{
+    SkASSERT(tex->width() == w);
+    SkASSERT(tex->height() == h);
+}
 
 SkImage_Gpu::~SkImage_Gpu() {
     if (fAddedRasterVersionToCache.load()) {
@@ -38,6 +41,10 @@ extern void SkTextureImageApplyBudgetedDecision(SkImage* image) {
     }
 }
 
+static SkImageInfo make_info(int w, int h, bool isOpaque) {
+    return SkImageInfo::MakeN32(w, h, isOpaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
+}
+
 bool SkImage_Gpu::getROPixels(SkBitmap* dst) const {
     if (SkBitmapCache::Find(this->uniqueID(), dst)) {
         SkASSERT(dst->getGenerationID() == this->uniqueID());
@@ -46,8 +53,7 @@ bool SkImage_Gpu::getROPixels(SkBitmap* dst) const {
         return true;
     }
 
-    SkAlphaType at = this->isOpaque() ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
-    if (!dst->tryAllocPixels(SkImageInfo::MakeN32(this->width(), this->height(), at))) {
+    if (!dst->tryAllocPixels(make_info(this->width(), this->height(), this->isOpaque()))) {
         return false;
     }
     if (!fTexture->readPixels(0, 0, dst->width(), dst->height(), kSkia8888_GrPixelConfig,
@@ -61,56 +67,31 @@ bool SkImage_Gpu::getROPixels(SkBitmap* dst) const {
     return true;
 }
 
-static void make_raw_texture_stretched_key(uint32_t imageID, const SkGrStretch& stretch,
-                                           GrUniqueKey* stretchedKey) {
-    SkASSERT(SkGrStretch::kNone_Type != stretch.fType);
-
-    uint32_t width = SkToU16(stretch.fWidth);
-    uint32_t height = SkToU16(stretch.fHeight);
-
-    static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
-    GrUniqueKey::Builder builder(stretchedKey, kDomain, 3);
-    builder[0] = imageID;
-    builder[1] = stretch.fType;
-    builder[2] = width | (height << 16);
-    builder.finish();
-}
-
-class Texture_GrTextureMaker : public GrTextureMaker {
+class GpuImage_GrTextureAdjuster : public GrTextureAdjuster {
 public:
-    Texture_GrTextureMaker(const SkImage* image, GrTexture* unstretched)
-        : INHERITED(image->width(), image->height())
+    GpuImage_GrTextureAdjuster(const SkImage_Gpu* image)
+        : INHERITED(image->peekTexture())
         , fImage(image)
-        , fUnstretched(unstretched)
     {}
 
 protected:
-    GrTexture* onRefUnstretchedTexture(GrContext* ctx) override {
-        return SkRef(fUnstretched);
+    void makeCopyKey(const CopyParams& params, GrUniqueKey* copyKey) override {
+        GrUniqueKey baseKey;
+        GrMakeKeyFromImageID(&baseKey, fImage->uniqueID(),
+                             SkIRect::MakeWH(fImage->width(), fImage->height()));
+        MakeCopyKeyFromOrigKey(baseKey, params, copyKey);
     }
 
-    bool onMakeStretchedKey(const SkGrStretch& stretch, GrUniqueKey* stretchedKey) override {
-        make_raw_texture_stretched_key(fImage->uniqueID(), stretch, stretchedKey);
-        return stretchedKey->isValid();
-    }
-
-    void onNotifyStretchCached(const GrUniqueKey& stretchedKey) override {
-        as_IB(fImage)->notifyAddedToCache();
-    }
-
-    bool onGetROBitmap(SkBitmap* bitmap) override {
-        return as_IB(fImage)->getROPixels(bitmap);
-    }
+    void didCacheCopy(const GrUniqueKey& copyKey) override { as_IB(fImage)->notifyAddedToCache(); }
 
 private:
     const SkImage*  fImage;
-    GrTexture*      fUnstretched;
 
-    typedef GrTextureMaker INHERITED;
+    typedef GrTextureAdjuster INHERITED;
 };
 
-GrTexture* SkImage_Gpu::asTextureRef(GrContext* ctx, SkImageUsageType usage) const {
-    return Texture_GrTextureMaker(this, fTexture).refCachedTexture(ctx, usage);
+GrTexture* SkImage_Gpu::asTextureRef(GrContext* ctx, const GrTextureParams& params) const {
+    return GpuImage_GrTextureAdjuster(this).refTextureSafeForParams(params, nullptr);
 }
 
 bool SkImage_Gpu::isOpaque() const {
@@ -179,6 +160,85 @@ SkImage* SkImage_Gpu::onNewSubset(const SkIRect& subset) const {
     ctx->copySurface(subTx, fTexture, subset, SkIPoint::Make(0, 0));
     return new SkImage_Gpu(desc.fWidth, desc.fHeight, kNeedNewImageUniqueID, fAlphaType, subTx,
                            fBudgeted);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+#include "SkGrPixelRef.h"
+#include "SkImageFilter.h"
+
+class SkGpuImageFilterProxy : public SkImageFilter::Proxy {
+    GrContext* fCtx;
+
+public:
+    SkGpuImageFilterProxy(GrContext* ctx) : fCtx(ctx) {}
+
+    SkBaseDevice* createDevice(int width, int height) override {
+        GrSurfaceDesc desc;
+        desc.fConfig = kSkia8888_GrPixelConfig;
+        desc.fFlags = kRenderTarget_GrSurfaceFlag;
+        desc.fWidth = width;
+        desc.fHeight = height;
+        desc.fSampleCnt = 0;
+
+        SkAutoTUnref<GrTexture> texture(fCtx->textureProvider()->createTexture(desc, true));
+
+        if (texture) {
+            SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
+            return SkGpuDevice::Create(texture->asRenderTarget(), width, height, &props,
+                                       SkGpuDevice::kClear_InitContents);
+        } else {
+            return nullptr;
+        }
+    }
+
+    bool filterImage(const SkImageFilter* filter, const SkBitmap& src,
+                     const SkImageFilter::Context& ctx, SkBitmap* dst, SkIPoint* offset) override {
+        return filter->canFilterImageGPU() &&
+               filter->filterImageGPU(this, src, ctx, dst, offset);
+    }
+};
+
+static SkIRect compute_fast_ibounds(SkImageFilter* filter, const SkIRect& srcBounds) {
+    SkRect fastBounds;
+    fastBounds.set(srcBounds);
+    filter->computeFastBounds(fastBounds, &fastBounds);
+    return fastBounds.roundOut();
+}
+
+SkImage* SkImage_Gpu::onApplyFilter(SkImageFilter* filter, SkIPoint* offsetResult,
+                                    bool forceResultToOriginalSize) const {
+    const SkIRect srcBounds = SkIRect::MakeWH(this->width(), this->height());
+
+    if (forceResultToOriginalSize) {
+        SkBitmap src;
+        GrWrapTextureInBitmap(fTexture, this->width(), this->height(), this->isOpaque(), &src);
+
+        const SkIRect clipBounds = srcBounds;
+        SkGpuImageFilterProxy proxy(fTexture->getContext());
+        SkAutoTUnref<SkImageFilter::Cache> cache(SkGpuDevice::NewImageFilterCache());
+        SkImageFilter::Context ctx(SkMatrix::I(), clipBounds, cache, SkImageFilter::kExact_SizeConstraint);
+
+        SkBitmap dst;
+        if (!filter->filterImage(&proxy, src, ctx, &dst, offsetResult)) {
+            return nullptr;
+        }
+        return new SkImage_Gpu(dst.width(), dst.height(), kNeedNewImageUniqueID, dst.alphaType(),
+                               dst.getTexture(), SkSurface::kNo_Budgeted);
+    }
+
+    const SkIRect dstR = compute_fast_ibounds(filter, srcBounds);
+
+    SkImageInfo info = SkImageInfo::MakeN32Premul(dstR.width(), dstR.height());
+    SkAutoTUnref<SkSurface> surface(this->onNewSurface(info));
+
+    SkPaint paint;
+    paint.setImageFilter(filter);
+    surface->getCanvas()->drawImage(this, SkIntToScalar(-dstR.x()), SkIntToScalar(-dstR.y()),
+                                    &paint);
+
+    offsetResult->set(dstR.x(), dstR.y());
+    return surface->newImageSnapshot();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -297,18 +357,17 @@ SkImage* SkImage::NewFromYUVTexturesCopy(GrContext* ctx , SkYUVColorSpace colorS
 
     GrPaint paint;
     paint.setPorterDuffXPFactory(SkXfermode::kSrc_Mode);
-    paint.addColorFragmentProcessor(GrYUVtoRGBEffect::Create(paint.getProcessorDataManager(),
-                                                             yTex, uTex, vTex, yuvSizes,
+    paint.addColorFragmentProcessor(GrYUVtoRGBEffect::Create(yTex, uTex, vTex, yuvSizes,
                                                              colorSpace))->unref();
 
     const SkRect rect = SkRect::MakeWH(SkIntToScalar(dstDesc.fWidth),
                                        SkIntToScalar(dstDesc.fHeight));
-    SkAutoTUnref<GrDrawContext> drawContext(ctx->drawContext());
+    SkAutoTUnref<GrDrawContext> drawContext(ctx->drawContext(dst->asRenderTarget()));
     if (!drawContext) {
         return nullptr;
     }
 
-    drawContext->drawRect(dst->asRenderTarget(), GrClip::WideOpen(), paint, SkMatrix::I(), rect);
+    drawContext->drawRect(GrClip::WideOpen(), paint, SkMatrix::I(), rect);
     ctx->flushSurfaceWrites(dst);
     return new SkImage_Gpu(dstDesc.fWidth, dstDesc.fHeight, kNeedNewImageUniqueID,
                            kOpaque_SkAlphaType, dst, budgeted);

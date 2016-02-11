@@ -59,12 +59,11 @@ public:
 
     Document* getSVGDocument(ExceptionState&) const;
 
-    virtual ScrollbarMode scrollingMode() const { return ScrollbarAuto; }
-
     virtual bool loadedNonEmptyDocument() const { return false; }
     virtual void didLoadNonEmptyDocument() { }
 
     void setWidget(PassRefPtrWillBeRawPtr<Widget>);
+    PassRefPtrWillBeRawPtr<Widget> releaseWidget();
     Widget* ownedWidget() const;
 
     class UpdateSuspendScope {
@@ -82,6 +81,9 @@ public:
     void dispatchLoad() override;
     SandboxFlags sandboxFlags() const override { return m_sandboxFlags; }
     void renderFallbackContent() override { }
+    ScrollbarMode scrollingMode() const override { return ScrollbarAuto; }
+    int marginWidth() const override { return -1; }
+    int marginHeight() const override { return -1; }
 
     DECLARE_VIRTUAL_TRACE();
 
@@ -107,21 +109,25 @@ DEFINE_ELEMENT_TYPE_CASTS(HTMLFrameOwnerElement, isFrameOwnerElement());
 class SubframeLoadingDisabler {
     STACK_ALLOCATED();
 public:
-    explicit SubframeLoadingDisabler(Node& root)
+    explicit SubframeLoadingDisabler(Node& root) : SubframeLoadingDisabler(&root)
+    {
+    }
+
+    explicit SubframeLoadingDisabler(Node* root)
         : m_root(root)
     {
-        disabledSubtreeRoots().add(m_root);
+        if (m_root)
+            disabledSubtreeRoots().add(m_root);
     }
 
     ~SubframeLoadingDisabler()
     {
-        disabledSubtreeRoots().remove(m_root);
+        if (m_root)
+            disabledSubtreeRoots().remove(m_root);
     }
 
     static bool canLoadFrame(HTMLFrameOwnerElement& owner)
     {
-        if (owner.document().unloadStarted())
-            return false;
         for (Node* node = &owner; node; node = node->parentOrShadowHostNode()) {
             if (disabledSubtreeRoots().contains(node))
                 return false;
@@ -130,7 +136,7 @@ public:
     }
 
 private:
-    static WillBeHeapHashCountedSet<RawPtrWillBeMember<Node>>& disabledSubtreeRoots();
+    CORE_EXPORT static WillBeHeapHashCountedSet<RawPtrWillBeMember<Node>>& disabledSubtreeRoots();
 
     RawPtrWillBeMember<Node> m_root;
 };

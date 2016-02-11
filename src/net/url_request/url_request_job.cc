@@ -125,7 +125,7 @@ bool URLRequestJob::Read(IOBuffer* buf, int buf_size, int *bytes_read) {
     filtered_read_buffer_len_ = buf_size;
 
     if (ReadFilteredData(bytes_read)) {
-      rv = true;   // We have data to return.
+      rv = true;  // We have data to return.
 
       // It is fine to call DoneReading even if ReadFilteredData receives 0
       // bytes from the net, but we avoid making that call if we know for
@@ -401,7 +401,9 @@ void URLRequestJob::NotifyHeadersComplete() {
 
   // This should not be called on error, and the job type should have cleared
   // IO_PENDING state before calling this method.
-  DCHECK(request_->status().is_success());
+  // TODO(mmenke): Change this to a DCHECK once https://crbug.com/508900 is
+  // resolved.
+  CHECK(request_->status().is_success());
 
   // Initialize to the current time, and let the subclass optionally override
   // the time stamps if it has that information.  The default request_time is
@@ -636,8 +638,7 @@ void URLRequestJob::OnCallToDelegateComplete() {
   request_->OnCallToDelegateComplete();
 }
 
-bool URLRequestJob::ReadRawData(IOBuffer* buf, int buf_size,
-                                int *bytes_read) {
+bool URLRequestJob::ReadRawData(IOBuffer* buf, int buf_size, int* bytes_read) {
   DCHECK(bytes_read);
   *bytes_read = 0;
   return true;
@@ -740,7 +741,7 @@ bool URLRequestJob::ReadFilteredData(int* bytes_read) {
                    << "\"" << " Filter Error";
           filter_needs_more_output_space_ = false;
           NotifyDone(URLRequestStatus(URLRequestStatus::FAILED,
-                     ERR_CONTENT_DECODING_FAILED));
+                                      ERR_CONTENT_DECODING_FAILED));
           rv = false;
           break;
         }
@@ -792,9 +793,11 @@ void URLRequestJob::SetStatus(const URLRequestStatus &status) {
     // An error status should never be replaced by a non-error status by a
     // URLRequestJob.  URLRequest has some retry paths, but it resets the status
     // itself, if needed.
-    DCHECK(request_->status().is_io_pending() ||
-           request_->status().is_success() ||
-           (!status.is_success() && !status.is_io_pending()));
+    // TODO(mmenke): Change this to a DCHECK once https://crbug.com/508900 is
+    // resolved.
+    CHECK(request_->status().is_io_pending() ||
+          request_->status().is_success() ||
+          (!status.is_success() && !status.is_io_pending()));
     request_->set_status(status);
   }
 }
@@ -822,7 +825,8 @@ bool URLRequestJob::ReadRawDataForFilter(int* bytes_read) {
   return rv;
 }
 
-bool URLRequestJob::ReadRawDataHelper(IOBuffer* buf, int buf_size,
+bool URLRequestJob::ReadRawDataHelper(IOBuffer* buf,
+                                      int buf_size,
                                       int* bytes_read) {
   DCHECK(!request_->status().is_io_pending());
   DCHECK(raw_read_buffer_.get() == NULL);
@@ -854,8 +858,8 @@ void URLRequestJob::OnRawReadComplete(int bytes_read) {
   if (!filter_.get() && request() && bytes_read > 0 &&
       request()->net_log().IsCapturing()) {
     request()->net_log().AddByteTransferEvent(
-        NetLog::TYPE_URL_REQUEST_JOB_BYTES_READ,
-        bytes_read, raw_read_buffer_->data());
+        NetLog::TYPE_URL_REQUEST_JOB_BYTES_READ, bytes_read,
+        raw_read_buffer_->data());
   }
 
   if (bytes_read > 0) {
@@ -958,7 +962,7 @@ void URLRequestJob::MaybeNotifyNetworkBytes() {
   DCHECK_GE(total_received_bytes, last_notified_total_received_bytes_);
   if (total_received_bytes > last_notified_total_received_bytes_) {
     network_delegate_->NotifyNetworkBytesReceived(
-        *request_, total_received_bytes - last_notified_total_received_bytes_);
+        request_, total_received_bytes - last_notified_total_received_bytes_);
   }
   last_notified_total_received_bytes_ = total_received_bytes;
 
@@ -967,7 +971,7 @@ void URLRequestJob::MaybeNotifyNetworkBytes() {
   DCHECK_GE(total_sent_bytes, last_notified_total_sent_bytes_);
   if (total_sent_bytes > last_notified_total_sent_bytes_) {
     network_delegate_->NotifyNetworkBytesSent(
-        *request_, total_sent_bytes - last_notified_total_sent_bytes_);
+        request_, total_sent_bytes - last_notified_total_sent_bytes_);
   }
   last_notified_total_sent_bytes_ = total_sent_bytes;
 }

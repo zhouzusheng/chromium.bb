@@ -5,15 +5,20 @@
 #include "content/child/background_sync/background_sync_provider.h"
 
 #include "base/bind.h"
+#include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/single_thread_task_runner.h"
+#include "base/threading/thread_local.h"
 #include "content/child/background_sync/background_sync_type_converters.h"
+#include "content/child/child_thread_impl.h"
 #include "content/child/service_worker/web_service_worker_registration_impl.h"
-#include "content/child/worker_task_runner.h"
 #include "content/public/common/background_sync.mojom.h"
 #include "content/public/common/permission_status.mojom.h"
-#include "content/public/common/service_registry.h"
 #include "third_party/WebKit/public/platform/modules/background_sync/WebSyncError.h"
 #include "third_party/WebKit/public/platform/modules/background_sync/WebSyncRegistration.h"
+
+using base::LazyInstance;
+using base::ThreadLocalPointer;
 
 namespace content {
 namespace {
@@ -26,15 +31,54 @@ int64 GetServiceWorkerRegistrationId(
              service_worker_registration)->registration_id();
 }
 
+void ConnectToServiceOnMainThread(
+    mojo::InterfaceRequest<BackgroundSyncService> request) {
+  DCHECK(ChildThreadImpl::current());
+  ChildThreadImpl::current()->service_registry()->ConnectToRemoteService(
+      request.Pass());
+}
+
+LazyInstance<ThreadLocalPointer<BackgroundSyncProvider>>::Leaky
+    g_sync_provider_tls = LAZY_INSTANCE_INITIALIZER;
+
 }  // namespace
 
 BackgroundSyncProvider::BackgroundSyncProvider(
-    ServiceRegistry* service_registry)
-    : service_registry_(service_registry) {
-  DCHECK(service_registry);
+    const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner)
+    : main_thread_task_runner_(main_task_runner) {
+  DCHECK(main_task_runner);
+  g_sync_provider_tls.Pointer()->Set(this);
 }
 
 BackgroundSyncProvider::~BackgroundSyncProvider() {
+  g_sync_provider_tls.Pointer()->Set(nullptr);
+}
+
+// static
+BackgroundSyncProvider*
+BackgroundSyncProvider::GetOrCreateThreadSpecificInstance(
+    base::SingleThreadTaskRunner* main_thread_task_runner) {
+  DCHECK(main_thread_task_runner);
+  if (g_sync_provider_tls.Pointer()->Get())
+    return g_sync_provider_tls.Pointer()->Get();
+
+  bool have_worker_id = (WorkerThread::GetCurrentId() > 0);
+  if (!main_thread_task_runner->BelongsToCurrentThread() && !have_worker_id) {
+    // On a worker thread, this could happen if this method is called
+    // very late (say by a garbage collected SyncRegistration).
+    return nullptr;
+  }
+
+  BackgroundSyncProvider* instance =
+      new BackgroundSyncProvider(main_thread_task_runner);
+
+  if (have_worker_id) {
+    // For worker threads, use the observer interface to clean up when workers
+    // are stopped.
+    WorkerThread::AddObserver(instance);
+  }
+
+  return instance;
 }
 
 void BackgroundSyncProvider::registerBackgroundSync(
@@ -140,18 +184,19 @@ void BackgroundSyncProvider::releaseRegistration(int64_t handle_id) {
   GetBackgroundSyncServicePtr()->ReleaseRegistration(handle_id);
 }
 
-void BackgroundSyncProvider::notifyWhenDone(
+void BackgroundSyncProvider::notifyWhenFinished(
     int64_t handle_id,
-    blink::WebSyncNotifyWhenDoneCallbacks* callbacks) {
+    blink::WebSyncNotifyWhenFinishedCallbacks* callbacks) {
   DCHECK(callbacks);
 
-  scoped_ptr<blink::WebSyncNotifyWhenDoneCallbacks> callbacks_ptr(callbacks);
+  scoped_ptr<blink::WebSyncNotifyWhenFinishedCallbacks> callbacks_ptr(
+      callbacks);
 
   // base::Unretained is safe here, as the mojo channel will be deleted (and
   // will wipe its callbacks) before 'this' is deleted.
-  GetBackgroundSyncServicePtr()->NotifyWhenDone(
+  GetBackgroundSyncServicePtr()->NotifyWhenFinished(
       handle_id,
-      base::Bind(&BackgroundSyncProvider::NotifyWhenDoneCallback,
+      base::Bind(&BackgroundSyncProvider::NotifyWhenFinishedCallback,
                  base::Unretained(this), base::Passed(callbacks_ptr.Pass())));
 }
 
@@ -161,6 +206,10 @@ void BackgroundSyncProvider::DuplicateRegistrationHandle(
         callback) {
   GetBackgroundSyncServicePtr()->DuplicateRegistrationHandle(handle_id,
                                                              callback);
+}
+
+void BackgroundSyncProvider::WillStopCurrentWorkerThread() {
+  delete this;
 }
 
 void BackgroundSyncProvider::RegisterCallback(
@@ -335,8 +384,8 @@ void BackgroundSyncProvider::GetPermissionStatusCallback(
   }
 }
 
-void BackgroundSyncProvider::NotifyWhenDoneCallback(
-    scoped_ptr<blink::WebSyncNotifyWhenDoneCallbacks> callbacks,
+void BackgroundSyncProvider::NotifyWhenFinishedCallback(
+    scoped_ptr<blink::WebSyncNotifyWhenFinishedCallbacks> callbacks,
     BackgroundSyncError error,
     BackgroundSyncState state) {
   switch (error) {
@@ -344,15 +393,18 @@ void BackgroundSyncProvider::NotifyWhenDoneCallback(
       switch (state) {
         case BACKGROUND_SYNC_STATE_PENDING:
         case BACKGROUND_SYNC_STATE_FIRING:
+        case BACKGROUND_SYNC_STATE_REREGISTERED_WHILE_FIRING:
         case BACKGROUND_SYNC_STATE_UNREGISTERED_WHILE_FIRING:
           NOTREACHED();
           break;
         case BACKGROUND_SYNC_STATE_SUCCESS:
-          callbacks->onSuccess(true);
+          callbacks->onSuccess();
           break;
         case BACKGROUND_SYNC_STATE_FAILED:
         case BACKGROUND_SYNC_STATE_UNREGISTERED:
-          callbacks->onSuccess(false);
+          callbacks->onError(blink::WebSyncError(
+              blink::WebSyncError::ErrorTypeAbort,
+              "Sync failed, unregistered, or overwritten."));
           break;
       }
       break;
@@ -376,8 +428,11 @@ void BackgroundSyncProvider::NotifyWhenDoneCallback(
 BackgroundSyncServicePtr&
 BackgroundSyncProvider::GetBackgroundSyncServicePtr() {
   if (!background_sync_service_.get()) {
-    service_registry_->ConnectToRemoteService(
-        mojo::GetProxy(&background_sync_service_));
+    mojo::InterfaceRequest<BackgroundSyncService> request =
+        mojo::GetProxy(&background_sync_service_);
+    main_thread_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&ConnectToServiceOnMainThread, base::Passed(&request)));
   }
   return background_sync_service_;
 }

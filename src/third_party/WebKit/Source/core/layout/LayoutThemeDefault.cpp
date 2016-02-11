@@ -59,7 +59,7 @@ static const float maxSearchFieldResultsDecorationSize = 30;
 
 static bool useMockTheme()
 {
-    return LayoutTestSupport::isRunningLayoutTest();
+    return LayoutTestSupport::isMockThemeEnabledForTest();
 }
 
 unsigned LayoutThemeDefault::m_activeSelectionBackgroundColor = 0xff1e90ff;
@@ -78,7 +78,7 @@ LayoutThemeDefault::~LayoutThemeDefault()
 {
 }
 
-bool LayoutThemeDefault::supportsFocusRing(const ComputedStyle& style) const
+bool LayoutThemeDefault::themeDrawsFocusRing(const ComputedStyle& style) const
 {
     if (useMockTheme()) {
         // Don't use focus rings for buttons when mocking controls.
@@ -409,7 +409,7 @@ int LayoutThemeDefault::menuListInternalPadding(const ComputedStyle& style, int 
     if (paddingType == barType && style.appearance() != NoControlPart)
         padding += menuListArrowPadding();
 
-    return padding;
+    return padding * style.effectiveZoom();
 }
 
 //

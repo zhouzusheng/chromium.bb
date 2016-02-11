@@ -8,11 +8,11 @@
 #include <limits>
 #include <vector>
 
-#include "../../../../third_party/lcms2-2.6/include/lcms2.h"
-#include "../../../../third_party/libopenjpeg20/openjpeg.h"
-#include "../../../include/fxcodec/fx_codec.h"
-#include "../../../include/fxcrt/fx_safe_types.h"
 #include "codec_int.h"
+#include "core/include/fxcodec/fx_codec.h"
+#include "core/include/fxcrt/fx_safe_types.h"
+#include "third_party/lcms2-2.6/include/lcms2.h"
+#include "third_party/libopenjpeg20/openjpeg.h"
 
 static void fx_error_callback(const char* msg, void* client_data) {
   (void)client_data;
@@ -165,22 +165,26 @@ static void sycc_to_rgb(int offset,
   *out_b = b;
 }
 static void sycc444_to_rgb(opj_image_t* img) {
+  int prec = img->comps[0].prec;
+  int offset = 1 << (prec - 1);
+  int upb = (1 << prec) - 1;
+  OPJ_UINT32 maxw =
+      std::min(std::min(img->comps[0].w, img->comps[1].w), img->comps[2].w);
+  OPJ_UINT32 maxh =
+      std::min(std::min(img->comps[0].h, img->comps[1].h), img->comps[2].h);
+  FX_SAFE_SIZE_T max_size = maxw;
+  max_size *= maxh;
+  if (!max_size.IsValid())
+    return;
+
+  const int* y = img->comps[0].data;
+  const int* cb = img->comps[1].data;
+  const int* cr = img->comps[2].data;
   int *d0, *d1, *d2, *r, *g, *b;
-  const int *y, *cb, *cr;
-  int maxw, maxh, max, i, offset, upb;
-  i = (int)img->comps[0].prec;
-  offset = 1 << (i - 1);
-  upb = (1 << i) - 1;
-  maxw = (int)img->comps[0].w;
-  maxh = (int)img->comps[0].h;
-  max = maxw * maxh;
-  y = img->comps[0].data;
-  cb = img->comps[1].data;
-  cr = img->comps[2].data;
-  d0 = r = FX_Alloc(int, (size_t)max);
-  d1 = g = FX_Alloc(int, (size_t)max);
-  d2 = b = FX_Alloc(int, (size_t)max);
-  for (i = 0; i < max; ++i) {
+  d0 = r = FX_Alloc(int, max_size.ValueOrDie());
+  d1 = g = FX_Alloc(int, max_size.ValueOrDie());
+  d2 = b = FX_Alloc(int, max_size.ValueOrDie());
+  for (size_t i = 0; i < max_size.ValueOrDie(); ++i) {
     sycc_to_rgb(offset, upb, *y, *cb, *cr, r, g, b);
     ++y;
     ++cb;
@@ -197,24 +201,28 @@ static void sycc444_to_rgb(opj_image_t* img) {
   img->comps[2].data = d2;
 }
 static void sycc422_to_rgb(opj_image_t* img) {
+  int prec = img->comps[0].prec;
+  int offset = 1 << (prec - 1);
+  int upb = (1 << prec) - 1;
+  OPJ_UINT32 maxw =
+      std::min(std::min(img->comps[0].w, img->comps[1].w), img->comps[2].w);
+  OPJ_UINT32 maxh =
+      std::min(std::min(img->comps[0].h, img->comps[1].h), img->comps[2].h);
+  FX_SAFE_SIZE_T max_size = maxw;
+  max_size *= maxh;
+  if (!max_size.IsValid())
+    return;
+
+  const int* y = img->comps[0].data;
+  const int* cb = img->comps[1].data;
+  const int* cr = img->comps[2].data;
   int *d0, *d1, *d2, *r, *g, *b;
-  const int *y, *cb, *cr;
-  int maxw, maxh, max, offset, upb;
-  int i, j;
-  i = (int)img->comps[0].prec;
-  offset = 1 << (i - 1);
-  upb = (1 << i) - 1;
-  maxw = (int)img->comps[0].w;
-  maxh = (int)img->comps[0].h;
-  max = maxw * maxh;
-  y = img->comps[0].data;
-  cb = img->comps[1].data;
-  cr = img->comps[2].data;
-  d0 = r = FX_Alloc(int, (size_t)max);
-  d1 = g = FX_Alloc(int, (size_t)max);
-  d2 = b = FX_Alloc(int, (size_t)max);
-  for (i = 0; i < maxh; ++i) {
-    for (j = 0; (OPJ_UINT32)j < (maxw & ~(OPJ_UINT32)1); j += 2) {
+  d0 = r = FX_Alloc(int, max_size.ValueOrDie());
+  d1 = g = FX_Alloc(int, max_size.ValueOrDie());
+  d2 = b = FX_Alloc(int, max_size.ValueOrDie());
+  for (uint32_t i = 0; i < maxh; ++i) {
+    OPJ_UINT32 j;
+    for (j = 0; j < (maxw & ~static_cast<OPJ_UINT32>(1)); j += 2) {
       sycc_to_rgb(offset, upb, *y, *cb, *cr, r, g, b);
       ++y;
       ++r;
@@ -248,10 +256,6 @@ static void sycc422_to_rgb(opj_image_t* img) {
   img->comps[1].h = maxh;
   img->comps[2].w = maxw;
   img->comps[2].h = maxh;
-  img->comps[1].w = (OPJ_UINT32)maxw;
-  img->comps[1].h = (OPJ_UINT32)maxh;
-  img->comps[2].w = (OPJ_UINT32)maxw;
-  img->comps[2].h = (OPJ_UINT32)maxh;
   img->comps[1].dx = img->comps[0].dx;
   img->comps[2].dx = img->comps[0].dx;
   img->comps[1].dy = img->comps[0].dy;
@@ -658,7 +662,7 @@ class CJPX_Decoder {
  public:
   explicit CJPX_Decoder(bool use_colorspace);
   ~CJPX_Decoder();
-  FX_BOOL Init(const unsigned char* src_data, int src_size);
+  FX_BOOL Init(const unsigned char* src_data, FX_DWORD src_size);
   void GetInfo(FX_DWORD* width, FX_DWORD* height, FX_DWORD* components);
   bool Decode(uint8_t* dest_buf,
               int pitch,
@@ -666,7 +670,7 @@ class CJPX_Decoder {
 
  private:
   const uint8_t* m_SrcData;
-  int m_SrcSize;
+  FX_DWORD m_SrcSize;
   opj_image_t* image;
   opj_codec_t* l_codec;
   opj_stream_t* l_stream;
@@ -692,12 +696,12 @@ CJPX_Decoder::~CJPX_Decoder() {
   }
 }
 
-FX_BOOL CJPX_Decoder::Init(const unsigned char* src_data, int src_size) {
+FX_BOOL CJPX_Decoder::Init(const unsigned char* src_data, FX_DWORD src_size) {
   static const unsigned char szJP2Header[] = {
       0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50, 0x20, 0x20, 0x0d, 0x0a, 0x87, 0x0a};
-  if (!src_data || src_size < sizeof(szJP2Header)) {
+  if (!src_data || src_size < sizeof(szJP2Header))
     return FALSE;
-  }
+
   image = NULL;
   m_SrcData = src_data;
   m_SrcSize = src_size;

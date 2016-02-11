@@ -42,10 +42,10 @@
 #include "base/sys_byteorder.h"
 #include "base/values.h"
 #include "net/base/address_list.h"
-#include "net/base/dns_util.h"
 #include "net/base/ip_address_number.h"
 #include "net/base/net_module.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "net/base/url_util.h"
 #include "net/grit/net_resources.h"
 #include "net/http/http_content_disposition.h"
 #include "url/gurl.h"
@@ -158,17 +158,6 @@ bool IsCanonicalizedHostCompliant(const std::string& host) {
   }
 
   return most_recent_component_started_alphanumeric;
-}
-
-base::string16 StripWWW(const base::string16& text) {
-  const base::string16 www(base::ASCIIToUTF16("www."));
-  return base::StartsWith(text, www, base::CompareCase::SENSITIVE)
-      ? text.substr(www.length()) : text;
-}
-
-base::string16 StripWWWFromHost(const GURL& url) {
-  DCHECK(url.is_valid());
-  return StripWWW(base::ASCIIToUTF16(url.host_piece()));
 }
 
 int SetNonBlocking(int fd) {
@@ -492,30 +481,6 @@ bool HaveOnlyLoopbackAddresses() {
 #endif  // defined(various platforms)
 }
 
-AddressFamily GetAddressFamily(const IPAddressNumber& address) {
-  switch (address.size()) {
-    case kIPv4AddressSize:
-      return ADDRESS_FAMILY_IPV4;
-    case kIPv6AddressSize:
-      return ADDRESS_FAMILY_IPV6;
-    default:
-      return ADDRESS_FAMILY_UNSPECIFIED;
-  }
-}
-
-int ConvertAddressFamily(AddressFamily address_family) {
-  switch (address_family) {
-    case ADDRESS_FAMILY_UNSPECIFIED:
-      return AF_UNSPEC;
-    case ADDRESS_FAMILY_IPV4:
-      return AF_INET;
-    case ADDRESS_FAMILY_IPV6:
-      return AF_INET6;
-  }
-  NOTREACHED();
-  return AF_UNSPEC;
-}
-
 const uint16_t* GetPortFieldFromSockaddr(const struct sockaddr* address,
                                          socklen_t address_len) {
   if (address->sa_family == AF_INET) {
@@ -600,10 +565,6 @@ bool IsLocalhost(base::StringPiece host) {
   }
 
   return false;
-}
-
-bool IsLocalhostTLD(base::StringPiece host) {
-  return IsNormalizedLocalhostTLD(NormalizeHostname(host));
 }
 
 bool HasGoogleHost(const GURL& url) {

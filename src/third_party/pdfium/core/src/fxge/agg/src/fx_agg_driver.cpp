@@ -4,19 +4,21 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../../../include/fxge/fx_ge.h"
+#include "core/src/fxge/agg/include/fx_agg_driver.h"
+
 #include "../../dib/dib_int.h"
 #include "../../ge/text_int.h"
-#include "../../../../include/fxcodec/fx_codec.h"
-#include "../../../../../third_party/agg23/agg_pixfmt_gray.h"
-#include "../../../../../third_party/agg23/agg_path_storage.h"
-#include "../../../../../third_party/agg23/agg_scanline_u.h"
-#include "../../../../../third_party/agg23/agg_rasterizer_scanline_aa.h"
-#include "../../../../../third_party/agg23/agg_renderer_scanline.h"
-#include "../../../../../third_party/agg23/agg_curves.h"
-#include "../../../../../third_party/agg23/agg_conv_stroke.h"
-#include "../../../../../third_party/agg23/agg_conv_dash.h"
-#include "../include/fx_agg_driver.h"
+#include "core/include/fxcodec/fx_codec.h"
+#include "core/include/fxge/fx_ge.h"
+#include "third_party/agg23/agg_conv_dash.h"
+#include "third_party/agg23/agg_conv_stroke.h"
+#include "third_party/agg23/agg_curves.h"
+#include "third_party/agg23/agg_path_storage.h"
+#include "third_party/agg23/agg_pixfmt_gray.h"
+#include "third_party/agg23/agg_rasterizer_scanline_aa.h"
+#include "third_party/agg23/agg_renderer_scanline.h"
+#include "third_party/agg23/agg_scanline_u.h"
+
 void _HardClip(FX_FLOAT& x, FX_FLOAT& y) {
   if (x > 50000) {
     x = 50000;
@@ -318,7 +320,7 @@ FX_BOOL CFX_AggDeviceDriver::SetClip_PathFill(
     const CFX_AffineMatrix* pObject2Device,
     int fill_mode) {
   m_FillFlags = fill_mode;
-  if (m_pClipRgn == NULL) {
+  if (!m_pClipRgn) {
     m_pClipRgn = new CFX_ClipRgn(GetDeviceCaps(FXDC_PIXEL_WIDTH),
                                  GetDeviceCaps(FXDC_PIXEL_HEIGHT));
   }
@@ -350,7 +352,7 @@ FX_BOOL CFX_AggDeviceDriver::SetClip_PathStroke(
     const CFX_PathData* pPathData,
     const CFX_AffineMatrix* pObject2Device,
     const CFX_GraphStateData* pGraphState) {
-  if (m_pClipRgn == NULL) {
+  if (!m_pClipRgn) {
     m_pClipRgn = new CFX_ClipRgn(GetDeviceCaps(FXDC_PIXEL_WIDTH),
                                  GetDeviceCaps(FXDC_PIXEL_HEIGHT));
   }

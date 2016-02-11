@@ -41,6 +41,7 @@
 #include "core/events/UIEventWithKeyState.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/input/EventHandler.h"
@@ -51,11 +52,14 @@
 #include "core/loader/HistoryItem.h"
 #include "core/page/Page.h"
 #include "core/page/WindowFeatures.h"
+#include "modules/audio_output_devices/HTMLMediaElementAudioOutputDevice.h"
 #include "modules/device_light/DeviceLightController.h"
 #include "modules/device_orientation/DeviceMotionController.h"
+#include "modules/device_orientation/DeviceOrientationAbsoluteController.h"
 #include "modules/device_orientation/DeviceOrientationController.h"
 #include "modules/encryptedmedia/HTMLMediaElementEncryptedMedia.h"
 #include "modules/gamepad/NavigatorGamepad.h"
+#include "modules/mediasession/MediaSession.h"
 #include "modules/serviceworkers/NavigatorServiceWorker.h"
 #include "modules/storage/DOMWindowStorageController.h"
 #include "modules/vr/NavigatorVRDevice.h"
@@ -74,6 +78,7 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebVector.h"
+#include "public/platform/modules/mediasession/WebMediaSession.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProviderClient.h"
 #include "public/web/WebAutofillClient.h"
@@ -136,6 +141,8 @@ void FrameLoaderClientImpl::dispatchDidClearWindowObjectInMainWorld()
         if (document) {
             DeviceMotionController::from(*document);
             DeviceOrientationController::from(*document);
+            if (RuntimeEnabledFeatures::deviceOrientationAbsoluteEnabled())
+                DeviceOrientationAbsoluteController::from(*document);
             if (RuntimeEnabledFeatures::deviceLightEnabled())
                 DeviceLightController::from(*document);
             NavigatorGamepad::from(*document);
@@ -465,7 +472,7 @@ void FrameLoaderClientImpl::dispatchDidCommitLoad(HistoryItem* item, HistoryComm
 void FrameLoaderClientImpl::dispatchDidFailProvisionalLoad(
     const ResourceError& error, HistoryCommitType commitType)
 {
-    OwnPtr<WebPluginLoadObserver> observer = pluginLoadObserver(m_webFrame->frame()->loader().provisionalDocumentLoader());
+    OwnPtrWillBeRawPtr<WebPluginLoadObserver> observer = pluginLoadObserver(m_webFrame->frame()->loader().provisionalDocumentLoader());
     m_webFrame->didFail(error, true, commitType);
     if (observer)
         observer->didFailLoading(error);
@@ -473,7 +480,7 @@ void FrameLoaderClientImpl::dispatchDidFailProvisionalLoad(
 
 void FrameLoaderClientImpl::dispatchDidFailLoad(const ResourceError& error, HistoryCommitType commitType)
 {
-    OwnPtr<WebPluginLoadObserver> observer = pluginLoadObserver(m_webFrame->frame()->loader().documentLoader());
+    OwnPtrWillBeRawPtr<WebPluginLoadObserver> observer = pluginLoadObserver(m_webFrame->frame()->loader().documentLoader());
     m_webFrame->didFail(error, false, commitType);
     if (observer)
         observer->didFailLoading(error);
@@ -485,7 +492,7 @@ void FrameLoaderClientImpl::dispatchDidFailLoad(const ResourceError& error, Hist
 
 void FrameLoaderClientImpl::dispatchDidFinishLoad()
 {
-    OwnPtr<WebPluginLoadObserver> observer = pluginLoadObserver(m_webFrame->frame()->loader().documentLoader());
+    OwnPtrWillBeRawPtr<WebPluginLoadObserver> observer = pluginLoadObserver(m_webFrame->frame()->loader().documentLoader());
 
     if (m_webFrame->client())
         m_webFrame->client()->didFinishLoad(m_webFrame);
@@ -544,7 +551,7 @@ static bool allowCreatingBackgroundTabs()
     return userPolicy == NavigationPolicyNewBackgroundTab;
 }
 
-NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, DocumentLoader* loader, NavigationPolicy policy)
+NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const ResourceRequest& request, DocumentLoader* loader, NavigationType type, NavigationPolicy policy, bool replacesCurrentHistoryItem)
 {
     if (!m_webFrame->client())
         return NavigationPolicyIgnore;
@@ -556,11 +563,10 @@ NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const Resource
 
     WrappedResourceRequest wrappedResourceRequest(request);
     WebFrameClient::NavigationPolicyInfo navigationInfo(wrappedResourceRequest);
-    navigationInfo.frame = m_webFrame;
-    navigationInfo.extraData = ds->extraData();
-    navigationInfo.navigationType = ds->navigationType();
+    navigationInfo.navigationType = static_cast<WebNavigationType>(type);
     navigationInfo.defaultPolicy = static_cast<WebNavigationPolicy>(policy);
-    navigationInfo.isRedirect = ds->isRedirect();
+    navigationInfo.extraData = ds ? ds->extraData() : nullptr;
+    navigationInfo.replacesCurrentHistoryItem = replacesCurrentHistoryItem;
 
     WebNavigationPolicy webPolicy = m_webFrame->client()->decidePolicyForNavigation(navigationInfo);
     return static_cast<NavigationPolicy>(webPolicy);
@@ -604,15 +610,14 @@ void FrameLoaderClientImpl::didStopLoading()
         m_webFrame->client()->didStopLoading();
 }
 
-void FrameLoaderClientImpl::loadURLExternally(const ResourceRequest& request, NavigationPolicy policy, const String& suggestedName)
+void FrameLoaderClientImpl::loadURLExternally(const ResourceRequest& request, NavigationPolicy policy, const String& suggestedName, bool shouldReplaceCurrentEntry)
 {
-    if (m_webFrame->client()) {
-        ASSERT(m_webFrame->frame()->document());
-        Fullscreen::fullyExitFullscreen(*m_webFrame->frame()->document());
-        WrappedResourceRequest webreq(request);
-        m_webFrame->client()->loadURLExternally(
-            m_webFrame, webreq, static_cast<WebNavigationPolicy>(policy), suggestedName);
-    }
+    if (!m_webFrame->client())
+        return;
+    ASSERT(m_webFrame->frame()->document());
+    Fullscreen::fullyExitFullscreen(*m_webFrame->frame()->document());
+    m_webFrame->client()->loadURLExternally(
+        WrappedResourceRequest(request), static_cast<WebNavigationPolicy>(policy), suggestedName, shouldReplaceCurrentEntry);
 }
 
 bool FrameLoaderClientImpl::navigateBackForward(int offset) const
@@ -680,9 +685,9 @@ PassRefPtrWillBeRawPtr<DocumentLoader> FrameLoaderClientImpl::createDocumentLoad
     return ds.release();
 }
 
-String FrameLoaderClientImpl::userAgent(const KURL& url)
+String FrameLoaderClientImpl::userAgent()
 {
-    WebString override = m_webFrame->client()->userAgentOverride(m_webFrame, WebURL(url));
+    WebString override = m_webFrame->client()->userAgentOverride(m_webFrame);
     if (!override.isEmpty())
         return override;
 
@@ -776,9 +781,18 @@ PassOwnPtr<WebMediaPlayer> FrameLoaderClientImpl::createWebMediaPlayer(
         return nullptr;
 
     HTMLMediaElementEncryptedMedia& encryptedMedia = HTMLMediaElementEncryptedMedia::from(htmlMediaElement);
+    WebString sinkId(HTMLMediaElementAudioOutputDevice::sinkId(htmlMediaElement));
     return adoptPtr(webFrame->client()->createMediaPlayer(webFrame, url,
         client, &encryptedMedia,
-        encryptedMedia.contentDecryptionModule()));
+        encryptedMedia.contentDecryptionModule(), sinkId));
+}
+
+PassOwnPtr<WebMediaSession> FrameLoaderClientImpl::createWebMediaSession()
+{
+    if (!m_webFrame->client())
+        return nullptr;
+
+    return adoptPtr(m_webFrame->client()->createMediaSession());
 }
 
 ObjectContentType FrameLoaderClientImpl::objectContentType(
@@ -824,7 +838,7 @@ ObjectContentType FrameLoaderClientImpl::objectContentType(
     return ObjectContentNone;
 }
 
-PassOwnPtr<WebPluginLoadObserver> FrameLoaderClientImpl::pluginLoadObserver(DocumentLoader* loader)
+PassOwnPtrWillBeRawPtr<WebPluginLoadObserver> FrameLoaderClientImpl::pluginLoadObserver(DocumentLoader* loader)
 {
     return WebDataSourceImpl::fromDocumentLoader(loader)->releasePluginLoadObserver();
 }
@@ -857,6 +871,14 @@ void FrameLoaderClientImpl::didChangeSandboxFlags(Frame* childFrame, SandboxFlag
     if (!m_webFrame->client())
         return;
     m_webFrame->client()->didChangeSandboxFlags(WebFrame::fromFrame(childFrame), static_cast<WebSandboxFlags>(flags));
+}
+
+void FrameLoaderClientImpl::didChangeFrameOwnerProperties(HTMLFrameElementBase* frameElement)
+{
+    if (!m_webFrame->client())
+        return;
+
+    m_webFrame->client()->didChangeFrameOwnerProperties(WebFrame::fromFrame(frameElement->contentFrame()), WebFrameOwnerProperties(frameElement->scrollingMode(), frameElement->marginWidth(), frameElement->marginHeight()));
 }
 
 void FrameLoaderClientImpl::dispatchWillOpenWebSocket(WebSocketHandle* handle)

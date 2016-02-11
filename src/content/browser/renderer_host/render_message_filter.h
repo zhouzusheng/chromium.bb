@@ -43,6 +43,7 @@
 class GURL;
 struct FontDescriptor;
 struct ViewHostMsg_CreateWindow_Params;
+struct ViewHostMsg_CreateWindow_Reply;
 
 namespace blink {
 struct WebScreenInfo;
@@ -56,6 +57,10 @@ class TaskRunner;
 
 namespace gfx {
 struct GpuMemoryBufferHandle;
+}
+
+namespace gpu {
+struct SyncToken;
 }
 
 namespace media {
@@ -101,11 +106,6 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
 
   int render_process_id() const { return render_process_id_; }
 
-  // Returns the correct net::URLRequestContext depending on what type of url is
-  // given.
-  // Only call on the IO thread.
-  net::URLRequestContext* GetRequestContextForURL(const GURL& url);
-
  protected:
   ~RenderMessageFilter() override;
 
@@ -123,9 +123,7 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
 
   void OnGetProcessMemorySizes(size_t* private_bytes, size_t* shared_bytes);
   void OnCreateWindow(const ViewHostMsg_CreateWindow_Params& params,
-                      int* route_id,
-                      int* main_frame_route_id,
-                      int64* cloned_session_storage_namespace_id);
+                      ViewHostMsg_CreateWindow_Reply* reply);
   void OnCreateWidget(int opener_id,
                       blink::WebPopupType popup_type,
                       int* route_id);
@@ -216,7 +214,7 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
   void GpuMemoryBufferAllocated(IPC::Message* reply,
                                 const gfx::GpuMemoryBufferHandle& handle);
   void OnDeletedGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
-                                uint32 sync_point);
+                                const gpu::SyncToken& sync_token);
 
   // Cached resource request dispatcher host, guaranteed to be non-null. We do
   // not own it; it is managed by the BrowserProcess, which has a wider scope

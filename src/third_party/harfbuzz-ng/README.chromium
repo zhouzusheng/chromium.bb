@@ -1,8 +1,8 @@
 Name: harfbuzz-ng
 Short Name: harfbuzz-ng
 URL: http://harfbuzz.org
-Version: 1.0.5
-Date: 20151013
+Version: 1.1.1
+Date: 20151124
 Security Critical: yes
 License: MIT
 License File: COPYING
@@ -18,4 +18,3 @@ tarball's src folder over to src, then checking for removed or added files
 and update our build recipes in BUILD.gn and harfbuzz.gyp accordingly, update
 the NEWS file from HarfBuzz' release notes, and bump the version numbers
 in README.chromium.
-

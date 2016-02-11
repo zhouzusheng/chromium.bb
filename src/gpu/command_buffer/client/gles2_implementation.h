@@ -253,6 +253,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // ContextSupport implementation.
   void SignalSyncPoint(uint32 sync_point,
                        const base::Closure& callback) override;
+  void SignalSyncToken(const gpu::SyncToken& sync_token,
+                       const base::Closure& callback) override;
   void SignalQuery(uint32 query, const base::Closure& callback) override;
   void SetSurfaceVisible(bool visible) override;
   void SetAggressivelyFreeResources(bool aggressively_free_resources) override;
@@ -645,6 +647,17 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   const std::string& GetLogPrefix() const;
 
+  bool PrepareInstancedPathCommand(const char* function_name,
+                                   GLsizei num_paths,
+                                   GLenum path_name_type,
+                                   const void* paths,
+                                   GLenum transform_type,
+                                   const GLfloat* transform_values,
+                                   ScopedTransferBufferPtr* buffer,
+                                   uint32* out_paths_shm_id,
+                                   size_t* out_paths_offset,
+                                   uint32* out_transforms_shm_id,
+                                   size_t* out_transforms_offset);
 #if defined(GL_CLIENT_FAIL_GL_ERRORS)
   void CheckGLError();
   void FailGLError(GLenum error);
@@ -745,6 +758,12 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   // Used to check for single threaded access.
   int use_count_;
+
+  // Maximum amount of extra memory from the mapped memory pool to use when
+  // needing to transfer something exceeding the default transfer buffer.
+  // This should be 0 for low memory devices since they are already memory
+  // constrained.
+  const uint32_t max_extra_transfer_buffer_size_;
 
   // Map of GLenum to Strings for glGetString.  We need to cache these because
   // the pointer passed back to the client has to remain valid for eternity.

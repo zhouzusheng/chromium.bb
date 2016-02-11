@@ -20,9 +20,10 @@ class CC_EXPORT OverlayStrategyAllOrNothing
       OverlayCandidateValidator* capability_checker);
   ~OverlayStrategyAllOrNothing() override;
 
-  bool Attempt(RenderPassList* render_passes,
+  bool Attempt(ResourceProvider* resource_provider,
+               RenderPassList* render_passes,
                OverlayCandidateList* candidate_list,
-               float device_scale_factor) override;
+               gfx::Rect* damage_rect) override;
 
  private:
   OverlayCandidateValidator* capability_checker_;  // Weak.

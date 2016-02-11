@@ -169,12 +169,16 @@ DevToolsAPIImpl.prototype = {
     },
 
     /**
-     * @param {string} errorMessage
      * @param {!{fileSystemName: string, rootURL: string, fileSystemPath: string}} fileSystem
      */
-    fileSystemAdded: function(errorMessage, fileSystem)
+    fileSystemAdded: function(fileSystem)
     {
-        this._dispatchOnInspectorFrontendAPI("fileSystemAdded", [errorMessage, fileSystem]);
+        this._dispatchOnInspectorFrontendAPI("fileSystemAdded", ["", fileSystem]);
+    },
+
+    fileSystemFilesChanged: function(path)
+    {
+        this._dispatchOnInspectorFrontendAPI("fileSystemFilesChanged", [path]);
     },
 
     /**
@@ -270,9 +274,12 @@ DevToolsAPIImpl.prototype = {
         this._dispatchOnInspectorFrontendAPI("setUseSoftMenu", [useSoftMenu]);
     },
 
-    showConsole: function()
+    /**
+     * @param {string} panelName
+     */
+    showPanel: function(panelName)
     {
-        this._dispatchOnInspectorFrontendAPI("showConsole", []);
+        this._dispatchOnInspectorFrontendAPI("showPanel", [panelName]);
     },
 
     /**
@@ -508,7 +515,7 @@ InspectorFrontendHostImpl.prototype = {
      */
     sendMessageToBackend: function(message)
     {
-        DevToolsHost.sendMessageToBackend(message);
+        DevToolsAPI.sendMessageToEmbedder("dispatchProtocolMessage", [message], null);
     },
 
     /**
@@ -541,10 +548,11 @@ InspectorFrontendHostImpl.prototype = {
 
     /**
      * @override
+     * @param {string=} fileSystemPath
      */
-    addFileSystem: function()
+    addFileSystem: function(fileSystemPath)
     {
-        DevToolsAPI.sendMessageToEmbedder("addFileSystem", [], null);
+        DevToolsAPI.sendMessageToEmbedder("addFileSystem", [fileSystemPath || ""], null);
     },
 
     /**
@@ -685,6 +693,16 @@ InspectorFrontendHostImpl.prototype = {
     performActionOnRemotePage: function(pageId, action)
     {
         DevToolsAPI.sendMessageToEmbedder("performActionOnRemotePage", [pageId, action], null);
+    },
+
+    /**
+     * @override
+     * @param {string} browserId
+     * @param {string} url
+     */
+    openRemotePage: function(browserId, url)
+    {
+        DevToolsAPI.sendMessageToEmbedder("openRemotePage", [browserId, url], null);
     },
 
     /**

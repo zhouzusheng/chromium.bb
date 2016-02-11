@@ -156,6 +156,8 @@ ScrollCustomizationCallbacks& scrollCustomizationCallbacks()
 using namespace HTMLNames;
 using namespace XMLNames;
 
+enum class ClassStringContent { Empty, WhiteSpaceOnly, HasClasses };
+
 PassRefPtrWillBeRawPtr<Element> Element::create(const QualifiedName& tagName, Document* document)
 {
     return adoptRefWillBeNoop(new Element(tagName, document, CreateElement));
@@ -476,12 +478,14 @@ void Element::scrollIntoView(bool alignToTop)
     if (!layoutObject())
         return;
 
+    bool makeVisibleInVisualViewport = !document().page()->settings().inertVisualViewport();
+
     LayoutRect bounds = boundingBox();
     // Align to the top / bottom and to the closest edge.
     if (alignToTop)
-        layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignTopAlways);
+        layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignTopAlways, ProgrammaticScroll, makeVisibleInVisualViewport);
     else
-        layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignBottomAlways);
+        layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignBottomAlways, ProgrammaticScroll, makeVisibleInVisualViewport);
 }
 
 void Element::scrollIntoViewIfNeeded(bool centerIfNeeded)
@@ -491,11 +495,13 @@ void Element::scrollIntoViewIfNeeded(bool centerIfNeeded)
     if (!layoutObject())
         return;
 
+    bool makeVisibleInVisualViewport = !document().page()->settings().inertVisualViewport();
+
     LayoutRect bounds = boundingBox();
     if (centerIfNeeded)
-        layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded);
+        layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded, ProgrammaticScroll, makeVisibleInVisualViewport);
     else
-        layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignToEdgeIfNeeded);
+        layoutObject()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignToEdgeIfNeeded, ProgrammaticScroll, makeVisibleInVisualViewport);
 }
 
 void Element::setDistributeScroll(ScrollStateCallback* scrollStateCallback, String nativeScrollBehavior)
@@ -1005,16 +1011,20 @@ void Element::bbRequestSpellCheck()
             if (innerElement && innerElement->hasEditableStyle() && innerElement->isSpellCheckingEnabled()) {
                 VisiblePosition startPos = createVisiblePosition(firstPositionInNode(innerElement));
                 VisiblePosition endPos = createVisiblePosition(lastPositionInNode(innerElement));
-                EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
-                spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+                if (startPos.isNotNull() && endPos.isNotNull()) {
+                    EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
+                    spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+                }
             }
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->hasEditableStyle() && element->isSpellCheckingEnabled()) {
             VisiblePosition startPos = createVisiblePosition(firstPositionInNode(element));
             VisiblePosition endPos = createVisiblePosition(lastPositionInNode(element));
-            EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
-            spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            if (startPos.isNotNull() && endPos.isNotNull()) {
+                EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
+                spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            }
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else {
@@ -1319,7 +1329,7 @@ inline void Element::attributeChangedFromParserOrByCloning(const QualifiedName& 
 }
 
 template <typename CharacterType>
-static inline bool classStringHasClassName(const CharacterType* characters, unsigned length)
+static inline ClassStringContent classStringHasClassName(const CharacterType* characters, unsigned length)
 {
     ASSERT(length > 0);
 
@@ -1330,15 +1340,20 @@ static inline bool classStringHasClassName(const CharacterType* characters, unsi
         ++i;
     } while (i < length);
 
-    return i < length;
+    if (i == length && length == 1)
+        return ClassStringContent::Empty;
+    if (i == length && length > 1)
+        return ClassStringContent::WhiteSpaceOnly;
+
+    return ClassStringContent::HasClasses;
 }
 
-static inline bool classStringHasClassName(const AtomicString& newClassString)
+static inline ClassStringContent classStringHasClassName(const AtomicString& newClassString)
 {
     unsigned length = newClassString.length();
 
     if (!length)
-        return false;
+        return ClassStringContent::Empty;
 
     if (newClassString.is8Bit())
         return classStringHasClassName(newClassString.characters8(), length);
@@ -1351,8 +1366,9 @@ void Element::classAttributeChanged(const AtomicString& newClassString)
     bool testShouldInvalidateStyle = inActiveDocument() && styleResolver && styleChangeType() < SubtreeStyleChange;
 
     ASSERT(elementData());
-    if (classStringHasClassName(newClassString)) {
-        const bool shouldFoldCase = document().inQuirksMode();
+    ClassStringContent classStringContentType = classStringHasClassName(newClassString);
+    const bool shouldFoldCase = document().inQuirksMode();
+    if (classStringContentType == ClassStringContent::HasClasses) {
         const SpaceSplitString oldClasses = elementData()->classNames();
         elementData()->setClass(newClassString, shouldFoldCase);
         const SpaceSplitString& newClasses = elementData()->classNames();
@@ -1362,7 +1378,10 @@ void Element::classAttributeChanged(const AtomicString& newClassString)
         const SpaceSplitString& oldClasses = elementData()->classNames();
         if (testShouldInvalidateStyle)
             document().styleEngine().classChangedForElement(oldClasses, *this);
-        elementData()->clearClass();
+        if (classStringContentType == ClassStringContent::WhiteSpaceOnly)
+            elementData()->setClass(newClassString, shouldFoldCase);
+        else
+            elementData()->clearClass();
     }
 
     if (hasRareData())
@@ -1387,7 +1406,7 @@ bool Element::shouldInvalidateDistributionWhenAttributeChanged(ElementShadow* el
 
     if (name == HTMLNames::classAttr) {
         const AtomicString& newClassString = newValue;
-        if (classStringHasClassName(newClassString)) {
+        if (classStringHasClassName(newClassString) == ClassStringContent::HasClasses) {
             const SpaceSplitString& oldClasses = elementData()->classNames();
             const SpaceSplitString newClasses(newClassString, document().inQuirksMode() ? SpaceSplitString::ShouldFoldCase : SpaceSplitString::ShouldNotFoldCase);
             if (featureSet.checkSelectorsForClassChange(oldClasses, newClasses))
@@ -2005,22 +2024,21 @@ PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(const ScriptState* 
         exceptionState.throwDOMException(InvalidStateError, "Shadow root cannot be created on a host which already hosts this type of shadow tree.");
         return nullptr;
     }
-    return createShadowRootInternal(ShadowRootType::OpenByDefault, exceptionState);
+    return createShadowRootInternal(ShadowRootType::V0, exceptionState);
 }
 
-PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(const ScriptState* scriptState, const ShadowRootInit& shadowRootInitDict, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ShadowRoot> Element::attachShadow(const ScriptState* scriptState, const ShadowRootInit& shadowRootInitDict, ExceptionState& exceptionState)
 {
-    ASSERT(RuntimeEnabledFeatures::createShadowRootWithParameterEnabled());
-    UseCounter::count(document(), UseCounter::ElementCreateShadowRootWithParameter);
+    ASSERT(RuntimeEnabledFeatures::shadowDOMV1Enabled());
 
-    OriginsUsingFeatures::countMainWorldOnly(scriptState, document(), OriginsUsingFeatures::Feature::ElementCreateShadowRoot);
+    OriginsUsingFeatures::countMainWorldOnly(scriptState, document(), OriginsUsingFeatures::Feature::ElementAttachShadow);
 
     if (shadowRootInitDict.hasMode() && shadowRoot()) {
         exceptionState.throwDOMException(InvalidStateError, "Shadow root cannot be created on a host which already hosts a shadow tree.");
         return nullptr;
     }
 
-    ShadowRootType type = ShadowRootType::OpenByDefault;
+    ShadowRootType type = ShadowRootType::V0;
     if (shadowRootInitDict.hasMode())
         type = shadowRootInitDict.mode() == "open" ? ShadowRootType::Open : ShadowRootType::Closed;
 
@@ -2029,9 +2047,9 @@ PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(const ScriptState* 
             exceptionState.throwDOMException(NotSupportedError, "Closed shadow root is not supported yet.");
             return nullptr;
         }
-        UseCounter::count(document(), UseCounter::ElementCreateShadowRootClosed);
+        UseCounter::count(document(), UseCounter::ElementAttachShadowClosed);
     } else if (type == ShadowRootType::Open) {
-        UseCounter::count(document(), UseCounter::ElementCreateShadowRootOpen);
+        UseCounter::count(document(), UseCounter::ElementAttachShadowOpen);
     }
 
     RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = createShadowRootInternal(type, exceptionState);
@@ -2065,7 +2083,7 @@ ShadowRoot* Element::shadowRoot() const
     ElementShadow* elementShadow = shadow();
     if (!elementShadow)
         return nullptr;
-    return elementShadow->youngestShadowRoot();
+    return &elementShadow->youngestShadowRoot();
 }
 
 ShadowRoot* Element::openShadowRoot() const
@@ -2073,7 +2091,7 @@ ShadowRoot* Element::openShadowRoot() const
     ShadowRoot* root = shadowRoot();
     if (!root)
         return nullptr;
-    return root->type() == ShadowRootType::OpenByDefault || root->type() == ShadowRootType::Open ? root : nullptr;
+    return root->type() == ShadowRootType::V0 || root->type() == ShadowRootType::Open ? root : nullptr;
 }
 
 ShadowRoot* Element::closedShadowRoot() const
@@ -2424,7 +2442,7 @@ bool Element::hasAttributeNS(const AtomicString& namespaceURI, const AtomicStrin
     return elementData()->attributes().find(qName);
 }
 
-void Element::focus(bool restorePreviousSelection, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
+void Element::focus(const FocusParams& params)
 {
     if (!inDocument())
         return;
@@ -2446,13 +2464,13 @@ void Element::focus(bool restorePreviousSelection, WebFocusType type, InputDevic
         // Slide the focus to its inner node.
         Element* next = document().page()->focusController().findFocusableElement(WebFocusTypeForward, *this);
         if (next && containsIncludingShadowDOM(next)) {
-            next->focus(false, WebFocusTypeForward);
+            next->focus(FocusParams(SelectionBehaviorOnFocus::Reset, WebFocusTypeForward, nullptr));
             return;
         }
     }
 
     RefPtrWillBeRawPtr<Node> protect(this);
-    if (!document().page()->focusController().setFocusedElement(this, document().frame(), type, sourceCapabilities))
+    if (!document().page()->focusController().setFocusedElement(this, document().frame(), params))
         return;
 
     // Setting the focused node above might have invalidated the layout due to scripts.
@@ -2461,7 +2479,7 @@ void Element::focus(bool restorePreviousSelection, WebFocusType type, InputDevic
         return;
 
     cancelFocusAppearanceUpdate();
-    updateFocusAppearance(restorePreviousSelection);
+    updateFocusAppearance(params.selectionBehavior);
 
     if (UserGestureIndicator::processedUserGestureSinceLoad()) {
         // Bring up the keyboard in the context of anything triggered by a user
@@ -2472,7 +2490,7 @@ void Element::focus(bool restorePreviousSelection, WebFocusType type, InputDevic
     }
 }
 
-void Element::updateFocusAppearance(bool /*restorePreviousSelection*/)
+void Element::updateFocusAppearance(SelectionBehaviorOnFocus)
 {
     if (isRootEditableElement()) {
         // Taking the ownership since setSelection() may release the last reference to |frame|.
@@ -2503,7 +2521,7 @@ void Element::blur()
         if (doc.page())
             doc.page()->focusController().setFocusedElement(0, doc.frame());
         else
-            doc.setFocusedElement(nullptr);
+            doc.clearFocusedElement();
     }
 }
 
@@ -3639,11 +3657,6 @@ bool Element::supportsStyleSharing() const
     if (isHTMLElement() && toHTMLElement(this)->hasDirectionAuto())
         return false;
     if (hasAnimations())
-        return false;
-    // Turn off style sharing for elements that can gain layers for reasons outside of the style system.
-    // See comments in LayoutObject::setStyle().
-    // FIXME: Why does gaining a layer from outside the style system require disabling sharing?
-    if (isHTMLFrameElementBase(*this) || isHTMLPlugInElement(*this) || isHTMLCanvasElement(*this))
         return false;
     if (Fullscreen::isActiveFullScreenElement(*this))
         return false;

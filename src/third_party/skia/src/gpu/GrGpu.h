@@ -11,6 +11,7 @@
 #include "GrPipelineBuilder.h"
 #include "GrProgramDesc.h"
 #include "GrStencil.h"
+#include "GrTextureParamsAdjuster.h"
 #include "GrXferProcessor.h"
 #include "SkPath.h"
 
@@ -362,12 +363,18 @@ public:
 
     Stats* stats() { return &fStats; }
 
-    // creation and deletion of raw texture for testing
-    // only to be used in GPU-specific tests
+    /** Creates a texture directly in the backend API without wrapping it in a GrTexture. This is
+        only to be used for testing (particularly for testing the methods that import an externally
+        created texture into Skia. Must be matched with a call to deleteTestingOnlyTexture(). */
     virtual GrBackendObject createTestingOnlyBackendTexture(void* pixels, int w, int h,
                                                             GrPixelConfig config) const = 0;
-    virtual bool isTestingOnlyBackendTexture(GrBackendObject id) const = 0;
-    virtual void deleteTestingOnlyBackendTexture(GrBackendObject id) const = 0;
+    /** Check a handle represents an actual texture in the backend API that has not been freed. */
+    virtual bool isTestingOnlyBackendTexture(GrBackendObject) const = 0;
+    /** If ownership of the backend texture has been transferred pass true for abandonTexture. This
+        will do any necessary cleanup of the handle without freeing the texture in the backend
+        API. */
+    virtual void deleteTestingOnlyBackendTexture(GrBackendObject,
+                                                 bool abandonTexture = false) const = 0;
 
     // width and height may be larger than rt (if underlying API allows it).
     // Returns nullptr if compatible sb could not be created, otherwise the caller owns the ref on
@@ -377,6 +384,13 @@ public:
                                                                         int height) = 0;
     // clears target's entire stencil buffer to 0
     virtual void clearStencil(GrRenderTarget* target) = 0;
+
+
+    // Determines whether a copy of a texture must be made in order to be compatible with
+    // a given GrTextureParams. If so, the width, height and filter used for the copy are
+    // output via the CopyParams.
+    bool makeCopyForTextureParams(int width, int height, const GrTextureParams&,
+                                  GrTextureProducer::CopyParams*) const;
 
     // This is only to be used in GL-specific tests.
     virtual const GrGLContext* glContextForTesting() const { return nullptr; }
@@ -401,6 +415,12 @@ protected:
         GR_STATIC_ASSERT(GrGpu::kRequireDraw_DrawPreference >
                          GrGpu::kGpuPrefersDraw_DrawPreference);
         *preference = SkTMax(*preference, elevation);
+    }
+
+    void handleDirtyContext() {
+        if (fResetBits) {
+            this->resetContext();
+        }
     }
 
     Stats                                   fStats;
@@ -476,12 +496,6 @@ private:
         this->onResetContext(fResetBits);
         fResetBits = 0;
         ++fResetTimestamp;
-    }
-
-    void handleDirtyContext() {
-        if (fResetBits) {
-            this->resetContext();
-        }
     }
 
     ResetTimestamp                                                      fResetTimestamp;

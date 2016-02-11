@@ -184,10 +184,8 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
                                     const SkColorType color_type) = 0;
   // Ensures that the view does not drop the backing store even when hidden.
   virtual bool CanCopyFromBackingStore() = 0;
-#if defined(OS_ANDROID)
   virtual void LockBackingStore() = 0;
   virtual void UnlockBackingStore() = 0;
-#endif
 
   // Forwards the given message to the renderer. These are called by
   // the view when it has received a message.
@@ -210,9 +208,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Returns true if the renderer is loading, false if not.
   virtual bool IsLoading() const = 0;
-
-  // Returns true if this is a RenderViewHost, false if not.
-  virtual bool IsRenderView() const = 0;
 
   // Called to notify the RenderWidget that the resize rect has changed without
   // the size of the RenderWidget itself changing.
@@ -250,16 +245,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual void GetWebScreenInfo(blink::WebScreenInfo* result) = 0;
   // Get the color profile corresponding to this render widget.
   virtual bool GetScreenColorProfile(std::vector<char>* color_profile) = 0;
-
- protected:
-  friend class RenderWidgetHostImpl;
-
-  // Retrieves the implementation class.  Intended only for code
-  // within content/.  This method is necessary because
-  // RenderWidgetHost is the root of a diamond inheritance pattern, so
-  // subclasses inherit it virtually, which removes our ability to
-  // static_cast to the subclass.
-  virtual RenderWidgetHostImpl* AsRenderWidgetHostImpl() = 0;
 };
 
 }  // namespace content

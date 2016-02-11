@@ -36,6 +36,7 @@
 #include "bindings/core/v8/UnionTypesCore.h"
 #include "core/CSSValueKeywords.h"
 #include "core/css/BinaryDataFontFaceSource.h"
+#include "core/css/CSSCustomIdentValue.h"
 #include "core/css/CSSFontFace.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSFontSelector.h"
@@ -112,7 +113,7 @@ PassRefPtrWillBeRawPtr<FontFace> FontFace::create(Document* document, const Styl
 
     // Obtain the font-family property and the src property. Both must be defined.
     RefPtrWillBeRawPtr<CSSValue> family = properties.getPropertyCSSValue(CSSPropertyFontFamily);
-    if (!family || !family->isPrimitiveValue())
+    if (!family || (!family->isCustomIdentValue() && !family->isPrimitiveValue()))
         return nullptr;
     RefPtrWillBeRawPtr<CSSValue> src = properties.getPropertyCSSValue(CSSPropertySrc);
     if (!src || !src->isValueList())
@@ -120,13 +121,13 @@ PassRefPtrWillBeRawPtr<FontFace> FontFace::create(Document* document, const Styl
 
     RefPtrWillBeRawPtr<FontFace> fontFace = adoptRefWillBeNoop(new FontFace(document));
 
-    if (fontFace->setFamilyValue(toCSSPrimitiveValue(family.get()))
+    if (fontFace->setFamilyValue(*family)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontStyle)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontWeight)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontStretch)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyUnicodeRange)
         && fontFace->setPropertyFromStyle(properties, CSSPropertyFontVariant)
-        && fontFace->setPropertyFromStyle(properties, CSSPropertyWebkitFontFeatureSettings)
+        && fontFace->setPropertyFromStyle(properties, CSSPropertyFontFeatureSettings)
         && !fontFace->family().isEmpty()
         && fontFace->traits().bitfield()) {
         fontFace->initCSSFontFace(document, src);
@@ -153,7 +154,7 @@ FontFace::FontFace(ExecutionContext* context, const AtomicString& family, const 
     setPropertyFromString(document, descriptors.stretch(), CSSPropertyFontStretch);
     setPropertyFromString(document, descriptors.unicodeRange(), CSSPropertyUnicodeRange);
     setPropertyFromString(document, descriptors.variant(), CSSPropertyFontVariant);
-    setPropertyFromString(document, descriptors.featureSettings(), CSSPropertyWebkitFontFeatureSettings);
+    setPropertyFromString(document, descriptors.featureSettings(), CSSPropertyFontFeatureSettings);
 
     suspendIfNeeded();
 }
@@ -219,7 +220,7 @@ void FontFace::setVariant(ExecutionContext* context, const String& s, ExceptionS
 
 void FontFace::setFeatureSettings(ExecutionContext* context, const String& s, ExceptionState& exceptionState)
 {
-    setPropertyFromString(toDocument(context), s, CSSPropertyWebkitFontFeatureSettings, &exceptionState);
+    setPropertyFromString(toDocument(context), s, CSSPropertyFontFeatureSettings, &exceptionState);
 }
 
 void FontFace::setPropertyFromString(const Document* document, const String& s, CSSPropertyID propertyID, ExceptionState* exceptionState)
@@ -260,7 +261,7 @@ bool FontFace::setPropertyValue(PassRefPtrWillBeRawPtr<CSSValue> value, CSSPrope
     case CSSPropertyFontVariant:
         m_variant = value;
         break;
-    case CSSPropertyWebkitFontFeatureSettings:
+    case CSSPropertyFontFeatureSettings:
         m_featureSettings = value;
         break;
     default:
@@ -270,15 +271,15 @@ bool FontFace::setPropertyValue(PassRefPtrWillBeRawPtr<CSSValue> value, CSSPrope
     return true;
 }
 
-bool FontFace::setFamilyValue(CSSPrimitiveValue* familyValue)
+bool FontFace::setFamilyValue(const CSSValue& familyValue)
 {
     AtomicString family;
-    if (familyValue->isCustomIdent()) {
-        family = AtomicString(familyValue->getStringValue());
-    } else if (familyValue->isValueID()) {
+    if (familyValue.isCustomIdentValue()) {
+        family = AtomicString(toCSSCustomIdentValue(familyValue).value());
+    } else if (toCSSPrimitiveValue(familyValue).isValueID()) {
         // We need to use the raw text for all the generic family types, since @font-face is a way of actually
         // defining what font to use for those types.
-        switch (familyValue->getValueID()) {
+        switch (toCSSPrimitiveValue(familyValue).getValueID()) {
         case CSSValueSerif:
             family =  FontFamilyNames::webkit_serif;
             break;
@@ -594,7 +595,6 @@ void FontFace::initCSSFontFace(const unsigned char* data, unsigned size)
 
 DEFINE_TRACE(FontFace)
 {
-    visitor->trace(m_src);
     visitor->trace(m_style);
     visitor->trace(m_weight);
     visitor->trace(m_stretch);

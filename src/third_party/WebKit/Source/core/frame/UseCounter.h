@@ -56,7 +56,7 @@ class StyleSheetContents;
 // http://www.google.com/chrome/intl/en/privacy.html
 
 class CORE_EXPORT UseCounter {
-    DISALLOW_ALLOCATION();
+    DISALLOW_NEW();
     WTF_MAKE_NONCOPYABLE(UseCounter);
 public:
     UseCounter();
@@ -324,7 +324,7 @@ public:
         PrefixedMouseEventMovementY = 383,
         PrefixedFileRelativePath = 386,
         DocumentCaretRangeFromPoint = 387,
-        DocumentGetCSSCanvasContext = 388,
+        // DocumentGetCSSCanvasContext = 388,
         ElementScrollIntoViewIfNeeded = 389,
         RangeExpand = 393,
         HTMLImageElementX = 396,
@@ -470,7 +470,6 @@ public:
         NotificationShowEvent = 565,
         CSSXGetComputedStyleQueries = 566,
         SVG1DOM = 567,
-        SVGPathSegDOM = 568,
         SVGTransformListConsolidate = 569,
         SVGAnimatedTransformListBaseVal = 570,
         QuotedAnimationName = 571,
@@ -479,7 +478,6 @@ public:
         WindowPostMessage = 574,
         WindowPostMessageWithLegacyTargetOriginArgument = 575,
         RenderRuby = 576,
-        CanvasRenderingContext2DCompositeOperationDarker = 577,
         ScriptElementWithInvalidTypeHasSrc = 578,
         XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload = 581,
         CSSSelectorPseudoScrollbar = 582,
@@ -569,14 +567,12 @@ public:
         XMLHttpRequestAsynchronous = 677,
         WhiteSpacePreFromXMLSpace = 679,
         WhiteSpaceNowrapFromXMLSpace = 680,
-        WindowMoveResizeMissingArguments = 684,
         SVGSVGElementForceRedraw = 685,
         SVGSVGElementSuspendRedraw = 686,
         SVGSVGElementUnsuspendRedraw = 687,
         SVGSVGElementUnsuspendRedrawAll = 688,
         AudioContextClose = 689,
         CSSZoomNotEqualToOne = 691,
-        SVGGraphicsElementGetTransformToElement = 692,
         // The above items are available in M42 branch.
 
         ClientRectListItem = 694,
@@ -630,9 +626,6 @@ public:
         V8Permissions_Query_Method = 750,
         // The above items are available in M43 branch.
 
-        LegacyCSSValueIntrinsic = 751,
-        LegacyCSSValueMinIntrinsic = 752,
-        WebkitCanvas = 753,
         V8HTMLInputElement_Autocapitalize_AttributeGetter = 754,
         V8HTMLInputElement_Autocapitalize_AttributeSetter = 755,
         V8HTMLTextAreaElement_Autocapitalize_AttributeGetter = 756,
@@ -665,18 +658,13 @@ public:
         V8Screen_AvailLeft_AttributeGetter = 786,
         V8Screen_AvailTop_AttributeGetter = 787,
         ObjectObserve = 788,
-        V8SVGAnimationElement_HasExtension_Method = 789,
-        V8SVGCursorElement_HasExtension_Method = 790,
         V8SVGFEConvolveMatrixElement_PreserveAlpha_AttributeGetter = 791,
-        V8SVGGraphicsElement_HasExtension_Method = 795,
-        V8SVGMaskElement_HasExtension_Method = 796,
-        V8SVGPatternElement_HasExtension_Method = 797,
         V8SVGStyleElement_Disabled_AttributeGetter = 798,
         V8SVGStyleElement_Disabled_AttributeSetter = 799,
         ElementCreateShadowRootMultipleWithUserAgentShadowRoot = 800,
         InputTypeFileSecureOrigin = 801,
         InputTypeFileInsecureOrigin = 802,
-        ElementCreateShadowRootWithParameter = 804,
+        ElementAttachShadow = 804,
         V8KeyboardEvent_KeyIdentifier_AttributeGetter = 805,
         V8SecurityPolicyViolationEvent_DocumentURI_AttributeGetter = 806,
         V8SecurityPolicyViolationEvent_BlockedURI_AttributeGetter = 807,
@@ -692,16 +680,11 @@ public:
         V8DOMError_Name_AttributeGetter = 817,
         V8DOMError_Message_AttributeGetter = 818,
         V8FileReader_Error_AttributeGetter = 819,
-        V8IDBRequest_Error_AttributeGetter = 820,
-        V8IDBTransaction_Error_AttributeGetter = 821,
-        V8DOMStringList_Item_Method = 822,
         V8Location_AncestorOrigins_AttributeGetter = 823,
         V8IDBDatabase_ObjectStoreNames_AttributeGetter = 824,
         V8IDBObjectStore_IndexNames_AttributeGetter = 825,
         V8IDBTransaction_ObjectStoreNames_AttributeGetter = 826,
         V8Navigator_GetStorageUpdates_Method = 827,
-        V8TextTrackCueList_Item_Method = 828,
-        V8TextTrackList_Item_Method = 829,
         TextInputFired = 830,
         V8TextEvent_Data_AttributeGetter = 831,
         V8TextEvent_InitTextEvent_Method = 832,
@@ -746,7 +729,6 @@ public:
         V8TouchEvent_InitTouchEvent_Method = 872,
         V8UIEvent_InitUIEvent_Method = 873,
         V8Document_CreateTouch_Method = 874,
-        V8HTMLFrameElement_GetSVGDocument_Method = 875,
         RequestFileSystemNonWebbyOrigin = 876,
         V8Console_Memory_AttributeGetter = 877,
         V8Console_Memory_AttributeSetter = 878,
@@ -780,8 +762,8 @@ public:
         ClientHintsMetaAcceptCH = 904,
         HTMLElementDeprecatedWidth = 905,
         ClientHintsContentDPR = 906,
-        ElementCreateShadowRootOpen = 907,
-        ElementCreateShadowRootClosed = 908,
+        ElementAttachShadowOpen = 907,
+        ElementAttachShadowClosed = 908,
         AudioParamSetValueAtTime = 909,
         AudioParamLinearRampToValueAtTime = 910,
         AudioParamExponentialRampToValueAtTime = 911,
@@ -806,13 +788,15 @@ public:
         PresentationRequestReconnect = 930,
         PresentationRequestGetAvailability = 931,
         PresentationRequestConnectionAvailableEventListener = 932,
-        PresentationConnectionClose = 933,
+        PresentationConnectionTerminate = 933,
         PresentationConnectionSend = 934,
         PresentationConnectionStateChangeEventListener = 935,
         PresentationConnectionMessageEventListener = 936,
         CSSAnimationsStackedNeutralKeyframe = 937,
         ReadingCheckedInClickHandler = 938,
         FlexboxIntrinsicSizeAlgorithmIsDifferent = 939,
+        // The above items are available in M46 branch.
+
         HTMLImportsHasStyleSheets = 940,
         WebkitTextInClipProperty = 941,
         WebkitTextInColorProperty = 942,
@@ -838,12 +822,60 @@ public:
         CredentialManagerGetWithoutUI = 962,
         CredentialManagerStore = 963,
         CredentialManagerRequireUserMediation = 964,
+        // The above items are available in M47 branch.
+
+        RequestAutocomplete = 965,
+        BlockableMixedContentInSubframeBlocked = 966,
+        AddEventListenerThirdArgumentIsObject = 967,
+        RemoveEventListenerThirdArgumentIsObject = 968,
+        CSSAtRuleCharset = 969,
+        CSSAtRuleFontFace = 970,
+        CSSAtRuleImport = 971,
+        CSSAtRuleKeyframes = 972,
+        CSSAtRuleMedia = 973,
+        CSSAtRuleNamespace = 974,
+        CSSAtRulePage = 975,
+        CSSAtRuleSupports = 976,
+        CSSAtRuleViewport = 977,
+        CSSAtRuleWebkitKeyframes = 978,
+        V8HTMLFieldSetElement_Elements_AttributeGetter = 979,
+        HTMLMediaElementPreloadForcedNone = 980,
+        ExternalAddSearchProvider = 981,
+        ExternalIsSearchProviderInstalled = 982,
+        V8Permissions_RequestAll_Method = 983,
+        BluetoothDeviceInstanceId = 984,
+        HTMLLabelElementFormIDLAttribute = 985,
+        HTMLLabelElementFormContentAttribute = 986,
+        DeviceOrientationAbsoluteInsecureOrigin = 987,
+        DeviceOrientationAbsoluteSecureOrigin = 988,
+        FontFaceConstructor = 989,
+        ServiceWorkerControlledPage = 990,
         MeterElementWithContinuousCapacityAppearance = 991,
         MeterElementWithDiscreteCapacityAppearance = 992,
         MeterElementWithMeterAppearance = 993,
         MeterElementWithNoneAppearance = 994,
         MeterElementWithRatingAppearance = 995,
         MeterElementWithRelevancyAppearance = 996,
+        SelectionAnchorNode = 997,
+        SelectionAnchorOffset = 998,
+        SelectionFocusNode = 999,
+        SelectionFocusOffset = 1000,
+        SelectionIsCollapsed = 1001,
+        SelectionRangeCount = 1002,
+        SelectionGetRangeAt = 1003,
+        SelectionAddRange = 1004,
+        SelectionRemoveAllRanges = 1005,
+        SelectionCollapse = 1006,
+        SelectionCollapseToStart = 1007,
+        SelectionCollapseToEnd = 1008,
+        SelectionExtend = 1009,
+        SelectionSelectAllChildren = 1010,
+        SelectionDeleteDromDocument = 1011,
+        SelectionDOMString = 1012,
+        InputTypeRangeVerticalAppearance = 1013,
+        BackgroundSyncRegister = 1025,
+        FormNameAccessForNonDescendantImageElement = 1093,
+        FormControlsCollectionNameAccessForImageElement = 1094,
 
         // Add new features immediately above this line. Don't change assigned
         // numbers of any item, and don't reuse removed slots.
@@ -902,7 +934,7 @@ public:
     static void unmuteForInspector();
 
     class CountBits {
-        DISALLOW_ALLOCATION();
+        DISALLOW_NEW();
     public:
         CountBits() : m_bits(NumberOfFeatures) { }
 

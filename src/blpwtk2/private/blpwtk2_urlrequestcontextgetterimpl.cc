@@ -251,20 +251,23 @@ void URLRequestContextGetterImpl::initialize()
         d_urlRequestContext->host_resolver();
 
     bool useCache = d_diskCacheEnabled;
-    net::HttpCache::BackendFactory* backendFactory =
-        useCache ? new net::HttpCache::DefaultBackend(net::DISK_CACHE,
-                                                      net::CACHE_BACKEND_DEFAULT,
-                                                      d_path.Append(FILE_PATH_LITERAL("Cache")),
-                                                      0,
-                                                      content::BrowserThread::GetMessageLoopProxyForThread(content::BrowserThread::CACHE))
-                 : net::HttpCache::DefaultBackend::InMemory(0);
+    scoped_ptr<net::HttpCache::BackendFactory> backendFactory;
+    if (useCache) {
+        backendFactory.reset(new net::HttpCache::DefaultBackend(net::DISK_CACHE,
+                                                                net::CACHE_BACKEND_DEFAULT,
+                                                                d_path.Append(FILE_PATH_LITERAL("Cache")),
+                                                                0,
+                                                                content::BrowserThread::GetMessageLoopProxyForThread(content::BrowserThread::CACHE)));
+    }
+    else {
+        backendFactory = net::HttpCache::DefaultBackend::InMemory(0);
+    }
 
-    net::HttpNetworkLayer* networkLayer
-        = new net::HttpNetworkLayer(new net::HttpNetworkSession(networkSessionParams));
-
-    net::HttpCache* mainCache = new net::HttpCache(networkLayer,
-                                                   networkSessionParams.net_log,
-                                                   backendFactory);
+    d_storage->set_http_network_session(
+        make_scoped_ptr(new net::HttpNetworkSession(networkSessionParams)));
+    net::HttpCache* mainCache = new net::HttpCache(d_storage->http_network_session(),
+                                                   backendFactory.Pass(),
+                                                   true);
     d_storage->set_http_transaction_factory(make_scoped_ptr(mainCache));
 
     scoped_ptr<net::URLRequestJobFactoryImpl> jobFactory(

@@ -95,6 +95,20 @@ public:
                           const GrPrimitiveProcessor&,
                           const GrPipeline&) const override;
 
+    // id and type (GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER) of buffer to bind
+    void bindBuffer(GrGLuint id, GrGLenum type);
+
+    void releaseBuffer(GrGLuint id, GrGLenum type);
+
+    // sizes are in bytes
+    void* mapBuffer(GrGLuint id, GrGLenum type, bool dynamic, size_t currentSize,
+                    size_t requestedSize);
+
+    void unmapBuffer(GrGLuint id, GrGLenum type, void* mapPtr);
+
+    void bufferData(GrGLuint id, GrGLenum type, bool dynamic, size_t currentSize,
+                    const void* src, size_t srcSizeInBytes);
+
     const GrGLContext* glContextForTesting() const override {
         return &this->glContext();
     }
@@ -111,8 +125,8 @@ public:
 
     GrBackendObject createTestingOnlyBackendTexture(void* pixels, int w, int h,
                                                     GrPixelConfig config) const override;
-    bool isTestingOnlyBackendTexture(GrBackendObject id) const override;
-    void deleteTestingOnlyBackendTexture(GrBackendObject id) const override;
+    bool isTestingOnlyBackendTexture(GrBackendObject) const override;
+    void deleteTestingOnlyBackendTexture(GrBackendObject, bool abandonTexture) const override;
 
 private:
     GrGLGpu(GrGLContext* ctx, GrContext* context);
@@ -255,16 +269,12 @@ private:
     // ensures that such operations don't negatively interact with tracking bound textures.
     void setScratchTextureUnit();
 
-    // colocates all samples at pixel center for render target, if MSAA.
-    // allows drawing coverage based AA shapes in MSAA mode.
-    void setColocatedSampleLocations(GrRenderTarget* rt, bool useColocatedSampleLocations);
-
     // bounds is region that may be modified and therefore has to be resolved.
     // nullptr means whole target. Can be an empty rect.
     void flushRenderTarget(GrGLRenderTarget*, const SkIRect* bounds);
 
     void flushStencil(const GrStencilSettings&);
-    void flushHWAAState(GrRenderTarget* rt, bool useHWAA, bool stencilEnabled);
+    void flushHWAAState(GrRenderTarget* rt, bool useHWAA);
 
     bool configToGLFormats(GrPixelConfig config,
                            bool getSizedInternal,
@@ -273,6 +283,7 @@ private:
                            GrGLenum* externalType) const;
     // helper for onCreateTexture and writeTexturePixels
     bool uploadTexData(const GrSurfaceDesc& desc,
+                       GrGLenum target,
                        bool isNewTexture,
                        int left, int top, int width, int height,
                        GrPixelConfig dataConfig,
@@ -286,23 +297,28 @@ private:
     // the texture is already in GPU memory and that it's going to be updated
     // with new data.
     bool uploadCompressedTexData(const GrSurfaceDesc& desc,
+                                 GrGLenum target,
                                  const void* data,
                                  bool isNewTexture = true,
                                  int left = 0, int top = 0,
                                  int width = -1, int height = -1);
 
     bool createRenderTargetObjects(const GrSurfaceDesc&, GrGpuResource::LifeCycle lifeCycle,
-                                   GrGLuint texID, GrGLRenderTarget::IDDesc*);
+                                   const GrGLTextureInfo& texInfo, GrGLRenderTarget::IDDesc*);
 
     enum TempFBOTarget {
         kSrc_TempFBOTarget,
         kDst_TempFBOTarget
     };
 
-    GrGLuint bindSurfaceAsFBO(GrSurface* surface, GrGLenum fboTarget, GrGLIRect* viewport,
+    // Binds a surface as a FBO for a copy operation. If the surface already owns an FBO ID then
+    // that ID is bound. If not the surface is temporarily bound to a FBO and that FBO is bound.
+    // This must be paired with a call to unbindSurfaceFBOForCopy().
+    void bindSurfaceFBOForCopy(GrSurface* surface, GrGLenum fboTarget, GrGLIRect* viewport,
                               TempFBOTarget tempFBOTarget);
 
-    void unbindTextureFromFBO(GrGLenum fboTarget);
+    // Must be called if bindSurfaceFBOForCopy was used to bind a surface for copying.
+    void unbindTextureFBOForCopy(GrGLenum fboTarget, GrSurface* surface);
 
     SkAutoTUnref<GrGLContext>  fGLContext;
 

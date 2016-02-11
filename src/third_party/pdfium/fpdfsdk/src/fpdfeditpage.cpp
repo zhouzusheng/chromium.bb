@@ -4,8 +4,10 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../public/fpdf_edit.h"
+#include "public/fpdf_edit.h"
+
 #include "../include/fsdk_define.h"
+#include "public/fpdf_formfill.h"
 
 #if _FX_OS_ == _FX_ANDROID_
 #include "time.h"
@@ -39,14 +41,12 @@ DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_CreateNewDocument() {
     pInfoDict->SetAt("Creator", new CPDF_String(L"PDFium"));
   }
 
-  return pDoc;
+  return FPDFDocumentFromCPDFDocument(pDoc);
 }
 
 DLLEXPORT void STDCALL FPDFPage_Delete(FPDF_DOCUMENT document, int page_index) {
-  CPDF_Document* pDoc = (CPDF_Document*)document;
-  if (pDoc == NULL)
-    return;
-  if (page_index < 0 || page_index >= pDoc->GetPageCount())
+  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
+  if (!pDoc || page_index < 0 || page_index >= pDoc->GetPageCount())
     return;
 
   pDoc->DeletePage(page_index);
@@ -56,17 +56,14 @@ DLLEXPORT FPDF_PAGE STDCALL FPDFPage_New(FPDF_DOCUMENT document,
                                          int page_index,
                                          double width,
                                          double height) {
-  if (!document)
-    return NULL;
+  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
+  if (!pDoc)
+    return nullptr;
 
-  //	CPDF_Parser* pParser = (CPDF_Parser*)document;
-  CPDF_Document* pDoc = (CPDF_Document*)document;
   if (page_index < 0)
     page_index = 0;
   if (pDoc->GetPageCount() < page_index)
     page_index = pDoc->GetPageCount();
-  //	if (page_index < 0 || page_index >= pDoc->GetPageCount())
-  //		return NULL;
 
   CPDF_Dictionary* pPageDict = pDoc->CreateNewPage(page_index);
   if (!pPageDict)
@@ -89,7 +86,7 @@ DLLEXPORT FPDF_PAGE STDCALL FPDFPage_New(FPDF_DOCUMENT document,
 }
 
 DLLEXPORT int STDCALL FPDFPage_GetRotation(FPDF_PAGE page) {
-  CPDF_Page* pPage = (CPDF_Page*)page;
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage || !pPage->m_pFormDict || !pPage->m_pFormDict->KeyExist("Type") ||
       !pPage->m_pFormDict->GetElement("Type")->GetDirect() ||
       pPage->m_pFormDict->GetElement("Type")->GetDirect()->GetString().Compare(
@@ -97,43 +94,26 @@ DLLEXPORT int STDCALL FPDFPage_GetRotation(FPDF_PAGE page) {
     return -1;
   }
   CPDF_Dictionary* pDict = pPage->m_pFormDict;
-
-  int rotate = 0;
-  if (pDict != NULL) {
-    if (pDict->KeyExist("Rotate"))
-      rotate = pDict->GetElement("Rotate")->GetDirect()
-                   ? pDict->GetElement("Rotate")->GetDirect()->GetInteger() / 90
-                   : 0;
-    else {
-      if (pDict->KeyExist("Parent")) {
-        CPDF_Dictionary* pPages =
-            (CPDF_Dictionary*)pDict->GetElement("Parent")->GetDirect();
-        while (pPages) {
-          if (pPages->KeyExist("Rotate")) {
-            rotate =
-                pPages->GetElement("Rotate")->GetDirect()
-                    ? pPages->GetElement("Rotate")->GetDirect()->GetInteger() /
-                          90
-                    : 0;
-            break;
-          } else if (pPages->KeyExist("Parent"))
-            pPages =
-                (CPDF_Dictionary*)pPages->GetElement("Parent")->GetDirect();
-          else
-            break;
-        }
-      }
-    }
-  } else {
+  if (!pDict)
     return -1;
+
+  while (pDict) {
+    if (pDict->KeyExist("Rotate")) {
+      CPDF_Object* pRotateObj = pDict->GetElement("Rotate")->GetDirect();
+      return pRotateObj ? pRotateObj->GetInteger() / 90 : 0;
+    }
+    if (!pDict->KeyExist("Parent"))
+      break;
+
+    pDict = ToDictionary(pDict->GetElement("Parent")->GetDirect());
   }
 
-  return rotate;
+  return 0;
 }
 
 DLLEXPORT void STDCALL FPDFPage_InsertObject(FPDF_PAGE page,
                                              FPDF_PAGEOBJECT page_obj) {
-  CPDF_Page* pPage = (CPDF_Page*)page;
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage || !pPage->m_pFormDict || !pPage->m_pFormDict->KeyExist("Type") ||
       !pPage->m_pFormDict->GetElement("Type")->GetDirect() ||
       pPage->m_pFormDict->GetElement("Type")->GetDirect()->GetString().Compare(
@@ -141,7 +121,7 @@ DLLEXPORT void STDCALL FPDFPage_InsertObject(FPDF_PAGE page,
     return;
   }
   CPDF_PageObject* pPageObj = (CPDF_PageObject*)page_obj;
-  if (pPageObj == NULL)
+  if (!pPageObj)
     return;
   FX_POSITION LastPersition = pPage->GetLastObjectPosition();
 
@@ -175,13 +155,10 @@ DLLEXPORT void STDCALL FPDFPage_InsertObject(FPDF_PAGE page,
     default:
       break;
   }
-
-  //	pPage->ParseContent();
-  // pPage->GenerateContent();
 }
 
 DLLEXPORT int STDCALL FPDFPage_CountObject(FPDF_PAGE page) {
-  CPDF_Page* pPage = (CPDF_Page*)page;
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage || !pPage->m_pFormDict || !pPage->m_pFormDict->KeyExist("Type") ||
       !pPage->m_pFormDict->GetElement("Type")->GetDirect() ||
       pPage->m_pFormDict->GetElement("Type")->GetDirect()->GetString().Compare(
@@ -189,27 +166,22 @@ DLLEXPORT int STDCALL FPDFPage_CountObject(FPDF_PAGE page) {
     return -1;
   }
   return pPage->CountObjects();
-  //	return 0;
 }
 
 DLLEXPORT FPDF_PAGEOBJECT STDCALL FPDFPage_GetObject(FPDF_PAGE page,
                                                      int index) {
-  CPDF_Page* pPage = (CPDF_Page*)page;
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage || !pPage->m_pFormDict || !pPage->m_pFormDict->KeyExist("Type") ||
       pPage->m_pFormDict->GetElement("Type")->GetDirect()->GetString().Compare(
           "Page")) {
     return NULL;
   }
   return pPage->GetObjectByIndex(index);
-  //	return NULL;
 }
 
 DLLEXPORT FPDF_BOOL STDCALL FPDFPage_HasTransparency(FPDF_PAGE page) {
-  if (!page)
-    return FALSE;
-  CPDF_Page* pPage = (CPDF_Page*)page;
-
-  return pPage->BackgroundAlphaNeeded();
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
+  return pPage && pPage->BackgroundAlphaNeeded();
 }
 
 DLLEXPORT FPDF_BOOL STDCALL
@@ -225,7 +197,7 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject) {
     return TRUE;
 
   CPDF_Dictionary* pSMaskDict =
-      pGeneralState ? (CPDF_Dictionary*)pGeneralState->m_pSoftMask : NULL;
+      pGeneralState ? ToDictionary(pGeneralState->m_pSoftMask) : NULL;
   if (pSMaskDict)
     return TRUE;
 
@@ -251,7 +223,7 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT pageObject) {
 }
 
 DLLEXPORT FPDF_BOOL STDCALL FPDFPage_GenerateContent(FPDF_PAGE page) {
-  CPDF_Page* pPage = (CPDF_Page*)page;
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage || !pPage->m_pFormDict || !pPage->m_pFormDict->KeyExist("Type") ||
       !pPage->m_pFormDict->GetElement("Type")->GetDirect() ||
       pPage->m_pFormDict->GetElement("Type")->GetDirect()->GetString().Compare(
@@ -272,8 +244,9 @@ DLLEXPORT void STDCALL FPDFPageObj_Transform(FPDF_PAGEOBJECT page_object,
                                              double e,
                                              double f) {
   CPDF_PageObject* pPageObj = (CPDF_PageObject*)page_object;
-  if (pPageObj == NULL)
+  if (!pPageObj)
     return;
+
   CFX_AffineMatrix matrix((FX_FLOAT)a, (FX_FLOAT)b, (FX_FLOAT)c, (FX_FLOAT)d,
                           (FX_FLOAT)e, (FX_FLOAT)f);
   pPageObj->Transform(matrix);
@@ -285,11 +258,11 @@ DLLEXPORT void STDCALL FPDFPage_TransformAnnots(FPDF_PAGE page,
                                                 double d,
                                                 double e,
                                                 double f) {
-  if (page == NULL)
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
+  if (!pPage)
     return;
-  CPDF_Page* pPage = (CPDF_Page*)page;
   CPDF_AnnotList AnnotList(pPage);
-  for (int i = 0; i < AnnotList.Count(); i++) {
+  for (size_t i = 0; i < AnnotList.Count(); ++i) {
     CPDF_Annot* pAnnot = AnnotList.GetAt(i);
     // transformAnnots Rectangle
     CPDF_Rect rect;
@@ -313,7 +286,7 @@ DLLEXPORT void STDCALL FPDFPage_TransformAnnots(FPDF_PAGE page,
 }
 
 DLLEXPORT void STDCALL FPDFPage_SetRotation(FPDF_PAGE page, int rotate) {
-  CPDF_Page* pPage = (CPDF_Page*)page;
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage || !pPage->m_pFormDict || !pPage->m_pFormDict->KeyExist("Type") ||
       !pPage->m_pFormDict->GetElement("Type")->GetDirect() ||
       pPage->m_pFormDict->GetElement("Type")->GetDirect()->GetString().Compare(

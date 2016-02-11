@@ -339,21 +339,14 @@ LayoutMultiColumnSet* LayoutMultiColumnFlowThread::columnSetAtBlockOffset(Layout
     return adapter.result();
 }
 
-void LayoutMultiColumnFlowThread::layoutColumns(bool relayoutChildren, SubtreeLayoutScope& layoutScope)
+void LayoutMultiColumnFlowThread::layoutColumns(SubtreeLayoutScope& layoutScope)
 {
-    if (relayoutChildren)
-        layoutScope.setChildNeedsLayout(this);
+    // Since we ended up here, it means that the multicol container (our parent) needed
+    // layout. Since contents of the multicol container are diverted to the flow thread, the flow
+    // thread needs layout as well.
+    layoutScope.setChildNeedsLayout(this);
 
     m_needsColumnHeightsRecalculation = false;
-    if (!needsLayout()) {
-        // Just before the multicol container (our parent LayoutBlockFlow) finishes laying out, it
-        // will call recalculateColumnHeights() on us unconditionally, but we only want that method
-        // to do any work if we actually laid out the flow thread. Otherwise, the balancing
-        // machinery would kick in needlessly, and trigger additional layout passes. Furthermore, we
-        // actually depend on a proper flowthread layout pass in order to do balancing, since it's
-        // flowthread layout that sets up content runs.
-        return;
-    }
 
     m_blockOffsetInEnclosingFlowThread = enclosingFlowThread() ? multiColumnBlockFlow()->offsetFromLogicalTopOfFirstPage() : LayoutUnit();
 
@@ -439,6 +432,15 @@ bool LayoutMultiColumnFlowThread::hasFragmentainerGroupForColumnAt(LayoutUnit of
     // If there's no enclosing flow thread, there'll always be only one fragmentainer group, and it
     // can hold as many columns as we like. We shouldn't even be here in that case.
     ASSERT(enclosingFlowThread());
+
+    if (!isPageLogicalHeightKnown()) {
+        // If we have no clue about the height of the multicol container, bail. This situation
+        // occurs initially when an auto-height multicol container is nested inside another
+        // auto-height multicol container. We need at least an estimated height of the outer
+        // multicol container before we can check what an inner fragmentainer group has room for.
+        // Its height height is indefinite for now.
+        return true;
+    }
 
     LayoutMultiColumnSet* lastColumnSet = lastMultiColumnSet();
     if (!lastColumnSet) {
@@ -581,29 +583,17 @@ bool LayoutMultiColumnFlowThread::descendantIsValidColumnSpanner(LayoutObject* d
         return false;
     }
 
-    // This looks like a spanner, but if we're inside something unbreakable, it's not to be treated as one.
+    // This looks like a spanner, but if we're inside something unbreakable or something that
+    // establishes a new formatting context, it's not to be treated as one.
     for (LayoutBox* ancestor = toLayoutBox(descendant)->parentBox(); ancestor; ancestor = ancestor->containingBlock()) {
         if (ancestor->isLayoutFlowThread()) {
             ASSERT(ancestor == this);
             return true;
         }
-        if (ancestor->spannerPlaceholder()) {
-            // FIXME: do we want to support nested spanners in a different way? The outer spanner
-            // has already broken out from the columns to become sized by the multicol container,
-            // which may be good enough for the inner spanner. But margins, borders, padding and
-            // explicit widths on the outer spanner, or on any children between the outer and inner
-            // spanner, will affect the width of the inner spanner this way, which might be
-            // undesirable. The spec has nothing to say on the matter.
-            return false; // Ignore nested spanners.
-        }
-        if (ancestor->isFloatingOrOutOfFlowPositioned()) {
-            // TODO(mstensho): It could actually be nice to support this (although the usefulness is
-            // probably very limited), but currently our column balancing algorithm gets confused
-            // when a spanner is inside a float, because a float's position isn't always known until
-            // after layout. Similarly for absolutely positioned boxes.
+        if (!ancestor->isLayoutBlockFlow())
             return false;
-        }
-        if (ancestor->isUnsplittableForPagination())
+        const LayoutBlockFlow& ancestorBlockFlow = *toLayoutBlockFlow(ancestor);
+        if (ancestorBlockFlow.createsNewFormattingContext() || ancestorBlockFlow.paginationBreakability() == ForbidBreaks)
             return false;
     }
     ASSERT_NOT_REACHED();
@@ -916,34 +906,26 @@ void LayoutMultiColumnFlowThread::layout()
     m_lastSetWorkedOn = nullptr;
 }
 
-void LayoutMultiColumnFlowThread::setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage)
+void LayoutMultiColumnFlowThread::contentWasLaidOut(LayoutUnit logicalTopInFlowThreadAfterPagination)
 {
-    // Only positive values are interesting (and allowed) here. Zero space shortage may be reported
-    // when we're at the top of a column and the element has zero height. Ignore this, and also
-    // ignore any negative values, which may occur when we set an early break in order to honor
-    // widows in the next column.
-    if (spaceShortage <= 0)
+    // Check if we need another fragmentainer group. If we've run out of columns in the last
+    // fragmentainer group (column row), we need to insert another fragmentainer group to hold more
+    // columns.
+    if (!multiColumnBlockFlow()->isInsideFlowThread())
+        return; // Early bail. We're not nested, so waste no more time on this.
+    if (!isInInitialLayoutPass()) {
+        // We only insert additional fragmentainer groups in the initial layout pass. We only want
+        // to balance columns in the last fragmentainer group (if we need to balance at all), so we
+        // want that last fragmentainer group to be the same one in all layout passes that follow.
         return;
-
-    if (LayoutMultiColumnSet* multicolSet = columnSetAtBlockOffset(offset))
-        multicolSet->recordSpaceShortage(offset, spaceShortage);
-}
-
-void LayoutMultiColumnFlowThread::updateMinimumPageHeight(LayoutUnit offset, LayoutUnit minHeight)
-{
-    if (LayoutMultiColumnSet* multicolSet = columnSetAtBlockOffset(offset))
-        multicolSet->updateMinimumColumnHeight(offset, minHeight);
-}
-
-bool LayoutMultiColumnFlowThread::addForcedColumnBreak(LayoutUnit offset, LayoutObject* /*breakChild*/, bool /*isBefore*/, LayoutUnit* offsetBreakAdjustment)
-{
-    if (LayoutMultiColumnSet* multicolSet = columnSetAtBlockOffset(offset)) {
-        multicolSet->addContentRun(offset);
-        if (offsetBreakAdjustment)
-            *offsetBreakAdjustment = pageLogicalHeightForOffset(offset) ? pageRemainingLogicalHeightForOffset(offset, AssociateWithFormerPage) : LayoutUnit();
-        return true;
     }
-    return false;
+    LayoutMultiColumnSet* columnSet = columnSetAtBlockOffset(logicalTopInFlowThreadAfterPagination);
+    if (!columnSet)
+        return;
+    MultiColumnFragmentainerGroup& row = columnSet->fragmentainerGroupAtFlowThreadOffset(logicalTopInFlowThreadAfterPagination);
+    if (!row.isLastGroup())
+        return;
+    appendNewFragmentainerGroupIfNeeded(logicalTopInFlowThreadAfterPagination);
 }
 
 }

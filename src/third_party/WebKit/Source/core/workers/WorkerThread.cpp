@@ -106,7 +106,7 @@ unsigned WorkerThread::workerThreadCount()
 }
 
 class WorkerThreadTask : public WebTaskRunner::Task {
-    WTF_MAKE_NONCOPYABLE(WorkerThreadTask); WTF_MAKE_FAST_ALLOCATED(WorkerThreadTask);
+    WTF_MAKE_NONCOPYABLE(WorkerThreadTask); USING_FAST_MALLOC(WorkerThreadTask);
 public:
     static PassOwnPtr<WorkerThreadTask> create(WorkerThread& workerThread, PassOwnPtr<ExecutionContextTask> task, bool isInstrumented)
     {
@@ -244,7 +244,7 @@ void WorkerThread::start(PassOwnPtr<WorkerThreadStartupData> startupData)
         return;
 
     m_started = true;
-    backingThread().postTask(FROM_HERE, new Task(threadSafeBind(&WorkerThread::initialize, AllowCrossThreadAccess(this), startupData)));
+    backingThread().postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&WorkerThread::initialize, AllowCrossThreadAccess(this), startupData)));
 }
 
 void WorkerThread::interruptAndDispatchInspectorCommands()
@@ -291,6 +291,8 @@ void WorkerThread::initialize(PassOwnPtr<WorkerThreadStartupData> startupData)
         if (RuntimeEnabledFeatures::v8IdleTasksEnabled()) {
             V8PerIsolateData::enableIdleTasks(m_isolate, adoptPtr(new V8IdleTaskRunner(m_webScheduler)));
         }
+        // Optimize for memory usage instead of latency for the worker isolate.
+        m_isolate->IsolateInBackgroundNotification();
         m_workerGlobalScope = createWorkerGlobalScope(startupData);
         m_workerGlobalScope->scriptLoaded(sourceCode.length(), cachedMetaData.get() ? cachedMetaData->size() : 0);
 
@@ -334,7 +336,7 @@ void WorkerThread::shutdown()
     workerGlobalScope()->dispose();
 
     backingThread().removeTaskObserver(m_microtaskRunner.get());
-    postTask(FROM_HERE, createSameThreadTask(&WorkerThread::performShutdownTask, this));
+    postTask(BLINK_FROM_HERE, createSameThreadTask(&WorkerThread::performShutdownTask, this));
 }
 
 void WorkerThread::performShutdownTask()
@@ -365,7 +367,7 @@ void WorkerThread::performShutdownTask()
 void WorkerThread::terminate()
 {
     // Prevent the deadlock between GC and an attempt to terminate a thread.
-    SafePointScope safePointScope(ThreadState::HeapPointersOnStack);
+    SafePointScope safePointScope(BlinkGC::HeapPointersOnStack);
     terminateInternal();
 }
 
@@ -419,7 +421,7 @@ void WorkerThread::terminateInternal()
 
     InspectorInstrumentation::didKillAllExecutionContextTasks(m_workerGlobalScope.get());
     m_debuggerTaskQueue->kill();
-    backingThread().postTask(FROM_HERE, new Task(threadSafeBind(&WorkerThread::shutdown, AllowCrossThreadAccess(this))));
+    backingThread().postTask(BLINK_FROM_HERE, new Task(threadSafeBind(&WorkerThread::shutdown, AllowCrossThreadAccess(this))));
 }
 
 void WorkerThread::didStartRunLoop()
@@ -525,7 +527,7 @@ WorkerThread::TaskQueueResult WorkerThread::runDebuggerTask(WaitMode waitMode)
     {
         if (waitMode == DontWaitForTask)
             absoluteTime = 0.0;
-        SafePointScope safePointScope(ThreadState::NoHeapPointersOnStack);
+        SafePointScope safePointScope(BlinkGC::NoHeapPointersOnStack);
         task = m_debuggerTaskQueue->waitWithTimeout(result, absoluteTime);
     }
 

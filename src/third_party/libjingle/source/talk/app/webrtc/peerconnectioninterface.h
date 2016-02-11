@@ -248,9 +248,6 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     // TODO(pthatcher): Rename this ice_servers, but update Chromium
     // at the same time.
     IceServers servers;
-    // A localhost candidate is signaled whenever a candidate with the any
-    // address is allocated.
-    bool enable_localhost_ice_candidate;
     BundlePolicy bundle_policy;
     RtcpMuxPolicy rtcp_mux_policy;
     TcpCandidatePolicy tcp_candidate_policy;
@@ -262,7 +259,6 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
 
     RTCConfiguration()
         : type(kAll),
-          enable_localhost_ice_candidate(false),
           bundle_policy(kBundlePolicyBalanced),
           rtcp_mux_policy(kRtcpMuxPolicyNegotiate),
           tcp_candidate_policy(kTcpCandidatePolicyEnabled),
@@ -541,11 +537,13 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
     Options() :
       disable_encryption(false),
       disable_sctp_data_channels(false),
+      disable_network_monitor(false),
       network_ignore_mask(rtc::kDefaultNetworkIgnoreMask),
       ssl_max_version(rtc::SSL_PROTOCOL_DTLS_10) {
     }
     bool disable_encryption;
     bool disable_sctp_data_channels;
+    bool disable_network_monitor;
 
     // Sets the network types to ignore. For instance, calling this with
     // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
@@ -618,6 +616,25 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   // TODO(grunell): Remove when Chromium has started to use AEC in each source.
   // http://crbug.com/264611.
   virtual bool StartAecDump(rtc::PlatformFile file) = 0;
+
+  // Stops logging the AEC dump.
+  virtual void StopAecDump() = 0;
+
+  // Starts RtcEventLog using existing file. Takes ownership of |file| and
+  // passes it on to VoiceEngine, which will take the ownership. If the
+  // operation fails the file will be closed. The logging will stop
+  // automatically after 10 minutes have passed, or when the StopRtcEventLog
+  // function is called.
+  // This function as well as the StopRtcEventLog don't really belong on this
+  // interface, this is a temporary solution until we move the logging object
+  // from inside voice engine to webrtc::Call, which will happen when the VoE
+  // restructuring effort is further along.
+  // TODO(ivoc): Move this into being:
+  //             PeerConnection => MediaController => webrtc::Call.
+  virtual bool StartRtcEventLog(rtc::PlatformFile file) = 0;
+
+  // Stops logging the RtcEventLog.
+  virtual void StopRtcEventLog() = 0;
 
  protected:
   // Dtor and ctor protected as objects shouldn't be created or deleted via

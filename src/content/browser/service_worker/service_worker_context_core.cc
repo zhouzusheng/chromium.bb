@@ -23,6 +23,7 @@
 #include "content/browser/service_worker/service_worker_register_job.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_storage.h"
+#include "content/common/service_worker/service_worker_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "ipc/ipc_message.h"
 #include "net/http/http_response_headers.h"
@@ -57,6 +58,13 @@ bool IsSameOriginClientProviderHost(const GURL& origin,
          host->document_url().GetOrigin() == origin;
 }
 
+bool IsSameOriginWindowProviderHost(const GURL& origin,
+                                    ServiceWorkerProviderHost* host) {
+  return host->provider_type() ==
+             ServiceWorkerProviderType::SERVICE_WORKER_PROVIDER_FOR_WINDOW &&
+         host->document_url().GetOrigin() == origin;
+}
+
 class ClearAllServiceWorkersHelper
     : public base::RefCounted<ClearAllServiceWorkersHelper> {
  public:
@@ -76,7 +84,11 @@ class ClearAllServiceWorkersHelper
       const std::vector<ServiceWorkerRegistrationInfo>& registrations) {
     if (!context)
       return;
-    for (const auto& version_itr : context->GetLiveVersions()) {
+    // Make a copy of live versions map because StopWorker() removes the version
+    // from it when we were starting up and don't have a process yet.
+    const std::map<int64, ServiceWorkerVersion*> live_versions_copy =
+        context->GetLiveVersions();
+    for (const auto& version_itr : live_versions_copy) {
       ServiceWorkerVersion* version(version_itr.second);
       if (version->running_status() == ServiceWorkerVersion::STARTING ||
           version->running_status() == ServiceWorkerVersion::RUNNING) {
@@ -274,6 +286,13 @@ scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator>
 ServiceWorkerContextCore::GetClientProviderHostIterator(const GURL& origin) {
   return make_scoped_ptr(new ProviderHostIterator(
       providers_.get(), base::Bind(IsSameOriginClientProviderHost, origin)));
+}
+
+bool ServiceWorkerContextCore::HasWindowProviderHost(const GURL& origin) const {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  ProviderHostIterator provider_host_iterator(
+      providers_.get(), base::Bind(IsSameOriginWindowProviderHost, origin));
+  return !provider_host_iterator.IsAtEnd();
 }
 
 void ServiceWorkerContextCore::RegisterProviderHostByClientID(
@@ -499,6 +518,33 @@ ServiceWorkerVersion* ServiceWorkerContextCore::GetLiveVersion(
   return (it != live_versions_.end()) ? it->second : NULL;
 }
 
+// PlzNavigate
+void ServiceWorkerContextCore::AddNavigationHandleCore(
+    int service_worker_provider_id,
+    ServiceWorkerNavigationHandleCore* handle) {
+  auto result = navigation_handle_cores_map_.insert(
+      std::pair<int, ServiceWorkerNavigationHandleCore*>(
+          service_worker_provider_id, handle));
+  DCHECK(result.second)
+      << "Inserting a duplicate ServiceWorkerNavigationHandleCore";
+}
+
+// PlzNavigate
+void ServiceWorkerContextCore::RemoveNavigationHandleCore(
+    int service_worker_provider_id) {
+  navigation_handle_cores_map_.erase(service_worker_provider_id);
+}
+
+// PlzNavigate
+ServiceWorkerNavigationHandleCore*
+ServiceWorkerContextCore::GetNavigationHandleCore(
+    int service_worker_provider_id) {
+  auto result = navigation_handle_cores_map_.find(service_worker_provider_id);
+  if (result == navigation_handle_cores_map_.end())
+    return nullptr;
+  return result->second;
+}
+
 void ServiceWorkerContextCore::AddLiveVersion(ServiceWorkerVersion* version) {
   // TODO(horo): If we will see crashes here, we have to find the root cause of
   // the version ID conflict. Otherwise change CHECK to DCHECK.
@@ -623,6 +669,16 @@ void ServiceWorkerContextCore::ClearAllServiceWorkersForTest(
                  AsWeakPtr()));
 }
 
+void ServiceWorkerContextCore::CheckHasServiceWorker(
+    const GURL& url,
+    const GURL& other_url,
+    const ServiceWorkerContext::CheckHasServiceWorkerCallback callback) {
+  storage()->FindRegistrationForDocument(
+      url, base::Bind(&ServiceWorkerContextCore::
+                          DidFindRegistrationForCheckHasServiceWorker,
+                      AsWeakPtr(), other_url, callback));
+}
+
 void ServiceWorkerContextCore::OnRunningStateChanged(
     ServiceWorkerVersion* version) {
   if (!observer_list_)
@@ -712,6 +768,44 @@ void ServiceWorkerContextCore::OnControlleeRemoved(
 
 ServiceWorkerProcessManager* ServiceWorkerContextCore::process_manager() {
   return wrapper_->process_manager();
+}
+
+void ServiceWorkerContextCore::DidFindRegistrationForCheckHasServiceWorker(
+    const GURL& other_url,
+    const ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
+    ServiceWorkerStatusCode status,
+    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+  if (status != SERVICE_WORKER_OK) {
+    callback.Run(false);
+    return;
+  }
+
+  if (!ServiceWorkerUtils::ScopeMatches(registration->pattern(), other_url)) {
+    callback.Run(false);
+    return;
+  }
+
+  if (registration->is_uninstalling() || registration->is_uninstalled()) {
+    callback.Run(false);
+    return;
+  }
+
+  if (!registration->active_version() && !registration->waiting_version()) {
+    registration->RegisterRegistrationFinishedCallback(
+        base::Bind(&ServiceWorkerContextCore::
+                       OnRegistrationFinishedForCheckHasServiceWorker,
+                   AsWeakPtr(), callback, registration));
+    return;
+  }
+
+  callback.Run(true);
+}
+
+void ServiceWorkerContextCore::OnRegistrationFinishedForCheckHasServiceWorker(
+    const ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
+    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+  callback.Run(registration->active_version() ||
+               registration->waiting_version());
 }
 
 }  // namespace content

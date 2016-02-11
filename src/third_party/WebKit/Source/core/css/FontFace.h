@@ -46,7 +46,7 @@
 namespace blink {
 
 class CSSFontFace;
-class CSSPrimitiveValue;
+class CSSValue;
 class DOMArrayBuffer;
 class DOMArrayBufferView;
 class Document;
@@ -125,7 +125,7 @@ private:
     void setPropertyFromString(const Document*, const String&, CSSPropertyID, ExceptionState* = 0);
     bool setPropertyFromStyle(const StylePropertySet&, CSSPropertyID);
     bool setPropertyValue(PassRefPtrWillBeRawPtr<CSSValue>, CSSPropertyID);
-    bool setFamilyValue(CSSPrimitiveValue*);
+    bool setFamilyValue(const CSSValue&);
     void loadInternal(ExecutionContext*);
     ScriptPromise fontStatusPromise(ScriptState*);
 
@@ -133,7 +133,6 @@ private:
 
     AtomicString m_family;
     String m_otsParseMessage;
-    RefPtrWillBeMember<CSSValue> m_src;
     RefPtrWillBeMember<CSSValue> m_style;
     RefPtrWillBeMember<CSSValue> m_weight;
     RefPtrWillBeMember<CSSValue> m_stretch;

@@ -70,6 +70,15 @@ class CONTENT_EXPORT MediaRecorderHandler final
   // Bound to the main render thread.
   base::ThreadChecker main_render_thread_checker_;
 
+  // Force using VP9 for video encoding, otherwise VP8 will be used by default.
+  bool use_vp9_;
+
+  // |client_| has no notion of time, thus may configure us via start(timeslice)
+  // to notify it after a certain |timeslice_| has passed. We use a moving
+  // |slice_origin_timestamp_| to track those time chunks.
+  base::TimeDelta timeslice_;
+  base::TimeTicks slice_origin_timestamp_;
+
   bool recording_;
   blink::WebMediaStream media_stream_;  // The MediaStream being recorded.
 

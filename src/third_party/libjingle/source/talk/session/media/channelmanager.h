@@ -33,7 +33,6 @@
 
 #include "talk/media/base/capturemanager.h"
 #include "talk/media/base/mediaengine.h"
-#include "webrtc/p2p/base/session.h"
 #include "talk/session/media/voicechannel.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/fileutils.h"
@@ -170,6 +169,15 @@ class ChannelManager : public rtc::MessageHandler,
 
   // Starts AEC dump using existing file.
   bool StartAecDump(rtc::PlatformFile file);
+
+  // Stops recording AEC dump.
+  void StopAecDump();
+
+  // Starts RtcEventLog using existing file.
+  bool StartRtcEventLog(rtc::PlatformFile file);
+
+  // Stops logging RtcEventLog.
+  void StopRtcEventLog();
 
   sigslot::signal2<VideoCapturer*, CaptureState> SignalVideoCaptureStateChange;
 

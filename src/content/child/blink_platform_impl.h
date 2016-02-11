@@ -144,7 +144,8 @@ class CONTENT_EXPORT BlinkPlatformImpl
   void updateTraceEventDuration(const unsigned char* category_group_enabled,
                                 const char* name,
                                 TraceEventHandle) override;
-  void registerMemoryDumpProvider(blink::WebMemoryDumpProvider* wmdp) override;
+  void registerMemoryDumpProvider(blink::WebMemoryDumpProvider* wmdp,
+                                  const char* name) override;
   void unregisterMemoryDumpProvider(
       blink::WebMemoryDumpProvider* wmdp) override;
   blink::WebProcessMemoryDump* createProcessMemoryDump() override;
@@ -164,8 +165,8 @@ class CONTENT_EXPORT BlinkPlatformImpl
       const blink::WebString& value1,
       const blink::WebString& value2) override;
   void suddenTerminationChanged(bool enabled) override {}
-  double currentTime() override;
-  double monotonicallyIncreasingTime() override;
+  double currentTimeSeconds() override;
+  double monotonicallyIncreasingTimeSeconds() override;
   double systemTraceTime() override;
   void cryptographicallyRandomValues(unsigned char* buffer,
                                      size_t length) override;
@@ -195,8 +196,6 @@ class CONTENT_EXPORT BlinkPlatformImpl
 
   bool IsMainThread() const;
 
-  scoped_refptr<base::SingleThreadTaskRunner> MainTaskRunnerForCurrentThread();
-
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
   WebThemeEngineImpl native_theme_engine_;
   WebFallbackThemeEngineImpl fallback_theme_engine_;
@@ -211,7 +210,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
   scoped_refptr<NotificationDispatcher> notification_dispatcher_;
   scoped_refptr<PushDispatcher> push_dispatcher_;
   scoped_ptr<PermissionDispatcher> permission_client_;
-  scoped_ptr<BackgroundSyncProvider> sync_provider_;
+  scoped_ptr<BackgroundSyncProvider> main_thread_sync_provider_;
 };
 
 }  // namespace content

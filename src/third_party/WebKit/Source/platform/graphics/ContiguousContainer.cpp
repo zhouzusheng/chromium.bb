@@ -5,8 +5,8 @@
 #include "config.h"
 #include "platform/graphics/ContiguousContainer.h"
 
+#include "wtf/Allocator.h"
 #include "wtf/ContainerAnnotations.h"
-#include "wtf/FastAllocBase.h"
 #include "wtf/PartitionAlloc.h"
 #include "wtf/Partitions.h"
 #include "wtf/PassOwnPtr.h"
@@ -20,7 +20,7 @@ static const unsigned kDefaultInitialBufferSize = 32;
 
 class ContiguousContainerBase::Buffer {
     WTF_MAKE_NONCOPYABLE(Buffer);
-    WTF_MAKE_FAST_ALLOCATED(Buffer);
+    USING_FAST_MALLOC(Buffer);
 public:
     explicit Buffer(size_t bufferSize)
     {

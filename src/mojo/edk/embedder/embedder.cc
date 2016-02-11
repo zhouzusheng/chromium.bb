@@ -10,6 +10,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/task_runner.h"
 #include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/process_delegate.h"
@@ -26,6 +27,7 @@ namespace edk {
 // temporarily.
 int g_channel_count = 0;
 bool g_wait_for_no_more_channels = false;
+base::TaskRunner* g_delegate_task_runner = nullptr;  // Used at shutdown.
 
 namespace {
 
@@ -36,9 +38,10 @@ void ShutdownIPCSupportHelper(bool wait_for_no_more_channels) {
     return;
   }
 
-  internal::g_delegate_thread_task_runner->PostTask(
+  g_delegate_task_runner->PostTask(
       FROM_HERE, base::Bind(&ProcessDelegate::OnShutdownComplete,
                             base::Unretained(internal::g_process_delegate)));
+  g_delegate_task_runner = nullptr;
 }
 
 }  // namespace
@@ -49,9 +52,12 @@ namespace internal {
 PlatformSupport* g_platform_support = nullptr;
 Core* g_core = nullptr;
 
-base::TaskRunner* g_delegate_thread_task_runner;
 ProcessDelegate* g_process_delegate;
 base::TaskRunner* g_io_thread_task_runner = nullptr;
+
+Core* GetCore() {
+  return g_core;
+}
 
 void ChannelStarted() {
   DCHECK(g_io_thread_task_runner->RunsTasksOnCurrentThread());
@@ -60,6 +66,7 @@ void ChannelStarted() {
 
 void ChannelShutdown() {
   DCHECK(g_io_thread_task_runner->RunsTasksOnCurrentThread());
+  DCHECK_GT(g_channel_count, 0);
   g_channel_count--;
   if (!g_channel_count && g_wait_for_no_more_channels) {
     // Reset g_wait_for_no_more_channels for unit tests which initialize and
@@ -129,12 +136,10 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
   return MOJO_RESULT_OK;
 }
 
-void InitIPCSupport(scoped_refptr<base::TaskRunner> delegate_thread_task_runner,
-                    ProcessDelegate* process_delegate,
+void InitIPCSupport(ProcessDelegate* process_delegate,
                     scoped_refptr<base::TaskRunner> io_thread_task_runner) {
   // |Init()| must have already been called.
   DCHECK(internal::g_core);
-  internal::g_delegate_thread_task_runner = delegate_thread_task_runner.get();
   internal::g_process_delegate = process_delegate;
   internal::g_io_thread_task_runner = io_thread_task_runner.get();
 }
@@ -143,11 +148,13 @@ void ShutdownIPCSupportOnIOThread() {
 }
 
 void ShutdownIPCSupport() {
+  g_delegate_task_runner = base::MessageLoop::current()->task_runner().get();
   internal::g_io_thread_task_runner->PostTask(
       FROM_HERE, base::Bind(&ShutdownIPCSupportHelper, false));
 }
 
 void ShutdownIPCSupportAndWaitForNoChannels() {
+  g_delegate_task_runner = base::MessageLoop::current()->task_runner().get();
   internal::g_io_thread_task_runner->PostTask(
       FROM_HERE, base::Bind(&ShutdownIPCSupportHelper, true));
 }
@@ -161,7 +168,8 @@ ScopedMessagePipeHandle CreateMessagePipe(
   ScopedMessagePipeHandle rv(
       MessagePipeHandle(internal::g_core->AddDispatcher(dispatcher)));
   CHECK(rv.is_valid());
-  dispatcher->Init(platform_handle.Pass());
+  dispatcher->Init(platform_handle.Pass(), nullptr, 0, nullptr, 0, nullptr,
+                   nullptr);
   // TODO(vtl): The |.Pass()| below is only needed due to an MSVS bug; remove it
   // once that's fixed.
   return rv.Pass();

@@ -62,6 +62,7 @@
 #include "core/streams/Stream.h"
 #include "core/xmlhttprequest/XMLHttpRequestProgressEvent.h"
 #include "core/xmlhttprequest/XMLHttpRequestUpload.h"
+#include "platform/FileMetadata.h"
 #include "platform/Logging.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
@@ -70,6 +71,7 @@
 #include "platform/network/ParsedContentType.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
+#include "public/platform/Platform.h"
 #include "public/platform/WebURLRequest.h"
 #include "wtf/Assertions.h"
 #include "wtf/StdLibExtras.h"
@@ -130,6 +132,13 @@ void logConsoleError(ExecutionContext* context, const String& message)
     // We should pass additional parameters so we can tell the console where the mistake occurred.
     context->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, message));
 }
+
+enum HeaderValueCategoryByRFC7230 {
+    HeaderValueInvalid,
+    HeaderValueAffectedByNormalization,
+    HeaderValueValid,
+    HeaderValueCategoryByRFC7230End
+};
 
 } // namespace
 
@@ -1174,10 +1183,6 @@ void XMLHttpRequest::setRequestHeader(const AtomicString& name, const AtomicStri
         return;
     }
 
-    // Show deprecation warnings and count occurrences of such deprecated header values.
-    if (!value.isEmpty() && !isValidHTTPFieldContentRFC7230(value))
-        UseCounter::countDeprecation(executionContext(), UseCounter::HeaderValueNotMatchingRFC7230);
-
     // No script (privileged or not) can set unsafe headers.
     if (FetchUtils::isForbiddenHeaderName(name)) {
         logConsoleError(executionContext(), "Refused to set unsafe header \"" + name + "\"");
@@ -1189,9 +1194,31 @@ void XMLHttpRequest::setRequestHeader(const AtomicString& name, const AtomicStri
 
 void XMLHttpRequest::setRequestHeaderInternal(const AtomicString& name, const AtomicString& value)
 {
+    HeaderValueCategoryByRFC7230 headerValueCategory = HeaderValueValid;
+
     HTTPHeaderMap::AddResult result = m_requestHeaders.add(name, value);
-    if (!result.isNewEntry)
-        result.storedValue->value = result.storedValue->value + ", " + value;
+    if (!result.isNewEntry) {
+        AtomicString newValue = result.storedValue->value + ", " + value;
+
+        // Without normalization at XHR level here, the actual header value
+        // sent to the network is |newValue| with leading/trailing whitespaces
+        // stripped (i.e. |normalizeHeaderValue(newValue)|).
+        // With normalization at XHR level here as the spec requires, the
+        // actual header value sent to the network is |normalizedNewValue|.
+        // If these two are different, introducing normalization here affects
+        // the header value sent to the network.
+        String normalizedNewValue = FetchUtils::normalizeHeaderValue(result.storedValue->value) + ", " + FetchUtils::normalizeHeaderValue(value);
+        if (FetchUtils::normalizeHeaderValue(newValue) != normalizedNewValue)
+            headerValueCategory = HeaderValueAffectedByNormalization;
+
+        result.storedValue->value = newValue;
+    }
+
+    String normalizedValue = FetchUtils::normalizeHeaderValue(value);
+    if (!normalizedValue.isEmpty() && !isValidHTTPFieldContentRFC7230(normalizedValue))
+        headerValueCategory = HeaderValueInvalid;
+
+    Platform::current()->histogramEnumeration("Blink.XHR.setRequestHeader.HeaderValueCategoryInRFC7230", headerValueCategory, HeaderValueCategoryByRFC7230End);
 }
 
 const AtomicString& XMLHttpRequest::getRequestHeader(const AtomicString& name) const
@@ -1421,7 +1448,7 @@ PassRefPtr<BlobDataHandle> XMLHttpRequest::createBlobDataHandleFromResponse()
     String filePath = m_response.downloadedFilePath();
     // If we errored out or got no data, we return an empty handle.
     if (!filePath.isEmpty() && m_lengthDownloadedToFile) {
-        blobData->appendFile(filePath);
+        blobData->appendFile(filePath, 0, m_lengthDownloadedToFile, invalidFileTime());
         // FIXME: finalResponseMIMETypeWithFallback() defaults to
         // text/xml which may be incorrect. Replace it with
         // finalResponseMIMEType() after compatibility investigation.

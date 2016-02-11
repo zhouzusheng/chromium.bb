@@ -55,9 +55,9 @@ void ResourcePool::PoolResource::OnMemoryDump(
 
 ResourcePool::ResourcePool(ResourceProvider* resource_provider,
                            base::SingleThreadTaskRunner* task_runner,
-                           GLenum target)
+                           bool use_image_texture_target)
     : resource_provider_(resource_provider),
-      target_(target),
+      use_image_texture_target_(use_image_texture_target),
       max_memory_usage_bytes_(0),
       max_resource_count_(0),
       in_use_memory_usage_bytes_(0),
@@ -69,7 +69,7 @@ ResourcePool::ResourcePool(ResourceProvider* resource_provider,
           base::TimeDelta::FromMilliseconds(kResourceExpirationDelayMs)),
       weak_ptr_factory_(this) {
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-      this, task_runner_.get());
+      this, "cc::ResourcePool", task_runner_.get());
 }
 
 ResourcePool::~ResourcePool() {
@@ -79,7 +79,7 @@ ResourcePool::~ResourcePool() {
   DCHECK_EQ(0u, in_use_resources_.size());
 
   while (!busy_resources_.empty()) {
-    DidFinishUsingResource(busy_resources_.take_front());
+    DidFinishUsingResource(busy_resources_.take_back());
   }
 
   SetResourceUsageLimits(0, 0);
@@ -91,6 +91,9 @@ ResourcePool::~ResourcePool() {
 
 Resource* ResourcePool::AcquireResource(const gfx::Size& size,
                                         ResourceFormat format) {
+  // Finding resources in |unused_resources_| from MRU to LRU direction, touches
+  // LRU resources only if needed, which increases possibility of expiring more
+  // LRU resources within kResourceExpirationDelayMs.
   for (ResourceDeque::iterator it = unused_resources_.begin();
        it != unused_resources_.end(); ++it) {
     ScopedResource* resource = *it;
@@ -110,9 +113,13 @@ Resource* ResourcePool::AcquireResource(const gfx::Size& size,
 
   scoped_ptr<PoolResource> pool_resource =
       PoolResource::Create(resource_provider_);
-  GLenum target =
-      target_ ? target_ : resource_provider_->GetImageTextureTarget(format);
-  pool_resource->AllocateManaged(size, target, format);
+
+  if (use_image_texture_target_) {
+    pool_resource->AllocateWithImageTextureTarget(size, format);
+  } else {
+    pool_resource->Allocate(size, ResourceProvider::TEXTURE_HINT_IMMUTABLE,
+                            format);
+  }
 
   DCHECK(ResourceUtil::VerifySizeInBytes<size_t>(pool_resource->size(),
                                                  pool_resource->format()));
@@ -156,7 +163,7 @@ void ResourcePool::ReleaseResource(Resource* resource, uint64_t content_id) {
   pool_resource->set_last_usage(base::TimeTicks::Now());
 
   // Transfer resource to |busy_resources_|.
-  busy_resources_.push_back(in_use_resources_.take_and_erase(it));
+  busy_resources_.push_front(in_use_resources_.take_and_erase(it));
   in_use_memory_usage_bytes_ -= ResourceUtil::UncheckedSizeInBytes<size_t>(
       pool_resource->size(), pool_resource->format());
 
@@ -185,7 +192,7 @@ void ResourcePool::ReduceResourceUsage() {
     // can't be locked for write might also not be truly free-able.
     // We can free the resource here but it doesn't mean that the
     // memory is necessarily returned to the OS.
-    DeleteResource(unused_resources_.take_front());
+    DeleteResource(unused_resources_.take_back());
   }
 }
 
@@ -221,7 +228,7 @@ void ResourcePool::CheckBusyResources() {
 }
 
 void ResourcePool::DidFinishUsingResource(scoped_ptr<PoolResource> resource) {
-  unused_resources_.push_back(resource.Pass());
+  unused_resources_.push_front(resource.Pass());
 }
 
 void ResourcePool::ScheduleEvictExpiredResourcesIn(
@@ -260,10 +267,10 @@ void ResourcePool::EvictResourcesNotUsedSince(base::TimeTicks time_limit) {
     // as this may not exactly line up with the time a resource became non-busy.
     // However, this should be roughly ordered, and will only introduce slight
     // delays in freeing expired resources.
-    if (unused_resources_.front()->last_usage() > time_limit)
+    if (unused_resources_.back()->last_usage() > time_limit)
       return;
 
-    DeleteResource(unused_resources_.take_front());
+    DeleteResource(unused_resources_.take_back());
   }
 
   // Also free busy resources older than the delay. With a sufficiently large
@@ -271,21 +278,21 @@ void ResourcePool::EvictResourcesNotUsedSince(base::TimeTicks time_limit) {
   // expired are not likely to be busy. Additionally, freeing a "busy" resource
   // has no downside other than incorrect accounting.
   while (!busy_resources_.empty()) {
-    if (busy_resources_.front()->last_usage() > time_limit)
+    if (busy_resources_.back()->last_usage() > time_limit)
       return;
 
-    DeleteResource(busy_resources_.take_front());
+    DeleteResource(busy_resources_.take_back());
   }
 }
 
 base::TimeTicks ResourcePool::GetUsageTimeForLRUResource() const {
   if (!unused_resources_.empty()) {
-    return unused_resources_.front()->last_usage();
+    return unused_resources_.back()->last_usage();
   }
 
   // This is only called when we have at least one evictable resource.
   DCHECK(!busy_resources_.empty());
-  return busy_resources_.front()->last_usage();
+  return busy_resources_.back()->last_usage();
 }
 
 bool ResourcePool::OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,

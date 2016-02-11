@@ -136,6 +136,9 @@ public:
 
     String valueWithDefault() const;
 
+    // This function dispatches 'input' event for non-textfield types. Callers
+    // need to handle any DOM structure changes by event handlers, or need to
+    // delay the 'input' event with EventQueueScope.
     void setValueFromRenderer(const String&);
 
     int selectionStartForBinding(ExceptionState&) const;
@@ -150,7 +153,7 @@ public:
     bool layoutObjectIsNeeded(const ComputedStyle&) final;
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
     void detach(const AttachContext& = AttachContext()) final;
-    void updateFocusAppearance(bool restorePreviousSelection) final;
+    void updateFocusAppearance(SelectionBehaviorOnFocus) final;
 
     // FIXME: For isActivatedSubmit and setActivatedSubmit, we should use the NVI-idiom here by making
     // it private virtual in all classes and expose a public method in HTMLFormControlElement to call

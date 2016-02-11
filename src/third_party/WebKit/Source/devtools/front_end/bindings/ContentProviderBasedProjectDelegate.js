@@ -44,10 +44,18 @@ WebInspector.ContentProviderBasedProjectDelegate = function(workspace, id, type)
     this._contentProviders = {};
     this._workspace = workspace;
     this._id = id;
-    workspace.addProject(id, this);
+    this._project = workspace.addProject(id, this);
 }
 
 WebInspector.ContentProviderBasedProjectDelegate.prototype = {
+    /**
+     * @return {!WebInspector.Project}
+     */
+    project: function()
+    {
+        return this._project;
+    },
+
     /**
      * @override
      * @return {string}
@@ -342,7 +350,7 @@ WebInspector.ContentProviderBasedProjectDelegate.prototype = {
     {
         var path = parentPath ? parentPath + "/" + name : name;
         if (this._contentProviders[path])
-            return path;
+            this.dispatchEventToListeners(WebInspector.ProjectDelegate.Events.FileRemoved, path);
         var fileDescriptor = new WebInspector.FileDescriptor(parentPath, name, originURL, contentProvider.contentType());
         this._contentProviders[path] = contentProvider;
         this.dispatchEventToListeners(WebInspector.ProjectDelegate.Events.FileAdded, fileDescriptor);

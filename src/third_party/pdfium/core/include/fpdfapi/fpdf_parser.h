@@ -9,31 +9,34 @@
 
 #include "../fxcrt/fx_system.h"
 #include "fpdf_objects.h"
+#include "third_party/base/nonstd_unique_ptr.h"
 
-class CPDF_Document;
-class CPDF_Parser;
-class CPDF_SecurityHandler;
-class CPDF_StandardSecurityHandler;
-class CPDF_CryptoHandler;
-class CPDF_Object;
-class IFX_FileRead;
 class CFDF_Document;
 class CFDF_Parser;
-class CFX_Font;
 class CFX_AffineMatrix;
+class CFX_DIBSource;
 class CFX_FloatRect;
-class CPDF_Point;
+class CFX_Font;
+class CFX_PrivateData;
+class CPDF_ColorSpace;
+class CPDF_CryptoHandler;
 class CPDF_DocPageData;
 class CPDF_DocRenderData;
-class CPDF_ModuleMgr;
-class CFX_DIBSource;
+class CPDF_Document;
 class CPDF_Font;
-class CPDF_Image;
-class CPDF_ColorSpace;
-class CPDF_Pattern;
 class CPDF_FontEncoding;
+class CPDF_HintTables;
 class CPDF_IccProfile;
-class CFX_PrivateData;
+class CPDF_Image;
+class CPDF_ModuleMgr;
+class CPDF_Object;
+class CPDF_Parser;
+class CPDF_Pattern;
+class CPDF_Point;
+class CPDF_SecurityHandler;
+class CPDF_StandardSecurityHandler;
+class IFX_FileRead;
+
 #define FPDFPERM_PRINT 0x0004
 #define FPDFPERM_MODIFY 0x0008
 #define FPDFPERM_EXTRACT 0x0010
@@ -44,12 +47,25 @@ class CFX_PrivateData;
 #define FPDFPERM_PRINT_HIGH 0x0800
 #define FPDF_PAGE_MAX_NUM 0xFFFFF
 
-// Indexed by 8-bit character code, contains either:
-//   'W' - for whitespace: NUL, TAB, CR, LF, FF, 0x80, 0xff
-//   'N' - for numeric: 0123456789+-.
-//   'D' - for delimiter: %()/<>[]{}
-//   'R' - otherwise.
+// Use the accessors below instead of directly accessing PDF_CharType.
 extern const char PDF_CharType[256];
+
+inline bool PDFCharIsWhitespace(uint8_t c) {
+  return PDF_CharType[c] == 'W';
+}
+inline bool PDFCharIsNumeric(uint8_t c) {
+  return PDF_CharType[c] == 'N';
+}
+inline bool PDFCharIsDelimiter(uint8_t c) {
+  return PDF_CharType[c] == 'D';
+}
+inline bool PDFCharIsOther(uint8_t c) {
+  return PDF_CharType[c] == 'R';
+}
+
+inline bool PDFCharIsLineEnding(uint8_t c) {
+  return c == '\r' || c == '\n';
+}
 
 // Indexed by 8-bit char code, contains unicode code points.
 extern const FX_WORD PDFDocEncoding[256];
@@ -270,7 +286,7 @@ class CPDF_SyntaxParser {
   FX_FILESIZE FindTag(const CFX_ByteStringC& tag, FX_FILESIZE limit);
 
   void SetEncrypt(CPDF_CryptoHandler* pCryptoHandler) {
-    m_pCryptoHandler = pCryptoHandler;
+    m_pCryptoHandler.reset(pCryptoHandler);
   }
 
   FX_BOOL IsEncrypted() { return m_pCryptoHandler != NULL; }
@@ -282,6 +298,10 @@ class CPDF_SyntaxParser {
   CFX_ByteString GetNextWord(FX_BOOL& bIsNumber);
 
  protected:
+  friend class CPDF_Parser;
+  friend class CPDF_DataAvail;
+  friend class fpdf_parser_parser_ReadHexString_Test;
+
   static const int kParserMaxRecursionDepth = 64;
   static int s_CurrentRecursionDepth;
 
@@ -326,7 +346,7 @@ class CPDF_SyntaxParser {
 
   FX_FILESIZE m_BufOffset;
 
-  CPDF_CryptoHandler* m_pCryptoHandler;
+  nonstd::unique_ptr<CPDF_CryptoHandler> m_pCryptoHandler;
 
   uint8_t m_WordBuffer[257];
 
@@ -335,8 +355,6 @@ class CPDF_SyntaxParser {
   FX_BOOL m_bIsNumber;
 
   FX_FILESIZE m_dwWordPos;
-  friend class CPDF_Parser;
-  friend class CPDF_DataAvail;
 };
 
 #define PDFPARSE_TYPEONLY 1
@@ -375,9 +393,13 @@ class CPDF_Parser {
 
   CFX_ByteString GetPassword() { return m_Password; }
 
-  CPDF_SecurityHandler* GetSecurityHandler() { return m_pSecurityHandler; }
+  CPDF_SecurityHandler* GetSecurityHandler() {
+    return m_pSecurityHandler.get();
+  }
 
-  CPDF_CryptoHandler* GetCryptoHandler() { return m_Syntax.m_pCryptoHandler; }
+  CPDF_CryptoHandler* GetCryptoHandler() {
+    return m_Syntax.m_pCryptoHandler.get();
+  }
 
   void SetSecurityHandler(CPDF_SecurityHandler* pSecurityHandler,
                           FX_BOOL bForced = FALSE);
@@ -495,7 +517,7 @@ class CPDF_Parser {
 
   FX_BOOL m_bXRefStream;
 
-  CPDF_SecurityHandler* m_pSecurityHandler;
+  nonstd::unique_ptr<CPDF_SecurityHandler> m_pSecurityHandler;
 
   FX_BOOL m_bForceUseSecurityHandler;
 
@@ -845,14 +867,37 @@ class IFX_DownloadHints {
   virtual ~IFX_DownloadHints() {}
   virtual void AddSegment(FX_FILESIZE offset, FX_DWORD size) = 0;
 };
-#define PDF_IS_LINEARIZED 1
-#define PDF_NOT_LINEARIZED 0
-#define PDF_UNKNOW_LINEARIZED -1
-#define PDFFORM_NOTAVAIL 0
-#define PDFFORM_AVAIL 1
-#define PDFFORM_NOTEXIST 2
+
 class IPDF_DataAvail {
  public:
+  // Must match PDF_DATA_* definitions in public/fpdf_dataavail.h, but cannot
+  // #include that header. fpdfsdk/src/fpdf_dataavail.cpp has static_asserts
+  // to make sure the two sets of values match.
+  enum DocAvailStatus {
+    DataError = -1,        // PDF_DATA_ERROR
+    DataNotAvailable = 0,  // PDF_DATA_NOTAVAIL
+    DataAvailable = 1,     // PDF_DATA_AVAIL
+  };
+
+  // Must match PDF_*LINEAR* definitions in public/fpdf_dataavail.h, but cannot
+  // #include that header. fpdfsdk/src/fpdf_dataavail.cpp has static_asserts
+  // to make sure the two sets of values match.
+  enum DocLinearizationStatus {
+    LinearizationUnknown = -1,  // PDF_LINEARIZATION_UNKNOWN
+    NotLinearized = 0,          // PDF_NOT_LINEARIZED
+    Linearized = 1,             // PDF_LINEARIZED
+  };
+
+  // Must match PDF_FORM_* definitions in public/fpdf_dataavail.h, but cannot
+  // #include that header. fpdfsdk/src/fpdf_dataavail.cpp has static_asserts
+  // to make sure the two sets of values match.
+  enum DocFormStatus {
+    FormError = -1,        // PDF_FORM_ERROR
+    FormNotAvailable = 0,  // PDF_FORM_NOTAVAIL
+    FormAvailable = 1,     // PDF_FORM_AVAIL
+    FormNotExist = 2,      // PDF_FORM_NOTEXIST
+  };
+
   static IPDF_DataAvail* Create(IFX_FileAvail* pFileAvail,
                                 IFX_FileRead* pFileRead);
   virtual ~IPDF_DataAvail() {}
@@ -860,12 +905,12 @@ class IPDF_DataAvail {
   IFX_FileAvail* GetFileAvail() const { return m_pFileAvail; }
   IFX_FileRead* GetFileRead() const { return m_pFileRead; }
 
-  virtual FX_BOOL IsDocAvail(IFX_DownloadHints* pHints) = 0;
+  virtual DocAvailStatus IsDocAvail(IFX_DownloadHints* pHints) = 0;
   virtual void SetDocument(CPDF_Document* pDoc) = 0;
-  virtual FX_BOOL IsPageAvail(int iPage, IFX_DownloadHints* pHints) = 0;
+  virtual int IsPageAvail(int iPage, IFX_DownloadHints* pHints) = 0;
   virtual FX_BOOL IsLinearized() = 0;
-  virtual int32_t IsFormAvail(IFX_DownloadHints* pHints) = 0;
-  virtual int32_t IsLinearizedPDF() = 0;
+  virtual DocFormStatus IsFormAvail(IFX_DownloadHints* pHints) = 0;
+  virtual DocLinearizationStatus IsLinearizedPDF() = 0;
   virtual void GetLinearizedMainXRefInfo(FX_FILESIZE* pPos,
                                          FX_DWORD* pSize) = 0;
 
@@ -907,6 +952,7 @@ enum PDF_DATAAVAIL_STATUS {
   PDF_DATAAVAIL_HEADER = 0,
   PDF_DATAAVAIL_FIRSTPAGE,
   PDF_DATAAVAIL_FIRSTPAGE_PREPARE,
+  PDF_DATAAVAIL_HINTTABLE,
   PDF_DATAAVAIL_END,
   PDF_DATAAVAIL_CROSSREF,
   PDF_DATAAVAIL_CROSSREF_ITEM,
@@ -927,6 +973,24 @@ enum PDF_DATAAVAIL_STATUS {
   PDF_DATAAVAIL_TRAILER_APPEND
 };
 
+// Public for testing.
+FX_DWORD A85Decode(const uint8_t* src_buf,
+                   FX_DWORD src_size,
+                   uint8_t*& dest_buf,
+                   FX_DWORD& dest_size);
+// Public for testing.
+FX_DWORD HexDecode(const uint8_t* src_buf,
+                   FX_DWORD src_size,
+                   uint8_t*& dest_buf,
+                   FX_DWORD& dest_size);
+// Public for testing.
+FX_DWORD FPDFAPI_FlateOrLZWDecode(FX_BOOL bLZW,
+                                  const uint8_t* src_buf,
+                                  FX_DWORD src_size,
+                                  CPDF_Dictionary* pParams,
+                                  FX_DWORD estimated_size,
+                                  uint8_t*& dest_buf,
+                                  FX_DWORD& dest_size);
 FX_BOOL PDF_DataDecode(const uint8_t* src_buf,
                        FX_DWORD src_size,
                        const CPDF_Dictionary* pDict,

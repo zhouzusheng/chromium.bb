@@ -4,9 +4,10 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#include "../../public/fpdf_edit.h"
-#include "../../public/fpdf_save.h"
+#include "public/fpdf_save.h"
+
 #include "../include/fsdk_define.h"
+#include "public/fpdf_edit.h"
 
 #if _FX_OS_ == _FX_ANDROID_
 #include "time.h"
@@ -56,7 +57,7 @@ FPDF_BOOL _FPDF_Doc_Save(FPDF_DOCUMENT document,
                          FPDF_DWORD flags,
                          FPDF_BOOL bSetVersion,
                          int fileVerion) {
-  CPDF_Document* pDoc = (CPDF_Document*)document;
+  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
   if (!pDoc)
     return 0;
 

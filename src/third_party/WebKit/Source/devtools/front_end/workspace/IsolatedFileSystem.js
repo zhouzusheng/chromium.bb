@@ -41,7 +41,7 @@ WebInspector.IsolatedFileSystem = function(manager, path, domFileSystem)
     this._domFileSystem = domFileSystem;
     this._excludedFoldersSetting = WebInspector.settings.createLocalSetting("workspaceExcludedFolders", {});
     /** @type {!Set<string>} */
-    this._excludedFolders = new Set(this._excludedFoldersSetting.get()[path]);
+    this._excludedFolders = new Set(this._excludedFoldersSetting.get()[path] || []);
     /** @type {!Set<string>} */
     this._nonConfigurableExcludedFolders = new Set();
 }
@@ -512,9 +512,9 @@ WebInspector.IsolatedFileSystem.prototype = {
 
         function innerCallback(results)
         {
-            if (!results.length)
+            if (!results.length) {
                 callback(entries.sort());
-            else {
+            } else {
                 entries = entries.concat(toArray(results));
                 dirReader.readEntries(innerCallback, errorHandler);
             }

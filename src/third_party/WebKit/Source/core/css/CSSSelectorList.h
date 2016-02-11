@@ -34,7 +34,7 @@ namespace blink {
 class CSSParserSelector;
 
 class CORE_EXPORT CSSSelectorList {
-    WTF_MAKE_FAST_ALLOCATED(CSSSelectorList);
+    USING_FAST_MALLOC(CSSSelectorList);
 public:
     CSSSelectorList() : m_selectorArray(nullptr) { }
     CSSSelectorList(const CSSSelectorList&);
@@ -63,9 +63,10 @@ public:
 
     bool selectorNeedsUpdatedDistribution(size_t index) const;
 
-    // TODO(esprehn): These methods are confusing and incorrectly named.
-    bool hasShadowDistributedAt(size_t index) const;
-    bool selectorCrossesTreeScopes(size_t index) const;
+    // TODO(kochi): "ShadowDistributed" means the selector has ::content pseudo element.
+    // Once ::slotted is introduced, come up with more readable name.
+    bool selectorHasShadowDistributed(size_t index) const;
+    bool selectorUsesDeepCombinatorOrShadowPseudo(size_t index) const;
 
     String selectorsText() const;
 

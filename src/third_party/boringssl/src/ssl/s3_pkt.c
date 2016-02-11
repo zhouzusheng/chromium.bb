@@ -249,6 +249,23 @@ int ssl3_write_bytes(SSL *s, int type, const void *buf_, int len) {
   }
 }
 
+static int ssl3_write_pending(SSL *s, int type, const uint8_t *buf,
+                              unsigned int len) {
+  if (s->s3->wpend_tot > (int)len ||
+      (s->s3->wpend_buf != buf &&
+       !(s->mode & SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER)) ||
+      s->s3->wpend_type != type) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_WRITE_RETRY);
+    return -1;
+  }
+
+  int ret = ssl_write_buffer_flush(s);
+  if (ret <= 0) {
+    return ret;
+  }
+  return s->s3->wpend_ret;
+}
+
 /* do_ssl3_write writes an SSL record of the given type. */
 static int do_ssl3_write(SSL *s, int type, const uint8_t *buf, unsigned len) {
   /* If there is still data from the previous record, flush it. */
@@ -298,22 +315,6 @@ static int do_ssl3_write(SSL *s, int type, const uint8_t *buf, unsigned len) {
   return ssl3_write_pending(s, type, buf, len);
 }
 
-int ssl3_write_pending(SSL *s, int type, const uint8_t *buf, unsigned int len) {
-  if (s->s3->wpend_tot > (int)len ||
-      (s->s3->wpend_buf != buf &&
-       !(s->mode & SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER)) ||
-      s->s3->wpend_type != type) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_WRITE_RETRY);
-    return -1;
-  }
-
-  int ret = ssl_write_buffer_flush(s);
-  if (ret <= 0) {
-    return ret;
-  }
-  return s->s3->wpend_ret;
-}
-
 /* ssl3_expect_change_cipher_spec informs the record layer that a
  * ChangeCipherSpec record is required at this point. If a Handshake record is
  * received before ChangeCipherSpec, the connection will fail. Moreover, if
@@ -335,6 +336,22 @@ int ssl3_read_app_data(SSL *ssl, uint8_t *buf, int len, int peek) {
 
 void ssl3_read_close_notify(SSL *ssl) {
   ssl3_read_bytes(ssl, 0, NULL, 0, 0);
+}
+
+static int ssl3_can_renegotiate(SSL *ssl) {
+  switch (ssl->renegotiate_mode) {
+    case ssl_renegotiate_never:
+      return 0;
+    case ssl_renegotiate_once:
+      return ssl->s3->total_renegotiations == 0;
+    case ssl_renegotiate_freely:
+      return 1;
+    case ssl_renegotiate_ignore:
+      return 1;
+  }
+
+  assert(0);
+  return 0;
 }
 
 /* Return up to 'len' payload bytes received in 'type' records.
@@ -368,7 +385,7 @@ int ssl3_read_bytes(SSL *s, int type, uint8_t *buf, int len, int peek) {
   int al, i, ret;
   unsigned int n;
   SSL3_RECORD *rr;
-  void (*cb)(const SSL *ssl, int type2, int val) = NULL;
+  void (*cb)(const SSL *ssl, int type, int value) = NULL;
 
   if ((type && type != SSL3_RT_APPLICATION_DATA && type != SSL3_RT_HANDSHAKE) ||
       (peek && type != SSL3_RT_APPLICATION_DATA)) {
@@ -509,7 +526,7 @@ start:
   if (rr->type == SSL3_RT_HANDSHAKE) {
     /* If peer renegotiations are disabled, all out-of-order handshake records
      * are fatal. Renegotiations as a server are never supported. */
-    if (!s->accept_peer_renegotiations || s->server) {
+    if (s->server || !ssl3_can_renegotiate(s)) {
       al = SSL_AD_NO_RENEGOTIATION;
       OPENSSL_PUT_ERROR(SSL, SSL_R_NO_RENEGOTIATION);
       goto f_err;
@@ -552,6 +569,10 @@ start:
       goto err;
     }
 
+    if (s->renegotiate_mode == ssl_renegotiate_ignore) {
+      goto start;
+    }
+
     /* Renegotiation is only supported at quiescent points in the application
      * protocol, namely in HTTPS, just before reading the HTTP response. Require
      * the record-layer be idle and avoid complexities of sending a handshake
@@ -563,6 +584,7 @@ start:
     }
 
     /* Begin a new handshake. */
+    s->s3->total_renegotiations++;
     s->state = SSL_ST_CONNECT;
     i = s->handshake_func(s);
     if (i < 0) {
@@ -771,7 +793,7 @@ int ssl3_send_alert(SSL *s, int level, int desc) {
 
 int ssl3_dispatch_alert(SSL *s) {
   int i, j;
-  void (*cb)(const SSL *ssl, int type, int val) = NULL;
+  void (*cb)(const SSL *ssl, int type, int value) = NULL;
 
   s->s3->alert_dispatch = 0;
   i = do_ssl3_write(s, SSL3_RT_ALERT, &s->s3->send_alert[0], 2);

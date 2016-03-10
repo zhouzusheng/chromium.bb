@@ -100,6 +100,7 @@ enum {
     IDM_TEST_GET_PDF,
     IDM_TEST_GET_BITMAP,
     IDM_TEST_DUMP_LAYOUT_TREE,
+    IDM_TEST_DUMP_GPU_INFO,
     IDM_SPELLCHECK,
     IDM_SPELLCHECK_ENABLED,
     IDM_LANGUAGES,
@@ -1474,7 +1475,10 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             return 0;
         case IDM_TEST_DUMP_LAYOUT_TREE:
             testDumpLayoutTree(shell->d_webView);
-            break;
+            return 0;
+        case IDM_TEST_DUMP_GPU_INFO:
+            g_toolkit->dumpDiagnosticInfo(blpwtk2::Toolkit::DIAGNOSTIC_INFO_GPU, "gpuInfo.txt");
+            return 0;
         case IDM_SPELLCHECK_ENABLED:
             g_spellCheckEnabled = !g_spellCheckEnabled;
             updateSpellCheckConfig(shell->d_profile);
@@ -1700,6 +1704,7 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     AppendMenu(testMenu, MF_STRING, IDM_TEST_GET_PDF, L"Test Capture PDF");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_GET_BITMAP, L"Test Capture Bitmap");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_DUMP_LAYOUT_TREE, L"Dump Layout Tree");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_DUMP_GPU_INFO, L"Dump GPU Information");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     HMENU spellCheckMenu = CreateMenu();
     AppendMenu(spellCheckMenu, MF_STRING, IDM_SPELLCHECK_ENABLED, L"Enable &Spellcheck");

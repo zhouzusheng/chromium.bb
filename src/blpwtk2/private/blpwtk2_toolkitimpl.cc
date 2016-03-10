@@ -43,6 +43,7 @@
 #include <blpwtk2_webviewcreateparams.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_webviewproxy.h>
+#include <blpwtk2_utility.h>
 
 #include <base/command_line.h>
 #include <base/message_loop/message_loop.h>
@@ -536,6 +537,18 @@ String ToolkitImpl::registerNativeViewForStreaming(NativeView view)
     }
 
     return String(result);
+}
+
+void ToolkitImpl::dumpDiagnosticInfo(DiagnosticInfoType type,
+                                     const blpwtk2::StringRef& filepath)
+{
+    if (Statics::isRendererMainThreadMode()) {
+        DCHECK(d_processClient.get());
+        d_processClient->Send(new BlpControlHostMsg_DumpDiagnoticInfo(type, filepath.toStdString()));
+    }
+    else if (type == DIAGNOSTIC_INFO_GPU) {
+        DumpGpuInfo(filepath.toStdString());
+    }
 }
 
 }  // close namespace blpwtk2

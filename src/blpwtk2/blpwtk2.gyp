@@ -226,6 +226,8 @@
         'private/blpwtk2_toolkitimpl.h',
         'private/blpwtk2_urlrequestcontextgetterimpl.cc',
         'private/blpwtk2_urlrequestcontextgetterimpl.h',
+        'private/blpwtk2_utility.cc',
+        'private/blpwtk2_utility.h',
         'private/blpwtk2_viewsdelegateimpl.cc',
         'private/blpwtk2_viewsdelegateimpl.h',
         'private/blpwtk2_webcontentsviewdelegateimpl.cc',

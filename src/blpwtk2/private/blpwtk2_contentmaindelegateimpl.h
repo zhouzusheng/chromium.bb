@@ -27,7 +27,7 @@
 
 #include <base/memory/scoped_ptr.h>
 #include <content/public/app/content_main_delegate.h>
-#include <content/public/common/content_client.h>
+#include <chrome/common/chrome_content_client.h>
 
 namespace base {
 class FilePath;
@@ -38,7 +38,7 @@ namespace blpwtk2 {
 class RendererInfoMap;
 
 // FIXME: move this to a separate file
-class ContentClient : public content::ContentClient {
+class ContentClient : public ChromeContentClient {
   public:
     static ContentClient* Instance();
     ContentClient();

@@ -5,13 +5,17 @@
 #ifndef CHROME_COMMON_CHROME_CONTENT_CLIENT_H_
 #define CHROME_COMMON_CHROME_CONTENT_CLIENT_H_
 
+#if 0
 #include <string>
 #include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
+#endif
+
 #include "content/public/common/content_client.h"
 
+#if 0
 #if defined(ENABLE_PLUGINS)
 #include "content/public/common/pepper_plugin_info.h"
 #endif
@@ -20,9 +24,11 @@
 
 // Returns the user agent of Chrome.
 std::string GetUserAgent();
+#endif
 
 class ChromeContentClient : public content::ContentClient {
  public:
+#if 0
   static const char kPDFPluginName[];
   static const char kPDFPluginPath[];
   static const char kRemotingViewerPluginPath[];
@@ -55,7 +61,11 @@ class ChromeContentClient : public content::ContentClient {
 #endif
 
   void SetActiveURL(const GURL& url) override;
+#endif
+
   void SetGpuInfo(const gpu::GPUInfo& gpu_info) override;
+
+#if 0
   void AddPepperPlugins(
       std::vector<content::PepperPluginInfo>* plugins) override;
   void AddAdditionalSchemes(std::vector<url::SchemeWithType>* standard_schemes,
@@ -64,12 +74,16 @@ class ChromeContentClient : public content::ContentClient {
   std::string GetProduct() const override;
   std::string GetUserAgent() const override;
   base::string16 GetLocalizedString(int message_id) const override;
+#endif
+
   base::StringPiece GetDataResource(
       int resource_id,
       ui::ScaleFactor scale_factor) const override;
   base::RefCountedStaticMemory* GetDataResourceBytes(
       int resource_id) const override;
   gfx::Image& GetNativeImageNamed(int resource_id) const override;
+
+#if 0
   std::string GetProcessTypeNameInEnglish(int type) override;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
@@ -84,6 +98,7 @@ class ChromeContentClient : public content::ContentClient {
   void AddServiceWorkerSchemes(std::set<std::string>* schemes) override;
 
   bool IsSupplementarySiteIsolationModeEnabled() override;
+#endif
 };
 
 #endif  // CHROME_COMMON_CHROME_CONTENT_CLIENT_H_

@@ -410,7 +410,7 @@ public:
     Shell* d_inspectorShell;
     Shell* d_inspectorFor;
     POINT d_contextMenuPoint;
-    std::string d_findText;
+    std::wstring d_findText;
     std::vector<std::string> d_contextMenuSpellReplacements;
     std::string d_misspelledWord;
 
@@ -901,22 +901,23 @@ public:
 
     void find()
     {
-        char buf[200];
-        int len = ::GetWindowTextA(d_findEntryHwnd, buf, sizeof buf);
+        wchar_t buf[200];
+        int len = ::GetWindowTextW(d_findEntryHwnd, buf, (sizeof buf) / 2);
 
         d_findText.assign(buf, len);
         if (0 == len) {
             d_webView->stopFind(false);
         }
         else {
-            d_webView->find(d_findText, false, true);
+            d_webView->find(d_findText.data(), d_findText.size(), false, true);
         }
     }
 
     void findNext(bool forward)
     {
-        if (!d_findText.empty())
-            d_webView->find(d_findText, false, forward);
+        if (!d_findText.empty()) {
+            d_webView->find(d_findText.data(), d_findText.size(), false, forward);
+        }
     }
 
     void findState(blpwtk2::WebView* source, int numberOfMatches, int activeMatchOrdinal, bool finalUpdate) override

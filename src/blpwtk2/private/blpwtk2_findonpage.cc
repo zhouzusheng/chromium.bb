@@ -24,11 +24,11 @@
 
 namespace blpwtk2 {
 
-FindOnPageRequest FindOnPage::makeRequest(const StringRef& text,
+FindOnPageRequest FindOnPage::makeRequest(const std::wstring& text,
                                           bool matchCase,
                                           bool forward)
 {
-    bool findNext = StringRef(d_text).equals(text);
+    bool findNext = d_text.compare(text) == 0;
     if (!findNext) {
         d_text.assign(text.data(), text.length());
 

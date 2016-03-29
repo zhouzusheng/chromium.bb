@@ -241,7 +241,7 @@ public:
     // Find text on the current page.  Sending the same search string again
     // implies continuing the search forward or backward depending on the value
     // of the third argument.
-    virtual void find(const StringRef& text, bool matchCase,
+    virtual void find(const wchar_t *text, size_t len, bool matchCase,
                       bool forward = true) = 0;
 
     // Stop the current find operation, optionally preserving the selection of

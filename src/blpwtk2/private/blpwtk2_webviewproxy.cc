@@ -250,13 +250,13 @@ void WebViewProxy::loadUrl(const StringRef& url)
     Send(new BlpWebViewHostMsg_LoadUrl(d_routingId, surl));
 }
 
-void WebViewProxy::find(const StringRef& text, bool matchCase, bool forward)
+void WebViewProxy::find(const wchar_t *text, size_t len, bool matchCase, bool forward)
 {
     DCHECK(Statics::isInApplicationMainThread());
 
     if (!d_find) d_find.reset(new FindOnPage());
 
-    FindOnPageRequest request = d_find->makeRequest(text, matchCase, forward);
+    FindOnPageRequest request = d_find->makeRequest(std::wstring(text, len), matchCase, forward);
     Send(new BlpWebViewHostMsg_Find(d_routingId, request));
 }
 

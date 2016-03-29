@@ -128,7 +128,7 @@ class WebViewImpl : public WebView,
     void enableAltDragRubberbanding(bool enabled) override;
     void enableCustomTooltip(bool enabled) override;
     void setZoomPercent(int value) override;
-    void find(const StringRef& text, bool matchCase, bool forward) override;
+    void find(const wchar_t *text, size_t len, bool matchCase, bool forward) override;
     void stopFind(bool preserveSelection) override;
     void replaceMisspelledRange(const StringRef& text) override;
     void rootWindowPositionChanged() override;

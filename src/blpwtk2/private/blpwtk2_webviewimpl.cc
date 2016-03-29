@@ -207,10 +207,7 @@ void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
     options.findNext = request.findNext;
     options.forward = request.forward;
     options.matchCase = request.matchCase;
-    blink::WebString textStr =
-        blink::WebString::fromUTF8(request.text.data(),
-                                   request.text.length());
-    d_webContents->Find(request.reqId, textStr, options);
+    d_webContents->Find(request.reqId, request.text, options);
 }
 
 void WebViewImpl::handleExternalProtocol(const GURL& url)
@@ -282,7 +279,7 @@ void WebViewImpl::loadUrl(const StringRef& url)
     d_webContents->GetRenderViewHost()->GetWidget()->GetView()->SetBackgroundColor(d_properties.isTransparent? SK_ColorTRANSPARENT : SK_ColorBLACK);
 }
 
-void WebViewImpl::find(const StringRef& text, bool matchCase, bool forward)
+void WebViewImpl::find(const wchar_t *text, size_t len, bool matchCase, bool forward)
 {
     DCHECK(Statics::isOriginalThreadMode())
         <<  "renderer-main thread mode should use handleFindRequest";
@@ -292,7 +289,7 @@ void WebViewImpl::find(const StringRef& text, bool matchCase, bool forward)
 
     if (!d_find) d_find.reset(new FindOnPage());
 
-    handleFindRequest(d_find->makeRequest(text, matchCase, forward));
+    handleFindRequest(d_find->makeRequest(std::wstring(text, len), matchCase, forward));
 }
 
 void WebViewImpl::stopFind(bool preserveSelection)

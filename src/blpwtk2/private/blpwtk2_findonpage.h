@@ -25,8 +25,6 @@
 
 #include <blpwtk2_config.h>
 
-#include <blpwtk2_stringref.h>
-
 #include <string>
 
 namespace content {
@@ -38,7 +36,7 @@ namespace blpwtk2 {
 struct FindOnPageRequest
 {
     int reqId;
-    std::string text;
+    std::wstring text;
     bool matchCase;
     bool findNext;
     bool forward;
@@ -59,14 +57,14 @@ public:
     // zero-based index of the active match
     int activeMatchIndex() const { return d_activeMatchOrdinal - 1; }
 
-    FindOnPageRequest makeRequest(const StringRef& text,
+    FindOnPageRequest makeRequest(const std::wstring& text,
                                   bool matchCase,
                                   bool forward);
     bool applyUpdate(int reqId, int numberOfMatches, int activeMatchOrdinal);
 
 
 private:
-    std::string d_text;
+    std::wstring d_text;
     int d_reqId;
     int d_numberOfMatches;
     int d_activeMatchOrdinal; // 1-based index

@@ -34,12 +34,15 @@
 #include <blpwtk2_profilehost.h>
 #include <blpwtk2_rendererinfomap.h>
 #include <blpwtk2_statics.h>
+#include <blpwtk2_toolkit.h>
 #include <blpwtk2_webview_messages.h>
 #include <blpwtk2_webviewhost.h>
+#include <blpwtk2_utility.h>
 
 #include <base/command_line.h>
 #include <base/process/process_iterator.h>  // for kProcessAccess* constants
 #include <base/process/process_handle.h>
+#include <content/browser/gpu/compositor_util.h>
 #include <content/public/browser/browser_thread.h>
 #include <content/public/browser/render_process_host.h>
 #include <ipc/ipc_channel_proxy.h>
@@ -168,6 +171,7 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_Destroy, onProfileDestroy)
             IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_New, onWebViewNew)
             IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Destroy, onWebViewDestroy)
+            IPC_MESSAGE_HANDLER(BlpControlHostMsg_DumpDiagnoticInfo, onDumpDiagnoticInfo)
             IPC_MESSAGE_UNHANDLED_ERROR()
         IPC_END_MESSAGE_MAP()
 
@@ -328,6 +332,13 @@ void ProcessHostImpl::onWebViewDestroy(int routingId)
         static_cast<WebViewHost*>(findListener(routingId));
     DCHECK(webViewHost);
     delete webViewHost;
+}
+
+void ProcessHostImpl::onDumpDiagnoticInfo(int infoType, const std::string& path)
+{
+    if (infoType == Toolkit::DIAGNOSTIC_INFO_GPU) {
+        DumpGpuInfo(path);
+    }
 }
 
 }  // close namespace blpwtk2

@@ -84,6 +84,7 @@
 
 #include <blpwtk2_webviewcreateparams.h>
 #include <v8.h>
+#include <blpwtk2_stringref.h>
 
 namespace blpwtk2 {
 
@@ -97,6 +98,10 @@ class WebViewDelegate;
 // instance of this class can be created using the 'ToolkitFactory'.
 class Toolkit {
   public:
+    enum DiagnosticInfoType {
+      DIAGNOSTIC_INFO_GPU
+    };
+
     // Create a Profile using the specified 'params'.  A browser will typically
     // create a profile for each user on the system.  The data (cookies, local
     // storage, cache, etc) for any WebViews created using this profile will be
@@ -179,6 +184,11 @@ class Toolkit {
     virtual v8::Local<v8::Context> createWebScriptContext() = 0;
 
     virtual String registerNativeViewForStreaming(NativeView view) = 0;
+
+    // Write diagnostic information of the specified 'type' onto the
+    // file 'filepath'
+    virtual void dumpDiagnosticInfo(DiagnosticInfoType type,
+                                    const blpwtk2::StringRef& filepath) = 0;
 
   protected:
     // Destroy this Toolkit object.  Note that clients of blpwtk2 should use

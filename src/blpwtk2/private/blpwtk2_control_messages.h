@@ -51,6 +51,10 @@ IPC_SYNC_MESSAGE_CONTROL1_1(BlpControlHostMsg_RegisterNativeViewForStreaming,
                             blpwtk2::NativeViewForTransit /* NativeView */,
                             std::string /* streaming media id */)
 
+// Send a request to dump diagnotic information of given type to the given file.
+IPC_MESSAGE_CONTROL2(BlpControlHostMsg_DumpDiagnoticInfo,
+                     int /*info type*/,
+                     std::string /* output file path */)
 
 // ============= Messages from host to client =======================
 

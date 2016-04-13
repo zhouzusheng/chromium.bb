@@ -88,6 +88,7 @@ class ProcessHostImpl : public ProcessHost,
     void onProfileDestroy(int routingId);
     void onWebViewNew(const BlpWebViewHostMsg_NewParams& params);
     void onWebViewDestroy(int routingId);
+    void onDumpDiagnoticInfo(int infoType, const std::string& path);
 
     base::ProcessHandle d_processHandle;
     scoped_ptr<ManagedRenderProcessHost> d_renderProcessHost;

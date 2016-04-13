@@ -526,4 +526,12 @@ GpuInternalsUI::GpuInternalsUI(WebUI* web_ui)
   WebUIDataSource::Add(browser_context, CreateGpuHTMLSource());
 }
 
+scoped_ptr<base::DictionaryValue> GpuInternalsUI::GetGpuMemoryBufferInfo()
+{
+    scoped_ptr<base::DictionaryValue> gpu_memory_buffer_info_val(
+        GpuMemoryBufferInfoAsDictionaryValue());
+
+    return gpu_memory_buffer_info_val;
+}
+
 }  // namespace content

@@ -88,6 +88,8 @@ class ToolkitImpl : public Toolkit {
     void setTimerHiddenPageAlignmentInterval(double) override;
     v8::Local<v8::Context> createWebScriptContext() override;
     String registerNativeViewForStreaming(NativeView view) override;
+    void dumpDiagnosticInfo(DiagnosticInfoType type,
+                            const blpwtk2::StringRef& filepath) override;
 
   private:
     void createInProcessHost();

@@ -1488,7 +1488,15 @@ void FrameView::clearScrollAnchor()
 
 void FrameView::setScrollPosition(const DoublePoint& scrollPoint, ScrollType scrollType, ScrollBehavior scrollBehavior)
 {
-    DoublePoint newScrollPosition = clampScrollPosition(scrollPoint);
+    DoublePoint newScrollPosition;
+
+    if (scrollType == UserScroll && m_frame->document()->printing()) {
+        newScrollPosition = scrollPoint;
+    }
+    else {
+        newScrollPosition = clampScrollPosition(scrollPoint);
+    }
+
     if (newScrollPosition == scrollPositionDouble())
         return;
 
@@ -3148,14 +3156,32 @@ int FrameView::scrollSize(ScrollbarOrientation orientation) const
     return scrollbar->totalSize() - scrollbar->visibleSize();
 }
 
-void FrameView::setScrollOffset(const IntPoint& offset, ScrollType)
+void FrameView::setScrollOffset(const IntPoint& offset, ScrollType scrollType)
 {
-    scrollTo(clampScrollPosition(offset));
+    IntPoint newScrollPosition;
+
+    if (scrollType == UserScroll && m_frame->document()->printing()) {
+        newScrollPosition = offset;
+    }
+    else {
+        newScrollPosition = clampScrollPosition(offset);
+    }
+
+    scrollTo(newScrollPosition);
 }
 
-void FrameView::setScrollOffset(const DoublePoint& offset, ScrollType)
+void FrameView::setScrollOffset(const DoublePoint& offset, ScrollType scrollType)
 {
-    scrollTo(clampScrollPosition(offset));
+    DoublePoint newScrollPosition;
+
+    if (scrollType == UserScroll && m_frame->document()->printing()) {
+        newScrollPosition = offset;
+    }
+    else {
+        newScrollPosition = clampScrollPosition(offset);
+    }
+
+    scrollTo(newScrollPosition);
 }
 
 void FrameView::windowResizerRectChanged()

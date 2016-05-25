@@ -61,6 +61,7 @@ struct ToolkitCreateParamsImpl {
     bool d_inProcessRendererDisabled;
     bool d_useDefaultPrintSettings;
     std::string d_subProcessModule;
+    bool d_inProcessResizeOptimizationDisabled;
 
     ToolkitCreateParamsImpl()
     : d_threadMode(ThreadMode::ORIGINAL)
@@ -81,6 +82,7 @@ struct ToolkitCreateParamsImpl {
     , d_printBackgroundGraphics(false)
     , d_inProcessRendererDisabled(false)
     , d_useDefaultPrintSettings(false)
+    , d_inProcessResizeOptimizationDisabled(false)
     {
     }
 };
@@ -265,6 +267,11 @@ void ToolkitCreateParams::setSubProcessModule(const StringRef& moduleName)
                                       moduleName.length());
 }
 
+void ToolkitCreateParams::disableInProcessResizeOptimization()
+{
+    d_impl->d_inProcessResizeOptimizationDisabled = true;
+}
+
 ThreadMode::Value ToolkitCreateParams::threadMode() const
 {
     return d_impl->d_threadMode;
@@ -412,6 +419,11 @@ bool  ToolkitCreateParams::isPrintBackgroundGraphicsEnabled() const
 StringRef ToolkitCreateParams::subProcessModule() const
 {
     return d_impl->d_subProcessModule;
+}
+
+bool ToolkitCreateParams::isInProcessResizeOptimizationDisabled() const
+{
+    return d_impl->d_inProcessResizeOptimizationDisabled;
 }
 
 }  // close namespace blpwtk2

@@ -41,6 +41,7 @@ ToolkitCreateParams::ChannelErrorHandler Statics::channelErrorHandler = 0;
 bool Statics::hasDevTools = false;
 bool Statics::isInProcessRendererDisabled = false;
 int Statics::numProfiles = 0;
+bool Statics::inProcessResizeOptimizationDisabled = false;
 
 static int lastRoutingId = 0;
 

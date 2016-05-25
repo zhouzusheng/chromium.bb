@@ -110,7 +110,15 @@ class WebViewProxy : public WebView,
     void fileChooserCompleted(const StringRef* paths,
                               size_t numPaths) override;
     void performCustomContextMenuAction(int actionId) override;
+
+    // Begin Rubber Banding
     void enableAltDragRubberbanding(bool enabled) override;
+    bool forceStartRubberbanding(int x, int y) override;
+    bool isRubberbanding() const override;
+    void abortRubberbanding() override;
+    String getTextInRubberband(const NativeRect&) override;
+    // End Rubber Banding
+
     void enableCustomTooltip(bool enabled) override;
     void setZoomPercent(int value) override;
     void find(const wchar_t *text, size_t len, bool matchCase, bool forward) override;

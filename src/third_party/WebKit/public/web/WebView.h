@@ -202,6 +202,14 @@ public:
     // the rubberband events will not be dispatched.
     virtual WebString getTextInRubberband(const WebRect&) = 0;
 
+    // Begin rubberbanding, regardless of the state of the mouse/alt key. This
+    // method will internally invoke 'preStartRubberbanding' and, on success,
+    // 'startRubberBanding'. Rubberbanding will begin at the specified 'x' and
+    // 'y' in WebView client coordinates. Returns 'true' if rubberbanding began
+    // or was already in progress, and 'false' otherwise. The behavior is
+    // undefined if the mouse is not currently down when this function is
+    // called.
+    virtual bool forceStartRubberbanding(int x, int y) = 0;
 
     // Frames --------------------------------------------------------------
 

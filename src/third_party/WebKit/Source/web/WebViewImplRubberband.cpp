@@ -352,8 +352,10 @@ void WebViewImpl::rubberbandWalkLayoutObject(const RubberbandContext& context, L
             }
         }
 
-        layerContext.m_layerScrollOffset.setWidth(layer->scrollableArea()->scrollXOffset() * layerContext.m_scaleX);
-        layerContext.m_layerScrollOffset.setHeight(layer->scrollableArea()->scrollYOffset() * layerContext.m_scaleY);
+        if (layer->scrollableArea()) {
+            layerContext.m_layerScrollOffset.setWidth(layer->scrollableArea()->scrollXOffset() * layerContext.m_scaleX);
+            layerContext.m_layerScrollOffset.setHeight(layer->scrollableArea()->scrollYOffset() * layerContext.m_scaleY);
+        }
     }
     else if (localContext.m_containingBlock != context.m_containingBlock) {
         ASSERT(localContext.m_containingBlock);
@@ -659,12 +661,27 @@ WTF::String WebViewImpl::getTextInRubberbandImpl(const WebRect& rcOrig)
     return builder.toString();
 }
 
+bool WebViewImpl::forceStartRubberbanding(int x, int y)
+{
+    m_rubberbandingForcedOn = true;
+
+    if (isRubberbanding()) {
+        return true;
+    }
+
+    if (!preStartRubberbanding()) {
+        return false;
+    }
+
+    startRubberbanding();
+    m_rubberbandState->m_impl->m_startPoint = IntPoint(x, y);
+    return true;
+}
+
 bool WebViewImpl::handleAltDragRubberbandEvent(const WebInputEvent& inputEvent)
 {
-    if (!(inputEvent.modifiers & WebInputEvent::AltKey)) {
+    if (!m_rubberbandingForcedOn && !(inputEvent.modifiers & WebInputEvent::AltKey)) {
         if (isRubberbanding()) {
-            if (m_client)
-                m_client->hideRubberbandRect();
             abortRubberbanding();
         }
         return false;
@@ -685,9 +702,6 @@ bool WebViewImpl::handleAltDragRubberbandEvent(const WebInputEvent& inputEvent)
         return false;
     }
     else if (inputEvent.type == WebInputEvent::MouseUp) {
-        if (m_client)
-            m_client->hideRubberbandRect();
-
         IntPoint start = m_rubberbandState->m_impl->m_startPoint;
         IntPoint extent = IntPoint(mouseEvent.x, mouseEvent.y);
         WebRect rc = expandRubberbandRect(getRubberbandRect(start, extent));
@@ -721,8 +735,6 @@ void WebViewImpl::enableAltDragRubberbanding(bool value)
 {
     m_isAltDragRubberbandingEnabled = value;
     if (!m_isAltDragRubberbandingEnabled && isRubberbanding()) {
-        if (m_client)
-            m_client->hideRubberbandRect();
         abortRubberbanding();
     }
 }
@@ -827,9 +839,13 @@ WebString WebViewImpl::finishRubberbanding(const WebRect& rc)
 {
     ASSERT(isRubberbanding());
 
+    if (m_client)
+        m_client->hideRubberbandRect();
+
     WTF::String copied = getTextInRubberbandImpl(rc);
 
     m_rubberbandState.clear();
+    m_rubberbandingForcedOn = false;
     if (m_page && m_page->mainFrame() && m_page->mainFrame()->isLocalFrame() && m_page->deprecatedLocalMainFrame()->document()) {
         RefPtr<Event> event = Event::create("rubberbandfinished");
         m_page->deprecatedLocalMainFrame()->document()->dispatchEvent(event);
@@ -842,7 +858,11 @@ void WebViewImpl::abortRubberbanding()
 {
     ASSERT(isRubberbanding());
 
+    if (m_client)
+        m_client->hideRubberbandRect();
+
     m_rubberbandState.clear();
+    m_rubberbandingForcedOn = false;
 
     if (m_page && m_page->mainFrame() && m_page->mainFrame()->isLocalFrame() && m_page->deprecatedLocalMainFrame()->document()) {
         RefPtr<Event> event = Event::create("rubberbandaborted");

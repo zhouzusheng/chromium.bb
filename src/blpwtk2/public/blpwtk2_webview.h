@@ -233,6 +233,31 @@ public:
     // to the clipboard.
     virtual void enableAltDragRubberbanding(bool enabled) = 0;
 
+    // Begin rubberbanding, regardless of the state of the mouse/alt key. This
+    // method will internally invoke 'preStartRubberbanding' and, on success,
+    // 'startRubberBanding'. Rubberbanding will begin at the specified 'x' and
+    // 'y' in WebView client coordinates. Returns 'true' if rubberbanding began
+    // or was already in progress, and 'false' otherwise. The behavior is
+    // undefined if the mouse is not currently down when this function is
+    // called.
+    virtual bool forceStartRubberbanding(int x, int y) = 0;
+
+    // Returns true if a rubberband is in progress.
+    virtual bool isRubberbanding() const = 0;
+
+    // Abort rubberbanding.  Also, dispatch a "rubberbandaborted" event from
+    // the main document.  The behavior is undefined if 'isRubberbanding()'
+    // returns false.  Note that after this method returns, 'isRubberbanding()'
+    // will return false.
+    virtual void abortRubberbanding() = 0;
+
+    // Get the text in the specified rectangle (in WebView client coordinates),
+    // without actually starting and finishing a rubberband.  The behavior is
+    // undefined if 'isRubberbanding()' returns true.  Note that after this
+    // method returns, 'isRubberbanding()' will remain false.  Also note that
+    // the rubberband events will not be dispatched.
+    virtual String getTextInRubberband(const NativeRect&) = 0;
+
     // Set zoom percent for the WebView. 100 is the "original size" or 100%,
     // 150 is 150% etc. up to default limits of 500% and 25% of original size,
     // respectively.

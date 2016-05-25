@@ -329,6 +329,7 @@ public:
     virtual WebString finishRubberbanding(const WebRect&) override;
     virtual void abortRubberbanding() override;
     virtual WebString getTextInRubberband(const WebRect&) override;
+    virtual bool forceStartRubberbanding(int x, int y) override;
 
 
     const WebPoint& lastMouseDownPoint() const
@@ -741,6 +742,8 @@ private:
 
     // Whether Alt+Mousedrag rubberbanding is enabled or not.
     bool m_isAltDragRubberbandingEnabled;
+    // Whether rubberbanding has been forced on
+    bool m_rubberbandingForcedOn;
 
     // Whether the webview is rendering transparently.
     bool m_isTransparent;

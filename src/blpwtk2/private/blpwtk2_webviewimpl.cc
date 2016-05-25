@@ -570,6 +570,29 @@ void WebViewImpl::enableAltDragRubberbanding(bool enabled)
 #endif
 }
 
+bool WebViewImpl::forceStartRubberbanding(int x, int y)
+{
+    NOTREACHED() << "forceStartRubberbanding() not supported in WebViewImpl";
+    return false;
+}
+
+bool WebViewImpl::isRubberbanding() const
+{
+    NOTREACHED() << "isRubberbanding() not supported in WebViewImpl";
+    return false;
+}
+
+void WebViewImpl::abortRubberbanding()
+{
+    NOTREACHED() << "abortRubberbanding() not supported in WebViewImpl";
+}
+
+String WebViewImpl::getTextInRubberband(const NativeRect& rect)
+{
+    NOTREACHED() << "getTextInRubberband() not supported in WebViewImpl";
+    return String();
+}
+
 void WebViewImpl::enableCustomTooltip(bool enabled)
 {
     DCHECK(Statics::isInBrowserMainThread());

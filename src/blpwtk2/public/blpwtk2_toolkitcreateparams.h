@@ -219,6 +219,11 @@ class ToolkitCreateParams {
     // export the SubProcessMain symbol.
     BLPWTK2_EXPORT void setSubProcessModule(const StringRef& moduleName);
 
+    // Disables an optimization used when resizing a WebView from an in-process
+    // renderer (the optimization can cause undesirable rendering artifacts
+    // when the WebView is hosted in a deeply-nested window hierarchy).
+    BLPWTK2_EXPORT void disableInProcessResizeOptimization();
+
     // ACCESSORS
     ThreadMode::Value threadMode() const;
     PumpMode::Value pumpMode() const;
@@ -249,6 +254,7 @@ class ToolkitCreateParams {
     StringRef headerFooterHTMLContent() const;
     bool isPrintBackgroundGraphicsEnabled() const;
     StringRef subProcessModule() const;
+    bool isInProcessResizeOptimizationDisabled() const;
 
   private:
     ToolkitCreateParamsImpl* d_impl;

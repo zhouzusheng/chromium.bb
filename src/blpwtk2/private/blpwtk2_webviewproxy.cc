@@ -133,7 +133,7 @@ bool disableResizeOptimization()
         resizeOptimizationDisabled = !dpiScaling || compPolicy ? true : false;
     }
 
-    return resizeOptimizationDisabled && getScreenScaleFactor() > 1.0;
+    return blpwtk2::Statics::inProcessResizeOptimizationDisabled || (resizeOptimizationDisabled && getScreenScaleFactor() > 1.0);
 }
 
 }  // close anonymous namespace

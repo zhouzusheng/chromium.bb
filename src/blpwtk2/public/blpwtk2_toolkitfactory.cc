@@ -142,6 +142,7 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::channelErrorHandler = params.channelErrorHandler();
     content::DisableDWriteFactoryPatching();
     Statics::userAgentFromEmbedder().assign(params.userAgent().data(), params.userAgent().length());
+    Statics::inProcessResizeOptimizationDisabled = params.isInProcessResizeOptimizationDisabled();
 
     // If this process is the host, then set the environment variable that
     // subprocesses will use to determine which SubProcessMain module should

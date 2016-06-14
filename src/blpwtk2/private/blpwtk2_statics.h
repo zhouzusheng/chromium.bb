@@ -101,6 +101,10 @@ struct Statics {
     // incremented and decremented from the application's main thread.
     static int numProfiles;
 
+    // Whether or not an optimization used when resizing a WebView from an
+    // in-process renderer should be enabled.
+    static bool inProcessResizeOptimizationDisabled;
+
 
     // ====== some utility functions =============
 

@@ -116,7 +116,15 @@ void CompoundEventFilter::UpdateCursor(aura::Window* target,
       if (target->delegate()) {
         int window_component =
             target->delegate()->GetNonClientComponent(event->location());
-        cursor = CursorForWindowComponent(window_component);
+        if (window_component != HTCLIENT) {
+          cursor = CursorForWindowComponent(window_component);
+        }
+        else {
+          // The event is marked as non-client, but the delegate says otherwise.
+          // Believe the event, ignore the delegate, and return, allowing
+          // 'the OS to handle non client cursors'.
+          return;
+        }
       } else {
         // Allow the OS to handle non client cursors if we don't have a
         // a delegate to handle the non client hittest.

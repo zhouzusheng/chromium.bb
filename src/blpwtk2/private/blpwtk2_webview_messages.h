@@ -114,6 +114,8 @@ IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_ReplaceMisspelledRange,
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_RootWindowPositionChanged)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_RootWindowSettingsChanged)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_Print)
+IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetBackgroundColor,
+                    blpwtk2::NativeColor /* color */)
 
 // This destroys the WebView.
 IPC_MESSAGE_CONTROL1(BlpWebViewHostMsg_Destroy,

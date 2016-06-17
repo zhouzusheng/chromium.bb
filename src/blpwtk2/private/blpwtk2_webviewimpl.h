@@ -143,6 +143,7 @@ class WebViewImpl : public WebView,
     void drawContentsToBlob(Blob *blob, const DrawParams& params) override;
     String getLayoutTreeAsText(int flags) const override;
     int getRoutingId() const override;
+    void setBackgroundColor(NativeColor color) override;
 
   private:
     void createWidget(blpwtk2::NativeView parent);

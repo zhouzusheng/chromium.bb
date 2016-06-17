@@ -310,6 +310,10 @@ public:
     // WebView (it is used to route IPC messages to the host process).
     virtual int getRoutingId() const = 0;
 
+    // Set the default background color of the WebView. This function should
+    // only be called after loadUrl().
+    virtual void setBackgroundColor(NativeColor color) = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

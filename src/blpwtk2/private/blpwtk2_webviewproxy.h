@@ -132,6 +132,7 @@ class WebViewProxy : public WebView,
     void drawContentsToBlob(Blob *blob, const DrawParams& params) override;
     String getLayoutTreeAsText(int flags) const override;
     int getRoutingId() const override;
+    void setBackgroundColor(NativeColor color) override;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.

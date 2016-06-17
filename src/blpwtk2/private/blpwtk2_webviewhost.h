@@ -112,6 +112,7 @@ class WebViewHost : public ProcessHostListener,
     void onRootWindowPositionChanged();
     void onRootWindowSettingsChanged();
     void onPrint();
+    void onSetBackgroundColor(NativeColor color);
 
     // IPC::Sender override
     bool Send(IPC::Message* message) override;

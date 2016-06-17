@@ -275,8 +275,6 @@ void WebViewImpl::loadUrl(const StringRef& url)
         content::Referrer(),
         ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR),
         std::string());
-
-    d_webContents->GetRenderViewHost()->GetWidget()->GetView()->SetBackgroundColor(d_properties.isTransparent? SK_ColorTRANSPARENT : SK_ColorBLACK);
 }
 
 void WebViewImpl::find(const wchar_t *text, size_t len, bool matchCase, bool forward)
@@ -325,6 +323,19 @@ int WebViewImpl::getRoutingId() const
 {
     NOTREACHED() << "getRoutingId() not supported in WebViewImpl";
     return 0;
+}
+
+#define GetAValue(argb)      (LOBYTE((argb)>>24))
+
+void WebViewImpl::setBackgroundColor(NativeColor color)
+{
+    d_webContents->GetRenderViewHost()->GetWidget()->GetView()->SetBackgroundColor(
+        SkColorSetARGB(
+            GetAValue(color),
+            GetRValue(color),
+            GetGValue(color),
+            GetBValue(color)
+    ));
 }
 
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)

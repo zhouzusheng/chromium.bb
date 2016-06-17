@@ -119,6 +119,7 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowPositionChanged, onRootWindowPositionChanged)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowSettingsChanged, onRootWindowSettingsChanged)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Print, onPrint)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetBackgroundColor, onSetBackgroundColor)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
 
@@ -324,6 +325,11 @@ void WebViewHost::onRootWindowSettingsChanged()
 void WebViewHost::onPrint()
 {
     d_webView->print();
+}
+
+void WebViewHost::onSetBackgroundColor(NativeColor color)
+{
+    d_webView->setBackgroundColor(color);
 }
 
 // IPC::Sender override

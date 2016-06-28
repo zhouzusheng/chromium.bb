@@ -173,6 +173,7 @@ CompositedLayerMapping::CompositedLayerMapping(PaintLayer& layer)
     , m_isMainFrameLayoutViewLayer(false)
     , m_backgroundLayerPaintsFixedRootBackground(false)
     , m_scrollingContentsAreEmpty(false)
+    , m_lcdBackgroundColor(Color::transparent)
 {
     if (layer.isRootLayer() && layoutObject()->frame()->isMainFrame())
         m_isMainFrameLayoutViewLayer = true;
@@ -743,6 +744,7 @@ void CompositedLayerMapping::updateGraphicsLayerGeometry(const PaintLayer* compo
 
     updateContentsRect();
     updateBackgroundColor();
+    updateLCDBackgroundColor(compositingContainer);
     updateDrawsContent();
     updateContentsOpaque();
     updateAfterPartResize();
@@ -1767,6 +1769,67 @@ Color CompositedLayerMapping::layoutObjectBackgroundColor() const
 void CompositedLayerMapping::updateBackgroundColor()
 {
     m_graphicsLayer->setBackgroundColor(layoutObjectBackgroundColor());
+}
+
+void CompositedLayerMapping::updateLCDBackgroundColor(const PaintLayer* compositingContainer)
+{
+    // Traverse LayoutObject's between this layer and the containing compositing layer,
+    // find the first opaque background color:
+    Color lcdBackgroundColor = Color::transparent;
+
+    if (compositor()->lcdTextShouldBlendWithCSSBackgroundColor()) {
+        CompositedLayerMapping
+            *compositingContainerLayerMapping =
+                compositingContainer?
+                    compositingContainer->compositedLayerMapping():
+                    nullptr;
+
+        LayoutObject
+            *layoutObjectStart = layoutObject(),
+            *layoutObjectEnd =
+                compositingContainerLayerMapping?
+                    compositingContainerLayerMapping->layoutObject():
+                    nullptr;
+        do {
+            lcdBackgroundColor = layoutObjectStart->resolveColor(CSSPropertyBackgroundColor);
+            if (lcdBackgroundColor.alpha() == 255) {
+                break;
+            }
+            else if (layoutObjectStart->hasBackground()) {
+                break;
+            }
+            else {
+                layoutObjectStart = layoutObjectStart->parent();
+            }
+        } while (layoutObjectStart != layoutObjectEnd);
+
+        // If an opaque background color wasn't found, obtain it from the
+        // containing compositing layer:
+        if (lcdBackgroundColor.alpha() != 255    &&
+            layoutObjectStart == layoutObjectEnd &&
+            compositingContainerLayerMapping) {
+            lcdBackgroundColor = compositingContainerLayerMapping->m_lcdBackgroundColor;
+        }
+    }
+
+    if (m_lcdBackgroundColor == lcdBackgroundColor) {
+        return;
+    }
+
+    m_lcdBackgroundColor = lcdBackgroundColor;
+
+    // Now set LCD background color on the GraphicsLayer's that might use it:
+    m_graphicsLayer->setDefaultLCDBackgroundColor(m_lcdBackgroundColor);
+
+    if (m_backgroundLayer) {
+        m_backgroundLayer->setDefaultLCDBackgroundColor(m_lcdBackgroundColor);
+    }
+    if (m_foregroundLayer) {
+        m_foregroundLayer->setDefaultLCDBackgroundColor(m_lcdBackgroundColor);
+    }
+    if (m_squashingLayer) {
+        m_squashingLayer->setDefaultLCDBackgroundColor(m_lcdBackgroundColor);
+    }
 }
 
 bool CompositedLayerMapping::paintsChildren() const

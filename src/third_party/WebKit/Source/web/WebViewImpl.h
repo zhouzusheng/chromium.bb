@@ -183,6 +183,7 @@ public:
     bool isTransparent() const override;
     void setIsTransparent(bool value) override;
     void setBaseBackgroundColor(WebColor) override;
+    void setLCDTextShouldBlendWithCSSBackgroundColor(bool) override;
     bool tabsToLinks() const override;
     void setTabsToLinks(bool value) override;
     bool tabKeyCyclesThroughElements() const override;

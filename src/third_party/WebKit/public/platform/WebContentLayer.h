@@ -46,6 +46,10 @@ public:
     // be rasterized based on the layer's hierarchy and transform. This defaults
     // to false.
     virtual void setAutomaticallyComputeRasterScale(bool) { }
+
+    // Set the color to blend LCD text with when the layer's background color
+    // would otherwise be transparent.
+    virtual void setDefaultLCDBackgroundColor(WebColor) { }
 };
 
 } // namespace blink

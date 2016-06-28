@@ -27,6 +27,7 @@
 #define WebContentLayerClient_h
 
 #include "WebCommon.h"
+#include "WebColor.h"
 
 namespace blink {
 

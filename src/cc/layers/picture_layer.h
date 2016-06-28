@@ -25,6 +25,8 @@ class CC_EXPORT PictureLayer : public Layer {
 
   void SetNearestNeighbor(bool nearest_neighbor);
 
+  void SetDefaultLCDBackgroundColor(SkColor default_lcd_background_color);
+
   // Layer interface.
   scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
   void SetLayerTreeHost(LayerTreeHost* host) override;
@@ -69,6 +71,8 @@ class CC_EXPORT PictureLayer : public Layer {
   int update_source_frame_number_;
   bool is_mask_;
   bool nearest_neighbor_;
+
+  SkColor default_lcd_background_color_;
 
   DISALLOW_COPY_AND_ASSIGN(PictureLayer);
 };

@@ -1758,7 +1758,8 @@ static void CalculateDrawPropertiesInternal(
                                    .IsIdentityOrIntegerTranslation();
     // Also disable LCD text locally for non-opaque content.
     layer_can_use_lcd_text = subtree_can_use_lcd_text &&
-                             layer->contents_opaque();
+                             (layer->contents_opaque() ||
+                              layer->contents_opaque_for_lcd_text());
   }
 
   // full_hierarchy_matrix is the matrix that transforms objects between screen

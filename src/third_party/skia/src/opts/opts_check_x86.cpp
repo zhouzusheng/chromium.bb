@@ -263,6 +263,19 @@ SkBlitMask::BlitLCD16RowProc SkBlitMask::PlatformBlitRowProcs16(bool isOpaque) {
 
 }
 
+SkBlitMask::BlitLCD16RowOverBackgroundProc SkBlitMask::PlatformBlitRowOverBackgroundProcs16(bool isOpaque) {
+    if (supports_simd(SK_CPU_SSE_LEVEL_SSE2)) {
+        if (isOpaque) {
+            return SkBlitLCD16OpaqueRowOverBackground_SSE2;
+        } else {
+            return SkBlitLCD16RowOverBackground_SSE2;
+        }
+    } else {
+        return nullptr;
+    }
+
+}
+
 SkBlitMask::RowProc SkBlitMask::PlatformRowProcs(SkColorType, SkMask::Format, RowFlags) {
     return nullptr;
 }

@@ -87,6 +87,8 @@ class WebLayerImpl : public blink::WebLayer, public cc::LayerClient {
   bool isRootForIsolatedGroup() override;
   void setOpaque(bool opaque) override;
   bool opaque() const override;
+  void setOpaqueForLCDText(bool) override;
+  bool opaqueForLCDText() const override;
   void setPosition(const blink::WebFloatPoint& position) override;
   blink::WebFloatPoint position() const override;
   void setTransform(const SkMatrix44& transform) override;

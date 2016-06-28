@@ -77,6 +77,7 @@ PaintLayerCompositor::PaintLayerCompositor(LayoutView& layoutView)
     , m_isTrackingPaintInvalidations(layoutView.frameView()->isTrackingPaintInvalidations())
     , m_inOverlayFullscreenVideo(false)
     , m_needsUpdateDescendantDependentFlags(false)
+    , m_lcdTextShouldBlendWithCSSBackgroundColor(false)
     , m_rootLayerAttachment(RootLayerUnattached)
 {
     updateAcceleratedCompositingSettings();
@@ -757,6 +758,16 @@ void PaintLayerCompositor::updatePotentialCompositingReasonsFromStyle(PaintLayer
 void PaintLayerCompositor::updateDirectCompositingReasons(PaintLayer* layer)
 {
     layer->setCompositingReasons(m_compositingReasonFinder.directReasons(layer), CompositingReasonComboAllDirectReasons);
+}
+
+void PaintLayerCompositor::setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor)
+{
+    if (m_lcdTextShouldBlendWithCSSBackgroundColor == lcdTextShouldBlendWithCSSBackgroundColor) {
+        return;
+    }
+
+    m_lcdTextShouldBlendWithCSSBackgroundColor = lcdTextShouldBlendWithCSSBackgroundColor;
+    setNeedsCompositingUpdate(CompositingUpdateAfterGeometryChange);
 }
 
 bool PaintLayerCompositor::canBeComposited(const PaintLayer* layer) const

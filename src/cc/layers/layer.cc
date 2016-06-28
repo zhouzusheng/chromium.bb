@@ -71,6 +71,7 @@ Layer::Layer(const LayerSettings& settings)
       hide_layer_and_subtree_(false),
       masks_to_bounds_(false),
       contents_opaque_(false),
+      contents_opaque_for_lcd_text_(false),
       double_sided_(true),
       should_flatten_transform_(true),
       use_parent_backface_visibility_(false),
@@ -632,6 +633,14 @@ void Layer::SetContentsOpaque(bool opaque) {
   if (contents_opaque_ == opaque)
     return;
   contents_opaque_ = opaque;
+  SetNeedsCommit();
+}
+
+void Layer::SetContentsOpaqueForLCDText(bool opaque) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (contents_opaque_for_lcd_text_ == opaque)
+    return;
+  contents_opaque_for_lcd_text_ = opaque;
   SetNeedsCommit();
 }
 
@@ -1213,6 +1222,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetTouchEventHandlerRegion(touch_event_handler_region_);
   layer->SetScrollBlocksOn(scroll_blocks_on_);
   layer->SetContentsOpaque(contents_opaque_);
+  layer->SetContentsOpaqueForLCDText(contents_opaque_for_lcd_text_);
   if (!layer->OpacityIsAnimatingOnImplOnly() && !OpacityIsAnimating())
     layer->SetOpacity(opacity_);
   DCHECK(!(OpacityIsAnimating() && layer->OpacityIsAnimatingOnImplOnly()));

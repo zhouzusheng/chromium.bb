@@ -300,11 +300,41 @@ void PrepareDragData(const DropData& drop_data,
     WriteFileSystemFilesToPickle(drop_data.file_system_files, &pickle);
     provider->SetPickledData(GetFileSystemFileFormatType(), pickle);
   }
+
   if (!drop_data.custom_data.empty()) {
+    std::map<base::string16, base::string16> custom_data;
+
+    for (auto it = drop_data.custom_data.begin();
+         it != drop_data.custom_data.end(); ++it) {
+      // Look for a special format topic.  In addition to adding them as chromium
+      // WebCustomDataFormat, also add these formats separately to clipboard.
+      int format = 0;
+      std::wstring sft;
+      if (it->first.compare(0, 4, L"blp_") == 0) {
+        sft = it->first.substr(4);
+        format = std::stoi(sft);
+      }
+
+      if (format) {
+        FORMATETC formatetc;
+        formatetc.cfFormat = format;
+        formatetc.ptd = NULL;
+        formatetc.dwAspect = DVASPECT_CONTENT;
+        formatetc.lindex = -1;
+        formatetc.tymed = TYMED_HGLOBAL;
+
+        provider->SetCustomeData(formatetc, it->second);
+        custom_data.insert(std::make_pair(sft, it->second));
+      }
+      else {
+        custom_data.insert(std::make_pair(it->first, it->second));
+      }
+    }
+
     base::Pickle pickle;
-    ui::WriteCustomDataToPickle(drop_data.custom_data, &pickle);
+    ui::WriteCustomDataToPickle(custom_data, &pickle);
     provider->SetPickledData(ui::Clipboard::GetWebCustomDataFormatType(),
-                             pickle);
+                               pickle);
   }
 }
 

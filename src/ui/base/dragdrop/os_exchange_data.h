@@ -98,6 +98,8 @@ class UI_BASE_EXPORT OSExchangeData {
     virtual void SetFilenames(const std::vector<FileInfo>& file_names) = 0;
     virtual void SetPickledData(const Clipboard::FormatType& format,
                                 const base::Pickle& data) = 0;
+    virtual void SetCustomeData(const FORMATETC& format,
+                                const base::string16& data) = 0;
 
     virtual bool GetString(base::string16* data) const = 0;
     virtual bool GetURLAndTitle(FilenameToURLPolicy policy,

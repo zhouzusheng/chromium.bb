@@ -153,6 +153,8 @@ class UI_BASE_EXPORT OSExchangeDataProviderWin
   void SetFilenames(const std::vector<FileInfo>& filenames) override;
   void SetPickledData(const Clipboard::FormatType& format,
                       const base::Pickle& data) override;
+  void SetCustomeData(const FORMATETC& format,
+                      const base::string16& data) override;
   void SetFileContents(const base::FilePath& filename,
                        const std::string& file_contents) override;
   void SetHtml(const base::string16& html, const GURL& base_url) override;

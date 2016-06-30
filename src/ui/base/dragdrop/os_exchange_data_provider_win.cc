@@ -299,6 +299,13 @@ void OSExchangeDataProviderWin::SetString(const base::string16& data) {
       Clipboard::GetPlainTextFormatType().ToFormatEtc(), storage));
 }
 
+void OSExchangeDataProviderWin::SetCustomeData(const FORMATETC& format,
+                                               const base::string16& data) {
+  STGMEDIUM* storage = GetStorageForString(base::UTF16ToUTF8(data));
+  data_->contents_.push_back(new DataObjectImpl::StoredDataInfo(
+      format, storage));
+}
+
 void OSExchangeDataProviderWin::SetURL(const GURL& url,
                                        const base::string16& title) {
   // NOTE WELL:

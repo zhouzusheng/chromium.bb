@@ -108,11 +108,6 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     // same renderer process.
     void setProfile(Profile* profile);
 
-    // By default, WebViews render their content on a black background with an opaque
-    // alpha channel. Setting this flag to true will cause the alpha channel to be
-    // populated with values specified by the content's HTML and CSS.
-    void setIsTransparent(bool isTransparent);
-
     // Setting this flag will cause the WebView's HWND to not receive input event
     // messages; application code can then use WebView::handleInputEvents() to
     // push such events into the WebView.
@@ -126,7 +121,6 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     bool javascriptCanAccessClipboard() const { return d_javascriptCanAccessClipboard; }
     int rendererAffinity() const { return d_rendererAffinity; }
     Profile* profile() const { return d_profile; }
-    bool isTransparent() const { return d_isTransparent; }
     bool inputEventsDisabled() const { return d_inputEventsDisabled; }
 
   private:
@@ -138,7 +132,6 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     bool d_javascriptCanAccessClipboard;
     int d_rendererAffinity;
     Profile* d_profile;
-    bool d_isTransparent;
     bool d_inputEventsDisabled;
 };
 

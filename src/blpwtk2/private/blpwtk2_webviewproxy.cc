@@ -297,6 +297,12 @@ int WebViewProxy::getRoutingId() const
     return d_routingId;
 }
 
+void WebViewProxy::setBackgroundColor(NativeColor color)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_SetBackgroundColor(d_routingId, color));
+}
+
 void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)
 {
     DCHECK(Statics::isRendererMainThreadMode());

@@ -126,6 +126,15 @@ blpwtk2::NativeView NativeViewWidget::getNativeWidgetView() const
     return views::HWNDForWidget(d_impl);
 }
 
+void NativeViewWidget::setRegion(blpwtk2::NativeRegion region)
+{
+    DCHECK(d_impl);
+    HWND hwnd = views::HWNDForWidget(d_impl);
+    ::SetWindowRgn(hwnd,
+                   region,
+                   ::IsWindowVisible(hwnd));
+}
+
 // views::WidgetDelegate overrides
 
 void NativeViewWidget::WindowClosing()

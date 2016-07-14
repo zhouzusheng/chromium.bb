@@ -49,6 +49,7 @@
 #include <pdf/pdf.h>
 #include <ui/events/event.h>
 #include <ui/gfx/geometry/size.h>
+#include <windows.h>
 
 namespace {
 
@@ -301,6 +302,28 @@ void WebViewProxy::setBackgroundColor(NativeColor color)
 {
     DCHECK(Statics::isInApplicationMainThread());
     Send(new BlpWebViewHostMsg_SetBackgroundColor(d_routingId, color));
+}
+
+void WebViewProxy::setRegion(NativeRegion region)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+
+    // Blobify the region:
+    std::vector<std::uint8_t> regionBlob;
+
+    if (region) {
+        DWORD blobSize = ::GetRegionData(region, 0, nullptr);
+        regionBlob.resize(blobSize);
+        ::GetRegionData(region, blobSize, reinterpret_cast<LPRGNDATA>(regionBlob.data()));
+    }
+
+    Send(new BlpWebViewHostMsg_SetRegion(d_routingId, regionBlob));
+
+    // After a call to ::SetWindowRgn(), the system owns the region. Since this
+    // region has been copied, it should be deleted here:
+    if (region) {
+        ::DeleteObject(region);
+    }
 }
 
 void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)

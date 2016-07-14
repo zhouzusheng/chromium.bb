@@ -45,6 +45,7 @@ typedef MSG NativeMsg;
 typedef HDC NativeDeviceContext;
 typedef RECT NativeRect;
 typedef COLORREF NativeColor;
+typedef HRGN NativeRegion;
 
 }  // close namespace blpwtk2
 

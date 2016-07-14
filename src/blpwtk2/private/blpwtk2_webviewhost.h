@@ -33,6 +33,7 @@
 #include <ipc/ipc_sender.h>
 #include <ui/gfx/geometry/rect.h>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -113,6 +114,7 @@ class WebViewHost : public ProcessHostListener,
     void onRootWindowSettingsChanged();
     void onPrint();
     void onSetBackgroundColor(NativeColor color);
+    void onSetRegion(const std::vector<std::uint8_t>& regionBlob);
 
     // IPC::Sender override
     bool Send(IPC::Message* message) override;

@@ -338,6 +338,13 @@ void WebViewImpl::setBackgroundColor(NativeColor color)
     ));
 }
 
+void WebViewImpl::setRegion(NativeRegion region)
+{
+    if (d_widget) {
+        d_widget->setRegion(region);
+    }
+}
+
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
 {
     NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";

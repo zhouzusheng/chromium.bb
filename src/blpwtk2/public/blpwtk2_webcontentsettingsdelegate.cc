@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2016 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,30 +20,13 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_WEBFRAME_H
-#define INCLUDED_BLPWTK2_WEBFRAME_H
-
-#include <blpwtk2_config.h>
-#include <v8.h>
+#include <blpwtk2_webcontentsettingsdelegate.h>
 
 namespace blpwtk2 {
 
-class WebContentSettingsDelegate;
-
-class WebFrame {
-public:
-    virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
-    virtual v8::Isolate* scriptIsolate() const = 0;
-    virtual void setContentSettingsDelegate(WebContentSettingsDelegate *contentSettingsDelegate) = 0;
-
-protected:
-    // Destroy this WebView.  Note that clients of blpwtk2 should not delete
-    // this object.  It will be deleted automatically when the WebView gets
-    // destroyed.
-    virtual ~WebFrame();
-};
+WebContentSettingsDelegate::~WebContentSettingsDelegate()
+{
+}
 
 }  // close namespace blpwtk2
-
-#endif  // INCLUDED_BLPWTK2_WEBFRAME_H
 

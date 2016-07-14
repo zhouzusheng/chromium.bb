@@ -27,6 +27,8 @@
 
 #include <blpwtk2_webframe.h>
 
+#include <third_party/WebKit/public/web/WebContentSettingsClient.h>
+
 namespace blink {
     class WebFrame;
 }  // close namespace blink
@@ -34,14 +36,21 @@ namespace blink {
 namespace blpwtk2 {
 
 // This is the implementation of the blpwtk2::WebFrame interface.
-class WebFrameImpl : public WebFrame {
+class WebFrameImpl : public WebFrame,
+                     private blink::WebContentSettingsClient {
   public:
     WebFrameImpl(blink::WebFrame* impl);
     v8::Local<v8::Context> mainWorldScriptContext() const override;
     v8::Isolate* scriptIsolate() const override;
+    void setContentSettingsDelegate(WebContentSettingsDelegate *contentSettingsDelegate) override;
 
   private:
     blink::WebFrame* d_impl;
+    WebContentSettingsDelegate* d_contentSettingsDelegate;
+
+    // blink::WebContentSettingsClient overrides
+    bool allowDisplayingInsecureContent(bool enabledPerSettings, const blink::WebSecurityOrigin&, const blink::WebURL&) override;
+    bool allowRunningInsecureContent(bool enabledPerSettings, const blink::WebSecurityOrigin&, const blink::WebURL&) override;
 };
 
 }  // close namespace blpwtk2

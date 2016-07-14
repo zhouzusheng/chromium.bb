@@ -22,12 +22,17 @@
 
 #include <blpwtk2_webframeimpl.h>
 
+#include <blpwtk2_webcontentsettingsdelegate.h>
+
+#include <base/logging.h>  // for CHECK
 #include <third_party/WebKit/public/web/WebFrame.h>
+#include <third_party/WebKit/public/web/WebLocalFrame.h>
 
 namespace blpwtk2 {
 
 WebFrameImpl::WebFrameImpl(blink::WebFrame* impl)
 : d_impl(impl)
+, d_contentSettingsDelegate(nullptr)
 {
 }
 
@@ -39,6 +44,36 @@ v8::Local<v8::Context> WebFrameImpl::mainWorldScriptContext() const
 v8::Isolate* WebFrameImpl::scriptIsolate() const
 {
     return d_impl->scriptIsolate();
+}
+
+void WebFrameImpl::setContentSettingsDelegate(WebContentSettingsDelegate *contentSettingsDelegate)
+{
+    if (!d_impl->isWebLocalFrame() ||
+        d_contentSettingsDelegate == contentSettingsDelegate) {
+        return;
+    }
+
+    d_contentSettingsDelegate = contentSettingsDelegate;
+
+    if (d_contentSettingsDelegate) {
+        d_impl->toWebLocalFrame()->setContentSettingsClient(this);
+    }
+    else {
+        d_impl->toWebLocalFrame()->setContentSettingsClient(nullptr);
+    }
+}
+
+// blink::WebContentSettingsClient overrides
+bool WebFrameImpl::allowDisplayingInsecureContent(bool enabledPerSettings, const blink::WebSecurityOrigin& securityOrigin, const blink::WebURL& url)
+{
+    DCHECK(d_contentSettingsDelegate) << "WebContentSettingsDelegate not set";
+    return d_contentSettingsDelegate->allowDisplayingInsecureContent(enabledPerSettings, securityOrigin, url);
+}
+
+bool WebFrameImpl::allowRunningInsecureContent(bool enabledPerSettings, const blink::WebSecurityOrigin& securityOrigin, const blink::WebURL& url)
+{
+    DCHECK(d_contentSettingsDelegate) << "WebContentSettingsDelegate not set";
+    return d_contentSettingsDelegate->allowRunningInsecureContent(enabledPerSettings, securityOrigin, url);
 }
 
 }  // close namespace blpwtk2

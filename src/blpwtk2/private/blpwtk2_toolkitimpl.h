@@ -90,6 +90,7 @@ class ToolkitImpl : public Toolkit {
     String registerNativeViewForStreaming(NativeView view) override;
     void dumpDiagnosticInfo(DiagnosticInfoType type,
                             const blpwtk2::StringRef& filepath) override;
+    void addOriginToTrustworthyList(const StringRef& originString) override;
 
   private:
     void createInProcessHost();

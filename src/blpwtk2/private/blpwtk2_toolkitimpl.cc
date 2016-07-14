@@ -40,6 +40,7 @@
 #include <blpwtk2_profilecreateparams.h>
 #include <blpwtk2_profileproxy.h>
 #include <blpwtk2_statics.h>
+#include <blpwtk2_stringref.h>
 #include <blpwtk2_webviewcreateparams.h>
 #include <blpwtk2_webviewimpl.h>
 #include <blpwtk2_webviewproxy.h>
@@ -59,6 +60,8 @@
 #include <content/public/common/content_switches.h>
 #include <sandbox/win/src/win_utils.h>
 #include <third_party/WebKit/public/web/WebKit.h>
+#include <third_party/WebKit/public/web/WebSecurityOrigin.h>
+#include <third_party/WebKit/public/web/WebSecurityPolicy.h>
 #include <third_party/WebKit/public/web/WebScriptBindings.h>
 #include <third_party/WebKit/public/web/WebScriptController.h>
 
@@ -548,6 +551,16 @@ void ToolkitImpl::dumpDiagnosticInfo(DiagnosticInfoType type,
     else if (type == DIAGNOSTIC_INFO_GPU) {
         DumpGpuInfo(filepath.toStdString());
     }
+}
+
+void ToolkitImpl::addOriginToTrustworthyList(const StringRef& originString)
+{
+    if (!d_threadsStarted) {
+        startupThreads();
+    }
+
+    blink::WebSecurityPolicy::addOriginTrustworthyWhiteList(
+        blink::WebSecurityOrigin::createFromString(toWebString(originString)));
 }
 
 }  // close namespace blpwtk2

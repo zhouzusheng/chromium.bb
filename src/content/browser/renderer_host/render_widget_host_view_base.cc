@@ -393,7 +393,7 @@ const int kFlushInputRateInUs = 16666;
 
 RenderWidgetHostViewBase::RenderWidgetHostViewBase()
     : popup_type_(blink::WebPopupTypeNone),
-      background_color_(SK_ColorWHITE),
+      background_color_(SK_ColorBLACK),
       mouse_locked_(false),
       showing_context_menu_(false),
       selection_text_offset_(0),
@@ -418,7 +418,7 @@ void RenderWidgetHostViewBase::SetBackgroundColor(SkColor color) {
 }
 
 void RenderWidgetHostViewBase::SetBackgroundColorToDefault() {
-  SetBackgroundColor(SK_ColorWHITE);
+  SetBackgroundColor(SK_ColorBLACK);
 }
 
 bool RenderWidgetHostViewBase::GetBackgroundOpaque() {

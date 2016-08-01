@@ -207,6 +207,7 @@ void GpuProcessHostUIShim::OnLogMessage(
     int level,
     const std::string& header,
     const std::string& message) {
+  LOG(INFO) << header << message;
   GpuDataManagerImpl::GetInstance()->AddLogMessage(
       level, header, message);
 }

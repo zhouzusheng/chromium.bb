@@ -84,6 +84,17 @@ bool disableResizeOptimization()
 {
     static bool scale_read = false;
     static bool resizeOptimizationDisabled = false;
+    static long lastCallMS = 0;
+    SYSTEMTIME st;
+    ::GetSystemTime(&st);
+    long time = st.wHour * 3600000 + st.wMinute * 60000 + st.wSecond * 1000 + st.wMilliseconds;
+    bool hasBeenFullSecond = time < lastCallMS || time - lastCallMS > 1000;
+
+    // To workaround a very rare case where a webview is initially sized
+    // incorrectly, we only apply the resize optimization when the last resize
+    // operation occured less than a second ago.  This allows the optimization
+    // to be used for user-driven interactive resize sessions.
+    lastCallMS = time;
 
     if (!scale_read) {
         HKEY userKey;
@@ -134,7 +145,7 @@ bool disableResizeOptimization()
         resizeOptimizationDisabled = !dpiScaling || compPolicy ? true : false;
     }
 
-    return blpwtk2::Statics::inProcessResizeOptimizationDisabled || (resizeOptimizationDisabled && getScreenScaleFactor() > 1.0);
+    return hasBeenFullSecond || blpwtk2::Statics::inProcessResizeOptimizationDisabled || (resizeOptimizationDisabled && getScreenScaleFactor() > 1.0);
 }
 
 }  // close anonymous namespace

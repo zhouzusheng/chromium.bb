@@ -25,11 +25,6 @@
 
 #include <blpwtk2_config.h>
 
-namespace blink {
-    class WebSecurityOrigin;
-    class WebURL;
-} // close namespace blink
-
 namespace blpwtk2 {
 
 // This class can be implemented by the application to establish the various
@@ -43,11 +38,11 @@ class BLPWTK2_EXPORT WebContentSettingsDelegate {
   public:
     virtual ~WebContentSettingsDelegate();
 
-    // Controls whether insecrure content is allowed to display for this frame.
-    virtual bool allowDisplayingInsecureContent(bool enabledPerSettings, const blink::WebSecurityOrigin& securityOrigin, const blink::WebURL& url) { return enabledPerSettings; };
+    // Controls whether insecure content is allowed to display for this frame.
+    virtual bool allowDisplayingInsecureContent(bool enabledPerSettings) = 0;
 
-    // Controls whether insecrure scripts are allowed to execute for this frame.
-    virtual bool allowRunningInsecureContent(bool enabledPerSettings, const blink::WebSecurityOrigin& securityOrigin, const blink::WebURL& url) { return enabledPerSettings; };
+    // Controls whether insecure scripts are allowed to execute for this frame.
+    virtual bool allowRunningInsecureContent(bool enabledPerSettings) = 0;
 };
 
 }  // close namespace blpwtk2

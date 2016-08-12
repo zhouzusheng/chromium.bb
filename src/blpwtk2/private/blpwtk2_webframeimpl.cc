@@ -67,13 +67,13 @@ void WebFrameImpl::setContentSettingsDelegate(WebContentSettingsDelegate *conten
 bool WebFrameImpl::allowDisplayingInsecureContent(bool enabledPerSettings, const blink::WebSecurityOrigin& securityOrigin, const blink::WebURL& url)
 {
     DCHECK(d_contentSettingsDelegate) << "WebContentSettingsDelegate not set";
-    return d_contentSettingsDelegate->allowDisplayingInsecureContent(enabledPerSettings, securityOrigin, url);
+    return d_contentSettingsDelegate->allowDisplayingInsecureContent(enabledPerSettings);
 }
 
 bool WebFrameImpl::allowRunningInsecureContent(bool enabledPerSettings, const blink::WebSecurityOrigin& securityOrigin, const blink::WebURL& url)
 {
     DCHECK(d_contentSettingsDelegate) << "WebContentSettingsDelegate not set";
-    return d_contentSettingsDelegate->allowRunningInsecureContent(enabledPerSettings, securityOrigin, url);
+    return d_contentSettingsDelegate->allowRunningInsecureContent(enabledPerSettings);
 }
 
 }  // close namespace blpwtk2

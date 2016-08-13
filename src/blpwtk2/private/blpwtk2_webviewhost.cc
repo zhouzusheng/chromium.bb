@@ -28,6 +28,7 @@
 #include <blpwtk2_webview_messages.h>
 
 #include <ipc/ipc_message_macros.h>
+#include <windows.h>
 
 namespace blpwtk2 {
 
@@ -120,6 +121,7 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowSettingsChanged, onRootWindowSettingsChanged)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Print, onPrint)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetBackgroundColor, onSetBackgroundColor)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetRegion, onSetRegion)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
 
@@ -330,6 +332,20 @@ void WebViewHost::onPrint()
 void WebViewHost::onSetBackgroundColor(NativeColor color)
 {
     d_webView->setBackgroundColor(color);
+}
+
+void WebViewHost::onSetRegion(const std::vector<std::uint8_t>& regionBlob)
+{
+    HRGN region = NULL;
+
+    if (regionBlob.size() > 0) {
+        region = ::ExtCreateRegion(NULL,
+                                   regionBlob.size(),
+                                   reinterpret_cast<const RGNDATA* >(regionBlob.data()));
+        DCHECK(region);
+    }
+
+    d_webView->setRegion(region);
 }
 
 // IPC::Sender override

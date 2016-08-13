@@ -314,6 +314,17 @@ public:
     // only be called after loadUrl().
     virtual void setBackgroundColor(NativeColor color) = 0;
 
+    // Sets the region of the webview's window. Painting and hit-testing
+    // will be restricted to the region.
+    virtual void setRegion(NativeRegion region) = 0;
+
+    // Set whether or not the WebView should assume that text will be drawn
+    // over a solid, opaque background color specified by the CSS background-color
+    // property. Making this assumption allows Chromium to leave 'LCD' subpixel
+    // smoothing enabled when rasterizing text to a non-opaque layer that will
+    // eventually be composited over an opaque layer and still display correctly.
+    virtual void setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor) = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

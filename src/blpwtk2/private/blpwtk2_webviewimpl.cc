@@ -338,6 +338,18 @@ void WebViewImpl::setBackgroundColor(NativeColor color)
     ));
 }
 
+void WebViewImpl::setRegion(NativeRegion region)
+{
+    if (d_widget) {
+        d_widget->setRegion(region);
+    }
+}
+
+void WebViewImpl::setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor)
+{
+    NOTREACHED() << "setLCDTextShouldBlendWithCSSBackgroundColor() not supported in WebViewImpl";
+}
+
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
 {
     NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";

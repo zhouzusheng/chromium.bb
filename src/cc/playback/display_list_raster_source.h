@@ -106,6 +106,8 @@ class CC_EXPORT DisplayListRasterSource
 
   scoped_refptr<DisplayListRasterSource> CreateCloneWithoutLCDText() const;
 
+  SkColor DefaultLCDBackgroundColor() const;
+
  protected:
   friend class base::RefCountedThreadSafe<DisplayListRasterSource>;
 
@@ -131,6 +133,7 @@ class CC_EXPORT DisplayListRasterSource
   // TODO(enne/vmiura): this has a read/write race between raster and compositor
   // threads with multi-threaded Ganesh.  Make this const or remove it.
   bool should_attempt_to_use_distance_field_text_;
+  const SkColor default_lcd_background_color_;
 
  private:
   // Called when analyzing a tile. We can use AnalysisCanvas as

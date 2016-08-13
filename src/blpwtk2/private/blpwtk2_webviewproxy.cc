@@ -49,6 +49,7 @@
 #include <pdf/pdf.h>
 #include <ui/events/event.h>
 #include <ui/gfx/geometry/size.h>
+#include <windows.h>
 
 namespace {
 
@@ -83,6 +84,17 @@ bool disableResizeOptimization()
 {
     static bool scale_read = false;
     static bool resizeOptimizationDisabled = false;
+    static long lastCallMS = 0;
+    SYSTEMTIME st;
+    ::GetSystemTime(&st);
+    long time = st.wHour * 3600000 + st.wMinute * 60000 + st.wSecond * 1000 + st.wMilliseconds;
+    bool hasBeenFullSecond = time < lastCallMS || time - lastCallMS > 1000;
+
+    // To workaround a very rare case where a webview is initially sized
+    // incorrectly, we only apply the resize optimization when the last resize
+    // operation occured less than a second ago.  This allows the optimization
+    // to be used for user-driven interactive resize sessions.
+    lastCallMS = time;
 
     if (!scale_read) {
         HKEY userKey;
@@ -133,7 +145,7 @@ bool disableResizeOptimization()
         resizeOptimizationDisabled = !dpiScaling || compPolicy ? true : false;
     }
 
-    return blpwtk2::Statics::inProcessResizeOptimizationDisabled || (resizeOptimizationDisabled && getScreenScaleFactor() > 1.0);
+    return hasBeenFullSecond || blpwtk2::Statics::inProcessResizeOptimizationDisabled || (resizeOptimizationDisabled && getScreenScaleFactor() > 1.0);
 }
 
 }  // close anonymous namespace
@@ -301,6 +313,40 @@ void WebViewProxy::setBackgroundColor(NativeColor color)
 {
     DCHECK(Statics::isInApplicationMainThread());
     Send(new BlpWebViewHostMsg_SetBackgroundColor(d_routingId, color));
+}
+
+void WebViewProxy::setRegion(NativeRegion region)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+
+    // Blobify the region:
+    std::vector<std::uint8_t> regionBlob;
+
+    if (region) {
+        DWORD blobSize = ::GetRegionData(region, 0, nullptr);
+        regionBlob.resize(blobSize);
+        ::GetRegionData(region, blobSize, reinterpret_cast<LPRGNDATA>(regionBlob.data()));
+    }
+
+    Send(new BlpWebViewHostMsg_SetRegion(d_routingId, regionBlob));
+
+    // After a call to ::SetWindowRgn(), the system owns the region. Since this
+    // region has been copied, it should be deleted here:
+    if (region) {
+        ::DeleteObject(region);
+    }
+}
+
+void WebViewProxy::setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor)
+{
+    DCHECK(Statics::isRendererMainThreadMode());
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_isMainFrameAccessible)
+        << "You should wait for didFinishLoad";
+    DCHECK(d_gotRenderViewInfo);
+
+    content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
+    rv->GetWebView()->setLCDTextShouldBlendWithCSSBackgroundColor(lcdTextShouldBlendWithCSSBackgroundColor);
 }
 
 void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)

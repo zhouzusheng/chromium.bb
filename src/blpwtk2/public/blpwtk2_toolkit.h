@@ -91,6 +91,7 @@ namespace blpwtk2 {
 class Profile;
 class ProfileCreateParams;
 class String;
+class StringRef;
 class WebView;
 class WebViewDelegate;
 
@@ -189,6 +190,10 @@ class Toolkit {
     // file 'filepath'
     virtual void dumpDiagnosticInfo(DiagnosticInfoType type,
                                     const blpwtk2::StringRef& filepath) = 0;
+
+    // Adds the security origin specified by 'originString' to the list of
+    // origins that blink considers 'trustworthy'.
+    virtual void addOriginToTrustworthyList(const StringRef& originString) = 0;
 
   protected:
     // Destroy this Toolkit object.  Note that clients of blpwtk2 should use

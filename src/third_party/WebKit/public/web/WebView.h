@@ -120,6 +120,8 @@ public:
     // first call to this method.
     virtual void setBaseBackgroundColor(WebColor) = 0;
 
+    virtual void setLCDTextShouldBlendWithCSSBackgroundColor(bool) = 0;
+
     // Controls whether pressing Tab key advances focus to links.
     virtual bool tabsToLinks() const = 0;
     virtual void setTabsToLinks(bool) = 0;

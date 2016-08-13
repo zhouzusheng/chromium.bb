@@ -133,6 +133,8 @@ class WebViewProxy : public WebView,
     String getLayoutTreeAsText(int flags) const override;
     int getRoutingId() const override;
     void setBackgroundColor(NativeColor color) override;
+    void setRegion(NativeRegion region) override;
+    void setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor) override;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.

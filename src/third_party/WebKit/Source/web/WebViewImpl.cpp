@@ -3860,6 +3860,13 @@ void WebViewImpl::setBaseBackgroundColor(WebColor color)
     updateLayerTreeBackgroundColor();
 }
 
+void WebViewImpl::setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor)
+{
+    if (compositor()) {
+        compositor()->setLCDTextShouldBlendWithCSSBackgroundColor(lcdTextShouldBlendWithCSSBackgroundColor);
+    }
+}
+
 void WebViewImpl::setIsActive(bool active)
 {
     if (page())

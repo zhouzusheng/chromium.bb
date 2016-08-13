@@ -291,6 +291,8 @@
         'public/blpwtk2_toolkitcreateparams.h',
         'public/blpwtk2_toolkitfactory.cc',
         'public/blpwtk2_toolkitfactory.h',
+        'public/blpwtk2_webcontentsettingsdelegate.cc',
+        'public/blpwtk2_webcontentsettingsdelegate.h',
         'public/blpwtk2_webframe.cc',
         'public/blpwtk2_webframe.h',
         'public/blpwtk2_webview.cc',

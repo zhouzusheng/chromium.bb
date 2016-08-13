@@ -34,6 +34,7 @@
 #include <blpwtk2_webviewproperties.h>
 
 #include <content/public/common/common_param_traits.h>
+#include <cstdint>
 #include <ipc/ipc_message_macros.h>
 #include <ui/gfx/ipc/gfx_param_traits.h>
 
@@ -116,6 +117,8 @@ IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_RootWindowSettingsChanged)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_Print)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetBackgroundColor,
                     blpwtk2::NativeColor /* color */)
+IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetRegion,
+                    std::vector<std::uint8_t> /* region blob */)
 
 // This destroys the WebView.
 IPC_MESSAGE_CONTROL1(BlpWebViewHostMsg_Destroy,

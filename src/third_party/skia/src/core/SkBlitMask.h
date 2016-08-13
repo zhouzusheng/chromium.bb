@@ -39,6 +39,10 @@ public:
                                      SkColor color, int width,
                                      SkPMColor opaqueDst);
 
+    typedef void (*BlitLCD16RowOverBackgroundProc)(SkPMColor dst[], const uint16_t src[],
+                                                   SkColor color, int width,
+                                                   SkPMColor opaqueDst, SkPMColor background);
+
     /**
      *  Function pointer that blits a row of src colors through a row of a mask
      *  onto a row of dst colors. The RowFactory that returns this function ptr
@@ -52,11 +56,15 @@ public:
      */
     static BlitLCD16RowProc BlitLCD16RowFactory(bool isOpaque);
 
+    static BlitLCD16RowOverBackgroundProc BlitLCD16RowOverBackgroundFactory(bool isOpaque);
+
     /**
      *  Return either platform specific optimized blitcolor BlitLCD16RowProc,
      *  or nullptr if no optimized routine is available.
      */
     static BlitLCD16RowProc PlatformBlitRowProcs16(bool isOpaque);
+
+    static BlitLCD16RowOverBackgroundProc PlatformBlitRowOverBackgroundProcs16(bool isOpaque);
 
     enum RowFlags {
         kSrcIsOpaque_RowFlag    = 1 << 0

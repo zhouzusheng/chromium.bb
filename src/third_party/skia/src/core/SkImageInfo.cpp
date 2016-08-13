@@ -33,6 +33,8 @@ void SkImageInfo::unflatten(SkReadBuffer& buffer) {
     buffer.validate(profile_type_is_valid(fProfileType) &&
                     alpha_type_is_valid(fAlphaType) &&
                     color_type_is_valid(fColorType));
+
+    fDefaultLCDBackgroundColor = buffer.readColor();
 }
 
 void SkImageInfo::flatten(SkWriteBuffer& buffer) const {
@@ -44,6 +46,8 @@ void SkImageInfo::flatten(SkWriteBuffer& buffer) const {
     SkASSERT(0 == (fColorType & ~0xFF));
     uint32_t packed = (fProfileType << 16) | (fAlphaType << 8) | fColorType;
     buffer.write32(packed);
+
+    buffer.writeColor(fDefaultLCDBackgroundColor);
 }
 
 bool SkColorTypeValidateAlphaType(SkColorType colorType, SkAlphaType alphaType,

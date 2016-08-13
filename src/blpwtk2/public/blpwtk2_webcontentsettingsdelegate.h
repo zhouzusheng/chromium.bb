@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2016 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,34 +20,31 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_CONFIG_H
-#define INCLUDED_BLPWTK2_CONFIG_H
+#ifndef INCLUDED_BLPWTK2_WEBCONTENTSETTINGSDELEGATE_H
+#define INCLUDED_BLPWTK2_WEBCONTENTSETTINGSDELEGATE_H
 
-#include <windows.h>  // NOLINT
-
-#if defined BUILDING_BLPWTK2_SHARED
-#define BLPWTK2_EXPORT _declspec(dllexport)
-#elif defined USING_BLPWTK2_SHARED
-#define BLPWTK2_EXPORT _declspec(dllimport)
-#else
-#define BLPWTK2_EXPORT
-#endif
-
-#include <blpwtk2_version.h>
+#include <blpwtk2_config.h>
 
 namespace blpwtk2 {
 
-// TODO: support other native handles
-typedef HWND NativeView;
-typedef HFONT NativeFont;
-typedef void* NativeViewForTransit;
-typedef MSG NativeMsg;
-typedef HDC NativeDeviceContext;
-typedef RECT NativeRect;
-typedef COLORREF NativeColor;
-typedef HRGN NativeRegion;
+// This class can be implemented by the application to establish the various
+// permissions of a blpwtk2::WebFrame.  The delegate is passed to the WebFrame
+// after it has been created and made accessible to the application (after it
+// has been loaded).
+//
+// All methods on the delegate are invoked in the application's renderer thread.
+
+class BLPWTK2_EXPORT WebContentSettingsDelegate {
+  public:
+    virtual ~WebContentSettingsDelegate();
+
+    // Controls whether insecure content is allowed to display for this frame.
+    virtual bool allowDisplayingInsecureContent(bool enabledPerSettings) = 0;
+
+    // Controls whether insecure scripts are allowed to execute for this frame.
+    virtual bool allowRunningInsecureContent(bool enabledPerSettings) = 0;
+};
 
 }  // close namespace blpwtk2
 
-#endif  // INCLUDED_BLPWTK2_CONFIG_H
-
+#endif  // INCLUDED_BLPWTK2_WEBCONTENTSETTINGSDELEGATE_H

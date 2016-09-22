@@ -69,6 +69,7 @@ void ParamTraits<WebViewProperties>::Write(Message* m, const param_type& p)
     WriteParam(m, p.domPasteEnabled);
     WriteParam(m, p.javascriptCanAccessClipboard);
     WriteParam(m, p.inputEventsDisabled);
+    WriteParam(m, p.rerouteMouseWheelToAnyRelatedWindow);
 }
 
 bool ParamTraits<WebViewProperties>::Read(const Message* m, base::PickleIterator* iter, param_type* r)
@@ -84,6 +85,8 @@ bool ParamTraits<WebViewProperties>::Read(const Message* m, base::PickleIterator
     if (!ReadParam(m, iter, &r->javascriptCanAccessClipboard))
         return false;
     if (!ReadParam(m, iter, &r->inputEventsDisabled))
+        return false;
+    if (!ReadParam(m, iter, &r->rerouteMouseWheelToAnyRelatedWindow))
         return false;
     return true;
 }
@@ -102,6 +105,8 @@ void ParamTraits<WebViewProperties>::Log(const param_type& p, std::string* l)
     LogParam(p.javascriptCanAccessClipboard, l);
     l->append(", ");
     LogParam(p.inputEventsDisabled, l);
+    l->append(", ");
+    LogParam(p.rerouteMouseWheelToAnyRelatedWindow, l);
     l->append(")");
 }
 

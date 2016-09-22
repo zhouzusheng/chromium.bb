@@ -113,6 +113,11 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     // push such events into the WebView.
     void setInputEventsDisabled(bool inputEventsDisabled);
 
+    // Setting this flag will cause mouse wheel events that are delivered to
+    // the focused webview window while hovering over a different window to be
+    // delivered to that window if it shares a 'root' window with the webview.
+    void setRerouteMouseWheelToAnyRelatedWindow(bool rerouteMouseWheelToAnyRelatedWindow);
+
     bool initiallyVisible() const { return d_initiallyVisible; }
     bool takeKeyboardFocusOnMouseDown() const { return d_takeKeyboardFocusOnMouseDown; }
     bool takeLogicalFocusOnMouseDown() const { return d_takeLogicalFocusOnMouseDown; }
@@ -122,6 +127,7 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     int rendererAffinity() const { return d_rendererAffinity; }
     Profile* profile() const { return d_profile; }
     bool inputEventsDisabled() const { return d_inputEventsDisabled; }
+    bool rerouteMouseWheelToAnyRelatedWindow() const { return d_rerouteMouseWheelToAnyRelatedWindow; }
 
   private:
     bool d_initiallyVisible;
@@ -133,6 +139,7 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     int d_rendererAffinity;
     Profile* d_profile;
     bool d_inputEventsDisabled;
+    bool d_rerouteMouseWheelToAnyRelatedWindow;
 };
 
 

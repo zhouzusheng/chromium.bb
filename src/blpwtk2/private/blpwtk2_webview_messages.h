@@ -124,6 +124,7 @@ IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetRegion,
 IPC_MESSAGE_CONTROL1(BlpWebViewHostMsg_Destroy,
                      int /* routingId */)
 
+IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_ClearTooltip)
 
 // ============== Messages from host to client ======================
 

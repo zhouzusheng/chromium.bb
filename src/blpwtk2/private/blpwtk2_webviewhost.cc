@@ -122,6 +122,7 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Print, onPrint)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetBackgroundColor, onSetBackgroundColor)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetRegion, onSetRegion)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_ClearTooltip, onClearTooltip)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
 
@@ -346,6 +347,11 @@ void WebViewHost::onSetRegion(const std::vector<std::uint8_t>& regionBlob)
     }
 
     d_webView->setRegion(region);
+}
+
+void WebViewHost::onClearTooltip()
+{
+    d_webView->clearTooltip();
 }
 
 // IPC::Sender override

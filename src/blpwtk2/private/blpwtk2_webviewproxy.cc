@@ -349,6 +349,12 @@ void WebViewProxy::setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShoul
     rv->GetWebView()->setLCDTextShouldBlendWithCSSBackgroundColor(lcdTextShouldBlendWithCSSBackgroundColor);
 }
 
+void WebViewProxy::clearTooltip()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_ClearTooltip(d_routingId));
+}
+
 void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)
 {
     DCHECK(Statics::isRendererMainThreadMode());

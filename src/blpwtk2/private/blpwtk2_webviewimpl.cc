@@ -350,6 +350,15 @@ void WebViewImpl::setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShould
     NOTREACHED() << "setLCDTextShouldBlendWithCSSBackgroundColor() not supported in WebViewImpl";
 }
 
+void WebViewImpl::clearTooltip()
+{
+    content::RenderWidgetHostViewBase* rwhv =
+        static_cast<content::RenderWidgetHostViewBase*>(
+            d_webContents->GetRenderWidgetHostView());
+
+    rwhv->SetTooltipText(L"");
+}
+
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
 {
     NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";

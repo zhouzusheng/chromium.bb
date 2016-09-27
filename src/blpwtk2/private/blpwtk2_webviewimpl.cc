@@ -689,7 +689,8 @@ void WebViewImpl::createWidget(blpwtk2::NativeView parent)
         d_webContents->GetNativeView(),
         parent,
         this,
-        d_properties.activateWindowOnMouseDown);
+        d_properties.activateWindowOnMouseDown,
+        d_properties.rerouteMouseWheelToAnyRelatedWindow);
 
     if (d_properties.inputEventsDisabled) {
         ::EnableWindow(d_widget->getNativeWidgetView(), FALSE);

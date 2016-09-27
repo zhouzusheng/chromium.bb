@@ -130,7 +130,8 @@ Widget::InitParams::InitParams()
       layer_type(ui::LAYER_TEXTURED),
       context(NULL),
       force_show_in_taskbar(false),
-      force_software_compositing(false) {
+      force_software_compositing(false),
+      reroute_mouse_wheel_to_any_related_window(false) {
 }
 
 Widget::InitParams::InitParams(Type type)
@@ -154,7 +155,8 @@ Widget::InitParams::InitParams(Type type)
       layer_type(ui::LAYER_TEXTURED),
       context(NULL),
       force_show_in_taskbar(false),
-      force_software_compositing(false) {
+      force_software_compositing(false),
+      reroute_mouse_wheel_to_any_related_window(false) {
 }
 
 Widget::InitParams::~InitParams() {

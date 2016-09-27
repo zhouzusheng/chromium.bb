@@ -286,6 +286,17 @@ void TooltipController::UpdateIfRequired() {
       IsDragDropInProgress() || !IsCursorVisible()) {
     tooltip_->Hide();
     return;
+  } else if (tooltip_window_) {
+    POINT point;
+    ::GetCursorPos(&point);
+    HWND cur_hwnd = WindowFromPoint(point);
+    HWND parent_hwnd = tooltip_->GetParentHwnd();
+
+    if (cur_hwnd != parent_hwnd) {
+      tooltip_->Hide();
+      SetTooltipWindow(NULL);
+      return;
+    }
   }
 
   base::string16 tooltip_text;

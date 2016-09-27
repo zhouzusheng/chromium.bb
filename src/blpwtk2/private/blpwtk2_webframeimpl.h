@@ -40,6 +40,8 @@ class WebFrameImpl : public WebFrame,
                      private blink::WebContentSettingsClient {
   public:
     WebFrameImpl(blink::WebFrame* impl);
+    ~WebFrameImpl();
+
     v8::Local<v8::Context> mainWorldScriptContext() const override;
     v8::Isolate* scriptIsolate() const override;
     void setContentSettingsDelegate(WebContentSettingsDelegate *contentSettingsDelegate) override;

@@ -269,6 +269,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     // If true then the widget uses software compositing. Defaults to false.
     // Only used on Windows.
     bool force_software_compositing;
+
+    bool reroute_mouse_wheel_to_any_related_window;
   };
 
   Widget();

@@ -333,7 +333,8 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       dwm_transition_desired_(false),
       sent_window_size_changing_(false),
       autohide_factory_(this),
-      weak_factory_(this) {}
+      weak_factory_(this),
+      reroute_mouse_wheel_to_any_related_window_(false) {}
 
 HWNDMessageHandler::~HWNDMessageHandler() {
   delegate_ = NULL;
@@ -2425,7 +2426,7 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
     active_mouse_tracking_flags_ = 0;
   } else if (event.type() == ui::ET_MOUSEWHEEL) {
     // Reroute the mouse wheel to the window under the pointer if applicable.
-    bool handled = ui::RerouteMouseWheel(hwnd(), w_param, l_param) ||
+    bool handled = ui::RerouteMouseWheel(hwnd(), w_param, l_param, reroute_mouse_wheel_to_any_related_window_) ||
             delegate_->HandleMouseEvent(ui::MouseWheelEvent(msg));
 
     SetMsgHandled(handled);

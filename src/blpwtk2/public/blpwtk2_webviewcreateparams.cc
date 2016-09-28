@@ -38,6 +38,7 @@ WebViewCreateParams::WebViewCreateParams()
 , d_rendererAffinity(Constants::ANY_OUT_OF_PROCESS_RENDERER)
 , d_profile(0)
 , d_inputEventsDisabled(false)
+, d_rerouteMouseWheelToAnyRelatedWindow(false)
 {
 }
 
@@ -88,6 +89,11 @@ void WebViewCreateParams::setProfile(Profile* profile)
 void WebViewCreateParams::setInputEventsDisabled(bool inputEventsDisabled)
 {
     d_inputEventsDisabled = inputEventsDisabled;
+}
+
+void WebViewCreateParams::setRerouteMouseWheelToAnyRelatedWindow(bool rerouteMouseWheelToAnyRelatedWindow)
+{
+    d_rerouteMouseWheelToAnyRelatedWindow = rerouteMouseWheelToAnyRelatedWindow;
 }
 
 }  // close namespace blpwtk2

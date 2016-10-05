@@ -137,6 +137,12 @@ void NativeViewWidget::setRegion(blpwtk2::NativeRegion region)
                    ::IsWindowVisible(hwnd));
 }
 
+void NativeViewWidget::compositionChanged()
+{
+    DCHECK(d_impl);
+    d_impl->CompositionChanged();
+}
+
 // views::WidgetDelegate overrides
 
 void NativeViewWidget::WindowClosing()

@@ -121,6 +121,7 @@ IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetRegion,
                     std::vector<std::uint8_t> /* region blob */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_EnableForInputEvents,
                     bool /* enabled */)
+IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_RootWindowCompositionChanged)
 
 // This destroys the WebView.
 IPC_MESSAGE_CONTROL1(BlpWebViewHostMsg_Destroy,

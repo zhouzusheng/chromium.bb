@@ -370,6 +370,13 @@ void WebViewImpl::enableForInputEvents(bool enabled)
     ::EnableWindow(d_widget->getNativeWidgetView(), enabled);
 }
 
+void WebViewImpl::rootWindowCompositionChanged()
+{
+    if (d_widget) {
+        d_widget->compositionChanged();
+    }
+}
+
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
 {
     NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";

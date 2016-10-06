@@ -108,11 +108,6 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     // same renderer process.
     void setProfile(Profile* profile);
 
-    // Setting this flag will cause the WebView's HWND to not receive input event
-    // messages; application code can then use WebView::handleInputEvents() to
-    // push such events into the WebView.
-    void setInputEventsDisabled(bool inputEventsDisabled);
-
     // Setting this flag will cause mouse wheel events that are delivered to
     // the focused webview window while hovering over a different window to be
     // delivered to that window if it shares a 'root' window with the webview.
@@ -126,7 +121,6 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     bool javascriptCanAccessClipboard() const { return d_javascriptCanAccessClipboard; }
     int rendererAffinity() const { return d_rendererAffinity; }
     Profile* profile() const { return d_profile; }
-    bool inputEventsDisabled() const { return d_inputEventsDisabled; }
     bool rerouteMouseWheelToAnyRelatedWindow() const { return d_rerouteMouseWheelToAnyRelatedWindow; }
 
   private:
@@ -138,7 +132,6 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     bool d_javascriptCanAccessClipboard;
     int d_rendererAffinity;
     Profile* d_profile;
-    bool d_inputEventsDisabled;
     bool d_rerouteMouseWheelToAnyRelatedWindow;
 };
 

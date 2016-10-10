@@ -200,6 +200,9 @@ void NativeWidgetAura::FrameTypeChanged() {
   GetWidget()->GetRootView()->SchedulePaint();
 }
 
+void NativeWidgetAura::CompositionChanged() {
+}
+
 Widget* NativeWidgetAura::GetWidget() {
   return delegate_->AsWidget();
 }

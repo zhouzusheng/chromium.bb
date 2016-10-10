@@ -329,6 +329,9 @@ public:
 
     virtual void enableForInputEvents(bool enabled) = 0;
 
+    // Notify the webview that desktop composition has been enabled or disabled.
+    virtual void rootWindowCompositionChanged() = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

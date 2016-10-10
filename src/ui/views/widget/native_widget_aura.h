@@ -53,6 +53,7 @@ class VIEWS_EXPORT NativeWidgetAura
   bool ShouldUseNativeFrame() const override;
   bool ShouldWindowContentsBeTransparent() const override;
   void FrameTypeChanged() override;
+  void CompositionChanged() override;
   Widget* GetWidget() override;
   const Widget* GetWidget() const override;
   gfx::NativeView GetNativeView() const override;

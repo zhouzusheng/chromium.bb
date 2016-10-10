@@ -116,6 +116,8 @@ class WebViewHost : public ProcessHostListener,
     void onSetBackgroundColor(NativeColor color);
     void onSetRegion(const std::vector<std::uint8_t>& regionBlob);
     void onClearTooltip();
+    void onEnableForInputEvents(bool enabled);
+    void onRootWindowCompositionChanged();
 
     // IPC::Sender override
     bool Send(IPC::Message* message) override;

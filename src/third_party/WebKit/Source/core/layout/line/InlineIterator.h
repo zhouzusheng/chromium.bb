@@ -667,40 +667,44 @@ static void adjustMidpointsAndAppendRunsForObjectIfNeeded(LineLayoutItem obj, un
     if (start > end || LayoutBlockFlow::shouldSkipCreatingRunsForObject(obj))
         return;
 
-    LineMidpointState& lineMidpointState = resolver.midpointState();
-    bool haveNextMidpoint = (lineMidpointState.currentMidpoint() < lineMidpointState.numMidpoints());
-    InlineIterator nextMidpoint;
-    if (haveNextMidpoint)
-        nextMidpoint = lineMidpointState.midpoints()[lineMidpointState.currentMidpoint()];
-    if (lineMidpointState.betweenMidpoints()) {
-        if (!(haveNextMidpoint && nextMidpoint.object() == obj))
-            return;
-        // This is a new start point. Stop ignoring objects and
-        // adjust our start.
-        lineMidpointState.setBetweenMidpoints(false);
-        start = nextMidpoint.offset();
-        lineMidpointState.incrementCurrentMidpoint();
-        if (start < end)
-            return adjustMidpointsAndAppendRunsForObjectIfNeeded(obj, start, end, resolver, behavior, tracker);
-    } else {
-        if (!haveNextMidpoint || (obj != nextMidpoint.object())) {
-            appendRunObjectIfNecessary(obj, start, end, resolver, behavior, tracker);
-            return;
-        }
-
-        // An end midpoint has been encountered within our object. We
-        // need to go ahead and append a run with our endpoint.
-        if (nextMidpoint.offset() + 1 <= end) {
-            lineMidpointState.setBetweenMidpoints(true);
+    for (;;) {
+        LineMidpointState& lineMidpointState = resolver.midpointState();
+        bool haveNextMidpoint = (lineMidpointState.currentMidpoint() < lineMidpointState.numMidpoints());
+        InlineIterator nextMidpoint;
+        if (haveNextMidpoint)
+            nextMidpoint = lineMidpointState.midpoints()[lineMidpointState.currentMidpoint()];
+        if (lineMidpointState.betweenMidpoints()) {
+            if (!(haveNextMidpoint && nextMidpoint.object() == obj))
+                return;
+            // This is a new start point. Stop ignoring objects and
+            // adjust our start.
+            lineMidpointState.setBetweenMidpoints(false);
+            start = nextMidpoint.offset();
             lineMidpointState.incrementCurrentMidpoint();
-            if (nextMidpoint.offset() != UINT_MAX) { // UINT_MAX means stop at the object and don't nclude any of it.
-                if (nextMidpoint.offset() + 1 > start)
-                    appendRunObjectIfNecessary(obj, start, nextMidpoint.offset() + 1, resolver, behavior, tracker);
-                return adjustMidpointsAndAppendRunsForObjectIfNeeded(obj, nextMidpoint.offset() + 1, end, resolver, behavior, tracker);
-            }
+            if (start < end)
+                continue;
         } else {
-            appendRunObjectIfNecessary(obj, start, end, resolver, behavior, tracker);
+            if (!haveNextMidpoint || (obj != nextMidpoint.object())) {
+                appendRunObjectIfNecessary(obj, start, end, resolver, behavior, tracker);
+                return;
+            }
+
+            // An end midpoint has been encountered within our object. We
+            // need to go ahead and append a run with our endpoint.
+            if (nextMidpoint.offset() + 1 <= end) {
+                lineMidpointState.setBetweenMidpoints(true);
+                lineMidpointState.incrementCurrentMidpoint();
+                if (nextMidpoint.offset() != UINT_MAX) { // UINT_MAX means stop at the object and don't nclude any of it.
+                    if (nextMidpoint.offset() + 1 > start)
+                        appendRunObjectIfNecessary(obj, start, nextMidpoint.offset() + 1, resolver, behavior, tracker);
+                    start = nextMidpoint.offset() + 1;
+                    continue;
+                }
+            } else {
+                appendRunObjectIfNecessary(obj, start, end, resolver, behavior, tracker);
+            }
         }
+        return;
     }
 }
 

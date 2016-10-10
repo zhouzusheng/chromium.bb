@@ -359,6 +359,24 @@ void WebViewImpl::clearTooltip()
     rwhv->SetTooltipText(L"");
 }
 
+void WebViewImpl::enableForInputEvents(bool enabled)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+
+    if (!d_widget)
+        createWidget(ui::GetHiddenWindow());
+
+    ::EnableWindow(d_widget->getNativeWidgetView(), enabled);
+}
+
+void WebViewImpl::rootWindowCompositionChanged()
+{
+    if (d_widget) {
+        d_widget->compositionChanged();
+    }
+}
+
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
 {
     NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";
@@ -691,10 +709,6 @@ void WebViewImpl::createWidget(blpwtk2::NativeView parent)
         this,
         d_properties.activateWindowOnMouseDown,
         d_properties.rerouteMouseWheelToAnyRelatedWindow);
-
-    if (d_properties.inputEventsDisabled) {
-        ::EnableWindow(d_widget->getNativeWidgetView(), FALSE);
-    }
 
     if (d_implClient) {
         d_implClient->updateNativeViews(d_widget->getNativeWidgetView(), ui::GetHiddenWindow());

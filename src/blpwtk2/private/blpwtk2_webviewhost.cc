@@ -123,6 +123,8 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetBackgroundColor, onSetBackgroundColor)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetRegion, onSetRegion)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_ClearTooltip, onClearTooltip)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableForInputEvents, onEnableForInputEvents)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowCompositionChanged, onRootWindowCompositionChanged)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
 
@@ -352,6 +354,16 @@ void WebViewHost::onSetRegion(const std::vector<std::uint8_t>& regionBlob)
 void WebViewHost::onClearTooltip()
 {
     d_webView->clearTooltip();
+}
+
+void WebViewHost::onEnableForInputEvents(bool enabled)
+{
+    d_webView->enableForInputEvents(enabled);
+}
+
+void WebViewHost::onRootWindowCompositionChanged()
+{
+    d_webView->rootWindowCompositionChanged();
 }
 
 // IPC::Sender override

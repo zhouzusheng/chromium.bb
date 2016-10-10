@@ -33,7 +33,6 @@ struct WebViewProperties {
     bool activateWindowOnMouseDown;
     bool domPasteEnabled;
     bool javascriptCanAccessClipboard;
-    bool inputEventsDisabled;
     bool rerouteMouseWheelToAnyRelatedWindow;
 };
 

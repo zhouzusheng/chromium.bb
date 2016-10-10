@@ -136,6 +136,8 @@ class WebViewProxy : public WebView,
     void setRegion(NativeRegion region) override;
     void setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor) override;
     void clearTooltip() override;
+    void enableForInputEvents(bool enabled) override;
+    void rootWindowCompositionChanged() override;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.

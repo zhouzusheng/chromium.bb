@@ -355,6 +355,12 @@ void WebViewProxy::clearTooltip()
     Send(new BlpWebViewHostMsg_ClearTooltip(d_routingId));
 }
 
+void WebViewProxy::enableForInputEvents(bool enabled)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_EnableForInputEvents(d_routingId, enabled));
+}
+
 void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)
 {
     DCHECK(Statics::isRendererMainThreadMode());

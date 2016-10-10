@@ -119,6 +119,8 @@ IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetBackgroundColor,
                     blpwtk2::NativeColor /* color */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetRegion,
                     std::vector<std::uint8_t> /* region blob */)
+IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_EnableForInputEvents,
+                    bool /* enabled */)
 
 // This destroys the WebView.
 IPC_MESSAGE_CONTROL1(BlpWebViewHostMsg_Destroy,

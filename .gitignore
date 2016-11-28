@@ -1,0 +1,20 @@
+# Gyp generated files
+*.vcproj
+*.sln
+*.rules
+*_rules.mk
+*.user
+*.vcxproj
+*.vcxproj.filters
+
+# VS generated files
+*.ncb
+*.suo
+*.sdf
+*.opensdf
+
+# Generated python
+*.pyc
+
+# Build output directories
+src/out

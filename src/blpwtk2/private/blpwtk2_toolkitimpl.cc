@@ -389,7 +389,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     properties.activateWindowOnMouseDown = params.activateWindowOnMouseDown();
     properties.domPasteEnabled = params.domPasteEnabled();
     properties.javascriptCanAccessClipboard = params.javascriptCanAccessClipboard();
-    properties.inputEventsDisabled = params.inputEventsDisabled();
+    properties.rerouteMouseWheelToAnyRelatedWindow = params.rerouteMouseWheelToAnyRelatedWindow();
 
     if (Statics::isRendererMainThreadMode()) {
         ProfileProxy* profileProxy = static_cast<ProfileProxy*>(profile);

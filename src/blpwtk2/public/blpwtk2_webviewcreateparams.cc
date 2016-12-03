@@ -37,7 +37,7 @@ WebViewCreateParams::WebViewCreateParams()
 , d_javascriptCanAccessClipboard(false)
 , d_rendererAffinity(Constants::ANY_OUT_OF_PROCESS_RENDERER)
 , d_profile(0)
-, d_inputEventsDisabled(false)
+, d_rerouteMouseWheelToAnyRelatedWindow(false)
 {
 }
 
@@ -85,9 +85,9 @@ void WebViewCreateParams::setProfile(Profile* profile)
     d_profile = profile;
 }
 
-void WebViewCreateParams::setInputEventsDisabled(bool inputEventsDisabled)
+void WebViewCreateParams::setRerouteMouseWheelToAnyRelatedWindow(bool rerouteMouseWheelToAnyRelatedWindow)
 {
-    d_inputEventsDisabled = inputEventsDisabled;
+    d_rerouteMouseWheelToAnyRelatedWindow = rerouteMouseWheelToAnyRelatedWindow;
 }
 
 }  // close namespace blpwtk2

@@ -323,7 +323,7 @@ void PrepareDragData(const DropData& drop_data,
         formatetc.lindex = -1;
         formatetc.tymed = TYMED_HGLOBAL;
 
-        provider->SetCustomeData(formatetc, it->second);
+        provider->SetCustomData(formatetc, it->second);
         custom_data.insert(std::make_pair(sft, it->second));
       }
       else {
@@ -375,6 +375,15 @@ void PrepareDropData(DropData* drop_data, const ui::OSExchangeData& data) {
   if (data.GetPickledData(ui::Clipboard::GetWebCustomDataFormatType(), &pickle))
     ui::ReadCustomDataIntoMap(
         pickle.data(), pickle.size(), &drop_data->custom_data);
+
+  std::vector<FORMATETC> custom_data_formats;
+  data.provider().EnumerateCustomData(&custom_data_formats);
+  for (const auto& format_etc : custom_data_formats) {
+    std::wstring key = L"blp_" + std::to_wstring(format_etc.cfFormat);
+    base::string16 value;
+    data.provider().GetCustomData(format_etc, &value);
+    drop_data->custom_data.insert(std::make_pair(key, value));
+  }
 }
 
 // Utilities to convert between blink::WebDragOperationsMask and

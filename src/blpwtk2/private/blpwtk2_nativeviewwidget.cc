@@ -34,7 +34,8 @@ namespace blpwtk2 {
 NativeViewWidget::NativeViewWidget(gfx::NativeView contents,
                                    blpwtk2::NativeView parent,
                                    NativeViewWidgetDelegate* delegate,
-                                   bool activatable)
+                                   bool activatable,
+                                   bool rerouteMouseWheelToAnyRelatedWindow)
 : d_delegate(delegate)
 , d_nativeViewHost(new views::NativeViewHost())
 , d_impl(new views::Widget())
@@ -49,6 +50,7 @@ NativeViewWidget::NativeViewWidget(gfx::NativeView contents,
     params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
     params.activatable = activatable ? views::Widget::InitParams::ACTIVATABLE_DEFAULT : views::Widget::InitParams::ACTIVATABLE_NO;
     params.layer_type = ui::LAYER_SOLID_COLOR;
+    params.reroute_mouse_wheel_to_any_related_window = rerouteMouseWheelToAnyRelatedWindow;
     d_impl->set_focus_on_creation(false);
     d_impl->Init(params);
     d_nativeViewHost->Attach(contents);
@@ -133,6 +135,12 @@ void NativeViewWidget::setRegion(blpwtk2::NativeRegion region)
     ::SetWindowRgn(hwnd,
                    region,
                    ::IsWindowVisible(hwnd));
+}
+
+void NativeViewWidget::compositionChanged()
+{
+    DCHECK(d_impl);
+    d_impl->CompositionChanged();
 }
 
 // views::WidgetDelegate overrides

@@ -135,6 +135,7 @@ void DesktopWindowTreeHostWin::Init(aura::Window* content_window,
     parent_hwnd = params.parent->GetHost()->GetAcceleratedWidget();
 
   message_handler_->set_remove_standard_frame(params.remove_standard_frame);
+  message_handler_->set_reroute_mouse_wheel_to_any_related_window(params.reroute_mouse_wheel_to_any_related_window);
 
   has_non_client_view_ = Widget::RequiresNonClientView(params.type);
 
@@ -412,6 +413,10 @@ bool DesktopWindowTreeHostWin::ShouldWindowContentsBeTransparent() const {
 
 void DesktopWindowTreeHostWin::FrameTypeChanged() {
   message_handler_->FrameTypeChanged();
+  SetWindowTransparency();
+}
+
+void DesktopWindowTreeHostWin::CompositionChanged() {
   SetWindowTransparency();
 }
 

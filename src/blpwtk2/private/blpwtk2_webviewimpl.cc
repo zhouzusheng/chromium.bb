@@ -350,6 +350,33 @@ void WebViewImpl::setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShould
     NOTREACHED() << "setLCDTextShouldBlendWithCSSBackgroundColor() not supported in WebViewImpl";
 }
 
+void WebViewImpl::clearTooltip()
+{
+    content::RenderWidgetHostViewBase* rwhv =
+        static_cast<content::RenderWidgetHostViewBase*>(
+            d_webContents->GetRenderWidgetHostView());
+
+    rwhv->SetTooltipText(L"");
+}
+
+void WebViewImpl::enableForInputEvents(bool enabled)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+
+    if (!d_widget)
+        createWidget(ui::GetHiddenWindow());
+
+    ::EnableWindow(d_widget->getNativeWidgetView(), enabled);
+}
+
+void WebViewImpl::rootWindowCompositionChanged()
+{
+    if (d_widget) {
+        d_widget->compositionChanged();
+    }
+}
+
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
 {
     NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";
@@ -680,11 +707,8 @@ void WebViewImpl::createWidget(blpwtk2::NativeView parent)
         d_webContents->GetNativeView(),
         parent,
         this,
-        d_properties.activateWindowOnMouseDown);
-
-    if (d_properties.inputEventsDisabled) {
-        ::EnableWindow(d_widget->getNativeWidgetView(), FALSE);
-    }
+        d_properties.activateWindowOnMouseDown,
+        d_properties.rerouteMouseWheelToAnyRelatedWindow);
 
     if (d_implClient) {
         d_implClient->updateNativeViews(d_widget->getNativeWidgetView(), ui::GetHiddenWindow());

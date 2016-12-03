@@ -309,10 +309,25 @@ int WebViewProxy::getRoutingId() const
     return d_routingId;
 }
 
+#define GetAValue(argb)      (LOBYTE((argb)>>24))
+
 void WebViewProxy::setBackgroundColor(NativeColor color)
 {
+    DCHECK(Statics::isRendererMainThreadMode());
     DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_isMainFrameAccessible)
+        << "You should wait for didFinishLoad";
+    DCHECK(d_gotRenderViewInfo);
+
     Send(new BlpWebViewHostMsg_SetBackgroundColor(d_routingId, color));
+
+    content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
+    rv->GetWebView()->setBaseBackgroundColor(
+        SkColorSetARGB(
+            GetAValue(color),
+            GetRValue(color),
+            GetGValue(color),
+            GetBValue(color)));
 }
 
 void WebViewProxy::setRegion(NativeRegion region)
@@ -347,6 +362,24 @@ void WebViewProxy::setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShoul
 
     content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
     rv->GetWebView()->setLCDTextShouldBlendWithCSSBackgroundColor(lcdTextShouldBlendWithCSSBackgroundColor);
+}
+
+void WebViewProxy::clearTooltip()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_ClearTooltip(d_routingId));
+}
+
+void WebViewProxy::rootWindowCompositionChanged()
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_RootWindowCompositionChanged(d_routingId));
+}
+
+void WebViewProxy::enableForInputEvents(bool enabled)
+{
+    DCHECK(Statics::isInApplicationMainThread());
+    Send(new BlpWebViewHostMsg_EnableForInputEvents(d_routingId, enabled));
 }
 
 void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)

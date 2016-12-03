@@ -146,6 +146,9 @@ class WebViewImpl : public WebView,
     void setBackgroundColor(NativeColor color) override;
     void setRegion(NativeRegion region) override;
     void setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor) override;
+    void clearTooltip() override;
+    void enableForInputEvents(bool enabled) override;
+    void rootWindowCompositionChanged() override;
 
   private:
     void createWidget(blpwtk2::NativeView parent);

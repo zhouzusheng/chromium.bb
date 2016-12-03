@@ -36,6 +36,13 @@ WebFrameImpl::WebFrameImpl(blink::WebFrame* impl)
 {
 }
 
+WebFrameImpl::~WebFrameImpl()
+{
+    if (d_impl->isWebLocalFrame() && d_contentSettingsDelegate) {
+        d_impl->toWebLocalFrame()->setContentSettingsClient(nullptr);
+    }
+}
+
 v8::Local<v8::Context> WebFrameImpl::mainWorldScriptContext() const
 {
     return d_impl->mainWorldScriptContext();

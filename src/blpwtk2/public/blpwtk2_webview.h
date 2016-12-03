@@ -325,6 +325,13 @@ public:
     // eventually be composited over an opaque layer and still display correctly.
     virtual void setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor) = 0;
 
+    virtual void clearTooltip() = 0;
+
+    virtual void enableForInputEvents(bool enabled) = 0;
+
+    // Notify the webview that desktop composition has been enabled or disabled.
+    virtual void rootWindowCompositionChanged() = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

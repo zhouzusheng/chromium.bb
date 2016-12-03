@@ -2,10 +2,10 @@
 
 本分支主要目的是修改Bloomberg Chromium， 删除不必要的代码，进一步减少编译出来的代码大小。
 删除的代码包括：
-	*打印支持
-	*PDF 组件
-	*HTML5 media
-	*device（ usb， power etc）
+    * 打印支持
+    * PDF 组件
+    * HTML5 media
+    * device（ usb， power etc）
 	*WEBRTC
 	*WEBP
 	*PPAPI（保留 NPAPI）
@@ -18,12 +18,11 @@
     * [Python 2.7](https://www.python.org/download/releases/2.7.6/)
     * Visual Studio 2013 Update 4 (see [VS updates](https://support.microsoft.com/en-us/kb/2829760))
     * [Ninja](https://github.com/martine/ninja)
-	* Run the following command from inside the top-level directory:
-		*修改 setenv.bat, 替换其中的 python 路径
-		*启动 VS2013 控制台
-        * 切换到顶层目录
-		setenv.bat    
-		src/build/runhooks
+    * 修改 setenv.bat, 替换其中的 python 路径
+    * 启动 VS2013 控制台
+    * 切换到顶层目录
+    * setenv.bat    
+    * src/build/runhooks
 
 * You can build it either on the command-line or from Visual Studio.
 * If building from the command line:

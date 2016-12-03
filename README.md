@@ -2,13 +2,13 @@
 
 本分支主要目的是修改Bloomberg Chromium， 删除不必要的代码，进一步减少编译出来的代码大小。
 删除的代码包括：
-	打印支持
-	PDF 组件
-	HTML5 media
-	device（ usb， power etc）
-	WEBRTC
-	WEBP
-	PPAPI（保留 NPAPI）
+	*打印支持
+	*PDF 组件
+	*HTML5 media
+	*device（ usb， power etc）
+	*WEBRTC
+	*WEBP
+	*PPAPI（保留 NPAPI）
 	
 
 ## Build Instructions

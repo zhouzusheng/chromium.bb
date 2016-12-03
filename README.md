@@ -1,16 +1,20 @@
 # minkit
 
 
-* 本分支主要目的是修改Bloomberg Chromium， 删除不必要的代码，进一步减少编译出来的代码大小。
+* 本分支主要目的是修改Bloomberg Chromium， 删除不必要的代码，减少编译出来的代码大小。
 * 删除的代码包括：
     * 打印支持
     * PDF 组件
-    * HTML5 media
-    * device（ usb， power etc）
-	*WEBRTC
-	*WEBP
-	*PPAPI（保留 NPAPI）
-	
+    * HTML5 media, medea capture
+    * DEVICE API (usb， power， etc.）
+    * WEBRTC
+    * WEBP
+    * PPAPI（保留 NPAPI）
+    * SANDBOX
+    * remoting
+    * safe_browsing
+    * speech	
+    * 其他一些小功能	
 
 ## Build Instructions
 

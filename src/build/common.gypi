@@ -422,7 +422,7 @@
       'use_titlecase_in_grd%': 0,
 
       # Remoting compilation is enabled by default. Set to 0 to disable.
-      'remoting%': 1,
+      'remoting%': 0,
 
       # Configuration policy is enabled by default. Set to 0 to disable.
       'configuration_policy%': 1,
@@ -431,10 +431,10 @@
       # for safe browsing feature. Safe browsing can be compiled in 3 different
       # levels: 0 disables it, 1 enables it fully, and 2 enables mobile
       # protection via an external API.
-      'safe_browsing%': 1,
+      'safe_browsing%': 0,
 
       # Web speech is enabled by default. Set to 0 to disable.
-      'enable_web_speech%': 1,
+      'enable_web_speech%': 0,
 
       # 'Ok Google' hotwording is disabled by default. Set to 1 to enable. (This
       # will download a closed-source NaCl module at startup.) Chrome-branded
@@ -452,7 +452,7 @@
       # Run tools/clang/scripts/update.sh to make sure they are compiled.
       # This causes 'clang_chrome_plugins_flags' to be set.
       # Has no effect if 'clang' is not set as well.
-      'clang_use_chrome_plugins%': 1,
+      'clang_use_chrome_plugins%': 0,
 
       # Enable building with ASAN (Clang's -fsanitize=address option).
       # -fsanitize=address only works with clang, but asan=1 implies clang=1
@@ -548,17 +548,17 @@
       'enable_pre_sync_backup%': 0,
 
       # Enable Chrome browser extensions
-      'enable_extensions%': 1,
+      'enable_extensions%': 0,
 
       # Enable Google Now.
-      'enable_google_now%': 1,
+      'enable_google_now%': 0,
 
       # Enable basic printing support and UI.
-      'enable_basic_printing%': 1,
+      'enable_basic_printing%': 0,
 
       # Enable printing with print preview. It does not imply
       # enable_basic_printing. It's possible to build Chrome with preview only.
-      'enable_print_preview%': 1,
+      'enable_print_preview%': 0,
 
       # Set the version of CLD.
       #   1: (DEPRECATED! See http://crbug.com/528305 for info) Use only CLD1.
@@ -573,17 +573,17 @@
       'cld2_table_size%': 2,
 
       # Enable spell checker.
-      'enable_spellcheck%': 1,
+      'enable_spellcheck%': 0,
 
       # Use the operating system spellchecker, e.g. NSSpellChecker on Mac or
       # SpellCheckerSession on Android.
       'use_browser_spellchecker%': 0,
 
       # Webrtc compilation is enabled by default. Set to 0 to disable.
-      'enable_webrtc%': 1,
+      'enable_webrtc%': 0,
 
       # Media router support is enabled by default. Set to 0 to disable.
-      'enable_media_router%': 1,
+      'enable_media_router%': 0,
 
       # Enables use of the session service, which is enabled by default.
       # Support for disabling depends on the platform.
@@ -604,7 +604,7 @@
       'enable_background%': 1,
 
       # Enable the task manager by default.
-      'enable_task_manager%': 1,
+      'enable_task_manager%': 0,
 
       # Enables used resource whitelist generation; disabled by default.
       'enable_resource_whitelist_generation%': 0,
@@ -895,7 +895,7 @@
         ['OS=="android" or OS=="ios" or (embedded==1 and chromecast==0)', {
           'enable_pdf%': 0,
         }, {
-          'enable_pdf%': 1,
+          'enable_pdf%': 0,
         }],
 
         ['chromeos==1 or OS=="android" or OS=="ios" or desktop_linux==1', {
@@ -969,7 +969,7 @@
 
         ['chromeos==1', {
           'enable_basic_printing%': 0,
-          'enable_print_preview%': 1,
+          'enable_print_preview%': 0,
         }],
 
         # Do not enable the Settings App on ChromeOS.
@@ -2046,7 +2046,7 @@
       }],
 
       ['enable_plugins==1 and (OS=="linux" or OS=="mac" or OS=="win") and chromecast==0', {
-        'enable_pepper_cdms%': 1,
+        'enable_pepper_cdms%': 0,
       }, {
         'enable_pepper_cdms%': 0,
       }],
@@ -3181,7 +3181,8 @@
               '_SCL_SECURE_NO_DEPRECATE',
             ],
             'msvs_disabled_warnings': [
-              4800,
+              4456, 4457, 4458, 4459,
+              4800,4996, 4067, 4800, 4819,4251
             ],
             'msvs_settings': {
               'VCCLCompilerTool': {
@@ -3200,6 +3201,8 @@
               # TODO(darin): Unfortunately, some third_party code depends on base.
                 'msvs_disabled_warnings': [
                   4251,  # class 'std::xx' needs to have dll-interface.
+				  4456, 4457, 4458, 4459,
+              4800,4996, 4067, 4800, 4819,4251
                  ],
               }],
             ],
@@ -3253,6 +3256,7 @@
           ['OS=="win" and component=="shared_library"', {
             'msvs_disabled_warnings': [
               4251,  # class 'std::xx' needs to have dll-interface.
+			  4996, 4067, 4800, 4819
             ],
           }],
         ],
@@ -5639,7 +5643,7 @@
                     # actually be a bug, so the incremental value of C4702 for
                     # PGO builds is likely very small.
                     'msvs_disabled_warnings': [
-                      4702
+                      4702,4996, 4067, 4800, 4819,4251
                     ],
                     'msvs_settings': {
                       'VCCLCompilerTool': {
@@ -5662,6 +5666,7 @@
             # installed Express users.
             'msvs_disabled_warnings': [
               4702,
+			  4996, 4067, 4800, 4819,4251
             ],
           }],
         ],
@@ -5744,7 +5749,7 @@
           # These are variable shadowing warnings that are new in VS2015. We
           # should work through these at some point -- they may be removed from
           # the RTM release in the /W4 set.
-          4456, 4457, 4458, 4459,
+          4456, 4457, 4458, 4459, 4996, 4067, 4800, 4819,4251
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {

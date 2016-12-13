@@ -5,6 +5,7 @@
 #include "ui/views/controls/menu/menu_key_event_handler.h"
 
 #include "ui/aura/env.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/views_delegate.h"
 
@@ -52,7 +53,7 @@ void MenuKeyEventHandler::OnKeyEvent(ui::KeyEvent* event) {
     const int flags = event->flags();
     if (menu_controller->exit_type() == MenuController::EXIT_NONE &&
         (flags & kKeyFlagsMask) == 0) {
-      base::char16 c = event->GetCharacter();
+      char c = ui::DomCodeToUsLayoutCharacter(event->code(), flags);
       menu_controller->SelectByChar(c);
     }
   }

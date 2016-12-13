@@ -15,10 +15,6 @@ namespace base {
 class FilePath;
 }
 
-namespace sandbox {
-class TargetPolicy;
-}
-
 namespace content {
 
 // Allows a caller of StartSandboxedProcess or
@@ -44,7 +40,7 @@ class CONTENT_EXPORT SandboxedProcessLauncherDelegate {
   virtual bool DisableDefaultPolicy();
 
   // Called right before spawning the process. Returns false on failure.
-  virtual bool PreSpawnTarget(sandbox::TargetPolicy* policy);
+  virtual bool PreSpawnTarget();
 
   // Called right after the process is launched, but before its thread is run.
   virtual void PostSpawnTarget(base::ProcessHandle process) {}

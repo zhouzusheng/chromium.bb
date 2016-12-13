@@ -123,13 +123,11 @@ class HistoryController;
 class HistoryEntry;
 class MouseLockDispatcher;
 class PageState;
-class PepperPluginInstanceImpl;
 class RenderViewImplTest;
 class RenderViewObserver;
 class RenderViewTest;
 class RendererDateTimePicker;
 class RendererWebColorChooserImpl;
-class SpeechRecognitionDispatcher;
 class WebPluginDelegateProxy;
 struct DropData;
 struct FaviconURL;
@@ -245,24 +243,7 @@ class CONTENT_EXPORT RenderViewImpl
   // Plugin-related functions --------------------------------------------------
 
 #if defined(ENABLE_PLUGINS)
-  // Get/set the plugin which will be used as to handle document find requests.
-  void set_plugin_find_handler(PepperPluginInstanceImpl* plugin) {
-    plugin_find_handler_ = plugin;
-  }
-  PepperPluginInstanceImpl* plugin_find_handler() {
-    return plugin_find_handler_;
-  }
-
-  PepperPluginInstanceImpl* focused_pepper_plugin() {
-    return focused_pepper_plugin_;
-  }
-  PepperPluginInstanceImpl* pepper_last_mouse_event_target() {
-    return pepper_last_mouse_event_target_;
-  }
-  void set_pepper_last_mouse_event_target(PepperPluginInstanceImpl* plugin) {
-    pepper_last_mouse_event_target_ = plugin;
-  }
-
+  
 #if defined(OS_MACOSX) || defined(OS_WIN)
   // Informs the render view that the given plugin has gained or lost focus.
   void PluginFocusChanged(bool focused, int plugin_id);
@@ -272,17 +253,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Starts plugin IME.
   void StartPluginIme();
 #endif
-
-  // Indicates that the given instance has been created.
-  void PepperInstanceCreated(PepperPluginInstanceImpl* instance);
-
-  // Indicates that the given instance is being destroyed. This is called from
-  // the destructor, so it's important that the instance is not dereferenced
-  // from this call.
-  void PepperInstanceDeleted(PepperPluginInstanceImpl* instance);
-
-  // Notification that the given plugin is focused or unfocused.
-  void PepperFocusChanged(PepperPluginInstanceImpl* instance, bool focused);
 
   void RegisterPluginDelegate(WebPluginDelegateProxy* delegate);
   void UnregisterPluginDelegate(WebPluginDelegateProxy* delegate);
@@ -392,8 +362,6 @@ class CONTENT_EXPORT RenderViewImpl
       const blink::WebVector<blink::WebRect>& target_rects) override;
 #endif
   blink::WebString acceptLanguages() override;
-  void setRubberbandRect(const blink::WebRect&) override;
-  void hideRubberbandRect() override;
   void navigateBackForwardSoon(int offset) override;
   int historyBackListCount() override;
   int historyForwardListCount() override;
@@ -667,7 +635,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnUpdateWebPreferences(const WebPreferences& prefs);
   void OnSetPageScale(float page_scale_factor);
   void OnZoom(PageZoom zoom);
-  void OnEnableAltDragRubberbanding(bool enable);
   void OnEnableViewSourceMode();
   void OnForceRedraw(int request_id);
   void OnSelectWordAroundCaret();
@@ -922,10 +889,6 @@ class CONTENT_EXPORT RenderViewImpl
   // along with the RenderView automatically.  This is why we just store
   // weak references.
 
-  // The speech recognition dispatcher attached to this view, lazily
-  // initialized.
-  SpeechRecognitionDispatcher* speech_recognition_dispatcher_;
-
   // Mouse Lock dispatcher attached to this view.
   MouseLockDispatcher* mouse_lock_dispatcher_;
 
@@ -958,26 +921,6 @@ class CONTENT_EXPORT RenderViewImpl
   int focused_plugin_id_;
 #endif
 
-#if defined(ENABLE_PLUGINS)
-  PepperPluginInstanceImpl* plugin_find_handler_;
-
-  typedef std::set<PepperPluginInstanceImpl*> PepperPluginSet;
-  PepperPluginSet active_pepper_instances_;
-
-  // TODO(jam): these belong on RenderFrame, once the browser knows which frame
-  // is focused and sends the IPCs which use these to the correct frame. Until
-  // then, we must store these on RenderView as that's the one place that knows
-  // about all the RenderFrames for a page.
-
-  // Whether or not the focus is on a PPAPI plugin
-  PepperPluginInstanceImpl* focused_pepper_plugin_;
-
-  // The plugin instance that received the last mouse event. It is set to NULL
-  // if the last mouse event went to elements other than Pepper plugins.
-  // |pepper_last_mouse_event_target_| is not owned by this class. We depend on
-  // the RenderFrameImpl to NULL it out when it destructs.
-  PepperPluginInstanceImpl* pepper_last_mouse_event_target_;
-#endif
 
   // Misc ----------------------------------------------------------------------
 

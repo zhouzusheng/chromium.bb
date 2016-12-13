@@ -13,9 +13,7 @@
 #include "base/command_line.h"
 
 #if defined(OS_WIN)
-namespace sandbox {
-struct SandboxInterfaceInfo;
-}
+
 #elif defined(OS_MACOSX)
 namespace base {
 namespace mac {
@@ -30,7 +28,6 @@ struct MainFunctionParams {
   explicit MainFunctionParams(const base::CommandLine& cl)
       : command_line(cl),
 #if defined(OS_WIN)
-        sandbox_info(NULL),
 #elif defined(OS_MACOSX)
         autorelease_pool(NULL),
 #elif defined(OS_POSIX) && !defined(OS_ANDROID)
@@ -42,7 +39,6 @@ struct MainFunctionParams {
   const base::CommandLine& command_line;
 
 #if defined(OS_WIN)
-  sandbox::SandboxInterfaceInfo* sandbox_info;
 #elif defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool* autorelease_pool;
 #elif defined(OS_POSIX) && !defined(OS_ANDROID)

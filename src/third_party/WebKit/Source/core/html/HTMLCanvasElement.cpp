@@ -111,7 +111,6 @@ inline HTMLCanvasElement::HTMLCanvasElement(Document& document)
     , DocumentVisibilityObserver(document)
     , m_size(DefaultWidth, DefaultHeight)
     , m_ignoreReset(false)
-    , m_bbDirectCompositingDisabled(false)
     , m_externallyAllocatedMemory(0)
     , m_originClean(true)
     , m_didFailToCreateImageBuffer(false)
@@ -256,8 +255,6 @@ CanvasRenderingContext* HTMLCanvasElement::getCanvasRenderingContext(const Strin
 
 bool HTMLCanvasElement::shouldBeDirectComposited() const
 {
-    if (m_bbDirectCompositingDisabled)
-        return false;
     return (m_context && m_context->isAccelerated()) || (hasImageBuffer() && buffer()->isExpensiveToPaint());
 }
 

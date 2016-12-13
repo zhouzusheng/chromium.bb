@@ -121,8 +121,7 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
                      int32 routing_id,
                      int32 main_frame_routing_id,
                      bool swapped_out,
-                     bool hidden,
-                     bool has_initialized_audio_host);
+                     bool hidden);
   ~RenderViewHostImpl() override;
 
   // RenderViewHost implementation.
@@ -184,7 +183,6 @@ class CONTENT_EXPORT RenderViewHostImpl : public RenderViewHost,
   WebPreferences GetWebkitPreferences() override;
   void UpdateWebkitPreferences(const WebPreferences& prefs) override;
   void OnWebkitPreferencesChanged() override;
-  void EnableAltDragRubberbanding(bool enable) override;
   void SelectWordAroundCaret() override;
 
 #if defined(OS_ANDROID)

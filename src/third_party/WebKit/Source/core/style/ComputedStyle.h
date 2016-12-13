@@ -634,8 +634,8 @@ public:
 
     static bool collapseWhiteSpace(EWhiteSpace ws)
     {
-        // pre, pre-wrap and -bb-pre-wrap-text do not collapse whitespace.
-        return ws != PRE && ws != PRE_WRAP && ws != BB_PRE_WRAP_TEXT;
+        // Pre and prewrap do not collapse whitespace.
+        return ws != PRE && ws != PRE_WRAP;
     }
 
     bool collapseWhiteSpace() const
@@ -657,7 +657,7 @@ public:
 
     bool breakOnlyAfterWhiteSpace() const
     {
-        return whiteSpace() == PRE_WRAP || whiteSpace() == BB_PRE_WRAP_TEXT || lineBreak() == LineBreakAfterWhiteSpace;
+        return whiteSpace() == PRE_WRAP || lineBreak() == LineBreakAfterWhiteSpace;
     }
 
     bool breakWords() const
@@ -824,7 +824,6 @@ public:
     EUserModify userModify() const { return static_cast<EUserModify>(rareInheritedData->userModify); }
     EUserDrag userDrag() const { return static_cast<EUserDrag>(rareNonInheritedData->userDrag); }
     EUserSelect userSelect() const { return static_cast<EUserSelect>(rareInheritedData->userSelect); }
-    ERubberbandable rubberbandable() const { return static_cast<ERubberbandable>(rareInheritedData->rubberbandable); }
     TextOverflow textOverflow() const { return static_cast<TextOverflow>(rareNonInheritedData->textOverflow); }
     EMarginCollapse marginBeforeCollapse() const { return static_cast<EMarginCollapse>(rareNonInheritedData->marginBeforeCollapse); }
     EMarginCollapse marginAfterCollapse() const { return static_cast<EMarginCollapse>(rareNonInheritedData->marginAfterCollapse); }
@@ -1356,7 +1355,6 @@ public:
     void setUserModify(EUserModify u) { SET_VAR(rareInheritedData, userModify, u); }
     void setUserDrag(EUserDrag d) { SET_VAR(rareNonInheritedData, userDrag, d); }
     void setUserSelect(EUserSelect s) { SET_VAR(rareInheritedData, userSelect, s); }
-    void setRubberbandable(ERubberbandable r) { SET_VAR(rareInheritedData, rubberbandable, r); }
     void setTextOverflow(TextOverflow overflow) { SET_VAR(rareNonInheritedData, textOverflow, overflow); }
     void setMarginBeforeCollapse(EMarginCollapse c) { SET_VAR(rareNonInheritedData, marginBeforeCollapse, c); }
     void setMarginAfterCollapse(EMarginCollapse c) { SET_VAR(rareNonInheritedData, marginAfterCollapse, c); }
@@ -1426,8 +1424,6 @@ public:
 
     void setWrapFlow(WrapFlow wrapFlow) { SET_VAR(rareNonInheritedData, m_wrapFlow, wrapFlow); }
     void setWrapThrough(WrapThrough wrapThrough) { SET_VAR(rareNonInheritedData, m_wrapThrough, wrapThrough); }
-
-    void setCaretColor(const StyleColor& c) { SET_VAR(rareInheritedData, caretColor, c); }
 
     // Apple-specific property setters
     void setPointerEvents(EPointerEvents p) { inherited_flags._pointerEvents = p; }
@@ -1625,7 +1621,6 @@ public:
     static NinePieceImage initialNinePieceImage() { return NinePieceImage(); }
     static LengthSize initialBorderRadius() { return LengthSize(Length(0, Fixed), Length(0, Fixed)); }
     static ECaptionSide initialCaptionSide() { return CAPTOP; }
-    static StyleColor initialCaretColor() { return StyleColor::currentColor(); }
     static EClear initialClear() { return CNONE; }
     static LengthBox initialClip() { return LengthBox(); }
     static TextDirection initialDirection() { return LTR; }
@@ -1701,7 +1696,6 @@ public:
     static EUserModify initialUserModify() { return READ_ONLY; }
     static EUserDrag initialUserDrag() { return DRAG_AUTO; }
     static EUserSelect initialUserSelect() { return SELECT_TEXT; }
-    static ERubberbandable initialRubberbandable() { return RUBBERBANDABLE_TEXT; }
     static TextOverflow initialTextOverflow() { return TextOverflowClip; }
     static EMarginCollapse initialMarginBeforeCollapse() { return MCOLLAPSE; }
     static EMarginCollapse initialMarginAfterCollapse() { return MCOLLAPSE; }
@@ -1874,7 +1868,6 @@ private:
     StyleColor visitedLinkTextEmphasisColor() const { return rareInheritedData->visitedLinkTextEmphasisColor(); }
     StyleColor visitedLinkTextFillColor() const { return rareInheritedData->visitedLinkTextFillColor(); }
     StyleColor visitedLinkTextStrokeColor() const { return rareInheritedData->visitedLinkTextStrokeColor(); }
-    StyleColor caretColor() const { return rareInheritedData->caretColor; }
 
     StyleColor decorationColorIncludingFallback(bool visitedLink) const;
     Color colorIncludingFallback(int colorProperty, bool visitedLink) const;

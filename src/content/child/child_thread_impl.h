@@ -11,7 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
-#include "base/power_monitor/power_monitor.h"
 #include "base/sequenced_task_runner.h"
 #include "base/tracked_objects.h"
 #include "content/child/mojo/mojo_application.h"
@@ -299,8 +298,6 @@ class CONTENT_EXPORT ChildThreadImpl
   // Observes the trace event system. When tracing is enabled, optionally
   // starts profiling the tcmalloc heap.
   scoped_ptr<base::trace_event::TraceMemoryController> trace_memory_controller_;
-
-  scoped_ptr<base::PowerMonitor> power_monitor_;
 
   scoped_refptr<ChildMessageFilter> geofencing_message_filter_;
 

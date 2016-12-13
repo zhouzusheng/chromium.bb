@@ -46,7 +46,6 @@
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/input/input_handler_manager.h"
-#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
@@ -1795,10 +1794,6 @@ void RenderWidget::OnUpdateScreenRects(const gfx::Rect& view_screen_rect,
     view_screen_rect_ = view_screen_rect;
     window_screen_rect_ = window_screen_rect;
   }
-
-  if (webwidget_)
-    webwidget_->didChangeWindowRect();
-
   Send(new ViewHostMsg_UpdateScreenRects_ACK(routing_id()));
 }
 

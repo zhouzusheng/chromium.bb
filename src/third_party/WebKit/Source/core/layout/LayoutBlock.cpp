@@ -109,9 +109,23 @@ static TrackedDescendantsMap* gPercentHeightDescendantsMap = nullptr;
 static TrackedContainerMap* gPositionedContainerMap = nullptr;
 static TrackedContainerMap* gPercentHeightContainerMap = nullptr;
 
-typedef WTF::HashSet<LayoutBlock*> DelayedUpdateScrollInfoSet;
+struct ScrollInfo {
+    ScrollInfo() : autoHorizontalScrollBarChanged(false), autoVerticalScrollBarChanged(false) {}
+    DoubleSize scrollOffset;
+    bool autoHorizontalScrollBarChanged;
+    bool autoVerticalScrollBarChanged;
+    bool hasOffset() const { return scrollOffset != DoubleSize(); }
+    bool scrollBarsChanged() const { return autoHorizontalScrollBarChanged || autoVerticalScrollBarChanged; }
+    void merge(const ScrollInfo& other)
+    {
+        // We always keep the first scrollOffset we saw for this block, so don't copy that field.
+        autoHorizontalScrollBarChanged |= other.autoHorizontalScrollBarChanged;
+        autoVerticalScrollBarChanged |= other.autoVerticalScrollBarChanged;
+    }
+};
+typedef WTF::HashMap<LayoutBlock*, ScrollInfo> DelayedUpdateScrollInfoMap;
 static int gDelayUpdateScrollInfo = 0;
-static DelayedUpdateScrollInfoSet* gDelayedUpdateScrollInfoSet = nullptr;
+static DelayedUpdateScrollInfoMap* gDelayedUpdateScrollInfoMap = nullptr;
 
 LayoutBlock::LayoutBlock(ContainerNode* node)
     : LayoutBox(node)
@@ -201,8 +215,8 @@ void LayoutBlock::willBeDestroyed()
 
     m_lineBoxes.deleteLineBoxes();
 
-    if (UNLIKELY(gDelayedUpdateScrollInfoSet != 0))
-        gDelayedUpdateScrollInfoSet->remove(this);
+    if (UNLIKELY(gDelayedUpdateScrollInfoMap != 0))
+        gDelayedUpdateScrollInfoMap->remove(this);
 
     if (TextAutosizer* textAutosizer = document().textAutosizer())
         textAutosizer->destroy(this);
@@ -834,10 +848,10 @@ bool LayoutBlock::isSelfCollapsingBlock() const
 void LayoutBlock::startDelayUpdateScrollInfo()
 {
     if (gDelayUpdateScrollInfo == 0) {
-        ASSERT(!gDelayedUpdateScrollInfoSet);
-        gDelayedUpdateScrollInfoSet = new DelayedUpdateScrollInfoSet;
+        ASSERT(!gDelayedUpdateScrollInfoMap);
+        gDelayedUpdateScrollInfoMap = new DelayedUpdateScrollInfoMap;
     }
-    ASSERT(gDelayedUpdateScrollInfoSet);
+    ASSERT(gDelayedUpdateScrollInfoMap);
     ++gDelayUpdateScrollInfo;
 }
 
@@ -846,14 +860,17 @@ void LayoutBlock::finishDelayUpdateScrollInfo()
     --gDelayUpdateScrollInfo;
     ASSERT(gDelayUpdateScrollInfo >= 0);
     if (gDelayUpdateScrollInfo == 0) {
-        ASSERT(gDelayedUpdateScrollInfoSet);
+        ASSERT(gDelayedUpdateScrollInfoMap);
 
-        OwnPtr<DelayedUpdateScrollInfoSet> infoSet(adoptPtr(gDelayedUpdateScrollInfoSet));
-        gDelayedUpdateScrollInfoSet = nullptr;
+        OwnPtr<DelayedUpdateScrollInfoMap> infoMap(adoptPtr(gDelayedUpdateScrollInfoMap));
+        gDelayedUpdateScrollInfoMap = nullptr;
 
-        for (auto* block : *infoSet) {
-            if (block->hasOverflowClip()) {
-                block->layer()->scrollableArea()->updateAfterLayout();
+        for (auto block : *infoMap) {
+            if (block.key->hasOverflowClip()) {
+                PaintLayerScrollableArea* scrollableArea = block.key->layer()->scrollableArea();
+                ScrollInfo& scrollInfo = block.value;
+                scrollableArea->updateScrollDimensions(scrollInfo.scrollOffset, scrollInfo.autoHorizontalScrollBarChanged, scrollInfo.autoVerticalScrollBarChanged);
+                scrollableArea->finalizeScrollDimensions(scrollInfo.scrollOffset, scrollInfo.autoHorizontalScrollBarChanged, scrollInfo.autoVerticalScrollBarChanged);
             }
         }
     }
@@ -871,10 +888,15 @@ void LayoutBlock::updateScrollInfoAfterLayout()
             return;
         }
 
-        if (gDelayUpdateScrollInfo)
-            gDelayedUpdateScrollInfoSet->add(this);
-        else
+        if (gDelayUpdateScrollInfo) {
+            ScrollInfo scrollInfo;
+            layer()->scrollableArea()->updateScrollDimensions(scrollInfo.scrollOffset, scrollInfo.autoHorizontalScrollBarChanged, scrollInfo.autoVerticalScrollBarChanged);
+            DelayedUpdateScrollInfoMap::AddResult scrollInfoIterator = gDelayedUpdateScrollInfoMap->add(this, scrollInfo);
+            if (!scrollInfoIterator.isNewEntry)
+                scrollInfoIterator.storedValue->value.merge(scrollInfo);
+        } else {
             layer()->scrollableArea()->updateAfterLayout();
+        }
     }
 }
 
@@ -986,16 +1008,6 @@ void LayoutBlock::addVisualOverflowFromTheme()
     IntRect inflatedRect = pixelSnappedBorderBoxRect();
     LayoutTheme::theme().addVisualOverflow(*this, inflatedRect);
     addVisualOverflow(LayoutRect(inflatedRect));
-}
-
-LayoutUnit LayoutBlock::additionalMarginStart() const
-{
-    if (isInline() || !parent() || parent()->childrenInline() || !parent()->node() || (!parent()->node()->hasTagName(ulTag) && !parent()->node()->hasTagName(olTag))) {
-        return 0;
-    }
-
-    LayoutBox *previousBox = previousSiblingBox();
-    return previousBox ? previousBox->additionalMarginStart() : 40;
 }
 
 bool LayoutBlock::createsNewFormattingContext() const
@@ -1869,11 +1881,6 @@ PositionWithAffinity LayoutBlock::positionForPointWithInlineChildren(const Layou
 
         // pass the box a top position that is inside it
         LayoutPoint point(pointInLogicalContents.x(), closestBox->root().blockDirectionPointInLine());
-
-        // SHEZ: don't do the above if it is a LayoutBlock
-        if (closestBox->layoutObject().isLayoutBlock())
-            point.setY(pointInLogicalContents.y());
-
         if (!isHorizontalWritingMode())
             point = point.transposedPoint();
         if (closestBox->lineLayoutItem().isReplaced())
@@ -1905,7 +1912,7 @@ PositionWithAffinity LayoutBlock::positionForPoint(const LayoutPoint& point)
     if (isTable())
         return LayoutBox::positionForPoint(point);
 
-    if (0 && isReplaced()) {
+    if (isReplaced()) {
         // FIXME: This seems wrong when the object's writing-mode doesn't match the line's writing-mode.
         LayoutUnit pointLogicalLeft = isHorizontalWritingMode() ? point.x() : point.y();
         LayoutUnit pointLogicalTop = isHorizontalWritingMode() ? point.y() : point.x();
@@ -1926,7 +1933,7 @@ PositionWithAffinity LayoutBlock::positionForPoint(const LayoutPoint& point)
     if (!isHorizontalWritingMode())
         pointInLogicalContents = pointInLogicalContents.transposedPoint();
 
-    if (childrenInline() && firstRootBox())
+    if (childrenInline())
         return positionForPointWithInlineChildren(pointInLogicalContents);
 
     LayoutBox* lastCandidateBox = lastChildBox();
@@ -2076,9 +2083,6 @@ void LayoutBlock::computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth
             marginStart += startMarginLength.value();
         if (endMarginLength.isFixed())
             marginEnd += endMarginLength.value();
-        // SHEZ: additionalMarginStart is treated as fixed margin
-        if (child->isBox())
-            marginStart += toLayoutBox(child)->additionalMarginStart();
         margin = marginStart + marginEnd;
 
         LayoutUnit childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth;
@@ -2155,9 +2159,6 @@ bool LayoutBlock::hasLineIfEmpty() const
         return false;
 
     if (node()->isRootEditableElement())
-        return true;
-
-    if (node()->hasEditableStyle() && isTableCell())
         return true;
 
     if (node()->isShadowRoot() && isHTMLInputElement(*toShadowRoot(node())->host()))
@@ -2540,67 +2541,8 @@ bool LayoutBlock::hasDragCaret() const
 LayoutRect LayoutBlock::localCaretRect(InlineBox* inlineBox, int caretOffset, LayoutUnit* extraWidthToEndOfLine)
 {
     // Do the normal calculation in most cases.
-    if (firstChild() || isInlineBoxWrapperActuallyChild()) {
-        if (!childrenInline()) {
-            // Fallback to the upstream behavior.
-            return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
-        }
-
-        // The caret is inside a RenderBlock, before the first inline child, in
-        // between two inline children, or after the last inline child.  Find
-        // the child at the specified 'caretOffset', then use the InlineBox of
-        // that child to determine the caret rect.  It would be either to the
-        // left of the child, or to the right of the child (if the caret is
-        // after the last child).
-
-        LayoutObject* child = firstChild();
-        while (caretOffset && child) {
-            child = child->nextSibling();
-            --caretOffset;
-        }
-
-        bool isAfterLastChild = false;
-        if (!child) {
-            if (caretOffset) {
-                // Something strange going on.  Fallback to the upstream behavior.
-                return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
-            }
-
-            // The caret is after the last child.
-            child = lastChild();
-            isAfterLastChild = true;
-
-            if (!child) {
-                // Fallback to the upstream behavior.
-                return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
-            }
-        }
-
-        LayoutUnit margin;
-        if (child->isBox()) {
-            LayoutBox* box = toLayoutBox(child);
-            inlineBox = box->inlineBoxWrapper();
-            margin = isAfterLastChild ? box->marginRight() : box->marginLeft();
-        }
-        else if (child->isText()) {
-            inlineBox = isAfterLastChild ? toLayoutText(child)->lastTextBox()
-                                         : toLayoutText(child)->firstTextBox();
-        }
-        else if (child->isLayoutInline()) {
-            inlineBox = isAfterLastChild ? toLayoutInline(child)->lastLineBox()
-                                         : toLayoutInline(child)->firstLineBox();
-        }
-
-        if (!inlineBox) {
-            return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
-        }
-
-        LayoutUnit x = isAfterLastChild ? inlineBox->x() + inlineBox->width() + margin
-                                        : inlineBox->x() - margin;
-        if (extraWidthToEndOfLine)
-            *extraWidthToEndOfLine = inlineBox->root().width() - x;
-        return LayoutRect(x, inlineBox->y(), 1, inlineBox->height());
-    }
+    if (firstChild() || isInlineBoxWrapperActuallyChild())
+        return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
 
     LayoutRect caretRect = localCaretRectForEmptyElement(size().width(), textIndentOffset());
 

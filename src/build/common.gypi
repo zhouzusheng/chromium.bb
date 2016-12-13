@@ -3181,7 +3181,7 @@
               '_SCL_SECURE_NO_DEPRECATE',
             ],
             'msvs_disabled_warnings': [
-              4456, 4457, 4458, 4459,
+               4456, 4457, 4458, 4459,
               4800,4996, 4067, 4800, 4819,4251
             ],
             'msvs_settings': {

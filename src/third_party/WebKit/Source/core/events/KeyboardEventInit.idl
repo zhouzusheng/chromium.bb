@@ -9,7 +9,6 @@ dictionary KeyboardEventInit : EventModifierInit {
     // TODO(philipj): DOMString code = "";
     unsigned long location = 0;
     boolean repeat = false;
-    boolean bbIsNumLock = false;
     // TODO(philipj): boolean isComposing = false;
 
     // Non-standard APIs

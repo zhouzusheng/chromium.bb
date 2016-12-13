@@ -312,9 +312,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetContentsOpaque(bool opaque);
   bool contents_opaque() const { return contents_opaque_; }
 
-  void SetContentsOpaqueForLCDText(bool opaque);
-  bool contents_opaque_for_lcd_text() const { return contents_opaque_for_lcd_text_; }
-
   void SetOpacity(float opacity);
   float opacity() const { return opacity_; }
   bool OpacityIsAnimating() const;
@@ -775,7 +772,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   bool masks_to_bounds_ : 1;
   bool contents_opaque_ : 1;
-  bool contents_opaque_for_lcd_text_ : 1;
   bool is_root_for_isolated_group_ : 1;
   bool use_parent_backface_visibility_ : 1;
   bool draws_content_ : 1;

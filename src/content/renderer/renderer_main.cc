@@ -45,7 +45,7 @@
 #endif  // OS_MACOSX
 
 #if defined(ENABLE_PLUGINS)
-#include "content/renderer/pepper/pepper_plugin_registry.h"
+
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -140,7 +140,7 @@ int RendererMain(const MainFunctionParams& parameters) {
   scoped_ptr<scheduler::RendererScheduler> renderer_scheduler(
       scheduler::RendererScheduler::Create());
 
-  bool no_sandbox = parsed_command_line.HasSwitch(switches::kNoSandbox);
+  bool no_sandbox = true;// parsed_command_line.HasSwitch(switches::kNoSandbox);
 
   // Initialize histogram statistics gathering system.
   base::StatisticsRecorder::Initialize();
@@ -172,10 +172,6 @@ int RendererMain(const MainFunctionParams& parameters) {
   // PlatformInitialize uses FieldTrials, so this must happen later.
   platform.PlatformInitialize();
 
-#if defined(ENABLE_PLUGINS)
-  // Load pepper plugins before engaging the sandbox.
-  PepperPluginRegistry::GetInstance();
-#endif
 #if defined(ENABLE_WEBRTC)
   // Initialize WebRTC before engaging the sandbox.
   // NOTE: On linux, this call could already have been made from

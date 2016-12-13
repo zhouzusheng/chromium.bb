@@ -11,7 +11,8 @@
 
 #if !defined(OS_IOS)
 // iOS doesn't use and must not depend on //media
-#include "media/base/mime_util.h"
+//zzs
+//#include "media/base/mime_util.h"
 #endif
 
 namespace mime_util {
@@ -158,7 +159,7 @@ bool MimeUtil::IsSupportedNonImageMimeType(const std::string& mime_type) const {
   return non_image_types_.find(base::ToLowerASCII(mime_type)) !=
              non_image_types_.end() ||
 #if !defined(OS_IOS)
-         media::IsSupportedMediaMimeType(mime_type) ||
+//         media::IsSupportedMediaMimeType(mime_type) ||
 #endif
          (base::StartsWith(mime_type, "text/",
                            base::CompareCase::INSENSITIVE_ASCII) &&

@@ -360,9 +360,6 @@ public:
 
     float spoolSinglePage(WebCanvas* canvas, int pageNumber)
     {
-        IntRect pageRect = m_pageRects[pageNumber];
-        frame()->view()->setScrollPosition(DoublePoint(pageRect.x(), pageRect.y()), UserScroll);
-
         dispatchEventsForPrintingOnAllFrames();
         if (!frame()->document() || !frame()->document()->layoutView())
             return 0;
@@ -370,6 +367,8 @@ public:
         frame()->view()->updateAllLifecyclePhases();
         if (!frame()->document() || !frame()->document()->layoutView())
             return 0;
+
+        IntRect pageRect = m_pageRects[pageNumber];
         SkPictureBuilder pictureBuilder(pageRect, &skia::getMetaData(*canvas));
         pictureBuilder.context().setPrinting(true);
 
@@ -779,7 +778,6 @@ void WebLocalFrameImpl::dispatchUnloadEvent()
 {
     if (!frame())
         return;
-    SubframeLoadingDisabler disabler(frame()->document());
     frame()->loader().dispatchUnloadEvent();
 }
 

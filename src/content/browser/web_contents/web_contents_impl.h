@@ -22,7 +22,6 @@
 #include "content/browser/frame_host/navigator_delegate.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/browser/frame_host/render_frame_host_manager.h"
-#include "content/browser/media/audio_stream_monitor.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
@@ -56,7 +55,6 @@ class GeolocationServiceContext;
 class InterstitialPageImpl;
 class JavaScriptDialogManager;
 class ManifestManagerHost;
-class MediaWebContentsObserver;
 class PluginContentOriginWhitelist;
 class PowerSaveBlocker;
 class RenderViewHost;
@@ -68,7 +66,6 @@ class ScreenOrientationDispatcherHost;
 class SiteInstance;
 class TestWebContents;
 class WakeLockServiceContext;
-class WebContentsAudioMuter;
 class WebContentsDelegate;
 class WebContentsImpl;
 class WebContentsObserver;
@@ -279,8 +276,6 @@ class CONTENT_EXPORT WebContentsImpl
   void IncrementCapturerCount(const gfx::Size& capture_size) override;
   void DecrementCapturerCount() override;
   int GetCapturerCount() const override;
-  bool IsAudioMuted() const override;
-  void SetAudioMuted(bool mute) override;
   bool IsCrashed() const override;
   void SetIsCrashed(base::TerminationStatus status, int error_code) override;
   base::TerminationStatus GetCrashedStatus() const override;
@@ -371,7 +366,6 @@ class CONTENT_EXPORT WebContentsImpl
             const blink::WebFindOptions& options) override;
   void StopFinding(StopFindAction action) override;
   void InsertCSS(const std::string& css) override;
-  bool WasRecentlyAudible() override;
   void GetManifest(const GetManifestCallback& callback) override;
   void HasManifest(const HasManifestCallback& callback) override;
   void ExitFullscreen() override;
@@ -504,11 +498,6 @@ class CONTENT_EXPORT WebContentsImpl
                          bool user_gesture) override;
   void ShowCreatedWidget(int route_id, const gfx::Rect& initial_rect) override;
   void ShowCreatedFullscreenWidget(int route_id) override;
-  void RequestMediaAccessPermission(
-      const MediaStreamRequest& request,
-      const MediaResponseCallback& callback) override;
-  bool CheckMediaAccessPermission(const GURL& security_origin,
-                                  MediaStreamType type) override;
   SessionStorageNamespace* GetSessionStorageNamespace(
       SiteInstance* instance) override;
   SessionStorageNamespaceMap GetSessionStorageNamespaceMap() override;
@@ -713,24 +702,6 @@ class CONTENT_EXPORT WebContentsImpl
   // Forces overscroll to be disabled (used by touch emulation).
   void SetForceDisableOverscrollContent(bool force_disable);
 
-  AudioStreamMonitor* audio_stream_monitor() {
-    return &audio_stream_monitor_;
-  }
-
-  bool has_audio_power_save_blocker_for_testing() const {
-    return audio_power_save_blocker_;
-  }
-
-  bool has_video_power_save_blocker_for_testing() const {
-    return video_power_save_blocker_;
-  }
-
-#if defined(ENABLE_BROWSER_CDMS)
-  MediaWebContentsObserver* media_web_contents_observer() {
-    return media_web_contents_observer_.get();
-  }
-#endif
-
  private:
   friend class WebContentsObserver;
   friend class WebContents;  // To implement factory methods.
@@ -895,24 +866,13 @@ class CONTENT_EXPORT WebContentsImpl
                           bool is_hung);
   void OnPluginCrashed(const base::FilePath& plugin_path,
                        base::ProcessId plugin_pid);
-  void OnRequestPpapiBrokerPermission(int routing_id,
-                                      const GURL& url,
-                                      const base::FilePath& plugin_path);
 
-  // Callback function when requesting permission to access the PPAPI broker.
-  // |result| is true if permission was granted.
-  void OnPpapiBrokerPermissionResult(int routing_id, bool result);
 
   void OnBrowserPluginMessage(RenderFrameHost* render_frame_host,
                               const IPC::Message& message);
 #endif  // defined(ENABLE_PLUGINS)
   void OnUpdateFaviconURL(const std::vector<FaviconURL>& candidates);
   void OnFirstVisuallyNonEmptyPaint();
-  void OnMediaPlayingNotification(int64 player_cookie,
-                                  bool has_video,
-                                  bool has_audio,
-                                  bool is_remote);
-  void OnMediaPausedNotification(int64 player_cookie);
   void OnShowValidationMessage(const gfx::Rect& anchor_in_root_view,
                                const base::string16& main_text,
                                const base::string16& sub_text);
@@ -1007,10 +967,6 @@ class CONTENT_EXPORT WebContentsImpl
   // |audio_power_save_blocker_| and |video_power_save_blocker_|.
   void ClearAllPowerSaveBlockers();
 
-  // Creates an audio or video power save blocker respectively.
-  void CreateAudioPowerSaveBlocker();
-  void CreateVideoPowerSaveBlocker();
-
   // Releases the audio power save blockers if |active_audio_players_| is empty.
   // Likewise, releases the video power save blockers if |active_video_players_|
   // is empty.
@@ -1026,17 +982,6 @@ class CONTENT_EXPORT WebContentsImpl
   // |delegate_|.
   void OnPreferredSizeChanged(const gfx::Size& old_size);
 
-  // Helper methods for adding or removing player entries in |player_map| under
-  // the key |render_frame_message_source_|.
-  typedef std::vector<int64> PlayerList;
-  typedef std::map<uintptr_t, PlayerList> ActiveMediaPlayerMap;
-  void AddMediaPlayerEntry(int64 player_cookie,
-                           ActiveMediaPlayerMap* player_map);
-  void RemoveMediaPlayerEntry(int64 player_cookie,
-                              ActiveMediaPlayerMap* player_map);
-  // Removes all entries from |player_map| for |render_frame_host|.
-  void RemoveAllMediaPlayerEntries(RenderFrameHost* render_frame_host,
-                                   ActiveMediaPlayerMap* player_map);
 
   // Internal helper to create WebUI objects associated with |this|. |url| is
   // used to determine which WebUI should be created (if any). |frame_name|
@@ -1088,12 +1033,6 @@ class CONTENT_EXPORT WebContentsImpl
 #endif
 
   // Helper classes ------------------------------------------------------------
-
-  // Tracking variables and associated power save blockers for media playback.
-  ActiveMediaPlayerMap active_audio_players_;
-  ActiveMediaPlayerMap active_video_players_;
-  scoped_ptr<PowerSaveBlocker> audio_power_save_blocker_;
-  scoped_ptr<PowerSaveBlocker> video_power_save_blocker_;
 
   // Manages the frame tree of the page and process swaps in each node.
   FrameTree frame_tree_;
@@ -1319,18 +1258,9 @@ class CONTENT_EXPORT WebContentsImpl
   // is created, and broadcast to all frames when it changes.
   AccessibilityMode accessibility_mode_;
 
-  // Monitors power levels for audio streams associated with this WebContents.
-  AudioStreamMonitor audio_stream_monitor_;
-
-  // Created on-demand to mute all audio output from this WebContents.
-  scoped_ptr<WebContentsAudioMuter> audio_muter_;
 
   bool virtual_keyboard_requested_;
 
-#if defined(ENABLE_BROWSER_CDMS)
-  // Manages all the media player and CDM managers and forwards IPCs to them.
-  scoped_ptr<MediaWebContentsObserver> media_web_contents_observer_;
-#endif
 
   scoped_ptr<RenderWidgetHostInputEventRouter> rwh_input_event_router_;
 

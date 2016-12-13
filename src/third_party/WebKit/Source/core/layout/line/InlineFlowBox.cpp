@@ -422,7 +422,7 @@ LayoutUnit InlineFlowBox::placeBoxRangeInInlineDirection(InlineBox* firstChild, 
                 if (knownToHaveNoOverflow())
                     maxLogicalRight = std::max(logicalLeft, maxLogicalRight);
                 logicalLeft += flow->marginLogicalRight();
-            } else {
+            } else if (!curr->layoutObject().isListMarker() || toLayoutListMarker(curr->layoutObject()).isInside()) {
                 // The box can have a different writing-mode than the overall line, so this is a bit complicated.
                 // Just get all the physical margin and overflow values by hand based off |isHorizontal|.
                 LayoutUnit logicalLeftMargin = isHorizontal() ? curr->boxModelObject().marginLeft() : curr->boxModelObject().marginTop();

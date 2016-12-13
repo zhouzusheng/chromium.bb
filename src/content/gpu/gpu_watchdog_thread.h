@@ -8,7 +8,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/power_monitor/power_observer.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "content/common/gpu/gpu_watchdog.h"
@@ -31,7 +30,6 @@ namespace content {
 // and deliberately crashes if one of them does not respond after a timeout.
 class GpuWatchdogThread : public base::Thread,
                           public GpuWatchdog,
-                          public base::PowerObserver,
                           public base::RefCountedThreadSafe<GpuWatchdogThread> {
  public:
   explicit GpuWatchdogThread(int timeout);
@@ -42,10 +40,6 @@ class GpuWatchdogThread : public base::Thread,
 
   // Implement GpuWatchdog.
   void CheckArmed() override;
-
-  // Must be called after a PowerMonitor has been created. Can be called from
-  // any thread.
-  void AddPowerObserver();
 
  protected:
   void Init() override;
@@ -79,12 +73,6 @@ class GpuWatchdogThread : public base::Thread,
   void SetupXChangeProp();
   bool MatchXEventAtom(XEvent* event);
 #endif
-
-  void OnAddPowerObserver();
-
-  // Implement PowerObserver.
-  void OnSuspend() override;
-  void OnResume() override;
 
 #if defined(OS_WIN)
   base::TimeDelta GetWatchedThreadTime();

@@ -55,9 +55,6 @@ class CONTENT_EXPORT WakeLockServiceContext : public WebContentsObserver {
   // RenderFrames requesting wake lock.
   std::set<std::pair<int, int>> frames_requesting_lock_;
 
-  // The actual power save blocker for screen.
-  scoped_ptr<PowerSaveBlocker> wake_lock_;
-
   base::WeakPtrFactory<WakeLockServiceContext> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WakeLockServiceContext);

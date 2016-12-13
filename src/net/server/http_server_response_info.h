@@ -31,6 +31,9 @@ class HttpServerResponseInfo {
   void SetContentHeaders(size_t content_length,
                          const std::string& content_type);
 
+  //zzs
+  void AddBody(const std::string& body);
+
   std::string Serialize() const;
 
   HttpStatusCode status_code() const;

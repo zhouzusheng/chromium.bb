@@ -37,6 +37,14 @@ void HttpServerResponseInfo::AddHeader(const std::string& name,
   headers_.push_back(std::make_pair(name, value));
 }
 
+//zzs
+void HttpServerResponseInfo::AddBody(const std::string& body) {
+
+	body_.append(body);
+	AddHeader(HttpRequestHeaders::kContentLength,
+		base::StringPrintf("%" PRIuS, body_.length()));
+}
+
 void HttpServerResponseInfo::SetBody(const std::string& body,
                                      const std::string& content_type) {
   DCHECK(body_.empty());

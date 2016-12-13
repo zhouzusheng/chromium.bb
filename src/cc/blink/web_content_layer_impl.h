@@ -30,7 +30,6 @@ class WebContentLayerImpl : public blink::WebContentLayer,
   // WebContentLayer implementation.
   blink::WebLayer* layer() override;
   void setDoubleSided(bool double_sided) override;
-  void setDefaultLCDBackgroundColor(blink::WebColor default_lcd_background_color) override;
 
  protected:
   ~WebContentLayerImpl() override;

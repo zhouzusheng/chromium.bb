@@ -36,15 +36,9 @@ class SurfaceFactory;
 enum class SurfaceDrawStatus;
 }
 
-namespace media {
-class VideoFrame;
-}
-
 namespace content {
 
 class DelegatedFrameHost;
-class ReadbackYUVInterface;
-class RenderWidgetHostViewFrameSubscriber;
 class RenderWidgetHostImpl;
 class ResizeLock;
 
@@ -149,15 +143,7 @@ class CONTENT_EXPORT DelegatedFrameHost
                                   const gfx::Size& output_size,
                                   const ReadbackRequestCallback& callback,
                                   const SkColorType preferred_color_type);
-  void CopyFromCompositingSurfaceToVideoFrame(
-      const gfx::Rect& src_subrect,
-      const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(const gfx::Rect&, bool)>& callback);
-  bool CanCopyToVideoFrame() const;
-  void BeginFrameSubscription(
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
-  void EndFrameSubscription();
-  bool HasFrameSubscriber() const { return frame_subscriber_; }
+   
   uint32_t GetSurfaceIdNamespace();
   // Returns a null SurfaceId if this DelegatedFrameHost has not yet created
   // a compositor Surface.
@@ -188,9 +174,7 @@ class CONTENT_EXPORT DelegatedFrameHost
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            DiscardDelegatedFramesWithLocking);
 
-  RenderWidgetHostViewFrameSubscriber* frame_subscriber() const {
-    return frame_subscriber_.get();
-  }
+ 
   bool ShouldCreateResizeLock();
   void LockResources();
   void UnlockResources();
@@ -228,18 +212,6 @@ class CONTENT_EXPORT DelegatedFrameHost
       const SkColorType color_type,
       const ReadbackRequestCallback& callback,
       scoped_ptr<cc::CopyOutputResult> result);
-  static void CopyFromCompositingSurfaceHasResultForVideo(
-      base::WeakPtr<DelegatedFrameHost> rwhva,
-      scoped_refptr<OwnedMailbox> subscriber_texture,
-      scoped_refptr<media::VideoFrame> video_frame,
-      const base::Callback<void(const gfx::Rect&, bool)>& callback,
-      scoped_ptr<cc::CopyOutputResult> result);
-  static void CopyFromCompositingSurfaceFinishedForVideo(
-      base::WeakPtr<DelegatedFrameHost> rwhva,
-      const base::Callback<void(bool)>& callback,
-      scoped_refptr<OwnedMailbox> subscriber_texture,
-      scoped_ptr<cc::SingleReleaseCallback> release_callback,
-      bool result);
   static void ReturnSubscriberTexture(
       base::WeakPtr<DelegatedFrameHost> rwhva,
       scoped_refptr<OwnedMailbox> subscriber_texture,
@@ -330,18 +302,10 @@ class CONTENT_EXPORT DelegatedFrameHost
 
   base::TimeTicks last_draw_ended_;
 
-  // Subscriber that listens to frame presentation events.
-  scoped_ptr<RenderWidgetHostViewFrameSubscriber> frame_subscriber_;
-  std::vector<scoped_refptr<OwnedMailbox> > idle_frame_subscriber_textures_;
-
   // Callback used to pass the output request to the layer or to a function
   // specified by a test.
   base::Callback<void(scoped_ptr<cc::CopyOutputRequest>)>
       request_copy_of_output_callback_for_testing_;
-
-  // YUV readback pipeline.
-  scoped_ptr<content::ReadbackYUVInterface>
-      yuv_readback_pipeline_;
 
   scoped_ptr<DelegatedFrameEvictor> delegated_frame_evictor_;
 };

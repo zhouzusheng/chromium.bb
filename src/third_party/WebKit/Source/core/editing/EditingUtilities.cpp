@@ -814,6 +814,8 @@ static HTMLElement* firstInSpecialElement(const Position& pos)
             HTMLElement* specialElement = toHTMLElement(n);
             VisiblePosition vPos = createVisiblePosition(pos);
             VisiblePosition firstInElement = createVisiblePosition(firstPositionInOrBeforeNode(specialElement));
+            if (isRenderedTableElement(specialElement) && vPos.deepEquivalent() == nextPositionOf(firstInElement).deepEquivalent())
+                return specialElement;
             if (vPos.deepEquivalent() == firstInElement.deepEquivalent())
                 return specialElement;
         }
@@ -829,6 +831,8 @@ static HTMLElement* lastInSpecialElement(const Position& pos)
             HTMLElement* specialElement = toHTMLElement(n);
             VisiblePosition vPos = createVisiblePosition(pos);
             VisiblePosition lastInElement = createVisiblePosition(lastPositionInOrAfterNode(specialElement));
+            if (isRenderedTableElement(specialElement) && vPos.deepEquivalent() == previousPositionOf(lastInElement).deepEquivalent())
+                return specialElement;
             if (vPos.deepEquivalent() == lastInElement.deepEquivalent())
                 return specialElement;
         }
@@ -958,7 +962,7 @@ VisiblePosition visiblePositionAfterNode(Node& node)
     return createVisiblePosition(positionInParentAfterNode(node));
 }
 
-bool isHTMLListElement(const Node* n)
+bool isHTMLListElement(Node* n)
 {
     return (n && (isHTMLUListElement(*n) || isHTMLOListElement(*n) || isHTMLDListElement(*n)));
 }
@@ -1043,89 +1047,6 @@ Node* highestEnclosingNodeOfType(const Position& p, bool (*nodeIsOfType)(const N
     }
 
     return highest;
-}
-
-Node* previousRenderedSibling(const Node* node)
-{
-    Node* result = node->previousSibling();
-    while (result && !isNodeRendered(*result))
-        result = result->previousSibling();
-    return result;
-}
-
-Node* nextRenderedSibling(const Node* node)
-{
-    Node* result = node->nextSibling();
-    while (result && !isNodeRendered(*result))
-        result = result->nextSibling();
-    return result;
-}
-
-static bool isWhitespaceNode(const Node* node)
-{
-    if (!node)
-        return false;
-    if (node->isTextNode())
-        return toText(node)->containsOnlyWhitespace();
-    return node->hasTagName(brTag);
-}
-
-Node* previousRenderedSiblingExcludingWhitespace(const Node* node)
-{
-    Node* result = previousRenderedSibling(node);
-    while (isWhitespaceNode(result))
-        result = previousRenderedSibling(result);
-    return result;
-}
-
-Node* nextRenderedSiblingExcludingWhitespace(const Node* node)
-{
-    Node* result = nextRenderedSibling(node);
-    while (isWhitespaceNode(result))
-        result = nextRenderedSibling(result);
-    return result;
-}
-
-Node* blockExtentStart(Node* node, const Node* stayWithin)
-{
-    while (true) {
-        if (isEnclosingBlock(node)) {
-            while (!previousRenderedSiblingExcludingWhitespace(node) && node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
-                node = node->parentNode();
-            break;
-        }
-        else if (node->previousSibling()) {
-            if (isEnclosingBlock(node->previousSibling()))
-                break;
-            node = node->previousSibling();
-        }
-        else if (node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
-            node = node->parentNode();
-        else
-            break;
-    }
-    return node;
-}
-
-Node* blockExtentEnd(Node* node, const Node* stayWithin)
-{
-    while (true) {
-        if (isEnclosingBlock(node)) {
-            while (!nextRenderedSiblingExcludingWhitespace(node) && node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
-                node = node->parentNode();
-            break;
-        }
-        else if (node->nextSibling()) {
-            if (isEnclosingBlock(node->nextSibling()))
-                break;
-            node = node->nextSibling();
-        }
-        else if (node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
-            node = node->parentNode();
-        else
-            break;
-    }
-    return node;
 }
 
 static bool hasARenderedDescendant(Node* node, Node* excludedNode)

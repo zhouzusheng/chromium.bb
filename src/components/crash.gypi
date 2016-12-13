@@ -146,8 +146,7 @@
             ['OS=="win"', {
               'dependencies': [
                 '../breakpad/breakpad.gyp:breakpad_handler',
-                '../breakpad/breakpad.gyp:breakpad_sender',
-                '../sandbox/sandbox.gyp:sandbox',
+                '../breakpad/breakpad.gyp:breakpad_sender'
               ],
             }],
             ['os_posix == 1 and OS != "mac" and OS != "ios"', {
@@ -320,8 +319,7 @@
               'dependencies': [
                 '../base/base.gyp:base_win64',
                 '../breakpad/breakpad.gyp:breakpad_handler_win64',
-                '../breakpad/breakpad.gyp:breakpad_sender_win64',
-                '../sandbox/sandbox.gyp:sandbox_win64',
+                '../breakpad/breakpad.gyp:breakpad_sender_win64'
               ],
               'configurations': {
                 'Common_Base': {

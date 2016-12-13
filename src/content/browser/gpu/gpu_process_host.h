@@ -49,7 +49,6 @@ class BrowserChildProcessHostImpl;
 class GpuMainThread;
 class InProcessChildThreadParams;
 class MojoApplicationHost;
-class RenderWidgetHostViewFrameSubscriber;
 class ShaderDiskCache;
 
 typedef base::Thread* (*GpuMainThreadFactoryFunction)(
@@ -163,10 +162,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // Asks the GPU process to stop by itself.
   void StopGpuProcess();
 
-  void BeginFrameSubscription(
-      int surface_id,
-      base::WeakPtr<RenderWidgetHostViewFrameSubscriber> subscriber);
-  void EndFrameSubscription(int surface_id);
   void LoadedShader(const std::string& key, const std::string& data);
 
  private:

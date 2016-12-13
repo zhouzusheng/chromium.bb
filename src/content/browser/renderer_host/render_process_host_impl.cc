@@ -42,7 +42,6 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/background_sync/background_sync_service_impl.h"
 #include "content/browser/bad_message.h"
-#include "content/browser/bluetooth/bluetooth_dispatcher_host.h"
 #include "content/browser/browser_child_process_host_impl.h"
 #include "content/browser/browser_main.h"
 #include "content/browser/browser_main_loop.h"
@@ -50,10 +49,6 @@
 #include "content/browser/cache_storage/cache_storage_context_impl.h"
 #include "content/browser/cache_storage/cache_storage_dispatcher_host.h"
 #include "content/browser/child_process_security_policy_impl.h"
-#include "content/browser/device_sensors/device_light_message_filter.h"
-#include "content/browser/device_sensors/device_motion_message_filter.h"
-#include "content/browser/device_sensors/device_orientation_absolute_message_filter.h"
-#include "content/browser/device_sensors/device_orientation_message_filter.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/dom_storage_message_filter.h"
 #include "content/browser/download/mhtml_generation_manager.h"
@@ -71,9 +66,6 @@
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/loader/resource_scheduler_filter.h"
-#include "content/browser/media/capture/audio_mirroring_manager.h"
-#include "content/browser/media/media_internals.h"
-#include "content/browser/media/midi_host.h"
 #include "content/browser/memory/memory_message_filter.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/mime_registry_message_filter.h"
@@ -90,14 +82,7 @@
 #include "content/browser/renderer_host/file_utilities_message_filter.h"
 #include "content/browser/renderer_host/gamepad_browser_message_filter.h"
 #include "content/browser/renderer_host/gpu_message_filter.h"
-#include "content/browser/renderer_host/media/audio_input_renderer_host.h"
-#include "content/browser/renderer_host/media/audio_renderer_host.h"
-#include "content/browser/renderer_host/media/media_stream_dispatcher_host.h"
-#include "content/browser/renderer_host/media/peer_connection_tracker_host.h"
-#include "content/browser/renderer_host/media/video_capture_host.h"
 #include "content/browser/renderer_host/memory_benchmark_message_filter.h"
-#include "content/browser/renderer_host/pepper/pepper_message_filter.h"
-#include "content/browser/renderer_host/pepper/pepper_renderer_connection.h"
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -110,7 +95,6 @@
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
 #include "content/browser/shared_worker/worker_storage_partition.h"
-#include "content/browser/speech/speech_recognition_dispatcher_host.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/streams/stream_context.h"
 #include "content/browser/tracing/trace_message_filter.h"
@@ -136,7 +120,6 @@
 #include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_iterator.h"
-#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/worker_service.h"
@@ -149,8 +132,6 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/url_constants.h"
-#include "device/battery/battery_monitor_impl.h"
-#include "device/vibration/vibration_manager_impl.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gpu_switches.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
@@ -161,9 +142,7 @@
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_switches.h"
 #include "ipc/mojo/ipc_channel_mojo.h"
-#include "media/base/media_switches.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ppapi/shared_impl/ppapi_switches.h"
 #include "storage/browser/fileapi/sandbox_file_system_backend.h"
 #include "third_party/icu/source/common/unicode/unistr.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
@@ -187,8 +166,6 @@
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/windows_version.h"
 #include "content/common/font_cache_dispatcher_win.h"
-#include "content/common/sandbox_win.h"
-#include "sandbox/win/src/sandbox_policy.h"
 #include "ui/gfx/win/dpi.h"
 #endif
 
@@ -367,16 +344,9 @@ class RendererSandboxedProcessLauncherDelegate
   ~RendererSandboxedProcessLauncherDelegate() override {}
 
 #if defined(OS_WIN)
-  bool PreSpawnTarget(sandbox::TargetPolicy* policy) override {
-    AddBaseHandleClosePolicy(policy);
-
-    const base::string16& sid =
-        GetContentClient()->browser()->GetAppContainerSidForSandboxType(
-            GetSandboxType());
-    if (!sid.empty())
-      AddAppContainerPolicy(policy, sid.c_str());
-
-    return GetContentClient()->browser()->PreSpawnRenderer(policy);
+  bool PreSpawnTarget() override {
+    
+    return GetContentClient()->browser()->PreSpawnRenderer();
   }
 
 #elif defined(OS_POSIX)
@@ -541,7 +511,6 @@ RenderProcessHostImpl::RenderProcessHostImpl(
       gpu_observer_registered_(false),
       delayed_cleanup_needed_(false),
       within_process_died_observer_(false),
-      power_monitor_broadcaster_(this),
       worker_ref_count_(0),
       max_worker_count_(0),
       permission_service_context_(new PermissionServiceContext(this)),
@@ -728,8 +697,6 @@ bool RenderProcessHostImpl::Init() {
     ui::GpuSwitchingManager::GetInstance()->AddObserver(this);
   }
 
-  power_monitor_broadcaster_.Init();
-
   is_initialized_ = true;
   init_time_ = base::TimeTicks::Now();
   return true;
@@ -778,12 +745,8 @@ scoped_ptr<IPC::ChannelProxy> RenderProcessHostImpl::CreateChannelProxy(
 
 void RenderProcessHostImpl::CreateMessageFilters() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  const base::CommandLine& browser_command_line =
-      *base::CommandLine::ForCurrentProcess();
+  
   AddFilter(new ResourceSchedulerFilter(GetID()));
-  MediaInternals* media_internals = MediaInternals::GetInstance();
-  media::AudioManager* audio_manager =
-      BrowserMainLoop::GetInstance()->audio_manager();
   // Add BrowserPluginMessageFilter to ensure it gets the first stab at messages
   // from guests.
   scoped_refptr<BrowserPluginMessageFilter> bp_message_filter(
@@ -794,7 +757,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       new RenderMessageFilter(
           GetID(), GetBrowserContext(),
           GetBrowserContext()->GetRequestContextForRenderProcess(GetID()),
-          widget_helper_.get(), audio_manager, media_internals,
+          widget_helper_.get(),
           storage_partition_impl_->GetDOMStorageContext()));
   AddFilter(render_message_filter.get());
   AddFilter(new RenderFrameMessageFilter(
@@ -829,23 +792,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       get_contexts_callback);
 
   AddFilter(resource_message_filter);
-  MediaStreamManager* media_stream_manager =
-      BrowserMainLoop::GetInstance()->media_stream_manager();
-  // The AudioInputRendererHost and AudioRendererHost needs to be available for
-  // lookup, so it's stashed in a member variable.
-  audio_input_renderer_host_ = new AudioInputRendererHost(
-      GetID(), base::GetProcId(GetHandle()), audio_manager,
-      media_stream_manager, AudioMirroringManager::GetInstance(),
-      BrowserMainLoop::GetInstance()->user_input_monitor());
-  AddFilter(audio_input_renderer_host_.get());
-  audio_renderer_host_ = new AudioRendererHost(
-      GetID(), audio_manager, AudioMirroringManager::GetInstance(),
-      media_internals, media_stream_manager,
-      browser_context->GetResourceContext()->GetMediaDeviceIDSalt());
-  AddFilter(audio_renderer_host_.get());
-  AddFilter(
-      new MidiHost(GetID(), BrowserMainLoop::GetInstance()->midi_manager()));
-  AddFilter(new VideoCaptureHost(media_stream_manager));
   AddFilter(new AppCacheDispatcherHost(
       storage_partition_impl_->GetAppCacheService(), GetID()));
   AddFilter(new ClipboardMessageFilter);
@@ -869,11 +815,8 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       media_stream_manager));
   AddFilter(new MediaStreamTrackMetricsHost());
 #endif
-#if defined(ENABLE_PLUGINS)
-  AddFilter(new PepperRendererConnection(GetID()));
-#endif
-  AddFilter(new SpeechRecognitionDispatcherHost(
-      GetID(), storage_partition_impl_->GetURLRequestContext()));
+  //AddFilter(new SpeechRecognitionDispatcherHost(
+  //    GetID(), storage_partition_impl_->GetURLRequestContext()));
   AddFilter(new FileAPIMessageFilter(
       GetID(), storage_partition_impl_->GetURLRequestContext(),
       storage_partition_impl_->GetFileSystemContext(),
@@ -928,7 +871,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
       GetID(), resource_context,
       WorkerStoragePartition(
           storage_partition_impl_->GetURLRequestContext(),
-          storage_partition_impl_->GetMediaURLRequestContext(),
           storage_partition_impl_->GetAppCacheService(),
           storage_partition_impl_->GetQuotaManager(),
           storage_partition_impl_->GetFileSystemContext(),
@@ -957,10 +899,6 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(notification_message_filter_.get());
 
   AddFilter(new GamepadBrowserMessageFilter());
-  AddFilter(new DeviceLightMessageFilter());
-  AddFilter(new DeviceMotionMessageFilter());
-  AddFilter(new DeviceOrientationMessageFilter());
-  AddFilter(new DeviceOrientationAbsoluteMessageFilter());
   AddFilter(new ProfilerMessageFilter(PROCESS_TYPE_RENDERER));
   AddFilter(new HistogramMessageFilter());
 #if defined(USE_TCMALLOC) && (defined(OS_LINUX) || defined(OS_ANDROID))
@@ -976,19 +914,11 @@ void RenderProcessHostImpl::CreateMessageFilters() {
 #endif
   AddFilter(new GeofencingDispatcherHost(
       storage_partition_impl_->GetGeofencingManager()));
-  if (browser_command_line.HasSwitch(switches::kEnableWebBluetooth)) {
-    bluetooth_dispatcher_host_ = new BluetoothDispatcherHost(GetID());
-    AddFilter(bluetooth_dispatcher_host_.get());
-  }
 }
 
 void RenderProcessHostImpl::RegisterMojoServices() {
 #if !defined(OS_ANDROID)
-  mojo_application_host_->service_registry()->AddService(
-      base::Bind(&device::BatteryMonitorImpl::Create));
-
-  mojo_application_host_->service_registry()->AddService(
-      base::Bind(&device::VibrationManagerImpl::Create));
+  
 #endif
 
   mojo_application_host_->service_registry()->AddService(
@@ -1280,7 +1210,6 @@ static void PropagateBrowserCommandLineToRenderer(
   static const char* const kSwitchNames[] = {
     switches::kAgcStartupMinVolume,
     switches::kAllowLoopbackInPeerConnection,
-    switches::kAudioBufferSize,
     switches::kBlinkPlatformLogChannels,
     switches::kBlinkSettings,
     switches::kDefaultTileWidth,
@@ -1317,7 +1246,6 @@ static void PropagateBrowserCommandLineToRenderer(
     switches::kDisablePresentationAPI,
     switches::kDisablePinch,
     switches::kDisableRGBA4444Textures,
-    switches::kDisableRTCSmoothnessAlgorithm,
     switches::kDisableSeccompFilterSandbox,
     switches::kDisableSharedWorkers,
     switches::kDisableSpeechAPI,
@@ -1348,7 +1276,6 @@ static void PropagateBrowserCommandLineToRenderer(
     switches::kEnableIconNtp,
     switches::kEnableLinkDisambiguationPopup,
     switches::kEnableLowResTiling,
-    switches::kEnableInbandTextTracks,
     switches::kEnableLCDText,
     switches::kEnableLogging,
     switches::kEnableMemoryBenchmarking,
@@ -1414,8 +1341,6 @@ static void PropagateBrowserCommandLineToRenderer(
     switches::kUseMobileUserAgent,
     switches::kUseNormalPriorityForTileTaskWorkerThreads,
     switches::kV,
-    switches::kVideoThreads,
-    switches::kVideoUnderflowThresholdMs,
     switches::kVModule,
     // Please keep these in alphabetical order. Compositor switches here should
     // also be added to chrome/browser/chromeos/login/chrome_restart_request.cc.
@@ -1441,9 +1366,6 @@ static void PropagateBrowserCommandLineToRenderer(
 
     scheduler::switches::kEnableVirtualizedTime,
 
-#if defined(ENABLE_PLUGINS)
-    switches::kEnablePepperTesting,
-#endif
 #if defined(ENABLE_WEBRTC)
     switches::kDisableWebRtcHWDecoding,
     switches::kDisableWebRtcHWEncoding,
@@ -1681,12 +1603,6 @@ void RenderProcessHostImpl::OnChannelConnected(int32 peer_pid) {
           ui::OzonePlatform::GetInstance()->OpenClientNativePixmapDevice())));
 #endif
 
-  // Inform AudioInputRendererHost about the new render process PID.
-  // AudioInputRendererHost is reference counted, so it's lifetime is
-  // guarantueed during the lifetime of the closure.
-  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                          base::Bind(&AudioInputRendererHost::set_renderer_pid,
-                                     audio_input_renderer_host_, peer_pid));
 }
 
 void RenderProcessHostImpl::OnChannelError() {
@@ -2369,7 +2285,7 @@ void RenderProcessHostImpl::UpdateProcessPriority() {
   // visible widgets -- the callers must call this function whenever we
   // transition in/out of those states.
   const bool should_background =
-      visible_widgets_ == 0 && !audio_renderer_host_->HasActiveAudio() &&
+      visible_widgets_ == 0 && 
       !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableRendererBackgrounding);
 
@@ -2513,11 +2429,6 @@ void RenderProcessHostImpl::OnProcessLaunchFailed() {
   ProcessDied(true, &details);
 }
 
-scoped_refptr<AudioRendererHost> RenderProcessHostImpl::audio_renderer_host()
-    const {
-  return audio_renderer_host_;
-}
-
 void RenderProcessHostImpl::OnUserMetricsRecordAction(
     const std::string& action) {
   RecordComputedAction(action);
@@ -2634,15 +2545,6 @@ void RenderProcessHostImpl::DecrementWorkerRefCount() {
   --worker_ref_count_;
   if (worker_ref_count_ == 0)
     Cleanup();
-}
-
-void RenderProcessHostImpl::GetAudioOutputControllers(
-    const GetAudioOutputControllersCallback& callback) const {
-  audio_renderer_host()->GetOutputControllers(callback);
-}
-
-BluetoothDispatcherHost* RenderProcessHostImpl::GetBluetoothDispatcherHost() {
-  return bluetooth_dispatcher_host_.get();
 }
 
 }  // namespace content

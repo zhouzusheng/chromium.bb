@@ -30,7 +30,6 @@
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_memory_buffer_factory.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/gpu/media/gpu_jpeg_decode_accelerator.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/common/value_state.h"
@@ -787,8 +786,6 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
                         OnCreateOffscreenCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyCommandBuffer,
                         OnDestroyCommandBuffer)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuMsg_CreateJpegDecoder,
-                                    OnCreateJpegDecoder)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   DCHECK(handled) << msg.type();
@@ -991,13 +988,6 @@ void GpuChannel::OnDestroyCommandBuffer(int32 route_id) {
     // This stub won't get a chance to reschedule, so update the count now.
     OnStubSchedulingChanged(stub.get(), true);
   }
-}
-
-void GpuChannel::OnCreateJpegDecoder(int32 route_id, IPC::Message* reply_msg) {
-  if (!jpeg_decoder_) {
-    jpeg_decoder_.reset(new GpuJpegDecodeAccelerator(this, io_task_runner_));
-  }
-  jpeg_decoder_->AddClient(route_id, reply_msg);
 }
 
 void GpuChannel::CacheShader(const std::string& key,

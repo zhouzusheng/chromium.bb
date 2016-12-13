@@ -12,7 +12,6 @@
 #include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
-#include "device/vibration/vibration_manager.mojom.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/modules/indexeddb/WebIDBFactory.h"
 #include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationType.h"
@@ -40,10 +39,6 @@ class WebThreadImplForRendererScheduler;
 }
 
 namespace content {
-class BatteryStatusDispatcher;
-class DeviceLightEventPump;
-class DeviceMotionEventPump;
-class DeviceOrientationEventPump;
 class PlatformEventObserverBase;
 class QuotaMessageFilter;
 class RendererClipboardDelegate;
@@ -181,29 +176,6 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
       blink::WebPlatformEventType type,
       scoped_ptr<PlatformEventObserverBase> observer);
 
-  // Disables the WebSandboxSupport implementation for testing.
-  // Tests that do not set up a full sandbox environment should call
-  // SetSandboxEnabledForTesting(false) _before_ creating any instances
-  // of this class, to ensure that we don't attempt to use sandbox-related
-  // file descriptors or other resources.
-  //
-  // Returns the previous |enable| value.
-  static bool SetSandboxEnabledForTesting(bool enable);
-
-  //  Set a double to return when setDeviceLightListener is invoked.
-  static void SetMockDeviceLightDataForTesting(double data);
-  // Set WebDeviceMotionData to return when setDeviceMotionListener is invoked.
-  static void SetMockDeviceMotionDataForTesting(
-      const blink::WebDeviceMotionData& data);
-  // Set WebDeviceOrientationData to return when setDeviceOrientationListener
-  // is invoked.
-  static void SetMockDeviceOrientationDataForTesting(
-      const blink::WebDeviceOrientationData& data);
-
-  // Notifies blink::WebBatteryStatusListener that battery status has changed.
-  void MockBatteryStatusChangedForTesting(
-      const blink::WebBatteryStatus& status);
-
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();
   }
@@ -221,8 +193,7 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   // Use the data previously set via SetMockDevice...DataForTesting() and send
   // them to the registered listener.
   void SendFakeDeviceEventDataForTesting(blink::WebPlatformEventType type);
-  device::VibrationManagerPtr& GetConnectedVibrationManagerService();
-
+ 
   scoped_ptr<blink::WebThread> main_thread_;
 
   scoped_ptr<RendererClipboardDelegate> clipboard_delegate_;
@@ -254,10 +225,6 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
 
   WebPublicSuffixListImpl public_suffix_list_;
 
-  scoped_ptr<DeviceLightEventPump> device_light_event_pump_;
-  scoped_ptr<DeviceMotionEventPump> device_motion_event_pump_;
-  scoped_ptr<DeviceOrientationEventPump> device_orientation_event_pump_;
-
   scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;
   scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
@@ -269,11 +236,6 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   cc_blink::WebCompositorSupportImpl compositor_support_;
 
   scoped_ptr<blink::WebScrollbarBehavior> web_scrollbar_behavior_;
-
-  scoped_ptr<BatteryStatusDispatcher> battery_status_dispatcher_;
-
-  // Handle to the Vibration mojo service.
-  device::VibrationManagerPtr vibration_manager_;
 
   IDMap<PlatformEventObserverBase, IDMapOwnPointer> platform_event_observers_;
 

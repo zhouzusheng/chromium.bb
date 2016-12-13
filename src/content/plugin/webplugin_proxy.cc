@@ -30,7 +30,7 @@
 
 #if defined(OS_WIN)
 #include "content/common/plugin_process_messages.h"
-#include "content/public/common/sandbox_init.h"
+
 #endif
 
 using blink::WebBindings;
@@ -97,6 +97,12 @@ void WebPluginProxy::WillDestroyWindow(gfx::PluginWindowHandle window) {
 }
 
 #if defined(OS_WIN)
+bool BrokerDuplicateHandle(HANDLE source_handle,
+	DWORD target_process_id,
+	HANDLE* target_handle,
+	DWORD desired_access,
+	DWORD options);
+
 void WebPluginProxy::SetWindowlessData(
     HANDLE pump_messages_event, gfx::NativeViewId dummy_activation_window) {
   HANDLE pump_messages_event_for_renderer = NULL;

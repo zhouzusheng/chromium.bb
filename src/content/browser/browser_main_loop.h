@@ -18,7 +18,6 @@ class CommandLine;
 class FilePath;
 class HighResolutionTimerManager;
 class MessageLoop;
-class PowerMonitor;
 class SystemMonitor;
 class MemoryPressureMonitor;
 namespace trace_event {
@@ -30,14 +29,6 @@ class TraceEventSystemStatsMonitor;
 namespace IPC {
 class ScopedIPCSupport;
 }
-
-namespace media {
-class AudioManager;
-class UserInputMonitor;
-namespace midi {
-class MidiManager;
-}  // namespace midi
-}  // namespace media
 
 namespace net {
 class NetworkChangeNotifier;
@@ -53,10 +44,8 @@ namespace content {
 class BrowserMainParts;
 class BrowserOnlineStateObserver;
 class BrowserThreadImpl;
-class MediaStreamManager;
 class MojoShellContext;
 class ResourceDispatcherHostImpl;
-class SpeechRecognitionManagerImpl;
 class StartupTaskRunner;
 class TimeZoneMonitor;
 struct MainFunctionParams;
@@ -109,14 +98,6 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   int GetResultCode() const { return result_code_; }
 
-  media::AudioManager* audio_manager() const { return audio_manager_.get(); }
-  MediaStreamManager* media_stream_manager() const {
-    return media_stream_manager_.get();
-  }
-  media::UserInputMonitor* user_input_monitor() const {
-    return user_input_monitor_.get();
-  }
-  media::midi::MidiManager* midi_manager() const { return midi_manager_.get(); }
   base::Thread* indexed_db_thread() const { return indexed_db_thread_.get(); }
 
   bool is_tracing_startup_for_duration() const {
@@ -187,7 +168,6 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   // Members initialized in |PostMainMessageLoopStart()| -----------------------
   scoped_ptr<base::SystemMonitor> system_monitor_;
-  scoped_ptr<base::PowerMonitor> power_monitor_;
   scoped_ptr<base::HighResolutionTimerManager> hi_res_timer_manager_;
   scoped_ptr<net::NetworkChangeNotifier> network_change_notifier_;
 
@@ -244,12 +224,6 @@ class CONTENT_EXPORT BrowserMainLoop {
   scoped_ptr<MojoShellContext> mojo_shell_context_;
   scoped_ptr<IPC::ScopedIPCSupport> mojo_ipc_support_;
 
-  // |user_input_monitor_| has to outlive |audio_manager_|, so declared first.
-  scoped_ptr<media::UserInputMonitor> user_input_monitor_;
-  scoped_ptr<media::AudioManager> audio_manager_;
-
-  scoped_ptr<media::midi::MidiManager> midi_manager_;
-
 #if defined(USE_UDEV)
   scoped_ptr<DeviceMonitorLinux> device_monitor_linux_;
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
@@ -260,8 +234,6 @@ class CONTENT_EXPORT BrowserMainLoop {
 #endif
 
   scoped_ptr<ResourceDispatcherHostImpl> resource_dispatcher_host_;
-  scoped_ptr<MediaStreamManager> media_stream_manager_;
-  scoped_ptr<SpeechRecognitionManagerImpl> speech_recognition_manager_;
   scoped_ptr<TimeZoneMonitor> time_zone_monitor_;
 
   // DO NOT add members here. Add them to the right categories above.

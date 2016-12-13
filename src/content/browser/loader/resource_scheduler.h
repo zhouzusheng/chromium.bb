@@ -107,8 +107,7 @@ class CONTENT_EXPORT ResourceScheduler : public base::NonThreadSafe {
   // Called when a renderer is created.
   void OnClientCreated(int child_id,
                        int route_id,
-                       bool is_visible,
-                       bool is_audible);
+                       bool is_visible);
 
   // Called when a renderer is destroyed.
   void OnClientDeleted(int child_id, int route_id);

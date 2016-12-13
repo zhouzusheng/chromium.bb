@@ -403,9 +403,7 @@ void SpellChecker::markMisspellingsAfterTypingToWord(const VisiblePosition &word
         return;
 
     // Check spelling of one word
-    VisiblePosition checkStartPos = startOfWord(wordStart, LeftWordIfOnBoundary);
-    VisiblePosition checkEndPos = selectionAfterTyping.visibleStart();
-    bool result = markMisspellings(VisibleSelection(checkStartPos, checkEndPos));
+    bool result = markMisspellings(VisibleSelection(startOfWord(wordStart, LeftWordIfOnBoundary), endOfWord(wordStart, RightWordIfOnBoundary)));
 
     if (!result || !isGrammarCheckingEnabled())
         return;
@@ -849,9 +847,7 @@ void SpellChecker::spellCheckOldSelection(const VisibleSelection& oldSelection, 
     TRACE_EVENT0("blink", "SpellChecker::spellCheckOldSelection");
 
     VisiblePosition oldStart(oldSelection.visibleStart());
-    VisiblePosition checkStartPos = startOfWord(oldStart, LeftWordIfOnBoundary);
-    VisiblePosition checkEndPos = endOfWord(checkStartPos, RightWordIfOnBoundary);
-    VisibleSelection oldAdjacentWords = VisibleSelection(checkStartPos, checkEndPos);
+    VisibleSelection oldAdjacentWords = VisibleSelection(startOfWord(oldStart, LeftWordIfOnBoundary), endOfWord(oldStart, RightWordIfOnBoundary));
     if (!equalSelectionsInDOMTree(oldAdjacentWords, newAdjacentWords)) {
         if (isContinuousSpellCheckingEnabled() && isGrammarCheckingEnabled()) {
             VisibleSelection selectedSentence = VisibleSelection(startOfSentence(oldStart), endOfSentence(oldStart));

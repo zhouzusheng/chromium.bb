@@ -300,9 +300,6 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
 
     frame->spellChecker().cancelCheck();
 
-    if (commandType != InsertText)
-        return;
-
     // Take a look at the selection that results after typing and determine whether we need to spellcheck.
     // Since the word containing the current selection is never marked, this does a check to
     // see if typing made a new word that is not in the current selection. Basically, you
@@ -318,7 +315,7 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
         frame->spellChecker().markMisspellingsAfterLineBreak(words);
     } else if (previous.isNotNull()) {
         VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
-        if (p1.deepEquivalent() != p2.deepEquivalent() && characterAfter(previous) != '\'' && 0 > comparePositions(p1.deepEquivalent(), p2.deepEquivalent()))
+        if (p1.deepEquivalent() != p2.deepEquivalent())
             frame->spellChecker().markMisspellingsAfterTypingToWord(p1, endingSelection());
     }
 }
@@ -442,19 +439,13 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
         if (killRing && selection->isCaret() && granularity != CharacterGranularity)
             selection->modify(FrameSelection::AlterationExtend, DirectionBackward, CharacterGranularity);
 
-        VisiblePosition previousPosition = previousPositionOf(endingSelection().visibleStart(), CannotCrossEditingBoundary);
         VisiblePosition visibleStart(endingSelection().visibleStart());
-        Node* enclosingTableCell = enclosingNodeOfType(visibleStart.deepEquivalent(), &isTableCell);
-        Node* enclosingTableCellForPreviousPosition = enclosingNodeOfType(previousPosition.deepEquivalent(), &isTableCell);
-        if (previousPosition.isNull() || enclosingTableCell != enclosingTableCellForPreviousPosition) {
-            // When the caret is at the start of the editable area, or cell, in an empty list item, break out of the list item.
+        if (previousPositionOf(visibleStart, CannotCrossEditingBoundary).isNull()) {
+            // When the caret is at the start of the editable area in an empty list item, break out of the list item.
             if (breakOutOfEmptyListItem()) {
                 typingAddedToOpenCommand(DeleteKey);
                 return;
             }
-        }
-
-        if (previousPosition.isNull()) {
             // When there are no visible positions in the editing root, delete its entire contents.
             if (nextPositionOf(visibleStart, CannotCrossEditingBoundary).isNull() && makeEditableRootEmpty()) {
                 typingAddedToOpenCommand(DeleteKey);
@@ -463,11 +454,19 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
         }
 
         // If we have a caret selection at the beginning of a cell, we have nothing to do.
+        Node* enclosingTableCell = enclosingNodeOfType(visibleStart.deepEquivalent(), &isTableCell);
         if (enclosingTableCell && visibleStart.deepEquivalent() == createVisiblePosition(firstPositionInNode(enclosingTableCell)).deepEquivalent())
             return;
 
+        // If the caret is at the start of a paragraph after a table, move content into the last table cell.
+        if (isStartOfParagraph(visibleStart) && isFirstPositionAfterTable(previousPositionOf(visibleStart, CannotCrossEditingBoundary))) {
+            // Unless the caret is just before a table.  We don't want to move a table into the last table cell.
+            if (isLastPositionBeforeTable(visibleStart))
+                return;
+            // Extend the selection backward into the last cell, then deletion will handle the move.
+            selection->modify(FrameSelection::AlterationExtend, DirectionBackward, granularity);
         // If the caret is just after a table, select the table and don't delete anything.
-        if (Element* table = isFirstPositionAfterTable(visibleStart)) {
+        } else if (Element* table = isFirstPositionAfterTable(visibleStart)) {
             setEndingSelection(VisibleSelection(positionBeforeNode(table), endingSelection().start(), TextAffinity::Downstream, endingSelection().isDirectional()));
             typingAddedToOpenCommand(DeleteKey);
             return;

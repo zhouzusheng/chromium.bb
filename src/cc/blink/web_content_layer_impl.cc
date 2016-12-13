@@ -62,10 +62,6 @@ void WebContentLayerImpl::setDoubleSided(bool double_sided) {
   layer_->layer()->SetDoubleSided(double_sided);
 }
 
-void WebContentLayerImpl::setDefaultLCDBackgroundColor(blink::WebColor default_lcd_background_color) {
-  static_cast<PictureLayer*>(layer_->layer())->SetDefaultLCDBackgroundColor(default_lcd_background_color);
-}
-
 scoped_refptr<cc::DisplayItemList>
 WebContentLayerImpl::PaintContentsToDisplayList(
     const gfx::Rect& clip,

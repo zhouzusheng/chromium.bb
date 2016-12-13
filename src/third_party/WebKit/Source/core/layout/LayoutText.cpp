@@ -903,17 +903,6 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
 
     bool breakAll = (styleToUse.wordBreak() == BreakAllWordBreak || styleToUse.wordBreak() == BreakWordBreak) && styleToUse.autoWrap();
     bool keepAll = styleToUse.wordBreak() == KeepAllWordBreak && styleToUse.autoWrap();
-    bool keepAllIfKorean = styleToUse.wordBreak() == KeepAllIfKoreanWordBreak && styleToUse.autoWrap();
-    LineBreakType lineBreakType;
-    if (breakAll) {
-        lineBreakType = LineBreakType::BreakAll;
-    } else if (keepAll) {
-        lineBreakType = LineBreakType::KeepAll;
-    } else if (keepAllIfKorean) {
-        lineBreakType = LineBreakType::KeepAllIfKorean;
-    } else {
-        lineBreakType = LineBreakType::Normal;
-    }
 
     BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
     BidiCharacterRun* run;
@@ -994,7 +983,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             continue;
         }
 
-        bool hasBreak = breakIterator.isBreakable(i, nextBreakable, lineBreakType);
+        bool hasBreak = breakIterator.isBreakable(i, nextBreakable, breakAll ? LineBreakType::BreakAll : keepAll ? LineBreakType::KeepAll : LineBreakType::Normal);
         bool betweenWords = true;
         int j = i;
         while (c != newlineCharacter && c != spaceCharacter && c != tabulationCharacter && (c != softHyphenCharacter)) {
@@ -1002,7 +991,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             if (j == len)
                 break;
             c = uncheckedCharacterAt(j);
-            if (breakIterator.isBreakable(j, nextBreakable, lineBreakType) && characterAt(j - 1) != softHyphenCharacter)
+            if (breakIterator.isBreakable(j, nextBreakable) && characterAt(j - 1) != softHyphenCharacter)
                 break;
             if (breakAll) {
                 betweenWords = false;
@@ -1228,26 +1217,10 @@ void LayoutText::setSelectionState(SelectionState state)
         containingBlock->setSelectionState(state);
 }
 
-extern bool g_bbNoRelayoutOnSetCharacterData;
-
-bool shouldSkipRelayoutOnSetText(const LayoutText* lt)
-{
-    return g_bbNoRelayoutOnSetCharacterData
-        && lt->firstTextBox()
-        && lt->firstTextBox() == lt->lastTextBox();
-}
-
 void LayoutText::setTextWithOffset(PassRefPtr<StringImpl> text, unsigned offset, unsigned len, bool force)
 {
     if (!force && equal(m_text.impl(), text.get()))
         return;
-
-    if (shouldSkipRelayoutOnSetText(this)) {
-        firstTextBox()->setStartAndLen(0, text->length());
-        m_linesDirty = false;
-        setText(text, force);
-        return;
-    }
 
     unsigned oldLen = textLength();
     unsigned newLen = text->length();
@@ -1441,12 +1414,8 @@ void LayoutText::setText(PassRefPtr<StringImpl> text, bool force)
     // If preferredLogicalWidthsDirty() of an orphan child is true, LayoutObjectChildList::
     // insertChildNode() fails to set true to owner. To avoid that, we call
     // setNeedsLayoutAndPrefWidthsRecalc() only if this LayoutText has parent.
-    if (parent()) {
-        if (shouldSkipRelayoutOnSetText(this))
-            setShouldDoFullPaintInvalidation();
-        else
-            setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::TextChanged);
-    }
+    if (parent())
+        setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::TextChanged);
     m_knownToHaveNoOverflowAndNoFallbackFonts = false;
 
     if (AXObjectCache* cache = document().existingAXObjectCache())

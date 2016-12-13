@@ -24,7 +24,6 @@ class BrowserContext;
 class PluginProcessHost;
 class PluginServiceFilter;
 class ResourceContext;
-struct PepperPluginInfo;
 struct WebPluginInfo;
 
 // This must be created on the main thread but it's only called on the IO/file
@@ -96,12 +95,6 @@ class PluginService {
   // provided function on the calling MessageLoop on completion.
   virtual void GetPlugins(const GetPluginsCallback& callback) = 0;
 
-  // Returns information about a pepper plugin if it exists, otherwise nullptr.
-  // The caller does not own the pointer, and it's not guaranteed to live past
-  // the call stack.
-  virtual PepperPluginInfo* GetRegisteredPpapiPluginInfo(
-      const base::FilePath& plugin_path) = 0;
-
   virtual void SetFilter(PluginServiceFilter* filter) = 0;
   virtual PluginServiceFilter* GetFilter() = 0;
 
@@ -160,9 +153,6 @@ class PluginService {
                                        base::string16* plugin_version) = 0;
 #endif
 
-  // Returns true iff PPAPI "dev channel" methods are supported.
-  virtual bool PpapiDevChannelSupported(BrowserContext* browser_context,
-                                        const GURL& document_url) = 0;
 };
 
 }  // namespace content

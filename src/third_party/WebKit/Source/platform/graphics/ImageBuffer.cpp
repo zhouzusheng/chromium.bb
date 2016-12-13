@@ -46,7 +46,6 @@
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "platform/image-encoders/skia/JPEGImageEncoder.h"
 #include "platform/image-encoders/skia/PNGImageEncoder.h"
-#include "platform/image-encoders/skia/WEBPImageEncoder.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebExternalTextureMailbox.h"
 #include "public/platform/WebGraphicsContext3D.h"
@@ -352,12 +351,6 @@ bool ImageDataBuffer::encodeImage(const String& mimeType, const double& quality,
         if (quality >= 0.0 && quality <= 1.0)
             compressionQuality = static_cast<int>(quality * 100 + 0.5);
         if (!JPEGImageEncoder::encode(*this, compressionQuality, encodedImage))
-            return false;
-    } else if (mimeType == "image/webp") {
-        int compressionQuality = WEBPImageEncoder::DefaultCompressionQuality;
-        if (quality >= 0.0 && quality <= 1.0)
-            compressionQuality = static_cast<int>(quality * 100 + 0.5);
-        if (!WEBPImageEncoder::encode(*this, compressionQuality, encodedImage))
             return false;
     } else {
         if (!PNGImageEncoder::encode(*this, encodedImage))

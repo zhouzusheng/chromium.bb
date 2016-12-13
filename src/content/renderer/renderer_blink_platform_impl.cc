@@ -49,19 +49,9 @@
 #include "content/public/common/service_registry.h"
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/battery_status/battery_status_dispatcher.h"
 #include "content/renderer/cache_storage/webserviceworkercachestorage_impl.h"
-#include "content/renderer/device_sensors/device_light_event_pump.h"
-#include "content/renderer/device_sensors/device_motion_event_pump.h"
-#include "content/renderer/device_sensors/device_orientation_absolute_event_pump.h"
-#include "content/renderer/device_sensors/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
-#include "content/renderer/media/audio_decoder.h"
-#include "content/renderer/media/media_recorder_handler.h"
-#include "content/renderer/media/renderer_webaudiodevice_impl.h"
-#include "content/renderer/media/renderer_webmidiaccessor_impl.h"
-#include "content/renderer/media/rtc_certificate_generator.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_delegate.h"
 #include "content/renderer/screen_orientation/screen_orientation_observer.h"
@@ -70,12 +60,6 @@
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sync_message_filter.h"
-#include "media/audio/audio_output_device.h"
-#include "media/base/audio_hardware_config.h"
-#include "media/base/key_systems.h"
-#include "media/base/mime_util.h"
-#include "media/blink/webcontentdecryptionmodule_impl.h"
-#include "media/filters/stream_parser_factory.h"
 #include "storage/common/database/database_identifier.h"
 #include "storage/common/quota/quota_types.h"
 #include "third_party/WebKit/public/platform/WebBatteryStatusListener.h"
@@ -159,16 +143,6 @@ using blink::WebVector;
 namespace content {
 
 namespace {
-
-bool g_sandbox_enabled = true;
-double g_test_device_light_data = -1;
-base::LazyInstance<blink::WebDeviceMotionData>::Leaky
-    g_test_device_motion_data = LAZY_INSTANCE_INITIALIZER;
-base::LazyInstance<blink::WebDeviceOrientationData>::Leaky
-    g_test_device_orientation_data = LAZY_INSTANCE_INITIALIZER;
-// Set in startListening() when running layout tests, unset in stopListening(),
-// not owned by us.
-blink::WebBatteryStatusListener* g_test_battery_status_listener = nullptr;
 
 }  // namespace
 
@@ -455,60 +429,15 @@ RendererBlinkPlatformImpl::MimeRegistry::supportsMediaMIMEType(
     const WebString& codecs,
     const WebString& key_system) {
   const std::string mime_type_ascii = ToASCIIOrEmpty(mime_type);
-  // Not supporting the container is a flat-out no.
-  if (!media::IsSupportedMediaMimeType(mime_type_ascii))
-    return IsNotSupported;
-
-  if (!key_system.isEmpty()) {
-    // Check whether the key system is supported with the mime_type and codecs.
-
-    // Chromium only supports ASCII parameters.
-    if (!base::IsStringASCII(key_system))
-      return IsNotSupported;
-
-    std::string key_system_ascii =
-        media::GetUnprefixedKeySystemName(base::UTF16ToASCII(
-            base::StringPiece16(key_system)));
-    std::vector<std::string> strict_codecs;
-    media::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, true);
-
-    if (!media::PrefixedIsSupportedKeySystemWithMediaMimeType(
-            mime_type_ascii, strict_codecs, key_system_ascii)) {
-      return IsNotSupported;
-    }
-
-    // Continue processing the mime_type and codecs.
-  }
-
-  // Check list of strict codecs to see if it is supported.
-  if (media::IsStrictMediaMimeType(mime_type_ascii)) {
-    // Check if the codecs are a perfect match.
-    std::vector<std::string> strict_codecs;
-    media::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
-    return static_cast<WebMimeRegistry::SupportsType> (
-        media::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs));
-  }
-
-  // If we don't recognize the codec, it's possible we support it.
-  std::vector<std::string> parsed_codecs;
-  media::ParseCodecString(ToASCIIOrEmpty(codecs), &parsed_codecs, true);
-  if (!media::AreSupportedMediaCodecs(parsed_codecs))
-    return MayBeSupported;
-
-  // Otherwise we have a perfect match.
-  return IsSupported;
+  //TODO:
+  return IsNotSupported;
 }
 
 bool RendererBlinkPlatformImpl::MimeRegistry::supportsMediaSourceMIMEType(
     const blink::WebString& mime_type,
     const WebString& codecs) {
   const std::string mime_type_ascii = ToASCIIOrEmpty(mime_type);
-  std::vector<std::string> parsed_codec_ids;
-  media::ParseCodecString(ToASCIIOrEmpty(codecs), &parsed_codec_ids, false);
-  if (mime_type_ascii.empty())
-    return false;
-  return media::StreamParserFactory::IsTypeSupported(
-      mime_type_ascii, parsed_codec_ids);
+  return false;
 }
 
 WebString RendererBlinkPlatformImpl::MimeRegistry::mimeTypeForExtension(
@@ -692,18 +621,15 @@ bool RendererBlinkPlatformImpl::isThreadedAnimationEnabled() {
 }
 
 double RendererBlinkPlatformImpl::audioHardwareSampleRate() {
-  RenderThreadImpl* thread = RenderThreadImpl::current();
-  return thread->GetAudioHardwareConfig()->GetOutputSampleRate();
+	return 60;
 }
 
 size_t RendererBlinkPlatformImpl::audioHardwareBufferSize() {
-  RenderThreadImpl* thread = RenderThreadImpl::current();
-  return thread->GetAudioHardwareConfig()->GetOutputBufferSize();
+  return 4096;
 }
 
 unsigned RendererBlinkPlatformImpl::audioHardwareOutputChannels() {
-  RenderThreadImpl* thread = RenderThreadImpl::current();
-  return thread->GetAudioHardwareConfig()->GetOutputChannels();
+  return 0;
 }
 
 WebDatabaseObserver* RendererBlinkPlatformImpl::databaseObserver() {
@@ -723,59 +649,7 @@ WebAudioDevice* RendererBlinkPlatformImpl::createAudioDevice(
   if (mock_device)
     return mock_device;
 
-  // The |channels| does not exactly identify the channel layout of the
-  // device. The switch statement below assigns a best guess to the channel
-  // layout based on number of channels.
-  media::ChannelLayout layout = media::CHANNEL_LAYOUT_UNSUPPORTED;
-  switch (channels) {
-    case 1:
-      layout = media::CHANNEL_LAYOUT_MONO;
-      break;
-    case 2:
-      layout = media::CHANNEL_LAYOUT_STEREO;
-      break;
-    case 3:
-      layout = media::CHANNEL_LAYOUT_2_1;
-      break;
-    case 4:
-      layout = media::CHANNEL_LAYOUT_4_0;
-      break;
-    case 5:
-      layout = media::CHANNEL_LAYOUT_5_0;
-      break;
-    case 6:
-      layout = media::CHANNEL_LAYOUT_5_1;
-      break;
-    case 7:
-      layout = media::CHANNEL_LAYOUT_7_0;
-      break;
-    case 8:
-      layout = media::CHANNEL_LAYOUT_7_1;
-      break;
-    default:
-      // If the layout is not supported (more than 9 channels), falls back to
-      // discrete mode.
-      layout = media::CHANNEL_LAYOUT_DISCRETE;
-  }
-
-  int session_id = 0;
-  if (input_device_id.isNull() ||
-      !base::StringToInt(base::UTF16ToUTF8(
-          base::StringPiece16(input_device_id)), &session_id)) {
-    if (input_channels > 0)
-      DLOG(WARNING) << "createAudioDevice(): request for audio input ignored";
-
-    input_channels = 0;
-  }
-
-  // For CHANNEL_LAYOUT_DISCRETE, pass the explicit channel count along with
-  // the channel layout when creating an |AudioParameters| object.
-  media::AudioParameters params(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                                layout, static_cast<int>(sample_rate), 16,
-                                buffer_size);
-  params.set_channels_for_discrete(channels);
-
-  return new RendererWebAudioDeviceImpl(params, callback, session_id);
+  return nullptr;
 }
 
 #if defined(OS_ANDROID)
@@ -793,8 +667,7 @@ bool RendererBlinkPlatformImpl::loadAudioResource(
     blink::WebAudioBus* destination_bus,
     const char* audio_file_data,
     size_t data_size) {
-  return DecodeAudioFileData(
-      destination_bus, audio_file_data, data_size);
+	return false;
 }
 #endif  // defined(OS_ANDROID)
 
@@ -807,7 +680,7 @@ blink::WebMIDIAccessor* RendererBlinkPlatformImpl::createMIDIAccessor(
   if (accessor)
     return accessor;
 
-  return new RendererWebMIDIAccessorImpl(client);
+  return nullptr;
 }
 
 void RendererBlinkPlatformImpl::getPluginList(
@@ -957,13 +830,6 @@ WebMediaStreamCenter* RendererBlinkPlatformImpl::createMediaStreamCenter(
   if (!render_thread)
     return NULL;
   return render_thread->CreateMediaStreamCenter(client);
-}
-
-// static
-bool RendererBlinkPlatformImpl::SetSandboxEnabledForTesting(bool enable) {
-  bool was_enabled = g_sandbox_enabled;
-  g_sandbox_enabled = enable;
-  return was_enabled;
 }
 
 //------------------------------------------------------------------------------
@@ -1118,47 +984,12 @@ void RendererBlinkPlatformImpl::recordRapporURL(const char* metric,
 
 //------------------------------------------------------------------------------
 
-// static
-void RendererBlinkPlatformImpl::SetMockDeviceLightDataForTesting(double data) {
-  g_test_device_light_data = data;
-}
-
-//------------------------------------------------------------------------------
-
-// static
-void RendererBlinkPlatformImpl::SetMockDeviceMotionDataForTesting(
-    const blink::WebDeviceMotionData& data) {
-  g_test_device_motion_data.Get() = data;
-}
-
-//------------------------------------------------------------------------------
-
-// static
-void RendererBlinkPlatformImpl::SetMockDeviceOrientationDataForTesting(
-    const blink::WebDeviceOrientationData& data) {
-  g_test_device_orientation_data.Get() = data;
-}
-
-//------------------------------------------------------------------------------
-
 void RendererBlinkPlatformImpl::vibrate(unsigned int milliseconds) {
-  GetConnectedVibrationManagerService()->Vibrate(
-      base::checked_cast<int64>(milliseconds));
-  vibration_manager_.reset();
+  
 }
 
 void RendererBlinkPlatformImpl::cancelVibration() {
-  GetConnectedVibrationManagerService()->Cancel();
-  vibration_manager_.reset();
-}
-
-device::VibrationManagerPtr&
-RendererBlinkPlatformImpl::GetConnectedVibrationManagerService() {
-  if (!vibration_manager_) {
-    RenderThread::Get()->GetServiceRegistry()->ConnectToRemoteService(
-        mojo::GetProxy(&vibration_manager_));
-  }
-  return vibration_manager_;
+ 
 }
 
 //------------------------------------------------------------------------------
@@ -1176,14 +1007,6 @@ RendererBlinkPlatformImpl::CreatePlatformEventObserverFromType(
     thread = NULL;
 
   switch (type) {
-    case blink::WebPlatformEventTypeDeviceMotion:
-      return new DeviceMotionEventPump(thread);
-    case blink::WebPlatformEventTypeDeviceOrientation:
-      return new DeviceOrientationEventPump(thread);
-    case blink::WebPlatformEventTypeDeviceOrientationAbsolute:
-      return new DeviceOrientationAbsoluteEventPump(thread);
-    case blink::WebPlatformEventTypeDeviceLight:
-      return new DeviceLightEventPump(thread);
     case blink::WebPlatformEventTypeGamepad:
       return new GamepadSharedMemoryReader(thread);
     case blink::WebPlatformEventTypeScreenOrientation:
@@ -1212,14 +1035,6 @@ void RendererBlinkPlatformImpl::startListening(
     blink::WebPlatformEventType type,
     blink::WebPlatformEventListener* listener) {
   if (type == blink::WebPlatformEventTypeBattery) {
-    if (RenderThreadImpl::current() &&
-        RenderThreadImpl::current()->layout_test_mode()) {
-      g_test_battery_status_listener =
-          static_cast<blink::WebBatteryStatusListener*>(listener);
-    } else {
-      battery_status_dispatcher_.reset(new BatteryStatusDispatcher(
-          static_cast<blink::WebBatteryStatusListener*>(listener)));
-    }
     return;
   }
 
@@ -1253,25 +1068,6 @@ void RendererBlinkPlatformImpl::SendFakeDeviceEventDataForTesting(
 
   void* data = 0;
 
-  switch (type) {
-  case blink::WebPlatformEventTypeDeviceMotion:
-    if (!(g_test_device_motion_data == 0))
-      data = &g_test_device_motion_data.Get();
-    break;
-  case blink::WebPlatformEventTypeDeviceOrientation:
-  case blink::WebPlatformEventTypeDeviceOrientationAbsolute:
-    if (!(g_test_device_orientation_data == 0))
-      data = &g_test_device_orientation_data.Get();
-    break;
-  case blink::WebPlatformEventTypeDeviceLight:
-    if (g_test_device_light_data >= 0)
-      data = &g_test_device_light_data;
-    break;
-  default:
-    NOTREACHED();
-    break;
-  }
-
   if (!data)
     return;
 
@@ -1283,8 +1079,6 @@ void RendererBlinkPlatformImpl::SendFakeDeviceEventDataForTesting(
 void RendererBlinkPlatformImpl::stopListening(
     blink::WebPlatformEventType type) {
   if (type == blink::WebPlatformEventTypeBattery) {
-    g_test_battery_status_listener = nullptr;
-    battery_status_dispatcher_.reset();
     return;
   }
 
@@ -1310,13 +1104,5 @@ void RendererBlinkPlatformImpl::queryStorageUsageAndQuota(
           QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
 }
 
-//------------------------------------------------------------------------------
-
-void RendererBlinkPlatformImpl::MockBatteryStatusChangedForTesting(
-    const blink::WebBatteryStatus& status) {
-  if (!g_test_battery_status_listener)
-    return;
-  g_test_battery_status_listener->updateBatteryStatus(status);
-}
 
 }  // namespace content

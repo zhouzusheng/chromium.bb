@@ -293,7 +293,6 @@ struct StoragePartitionImpl::DataDeletionHelper {
       DOMStorageContextWrapper* dom_storage_context,
       storage::QuotaManager* quota_manager,
       storage::SpecialStoragePolicy* special_storage_policy,
-      WebRTCIdentityStore* webrtc_identity_store,
       const base::Time begin,
       const base::Time end);
 
@@ -345,7 +344,6 @@ StoragePartitionImpl::StoragePartitionImpl(
     IndexedDBContextImpl* indexed_db_context,
     CacheStorageContextImpl* cache_storage_context,
     ServiceWorkerContextWrapper* service_worker_context,
-    WebRTCIdentityStore* webrtc_identity_store,
     storage::SpecialStoragePolicy* special_storage_policy,
     GeofencingManager* geofencing_manager,
     HostZoomLevelContext* host_zoom_level_context,
@@ -361,7 +359,6 @@ StoragePartitionImpl::StoragePartitionImpl(
       indexed_db_context_(indexed_db_context),
       cache_storage_context_(cache_storage_context),
       service_worker_context_(service_worker_context),
-      webrtc_identity_store_(webrtc_identity_store),
       special_storage_policy_(special_storage_policy),
       geofencing_manager_(geofencing_manager),
       host_zoom_level_context_(host_zoom_level_context),
@@ -473,9 +470,6 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
   scoped_refptr<ChromeAppCacheService> appcache_service =
       new ChromeAppCacheService(quota_manager->proxy());
 
-  scoped_refptr<WebRTCIdentityStore> webrtc_identity_store(
-      new WebRTCIdentityStore(path, context->GetSpecialStoragePolicy()));
-
   scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy(
       context->GetSpecialStoragePolicy());
 
@@ -504,7 +498,7 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
       filesystem_context.get(), database_tracker.get(),
       dom_storage_context.get(), indexed_db_context.get(),
       cache_storage_context.get(), service_worker_context.get(),
-      webrtc_identity_store.get(), special_storage_policy.get(),
+      special_storage_policy.get(),
       geofencing_manager.get(), host_zoom_level_context.get(),
       navigator_connect_context.get(), platform_notification_context.get(),
       background_sync_context.get());
@@ -522,10 +516,6 @@ net::URLRequestContextGetter* StoragePartitionImpl::GetURLRequestContext() {
   return url_request_context_.get();
 }
 
-net::URLRequestContextGetter*
-StoragePartitionImpl::GetMediaURLRequestContext() {
-  return media_url_request_context_.get();
-}
 
 storage::QuotaManager* StoragePartitionImpl::GetQuotaManager() {
   return quota_manager_.get();
@@ -613,7 +603,6 @@ void StoragePartitionImpl::ClearDataImpl(
                               dom_storage_context_.get(),
                               quota_manager_.get(),
                               special_storage_policy_.get(),
-                              webrtc_identity_store_.get(),
                               begin,
                               end);
 }
@@ -765,7 +754,6 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
     DOMStorageContextWrapper* dom_storage_context,
     storage::QuotaManager* quota_manager,
     storage::SpecialStoragePolicy* special_storage_policy,
-    WebRTCIdentityStore* webrtc_identity_store,
     const base::Time begin,
     const base::Time end) {
   DCHECK_NE(remove_mask, 0u);
@@ -834,18 +822,6 @@ void StoragePartitionImpl::DataDeletionHelper::ClearDataOnUIThread(
                    path, begin, end, decrement_callback));
   }
 
-  if (remove_mask & REMOVE_DATA_MASK_WEBRTC_IDENTITY) {
-    IncrementTaskCountOnUI();
-    BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&WebRTCIdentityStore::DeleteBetween,
-                   webrtc_identity_store,
-                   begin,
-                   end,
-                   decrement_callback));
-  }
-
   DecrementTaskCountOnUI();
 }
 
@@ -884,10 +860,6 @@ void StoragePartitionImpl::Flush() {
     GetDOMStorageContext()->Flush();
 }
 
-WebRTCIdentityStore* StoragePartitionImpl::GetWebRTCIdentityStore() {
-  return webrtc_identity_store_.get();
-}
-
 BrowserContext* StoragePartitionImpl::browser_context() const {
   return browser_context_;
 }
@@ -905,11 +877,6 @@ void StoragePartitionImpl::OverrideSpecialStoragePolicyForTesting(
 void StoragePartitionImpl::SetURLRequestContext(
     net::URLRequestContextGetter* url_request_context) {
   url_request_context_ = url_request_context;
-}
-
-void StoragePartitionImpl::SetMediaURLRequestContext(
-    net::URLRequestContextGetter* media_url_request_context) {
-  media_url_request_context_ = media_url_request_context;
 }
 
 }  // namespace content

@@ -65,11 +65,6 @@ namespace IPC {
 class MessageFilter;
 }
 
-namespace media {
-class AudioHardwareConfig;
-class GpuVideoAcceleratorFactories;
-}
-
 namespace scheduler {
 class RendererScheduler;
 }
@@ -81,11 +76,6 @@ class Extension;
 namespace content {
 
 class AppCacheDispatcher;
-class AecDumpMessageFilter;
-class AudioInputMessageFilter;
-class AudioMessageFilter;
-class AudioRendererMixerManager;
-class BluetoothMessageFilter;
 class BrowserPluginManager;
 class CacheStorageDispatcher;
 class CompositorForwardingMessageFilter;
@@ -97,9 +87,7 @@ class EmbeddedWorkerDispatcher;
 class GpuChannelHost;
 class IndexedDBDispatcher;
 class InputHandlerManager;
-class MediaStreamCenter;
 class MemoryObserver;
-class MidiMessageFilter;
 class NetInfoDispatcher;
 class P2PSocketDispatcher;
 class PeerConnectionDependencyFactory;
@@ -108,12 +96,9 @@ class RasterWorkerPool;
 class RenderProcessObserver;
 class RendererBlinkPlatformImpl;
 class RendererDemuxerAndroid;
-class RendererGpuVideoAcceleratorFactories;
 class ResourceDispatchThrottler;
 class V8SamplingProfiler;
-class VideoCaptureImplManager;
 class WebGraphicsContext3DCommandBufferImpl;
-class WebRTCIdentityService;
 
 #if defined(OS_ANDROID)
 class SynchronousCompositorFilter;
@@ -268,18 +253,6 @@ class CONTENT_EXPORT RenderThreadImpl
     return embedded_worker_dispatcher_.get();
   }
 
-  AudioInputMessageFilter* audio_input_message_filter() {
-    return audio_input_message_filter_.get();
-  }
-
-  AudioMessageFilter* audio_message_filter() {
-    return audio_message_filter_.get();
-  }
-
-  MidiMessageFilter* midi_message_filter() {
-    return midi_message_filter_.get();
-  }
-
 #if defined(OS_ANDROID)
   RendererDemuxerAndroid* renderer_demuxer() {
     return renderer_demuxer_.get();
@@ -313,10 +286,6 @@ class CONTENT_EXPORT RenderThreadImpl
   }
 #endif
 
-  VideoCaptureImplManager* video_capture_impl_manager() const {
-    return vc_manager_.get();
-  }
-
   // Get the GPU channel. Returns NULL if the channel is not established or
   // has been lost.
   GpuChannelHost* GetGpuChannel();
@@ -325,11 +294,6 @@ class CONTENT_EXPORT RenderThreadImpl
   // of the thread on which file operations should be run. Must be called
   // on the renderer's main thread.
   scoped_refptr<base::SingleThreadTaskRunner> GetFileThreadMessageLoopProxy();
-
-  // Returns a SingleThreadTaskRunner instance corresponding to the message loop
-  // of the thread on which media operations should be run. Must be called
-  // on the renderer's main thread.
-  scoped_refptr<base::SingleThreadTaskRunner> GetMediaThreadTaskRunner();
 
   // A TaskRunner instance that runs tasks on the raster worker pool.
   base::TaskRunner* GetWorkerTaskRunner();
@@ -342,20 +306,9 @@ class CONTENT_EXPORT RenderThreadImpl
   // not sent for at least one notification delay.
   void PostponeIdleNotification();
 
-  media::GpuVideoAcceleratorFactories* GetGpuFactories();
-
   scoped_refptr<cc_blink::ContextProviderWebContext>
   SharedMainThreadContextProvider();
 
-  // AudioRendererMixerManager instance which manages renderer side mixer
-  // instances shared based on configured audio parameters.  Lazily created on
-  // first call.
-  AudioRendererMixerManager* GetAudioRendererMixerManager();
-
-  // AudioHardwareConfig contains audio hardware configuration for
-  // renderer side clients.  Creation requires a synchronous IPC call so it is
-  // lazily created on the first call.
-  media::AudioHardwareConfig* GetAudioHardwareConfig();
 
 #if defined(OS_WIN)
   void PreCacheFontCharacters(const LOGFONT& log_font,
@@ -523,9 +476,7 @@ class CONTENT_EXPORT RenderThreadImpl
 
   // Used on the renderer and IPC threads.
   scoped_refptr<DBMessageFilter> db_message_filter_;
-  scoped_refptr<AudioInputMessageFilter> audio_input_message_filter_;
-  scoped_refptr<AudioMessageFilter> audio_message_filter_;
-  scoped_refptr<MidiMessageFilter> midi_message_filter_;
+  
 #if defined(OS_ANDROID)
   scoped_refptr<RendererDemuxerAndroid> renderer_demuxer_;
 #endif
@@ -544,15 +495,6 @@ class CONTENT_EXPORT RenderThreadImpl
   // Dispatches all P2P sockets.
   scoped_refptr<P2PSocketDispatcher> p2p_socket_dispatcher_;
 #endif
-
-  // Used on the render thread.
-  scoped_ptr<VideoCaptureImplManager> vc_manager_;
-
-  // Used for communicating registering AEC dump consumers with the browser and
-  // receving AEC dump file handles when AEC dump is enabled. An AEC dump is
-  // diagnostic audio data for WebRTC stored locally when enabled by the user in
-  // chrome://webrtc-internals.
-  scoped_refptr<AecDumpMessageFilter> aec_dump_message_filter_;
 
   // The count of RenderWidgets running through this thread.
   int widget_count_;
@@ -593,15 +535,6 @@ class CONTENT_EXPORT RenderThreadImpl
   // May be null if overridden by ContentRendererClient.
   scoped_ptr<base::Thread> compositor_thread_;
 
-  // Utility class to provide GPU functionalities to media.
-  // TODO(dcastagna): This should be just one scoped_ptr once
-  // http://crbug.com/580386 is fixed.
-  // NOTE(dcastagna): At worst this accumulates a few bytes per context lost.
-  ScopedVector<content::RendererGpuVideoAcceleratorFactories> gpu_factories_;
-
-  // Thread for running multimedia operations (e.g., video decoding).
-  scoped_ptr<base::Thread> media_thread_;
-
   // Will point to appropriate task runner after initialization,
   // regardless of whether |compositor_thread_| is overriden.
   scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
@@ -618,17 +551,12 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_refptr<SynchronousCompositorFilter> sync_compositor_message_filter_;
 #endif
 
-  scoped_refptr<BluetoothMessageFilter> bluetooth_message_filter_;
-
   scoped_refptr<cc_blink::ContextProviderWebContext>
       shared_main_thread_contexts_;
 
   base::ObserverList<RenderProcessObserver> observers_;
 
   scoped_refptr<ContextProviderCommandBuffer> shared_worker_context_provider_;
-
-  scoped_ptr<AudioRendererMixerManager> audio_renderer_mixer_manager_;
-  scoped_ptr<media::AudioHardwareConfig> audio_hardware_config_;
 
   HistogramCustomizer histogram_customizer_;
 

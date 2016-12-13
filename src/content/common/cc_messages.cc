@@ -341,12 +341,12 @@ void ParamTraits<cc::RenderPass>::Write(
       case cc::DrawQuad::TILED_CONTENT:
         WriteParam(m, *cc::TileDrawQuad::MaterialCast(quad));
         break;
-      case cc::DrawQuad::STREAM_VIDEO_CONTENT:
-        WriteParam(m, *cc::StreamVideoDrawQuad::MaterialCast(quad));
-        break;
-      case cc::DrawQuad::YUV_VIDEO_CONTENT:
-        WriteParam(m, *cc::YUVVideoDrawQuad::MaterialCast(quad));
-        break;
+      //case cc::DrawQuad::STREAM_VIDEO_CONTENT:
+      //  WriteParam(m, *cc::StreamVideoDrawQuad::MaterialCast(quad));
+      //  break;
+      //case cc::DrawQuad::YUV_VIDEO_CONTENT:
+      //  WriteParam(m, *cc::YUVVideoDrawQuad::MaterialCast(quad));
+      //  break;
       case cc::DrawQuad::INVALID:
         break;
     }
@@ -458,12 +458,9 @@ bool ParamTraits<cc::RenderPass>::Read(const Message* m,
       case cc::DrawQuad::TILED_CONTENT:
         draw_quad = ReadDrawQuad<cc::TileDrawQuad>(m, iter, p);
         break;
-      case cc::DrawQuad::STREAM_VIDEO_CONTENT:
-        draw_quad = ReadDrawQuad<cc::StreamVideoDrawQuad>(m, iter, p);
-        break;
-      case cc::DrawQuad::YUV_VIDEO_CONTENT:
-        draw_quad = ReadDrawQuad<cc::YUVVideoDrawQuad>(m, iter, p);
-        break;
+     // case cc::DrawQuad::YUV_VIDEO_CONTENT:
+     //   draw_quad = ReadDrawQuad<cc::YUVVideoDrawQuad>(m, iter, p);
+     //   break;
       case cc::DrawQuad::INVALID:
         break;
     }
@@ -551,12 +548,12 @@ void ParamTraits<cc::RenderPass>::Log(
       case cc::DrawQuad::TILED_CONTENT:
         LogParam(*cc::TileDrawQuad::MaterialCast(quad), l);
         break;
-      case cc::DrawQuad::STREAM_VIDEO_CONTENT:
-        LogParam(*cc::StreamVideoDrawQuad::MaterialCast(quad), l);
-        break;
-      case cc::DrawQuad::YUV_VIDEO_CONTENT:
-        LogParam(*cc::YUVVideoDrawQuad::MaterialCast(quad), l);
-        break;
+      //case cc::DrawQuad::STREAM_VIDEO_CONTENT:
+      //  LogParam(*cc::StreamVideoDrawQuad::MaterialCast(quad), l);
+      //  break;
+      //case cc::DrawQuad::YUV_VIDEO_CONTENT:
+      //  LogParam(*cc::YUVVideoDrawQuad::MaterialCast(quad), l);
+      //  break;
       case cc::DrawQuad::INVALID:
         break;
     }
@@ -795,6 +792,7 @@ void ParamTraits<cc::DrawQuad::Resources>::Log(const param_type& p,
   l->append("])");
 }
 
+/*
 void ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Write(
     Message* m,
     const param_type& p) {
@@ -825,6 +823,8 @@ void ParamTraits<cc::StreamVideoDrawQuad::OverlayResources>::Log(
   }
   l->append("])");
 }
+*/
+
 
 void ParamTraits<cc::TextureDrawQuad::OverlayResources>::Write(
     Message* m,

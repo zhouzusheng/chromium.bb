@@ -423,8 +423,6 @@ private:
     Position positionForBox(InlineBox*, bool start = true) const;
     PositionWithAffinity positionForPointWithInlineChildren(const LayoutPoint&);
 
-    LayoutUnit additionalMarginStart() const override;
-
     // End helper functions and structs used by layoutBlockChildren.
 
     void removeFromGlobalMaps();

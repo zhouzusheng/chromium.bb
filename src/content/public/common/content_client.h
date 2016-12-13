@@ -35,10 +35,6 @@ namespace gpu {
 struct GPUInfo;
 }
 
-namespace sandbox {
-class TargetPolicy;
-}
-
 namespace content {
 
 class ContentBrowserClient;

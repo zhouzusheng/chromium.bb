@@ -23,8 +23,6 @@
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "ipc/message_filter.h"
-#include "media/audio/audio_parameters.h"
-#include "media/base/channel_layout.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -63,11 +61,6 @@ namespace gpu {
 struct SyncToken;
 }
 
-namespace media {
-class AudioManager;
-struct MediaLogEvent;
-}
-
 namespace net {
 class KeygenHandler;
 class URLRequestContext;
@@ -77,7 +70,6 @@ class URLRequestContextGetter;
 namespace content {
 class BrowserContext;
 class DOMStorageContextWrapper;
-class MediaInternals;
 class RenderWidgetHelper;
 class ResourceContext;
 class ResourceDispatcherHostImpl;
@@ -92,8 +84,6 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
                       BrowserContext* browser_context,
                       net::URLRequestContextGetter* request_context,
                       RenderWidgetHelper* render_widget_helper,
-                      media::AudioManager* audio_manager,
-                      MediaInternals* media_internals,
                       DOMStorageContextWrapper* dom_storage_context);
 
   // BrowserMessageFilter methods:
@@ -148,9 +138,6 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
                               int render_frame_id,
                               const std::string& url_str);
 
-  void OnGetAudioHardwareConfig(media::AudioParameters* input_params,
-                                media::AudioParameters* output_params);
-
 #if defined(OS_WIN)
   // Used to look up the monitor color profile.
   void OnGetMonitorColorProfile(std::vector<char>* profile);
@@ -194,8 +181,6 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
                                 scoped_ptr<net::KeygenHandler> keygen_handler);
   void OnKeygenOnWorkerThread(scoped_ptr<net::KeygenHandler> keygen_handler,
                               IPC::Message* reply_msg);
-  void OnMediaLogEvents(const std::vector<media::MediaLogEvent>&);
-
   bool CheckBenchmarkingEnabled() const;
   bool CheckPreparsedJsCachingEnabled() const;
 
@@ -234,9 +219,6 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
   scoped_refptr<DOMStorageContextWrapper> dom_storage_context_;
 
   int render_process_id_;
-
-  media::AudioManager* audio_manager_;
-  MediaInternals* media_internals_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderMessageFilter);
 };

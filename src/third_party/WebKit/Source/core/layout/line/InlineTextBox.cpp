@@ -61,13 +61,6 @@ void InlineTextBox::destroy()
     InlineBox::destroy();
 }
 
-void InlineTextBox::setStartAndLen(unsigned start, unsigned len)
-{
-    InlineTextBoxPainter::removeFromTextBlobCache(*this);
-    m_start = start;
-    m_len = len;
-}
-
 void InlineTextBox::offsetRun(int delta)
 {
     ASSERT(!isDirty());

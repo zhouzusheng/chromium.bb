@@ -14,7 +14,7 @@
             [
                 'libANGLE',
                 'libGLESv2',
-                '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+                '../../../minikit/minikit.gyp:minikit_generate_sources',
             ],
             'includes':
             [
@@ -24,6 +24,7 @@
             [
                 '.',
                 '../include',
+				'<(SHARED_INTERMEDIATE_DIR)/minikit/public',
             ],
             'sources':
             [
@@ -32,9 +33,9 @@
             'conditions':
             [
                 ['bb_version!=""', {
-                  'product_name': 'blpcr_egl.<(bb_version)',
+                  'product_name': 'minicr_egl.<(bb_version)',
                 }, {
-                  'product_name': 'blpcr_egl',
+                  'product_name': 'minicr_egl',
                 }],
                 ['angle_build_winrt==1',
                 {

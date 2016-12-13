@@ -300,6 +300,9 @@ class SequencedWorkerPool::Inner {
 
   SequenceToken GetNamedSequenceToken(const std::string& name);
 
+  //zzs
+  bool			ReleaseNamedSequenceToken(const std::string& name, SequenceToken sequence_token);
+
   // This function accepts a name and an ID. If the name is null, the
   // token ID is used. This allows us to implement the optional name lookup
   // from a single function without having to enter the lock a separate time.
@@ -594,6 +597,18 @@ SequencedWorkerPool::SequenceToken
 SequencedWorkerPool::Inner::GetNamedSequenceToken(const std::string& name) {
   AutoLock lock(lock_);
   return SequenceToken(LockedGetNamedTokenID(name));
+}
+
+//zzs
+bool	SequencedWorkerPool::Inner::ReleaseNamedSequenceToken(const std::string& name, SequenceToken sequence_token)
+{
+	AutoLock lock(lock_);
+	std::map<std::string, int>::const_iterator found =
+		named_sequence_tokens_.find(name);
+	if (found == named_sequence_tokens_.end() || found->second != sequence_token.id_)
+		return false;
+	named_sequence_tokens_.erase(found);
+	return true;
 }
 
 bool SequencedWorkerPool::Inner::PostTask(
@@ -1222,6 +1237,12 @@ SequencedWorkerPool::SequenceToken SequencedWorkerPool::GetSequenceToken() {
 SequencedWorkerPool::SequenceToken SequencedWorkerPool::GetNamedSequenceToken(
     const std::string& name) {
   return inner_->GetNamedSequenceToken(name);
+}
+
+//zzs
+bool	SequencedWorkerPool::ReleaseNamedSequenceToken(const std::string& name, SequenceToken sequence_token)
+{
+	return inner_->ReleaseNamedSequenceToken(name, sequence_token);
 }
 
 scoped_refptr<SequencedTaskRunner> SequencedWorkerPool::GetSequencedTaskRunner(

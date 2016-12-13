@@ -81,7 +81,6 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   virtual bool ShouldUseNativeFrame() const = 0;
   virtual bool ShouldWindowContentsBeTransparent() const = 0;
   virtual void FrameTypeChanged() = 0;
-  virtual void CompositionChanged() = 0;
 
   // Returns the Widget associated with this NativeWidget. This function is
   // guaranteed to return non-NULL for the lifetime of the NativeWidget.

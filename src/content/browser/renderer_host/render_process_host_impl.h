@@ -15,7 +15,6 @@
 #include "base/synchronization/waitable_event.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
-#include "content/browser/power_monitor_message_broadcaster.h"
 #include "content/common/content_export.h"
 #include "content/common/mojo/service_registry_impl.h"
 #include "content/public/browser/render_process_host.h"
@@ -47,9 +46,6 @@ class ChannelMojoHost;
 }
 
 namespace content {
-class AudioInputRendererHost;
-class AudioRendererHost;
-class BluetoothDispatcherHost;
 class BrowserCdmManager;
 class BrowserDemuxerAndroid;
 class GpuMessageFilter;
@@ -61,11 +57,9 @@ class NotificationMessageFilter;
 class P2PSocketDispatcherHost;
 #endif
 class PermissionServiceContext;
-class PeerConnectionTrackerHost;
 class RenderWidgetHelper;
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
-class RenderWidgetHostViewFrameSubscriber;
 class StoragePartition;
 class StoragePartitionImpl;
 
@@ -179,7 +173,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void OnProcessLaunched() override;
   void OnProcessLaunchFailed() override;
 
-  scoped_refptr<AudioRendererHost> audio_renderer_host() const;
 
   // Call this function when it is evident that the child process is actively
   // performing some operation, for example if we just received an IPC message.
@@ -262,11 +255,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // to the Worker in this renderer process has changed.
   void IncrementWorkerRefCount();
   void DecrementWorkerRefCount();
-
-  void GetAudioOutputControllers(
-      const GetAudioOutputControllersCallback& callback) const override;
-
-  BluetoothDispatcherHost* GetBluetoothDispatcherHost();
 
  protected:
   // A proxy for our IPC::Channel that lives on the IO thread.
@@ -423,10 +411,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // RenderFrames.
   bool is_for_guests_only_;
 
-  // Forwards messages between WebRTCInternals in the browser process
-  // and PeerConnectionTracker in the renderer process.
-  scoped_refptr<PeerConnectionTrackerHost> peer_connection_tracker_host_;
-
   // Prevents the class from being added as a GpuDataManagerImpl observer more
   // than once.
   bool gpu_observer_registered_;
@@ -438,15 +422,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Indicates whether RenderProcessHostImpl is currently iterating and calling
   // through RenderProcessHostObserver::RenderProcessExited.
   bool within_process_died_observer_;
-
-  // Forwards power state messages to the renderer process.
-  PowerMonitorMessageBroadcaster power_monitor_broadcaster_;
-
-  scoped_refptr<AudioRendererHost> audio_renderer_host_;
-
-  scoped_refptr<AudioInputRendererHost> audio_input_renderer_host_;
-
-  scoped_refptr<BluetoothDispatcherHost> bluetooth_dispatcher_host_;
 
 #if defined(OS_ANDROID)
   scoped_refptr<BrowserDemuxerAndroid> browser_demuxer_android_;

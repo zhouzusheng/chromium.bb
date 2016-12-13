@@ -28,8 +28,7 @@ UI_BASE_EXPORT ViewProp* SetWindowSupportsRerouteMouseWheel(HWND hwnd);
 // successfully redirected.
 UI_BASE_EXPORT bool RerouteMouseWheel(HWND window,
                                       WPARAM w_param,
-                                      LPARAM l_param,
-                                      bool reroute_to_any_related_window);
+                                      LPARAM l_param);
 
 }  // namespace ui
 

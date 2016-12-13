@@ -293,7 +293,6 @@ private:
     void updateContentsOffsetInCompositingLayer(const IntPoint& snappedOffsetFromCompositedAncestor, const IntPoint& graphicsLayerParentLocation);
     void updateAfterPartResize();
     void updateCompositingReasons();
-    void updateLCDBackgroundColor(const PaintLayer* compositingContainer);
 
     static bool hasVisibleNonCompositingDescendant(PaintLayer* parent);
 
@@ -442,8 +441,6 @@ private:
     unsigned m_scrollingContentsAreEmpty : 1;
 
     mutable IntRect m_previousPaintInterestRect;
-
-    Color m_lcdBackgroundColor;
 
     friend class CompositedLayerMappingTest;
 };

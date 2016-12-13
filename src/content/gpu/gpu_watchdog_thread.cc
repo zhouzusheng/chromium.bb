@@ -16,7 +16,6 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
-#include "base/power_monitor/power_monitor.h"
 #include "base/process/process.h"
 #include "base/single_thread_task_runner.h"
 #include "build/build_config.h"
@@ -125,10 +124,6 @@ GpuWatchdogThread::~GpuWatchdogThread() {
 #if defined(OS_WIN)
   CloseHandle(watched_thread_handle_);
 #endif
-
-  base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
-  if (power_monitor)
-    power_monitor->RemoveObserver(this);
 
 #if defined(OS_CHROMEOS)
   if (tty_file_)
@@ -341,32 +336,6 @@ bool GpuWatchdogThread::MatchXEventAtom(XEvent* event) {
 }
 
 #endif
-void GpuWatchdogThread::AddPowerObserver() {
-  task_runner()->PostTask(
-      FROM_HERE, base::Bind(&GpuWatchdogThread::OnAddPowerObserver, this));
-}
-
-void GpuWatchdogThread::OnAddPowerObserver() {
-  base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
-  DCHECK(power_monitor);
-  power_monitor->AddObserver(this);
-}
-
-void GpuWatchdogThread::OnSuspend() {
-  suspended_ = true;
-
-  // When suspending force an acknowledgement to cancel any pending termination
-  // tasks.
-  OnAcknowledge();
-}
-
-void GpuWatchdogThread::OnResume() {
-  suspended_ = false;
-
-  // After resuming jump-start the watchdog again.
-  armed_ = false;
-  OnCheck(true);
-}
 
 #if defined(OS_WIN)
 base::TimeDelta GpuWatchdogThread::GetWatchedThreadTime() {

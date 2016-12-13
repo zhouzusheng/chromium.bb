@@ -11,12 +11,10 @@
 #include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
-#include "content/public/common/sandbox_init.h"
 #include "content/utility/utility_thread_impl.h"
 
 #if defined(OS_WIN)
 #include "base/rand_util.h"
-#include "sandbox/win/src/sandbox.h"
 #endif
 
 namespace content {
@@ -41,18 +39,7 @@ int UtilityMain(const MainFunctionParams& parameters) {
   base::HighResolutionTimerManager hi_res_timer_manager;
 
 #if defined(OS_WIN)
-  bool no_sandbox = parameters.command_line.HasSwitch(switches::kNoSandbox);
-  if (!no_sandbox) {
-    sandbox::TargetServices* target_services =
-        parameters.sandbox_info->target_services;
-    if (!target_services)
-      return false;
-    char buffer;
-    // Ensure RtlGenRandom is warm before the token is lowered; otherwise,
-    // base::RandBytes() will CHECK fail when v8 is initialized.
-    base::RandBytes(&buffer, sizeof(buffer));
-    target_services->LowerToken();
-  }
+  
 #endif
 
   base::MessageLoop::current()->Run();

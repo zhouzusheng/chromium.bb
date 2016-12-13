@@ -37,7 +37,6 @@
     readonly attribute boolean          altKey;
     readonly attribute boolean          metaKey;
     readonly attribute boolean          repeat;
-    readonly attribute boolean          bbIsNumLock;
     // TODO(philipj): readonly attribute boolean isComposing;
     boolean getModifierState(DOMString keyArg);
 

@@ -21,10 +21,19 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 
+#include "content/common/content_switches_internal.h"
+#include "content/public/common/content_switches.h"
+#include "base/base_switches.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_impl.h"
+#include "base/process/launch.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/hash.h"
+
 #if defined(OS_WIN)
 #include "base/files/file_path.h"
-#include "content/common/sandbox_win.h"
-#include "content/public/common/sandbox_init.h"
 #elif defined(OS_MACOSX)
 #include "content/browser/bootstrap_sandbox_manager_mac.h"
 #include "content/browser/browser_io_surface_manager_mac.h"
@@ -95,6 +104,51 @@ void OnChildProcessStartedAndroid(const NotifyCallback& callback,
   }
 }
 #endif
+
+void ProcessDebugFlags(base::CommandLine* command_line) {
+	const base::CommandLine& current_cmd_line =
+		*base::CommandLine::ForCurrentProcess();
+	std::string type = command_line->GetSwitchValueASCII(switches::kProcessType);
+	if (current_cmd_line.HasSwitch(switches::kWaitForDebuggerChildren)) {
+		// Look to pass-on the kWaitForDebugger flag.
+		std::string value = current_cmd_line.GetSwitchValueASCII(
+			switches::kWaitForDebuggerChildren);
+		if (value.empty() || value == type) {
+			command_line->AppendSwitch(switches::kWaitForDebugger);
+		}
+		command_line->AppendSwitchASCII(switches::kWaitForDebuggerChildren, value);
+	}
+}
+
+base::Process StartSandboxedProcess(
+	SandboxedProcessLauncherDelegate* delegate,
+	base::CommandLine* cmd_line) {
+	DCHECK(delegate);
+	const base::CommandLine& browser_command_line =
+		*base::CommandLine::ForCurrentProcess();
+	std::string type_str = cmd_line->GetSwitchValueASCII(switches::kProcessType);
+
+	TRACE_EVENT1("startup", "StartProcessWithAccess", "type", type_str);
+
+	// Propagate the --allow-no-job flag if present.
+	if (browser_command_line.HasSwitch(switches::kAllowNoSandboxJob) &&
+		!cmd_line->HasSwitch(switches::kAllowNoSandboxJob)) {
+		cmd_line->AppendSwitch(switches::kAllowNoSandboxJob);
+	}
+
+	ProcessDebugFlags(cmd_line);
+
+	// Prefetch hints on windows:
+	// Using a different prefetch profile per process type will allow Windows
+	// to create separate pretetch settings for browser, renderer etc.
+	cmd_line->AppendArg(base::StringPrintf("/prefetch:%d", base::Hash(type_str)));
+
+	
+	base::Process process =
+		base::LaunchProcess(*cmd_line, base::LaunchOptions());
+	return process.Pass();
+	
+}
 
 void LaunchOnLauncherThread(const NotifyCallback& callback,
                             BrowserThread::ID client_thread_id,

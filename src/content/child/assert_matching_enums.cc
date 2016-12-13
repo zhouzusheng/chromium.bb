@@ -8,7 +8,8 @@
 #include "base/macros.h"
 #include "cc/animation/animation.h"
 #include "content/public/common/screen_orientation_values.h"
-#include "media/base/mime_util.h"
+//zzs
+//#include "media/base/mime_util.h"
 #include "third_party/WebKit/public/platform/WebCompositorAnimation.h"
 #include "third_party/WebKit/public/platform/WebMimeRegistry.h"
 #include "third_party/WebKit/public/platform/modules/screen_orientation/WebScreenOrientationLockType.h"
@@ -39,12 +40,13 @@ STATIC_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockNatural,
     SCREEN_ORIENTATION_VALUES_NATURAL);
 
 // SupportsType
-STATIC_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsNotSupported,
-    media::IsNotSupported);
-STATIC_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsSupported,
-    media::IsSupported);
-STATIC_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::MayBeSupported,
-    media::MayBeSupported);
+//zzs
+//STATIC_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsNotSupported,
+//   media::IsNotSupported);
+//STATIC_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsSupported,
+//    media::IsSupported);
+//STATIC_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::MayBeSupported,
+//    media::MayBeSupported);
 
 // TargetProperty
 STATIC_ASSERT_MATCHING_ENUM(

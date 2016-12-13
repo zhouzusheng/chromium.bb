@@ -1,6 +1,6 @@
 // Microsoft Visual C++ generated resource script.
 //
-#include <blpwtk2_products.h>
+#include <minikit_products.h>
 
 #define APSTUDIO_READONLY_SYMBOLS
 /////////////////////////////////////////////////////////////////////////////
@@ -29,7 +29,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 
 1 TEXTINCLUDE 
 BEGIN
-    "blpwtk2_products.h\0"
+    "minikit_products.h\0"
 END
 
 2 TEXTINCLUDE 
@@ -69,12 +69,12 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "FileDescription", "ANGLE libGLESv2 Dynamic Link Library"
-            VALUE "FileVersion", BLPWTK2_RC_VERSION
-            VALUE "InternalName", "blpcr_glesv2"
+            VALUE "FileVersion", MINIKIT_RC_VERSION
+            VALUE "InternalName", "minicr_glesv2"
             VALUE "LegalCopyright", "Copyright (C) 2015 Google Inc."
-            VALUE "OriginalFilename", BLPCR_GLESV2_DLL_NAME
+            VALUE "OriginalFilename", MINICR_GLESV2_DLL_NAME
             VALUE "ProductName", "ANGLE libGLESv2 Dynamic Link Library"
-            VALUE "ProductVersion", BLPWTK2_RC_VERSION
+            VALUE "ProductVersion", MINIKIT_RC_VERSION
         END
     END
     BLOCK "VarFileInfo"

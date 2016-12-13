@@ -165,10 +165,6 @@ public:
     // will paint background by itself.
     void setBackgroundColor(const Color&);
 
-    // Set the color to blend LCD text with when the layer's background color
-    // would otherwise be transparent.
-    void setDefaultLCDBackgroundColor(const Color&);
-
     // opaque means that we know the layer contents have no alpha
     bool contentsOpaque() const { return m_contentsOpaque; }
     void setContentsOpaque(bool);

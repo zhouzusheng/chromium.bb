@@ -173,14 +173,6 @@ bool WebLayerImpl::opaque() const {
   return layer_->contents_opaque();
 }
 
-void WebLayerImpl::setOpaqueForLCDText(bool opaque_for_lcd_text) {
-  layer_->SetContentsOpaqueForLCDText(opaque_for_lcd_text);
-}
-
-bool WebLayerImpl::opaqueForLCDText() const {
-  return layer_->contents_opaque_for_lcd_text();
-}
-
 void WebLayerImpl::setPosition(const WebFloatPoint& position) {
   layer_->SetPosition(position);
 }

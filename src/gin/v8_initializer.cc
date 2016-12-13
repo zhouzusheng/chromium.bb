@@ -28,7 +28,7 @@
 #include "base/path_service.h"
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 
-#include <blpv8_products.h>  // For BLPV8_NATIVES_BLOB_NAME, BLPV8_SNAPSHOT_BLOB_NAME
+#include <miniv8_products.h>  // For BLPV8_NATIVES_BLOB_NAME, BLPV8_SNAPSHOT_BLOB_NAME
 
 namespace gin {
 
@@ -65,8 +65,8 @@ const char kSnapshotFileName[] = "snapshot_blob_32.bin";
 #endif // __LP64__
 
 #else  // defined(OS_ANDROID)
-const char kNativesFileName[] = BLPV8_NATIVES_BLOB_NAME;
-const char kSnapshotFileName[] = BLPV8_SNAPSHOT_BLOB_NAME;
+const char kNativesFileName[] = MINIV8_NATIVES_BLOB_NAME;
+const char kSnapshotFileName[] = MINIV8_SNAPSHOT_BLOB_NAME;
 #endif  // defined(OS_ANDROID)
 
 void GetV8FilePath(const char* file_name, base::FilePath* path_out) {

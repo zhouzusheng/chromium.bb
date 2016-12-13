@@ -50,9 +50,9 @@
         }],
         ['v8_as_shared_library==1', {
           'type': 'shared_library',
-          'product_name': 'blpv8<(bb_version_suffix)',
+          'product_name': 'miniv8<(bb_version_suffix)',
           'sources': [
-            '../../src/blpv8.rc',
+            '../../src/miniv8.rc',
             '<(SHARED_INTERMEDIATE_DIR)/gin/v8_snapshot_fingerprint.cc',
             # Note: on non-Windows we still build this file so that gyp
             # has some sources to link into the component.
@@ -62,7 +62,7 @@
             '../..',
           ],
           'dependencies': [
-            '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+            '../../../minikit/minikit.gyp:minikit_generate_sources',
             '../../../gin/gin.gyp:gin_v8_snapshot_fingerprint',
           ],
           'defines': [
@@ -376,7 +376,7 @@
       'type': 'static_library',
       'dependencies': [
         'v8_libbase',
-        '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+        '../../../minikit/minikit.gyp:minikit_generate_sources',
       ],
       'variables': {
         'optimize': 'max',

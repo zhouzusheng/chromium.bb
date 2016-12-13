@@ -49,46 +49,6 @@ static void D32_LCD16_Proc(void* SK_RESTRICT dst, size_t dstRB,
     } while (--height != 0);
 }
 
-SkBlitMask::BlitLCD16RowOverBackgroundProc SkBlitMask::BlitLCD16RowOverBackgroundFactory(bool isOpaque) {
-    BlitLCD16RowOverBackgroundProc proc = PlatformBlitRowOverBackgroundProcs16(isOpaque);
-    if (proc) {
-        return proc;
-    }
-
-    if (isOpaque) {
-        return  SkBlitLCD16OpaqueRowOverBackground;
-    } else {
-        return  SkBlitLCD16RowOverBackground;
-    }
-}
-
-static void D32_LCD16_OverBackground_Proc(void* SK_RESTRICT dst, size_t dstRB,
-                                          const void* SK_RESTRICT mask, size_t maskRB,
-                                          SkColor color, SkColor background,
-                                          int width, int height) {
-
-    SkPMColor*        dstRow = (SkPMColor*)dst;
-    const uint16_t* srcRow = (const uint16_t*)mask;
-    SkPMColor       opaqueDst;
-
-    SkBlitMask::BlitLCD16RowOverBackgroundProc proc = nullptr;
-    bool isOpaque = (0xFF == SkColorGetA(color));
-    proc = SkBlitMask::BlitLCD16RowOverBackgroundFactory(isOpaque);
-    SkASSERT(proc != nullptr);
-
-    if (isOpaque) {
-        opaqueDst = SkPreMultiplyColor(color);
-    } else {
-        opaqueDst = 0;  // ignored
-    }
-
-    do {
-        proc(dstRow, srcRow, color, width, opaqueDst, background);
-        dstRow = (SkPMColor*)((char*)dstRow + dstRB);
-        srcRow = (const uint16_t*)((const char*)srcRow + maskRB);
-    } while (--height != 0);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 bool SkBlitMask::BlitColor(const SkPixmap& device, const SkMask& mask,
@@ -103,16 +63,7 @@ bool SkBlitMask::BlitColor(const SkPixmap& device, const SkMask& mask,
     }
 
     if (device.colorType() == kN32_SkColorType && mask.fFormat == SkMask::kLCD16_Format) {
-        SkColor background = device.defaultLCDBackgroundColor();
-
-        if (0xFF == SkColorGetA(background)) {
-            D32_LCD16_OverBackground_Proc(device.writable_addr32(x,y), device.rowBytes(),
-                       mask.getAddr(x,y), mask.fRowBytes,
-                       color, SkPreMultiplyColor(background),
-                       clip.width(), clip.height());
-            return true;
-        }
-
+        // TODO: Is this reachable code?  Seems like no.
         D32_LCD16_Proc(device.writable_addr32(x,y), device.rowBytes(),
                        mask.getAddr(x,y), mask.fRowBytes,
                        color, clip.width(), clip.height());

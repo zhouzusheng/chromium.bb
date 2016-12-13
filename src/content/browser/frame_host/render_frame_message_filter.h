@@ -14,10 +14,6 @@
 #include "third_party/WebKit/public/web/WebFrameOwnerProperties.h"
 #include "third_party/WebKit/public/web/WebTreeScopeType.h"
 
-#if defined(ENABLE_PLUGINS)
-#include "content/common/pepper_renderer_instance_data.h"
-#endif
-
 class GURL;
 
 namespace net {
@@ -54,9 +50,7 @@ class RenderFrameMessageFilter : public BrowserMessageFilter {
 
  private:
   class OpenChannelToNpapiPluginCallback;
-  class OpenChannelToPpapiPluginCallback;
-  class OpenChannelToPpapiBrokerCallback;
-
+ 
   ~RenderFrameMessageFilter() override;
 
   void OnCreateChildFrame(
@@ -117,18 +111,7 @@ class RenderFrameMessageFilter : public BrowserMessageFilter {
                              IPC::Message* reply_msg);
   void OnCompletedOpenChannelToNpapiPlugin(
       OpenChannelToNpapiPluginCallback* client);
-  void OnOpenChannelToPepperPlugin(const base::FilePath& path,
-                                   IPC::Message* reply_msg);
-  void OnDidCreateOutOfProcessPepperInstance(
-      int plugin_child_id,
-      int32 pp_instance,
-      PepperRendererInstanceData instance_data,
-      bool is_external);
-  void OnDidDeleteOutOfProcessPepperInstance(int plugin_child_id,
-                                             int32 pp_instance,
-                                             bool is_external);
-  void OnOpenChannelToPpapiBroker(int routing_id,
-                                  const base::FilePath& path);
+  
   void OnPluginInstanceThrottleStateChange(int plugin_child_id,
                                            int32 pp_instance,
                                            bool is_throttled);

@@ -42,8 +42,7 @@ RenderViewHost* RenderViewHostFactory::Create(
                                           swapped_out);
   }
   return new RenderViewHostImpl(instance, delegate, widget_delegate, routing_id,
-                                main_frame_routing_id, swapped_out, hidden,
-                                true /* has_initialized_audio_host */);
+                                main_frame_routing_id, swapped_out, hidden);
 }
 
 // static

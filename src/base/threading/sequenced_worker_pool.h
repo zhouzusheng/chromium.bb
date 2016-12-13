@@ -190,6 +190,8 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
   // will be created.
   SequenceToken GetNamedSequenceToken(const std::string& name);
 
+  bool			ReleaseNamedSequenceToken(const std::string& name, SequenceToken sequence_token);
+
   // Returns a SequencedTaskRunner wrapper which posts to this
   // SequencedWorkerPool using the given sequence token. Tasks with nonzero
   // delay are posted with SKIP_ON_SHUTDOWN behavior and tasks with zero delay

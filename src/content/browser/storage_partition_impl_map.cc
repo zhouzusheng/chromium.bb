@@ -463,12 +463,7 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
             &protocol_handlers,
             request_interceptors.Pass()));
   }
-  partition->SetMediaURLRequestContext(
-      partition_domain.empty() ?
-      browser_context_->GetMediaRequestContext() :
-      browser_context_->GetMediaRequestContextForStoragePartition(
-          partition->GetPath(), in_memory));
-
+  
   GetContentClient()->browser()->GetAdditionalNavigatorConnectServices(
       partition->GetNavigatorConnectContext());
 

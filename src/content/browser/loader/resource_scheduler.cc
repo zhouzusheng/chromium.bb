@@ -365,10 +365,8 @@ void ResourceScheduler::RequestQueue::Insert(
 class ResourceScheduler::Client {
  public:
   explicit Client(ResourceScheduler* scheduler,
-                  bool is_visible,
-                  bool is_audible)
-      : is_audible_(is_audible),
-        is_visible_(is_visible),
+                  bool is_visible)
+      : is_visible_(is_visible),
         is_loaded_(false),
         is_paused_(false),
         has_html_body_(false),
@@ -383,7 +381,6 @@ class ResourceScheduler::Client {
     // Update to default state and pause to ensure the scheduler has a
     // correct count of relevant types of clients.
     is_visible_ = false;
-    is_audible_ = false;
     is_paused_ = true;
     UpdateThrottleState();
   }
@@ -436,14 +433,14 @@ class ResourceScheduler::Client {
     return unowned_requests;
   }
 
-  bool is_active() const { return is_visible_ || is_audible_; }
+  bool is_active() const { return is_visible_; }
 
   bool is_loaded() const { return is_loaded_; }
 
   bool is_visible() const { return is_visible_; }
 
   void OnAudibilityChanged(bool is_audible) {
-    UpdateState(is_audible, &is_audible_);
+    //UpdateState(is_audible, &is_audible_);
   }
 
   void OnVisibilityChanged(bool is_visible) {
@@ -948,7 +945,6 @@ class ResourceScheduler::Client {
     }
   }
 
-  bool is_audible_;
   bool is_visible_;
   bool is_loaded_;
   bool is_paused_;
@@ -1109,13 +1105,12 @@ void ResourceScheduler::RemoveRequest(ScheduledResourceRequest* request) {
 
 void ResourceScheduler::OnClientCreated(int child_id,
                                         int route_id,
-                                        bool is_visible,
-                                        bool is_audible) {
+                                        bool is_visible) {
   DCHECK(CalledOnValidThread());
   ClientId client_id = MakeClientId(child_id, route_id);
   DCHECK(!ContainsKey(client_map_, client_id));
 
-  Client* client = new Client(this, is_visible, is_audible);
+  Client* client = new Client(this, is_visible);
   client_map_[client_id] = client;
 
   client->UpdateThrottleState();

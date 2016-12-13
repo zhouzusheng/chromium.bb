@@ -694,7 +694,6 @@ bool ComputedStyle::diffNeedsPaintInvalidationObject(const ComputedStyle& other)
     if (rareInheritedData.get() != other.rareInheritedData.get()) {
         if (rareInheritedData->userModify != other.rareInheritedData->userModify
             || rareInheritedData->userSelect != other.rareInheritedData->userSelect
-            || rareInheritedData->rubberbandable != other.rareInheritedData->rubberbandable
             || rareInheritedData->m_imageRendering != other.rareInheritedData->m_imageRendering)
             return true;
     }
@@ -1492,9 +1491,6 @@ Color ComputedStyle::colorIncludingFallback(int colorProperty, bool visitedLink)
         break;
     case CSSPropertyOutlineColor:
         result = visitedLink ? visitedLinkOutlineColor() : outlineColor();
-        break;
-    case CSSPropertyWebkitCaretColor:
-        result = !caretColor().isCurrentColor() ? caretColor() : visitedLink ? visitedLinkColor() : color();
         break;
     case CSSPropertyWebkitColumnRuleColor:
         result = visitedLink ? visitedLinkColumnRuleColor() : columnRuleColor();

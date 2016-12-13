@@ -14,15 +14,12 @@
 #include "base/version.h"
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/plugin_service_impl.h"
-#include "content/browser/renderer_host/pepper/pepper_flash_file_message_filter.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/plugin_process_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_constants.h"
-#include "content/public/common/pepper_plugin_info.h"
-#include "ppapi/proxy/ppapi_messages.h"
 
 namespace content {
 
@@ -59,7 +56,6 @@ void PluginDataRemover::GetSupportedPlugins(
 
 class PluginDataRemoverImpl::Context
     : public PluginProcessHost::Client,
-      public PpapiPluginProcessHost::BrokerClient,
       public IPC::Listener,
       public base::RefCountedThreadSafe<Context,
                                         BrowserThread::DeleteOnIOThread> {
@@ -108,16 +104,10 @@ class PluginDataRemoverImpl::Context
     // eventually be called, so we need to keep this object around until then.
     AddRef();
 
-    PepperPluginInfo* pepper_info =
-        plugin_service->GetRegisteredPpapiPluginInfo(plugin_path);
-    if (pepper_info) {
-      plugin_name_ = pepper_info->name;
-      // Use the broker since we run this function outside the sandbox.
-      plugin_service->OpenChannelToPpapiBroker(0, plugin_path, this);
-    } else {
-      plugin_service->OpenChannelToNpapiPlugin(
+   
+     plugin_service->OpenChannelToNpapiPlugin(
           0, 0, GURL(), GURL(), mime_type, this);
-    }
+    
   }
 
   // Called when a timeout happens in order not to block the client
@@ -156,30 +146,11 @@ class PluginDataRemoverImpl::Context
     Release();
   }
 
-  // PpapiPluginProcessHost::BrokerClient implementation.
-  void GetPpapiChannelInfo(base::ProcessHandle* renderer_handle,
-                           int* renderer_id) override {
-    *renderer_handle = base::kNullProcessHandle;
-    *renderer_id = 0;
-  }
-
-  void OnPpapiChannelOpened(const IPC::ChannelHandle& channel_handle,
-                            base::ProcessId /* peer_pid */,
-                            int /* child_id */) override {
-    if (!channel_handle.name.empty())
-      ConnectToChannel(channel_handle, true);
-
-    // Balancing the AddRef call.
-    Release();
-  }
-
   // IPC::Listener methods.
   bool OnMessageReceived(const IPC::Message& message) override {
     IPC_BEGIN_MESSAGE_MAP(Context, message)
       IPC_MESSAGE_HANDLER(PluginProcessHostMsg_ClearSiteDataResult,
                           OnClearSiteDataResult)
-      IPC_MESSAGE_HANDLER(PpapiHostMsg_ClearSiteDataResult,
-                          OnPpapiClearSiteDataResult)
       IPC_MESSAGE_UNHANDLED_ERROR()
     IPC_END_MESSAGE_MAP()
 
@@ -199,24 +170,6 @@ class PluginDataRemoverImpl::Context
   friend struct BrowserThread::DeleteOnThread<BrowserThread::IO>;
   friend class base::DeleteHelper<Context>;
   ~Context() override {}
-
-  IPC::Message* CreatePpapiClearSiteDataMsg(uint64 max_age) {
-    base::FilePath profile_path =
-        PepperFlashFileMessageFilter::GetDataDirName(browser_context_path_);
-    // TODO(vtl): This "duplicates" logic in webkit/plugins/ppapi/file_path.cc
-    // (which prepends the plugin name to the relative part of the path
-    // instead, with the absolute, profile-dependent part being enforced by
-    // the browser).
-#if defined(OS_WIN)
-    base::FilePath plugin_data_path =
-        profile_path.Append(base::FilePath(base::UTF8ToUTF16(plugin_name_)));
-#else
-    base::FilePath plugin_data_path =
-        profile_path.Append(base::FilePath(plugin_name_));
-#endif  // defined(OS_WIN)
-    return new PpapiMsg_ClearSiteData(0u, plugin_data_path, std::string(),
-                                      kClearAllData, max_age);
-  }
 
   // Connects the client side of a newly opened plugin channel.
   void ConnectToChannel(const IPC::ChannelHandle& handle, bool is_ppapi) {
@@ -239,12 +192,9 @@ class PluginDataRemoverImpl::Context
         (base::Time::Now() - begin_time_).InSeconds();
 
     IPC::Message* msg;
-    if (is_ppapi) {
-      msg = CreatePpapiClearSiteDataMsg(max_age);
-    } else {
-      msg = new PluginProcessMsg_ClearSiteData(
+     msg = new PluginProcessMsg_ClearSiteData(
           std::string(), kClearAllData, max_age);
-    }
+    
     if (!channel_->Send(msg)) {
       NOTREACHED() << "Couldn't send ClearSiteData message";
       SignalDone();

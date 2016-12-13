@@ -23,7 +23,6 @@ namespace content {
 class ByteStreamReader;
 class ByteStreamWriter;
 class DownloadRequestHandle;
-class PowerSaveBlocker;
 struct DownloadCreateInfo;
 
 // Forwards data to the download thread.
@@ -107,11 +106,6 @@ class CONTENT_EXPORT DownloadResourceHandler
   // Data flow
   scoped_refptr<net::IOBuffer> read_buffer_;       // From URLRequest.
   scoped_ptr<ByteStreamWriter> stream_writer_; // To rest of system.
-
-  // Keeps the system from sleeping while this ResourceHandler is alive. If the
-  // system enters power saving mode while a request is alive, it can cause the
-  // request to fail and the associated download will be interrupted.
-  scoped_ptr<PowerSaveBlocker> power_save_blocker_;
 
   // The following are used to collect stats.
   base::TimeTicks download_start_time_;

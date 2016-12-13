@@ -15,7 +15,6 @@
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/host_zoom_level_context.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
-#include "content/browser/media/webrtc_identity_store.h"
 #include "content/browser/navigator_connect/navigator_connect_context_impl.h"
 #include "content/browser/notifications/platform_notification_context_impl.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
@@ -41,7 +40,6 @@ class StoragePartitionImpl : public StoragePartition {
   // StoragePartition interface.
   base::FilePath GetPath() override;
   net::URLRequestContextGetter* GetURLRequestContext() override;
-  net::URLRequestContextGetter* GetMediaURLRequestContext() override;
   storage::QuotaManager* GetQuotaManager() override;
   ChromeAppCacheService* GetAppCacheService() override;
   storage::FileSystemContext* GetFileSystemContext() override;
@@ -72,8 +70,6 @@ class StoragePartitionImpl : public StoragePartition {
                  const base::Closure& callback) override;
 
   void Flush() override;
-
-  WebRTCIdentityStore* GetWebRTCIdentityStore();
 
   // Can return nullptr while |this| is being destroyed.
   BrowserContext* browser_context() const;
@@ -137,7 +133,6 @@ class StoragePartitionImpl : public StoragePartition {
       IndexedDBContextImpl* indexed_db_context,
       CacheStorageContextImpl* cache_storage_context,
       ServiceWorkerContextWrapper* service_worker_context,
-      WebRTCIdentityStore* webrtc_identity_store,
       storage::SpecialStoragePolicy* special_storage_policy,
       GeofencingManager* geofencing_manager,
       HostZoomLevelContext* host_zoom_level_context,
@@ -168,12 +163,9 @@ class StoragePartitionImpl : public StoragePartition {
   // PostCreateInitialization() out of StoragePartitionImplMap.
   CONTENT_EXPORT void SetURLRequestContext(
       net::URLRequestContextGetter* url_request_context);
-  void SetMediaURLRequestContext(
-      net::URLRequestContextGetter* media_url_request_context);
 
   base::FilePath partition_path_;
   scoped_refptr<net::URLRequestContextGetter> url_request_context_;
-  scoped_refptr<net::URLRequestContextGetter> media_url_request_context_;
   scoped_refptr<storage::QuotaManager> quota_manager_;
   scoped_refptr<ChromeAppCacheService> appcache_service_;
   scoped_refptr<storage::FileSystemContext> filesystem_context_;
@@ -182,7 +174,6 @@ class StoragePartitionImpl : public StoragePartition {
   scoped_refptr<IndexedDBContextImpl> indexed_db_context_;
   scoped_refptr<CacheStorageContextImpl> cache_storage_context_;
   scoped_refptr<ServiceWorkerContextWrapper> service_worker_context_;
-  scoped_refptr<WebRTCIdentityStore> webrtc_identity_store_;
   scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy_;
   scoped_refptr<GeofencingManager> geofencing_manager_;
   scoped_refptr<HostZoomLevelContext> host_zoom_level_context_;

@@ -48,7 +48,6 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/overscroll_configuration.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
@@ -71,7 +70,6 @@
 #include "ui/base/hit_test.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ui_base_types.h"
-#include "ui/base/win/rubberband_windows.h"
 #include "ui/compositor/compositor_vsync_manager.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/events/blink/blink_event_util.h"
@@ -1140,27 +1138,6 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurface(
       src_subrect, dst_size, callback, preferred_color_type);
 }
 
-void RenderWidgetHostViewAura::CopyFromCompositingSurfaceToVideoFrame(
-    const gfx::Rect& src_subrect,
-    const scoped_refptr<media::VideoFrame>& target,
-    const base::Callback<void(const gfx::Rect&, bool)>& callback) {
-  delegated_frame_host_->CopyFromCompositingSurfaceToVideoFrame(
-      src_subrect, target, callback);
-}
-
-bool RenderWidgetHostViewAura::CanCopyToVideoFrame() const {
-  return delegated_frame_host_->CanCopyToVideoFrame();
-}
-
-void RenderWidgetHostViewAura::BeginFrameSubscription(
-    scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) {
-  delegated_frame_host_->BeginFrameSubscription(subscriber.Pass());
-}
-
-void RenderWidgetHostViewAura::EndFrameSubscription() {
-  delegated_frame_host_->EndFrameSubscription();
-}
-
 #if defined(OS_WIN)
 bool RenderWidgetHostViewAura::UsesNativeWindowFrame() const {
   return (legacy_render_widget_host_HWND_ != NULL);
@@ -1596,20 +1573,6 @@ void RenderWidgetHostViewAura::UnlockMouse() {
   }
 
   host_->LostMouseLock();
-}
-
-void RenderWidgetHostViewAura::SetRubberbandRect(const gfx::Rect& rect) {
-  if (!rubberband_outline_.get())
-    rubberband_outline_.reset(new ui::RubberbandOutline());
-
-  // TODO(SHEZ): Replace this windows-specific code with an Aura view
-  HWND hwnd = window_->GetHost()->GetAcceleratedWidget();
-  RECT wrect = rect.ToRECT();
-  rubberband_outline_->SetRect(hwnd, wrect);
-}
-
-void RenderWidgetHostViewAura::HideRubberbandRect() {
-  rubberband_outline_.reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

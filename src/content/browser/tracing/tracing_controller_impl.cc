@@ -12,7 +12,6 @@
 #include "base/sys_info.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/tracing/file_tracing_provider_impl.h"
-#include "content/browser/tracing/power_tracing_agent.h"
 #include "content/browser/tracing/trace_message_filter.h"
 #include "content/browser/tracing/tracing_ui.h"
 #include "content/common/child_process_messages.h"
@@ -151,8 +150,7 @@ TracingControllerImpl::TracingControllerImpl()
       is_system_tracing_(false),
 #endif
       is_tracing_(false),
-      is_monitoring_(false),
-      is_power_tracing_(false) {
+      is_monitoring_(false) {
   base::trace_event::MemoryDumpManager::GetInstance()->Initialize(
       this /* delegate */, true /* is_coordinator */);
 
@@ -221,8 +219,6 @@ bool TracingControllerImpl::StartTracing(
 #endif
 
   if (trace_config.IsSystraceEnabled()) {
-    DCHECK(!is_power_tracing_);
-    is_power_tracing_ = PowerTracingAgent::GetInstance()->StartTracing();
 #if defined(OS_CHROMEOS)
     DCHECK(!is_system_tracing_);
     chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->
@@ -337,14 +333,6 @@ void TracingControllerImpl::OnStopTracingDone() {
 #endif
   }
 #endif  // defined(OS_CHROMEOS) || defined(OS_WIN)
-
-  if (is_power_tracing_) {
-    is_power_tracing_ = false;
-    ++pending_stop_tracing_ack_count_;
-    PowerTracingAgent::GetInstance()->StopTracing(
-        base::Bind(&TracingControllerImpl::OnEndPowerTracingAcked,
-                   base::Unretained(this)));
-  }
 
   // Handle special case of zero child processes by immediately flushing the
   // trace log. Once the flush has completed the caller will be notified that
@@ -726,18 +714,6 @@ void TracingControllerImpl::OnStopTracingAcked(
     trace_data_sink_->Close();
     trace_data_sink_ = NULL;
   }
-}
-
-void TracingControllerImpl::OnEndPowerTracingAcked(
-    const scoped_refptr<base::RefCountedString>& events_str_ptr) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  if (trace_data_sink_.get()) {
-    std::string json_string = base::GetQuotedJSONString(events_str_ptr->data());
-    trace_data_sink_->SetPowerTrace(json_string);
-  }
-  std::vector<std::string> category_groups;
-  OnStopTracingAcked(NULL, category_groups);
 }
 
 #if defined(OS_CHROMEOS) || defined(OS_WIN)

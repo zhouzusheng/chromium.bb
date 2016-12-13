@@ -33,7 +33,6 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
-#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
@@ -43,7 +42,6 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_switches.h"
 #include "ipc/message_filter.h"
-#include "media/base/media_switches.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/events/latency_info.h"
 #include "ui/gl/gl_switches.h"
@@ -54,8 +52,6 @@
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
-#include "content/common/sandbox_win.h"
-#include "sandbox/win/src/sandbox_policy.h"
 #include "ui/gfx/switches.h"
 #endif
 
@@ -197,74 +193,8 @@ class GpuSandboxedProcessLauncherDelegate
   // which is USER_RESTRICTED breaks both the DirectX backend and the OpenGL
   // backend. Note that the GPU process is connected to the interactive
   // desktop.
-  bool PreSpawnTarget(sandbox::TargetPolicy* policy) override {
-    if (base::win::GetVersion() > base::win::VERSION_XP) {
-      if (cmd_line_->GetSwitchValueASCII(switches::kUseGL) ==
-          gfx::kGLImplementationDesktopName) {
-        // Open GL path.
-        policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
-                              sandbox::USER_LIMITED);
-        SetJobLevel(*cmd_line_, sandbox::JOB_UNPROTECTED, 0, policy);
-        policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
-      } else {
-        policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
-                              sandbox::USER_LIMITED);
-
-        // UI restrictions break when we access Windows from outside our job.
-        // However, we don't want a proxy window in this process because it can
-        // introduce deadlocks where the renderer blocks on the gpu, which in
-        // turn blocks on the browser UI thread. So, instead we forgo a window
-        // message pump entirely and just add job restrictions to prevent child
-        // processes.
-        SetJobLevel(*cmd_line_,
-                    sandbox::JOB_LIMITED_USER,
-                    JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS |
-                    JOB_OBJECT_UILIMIT_DESKTOP |
-                    JOB_OBJECT_UILIMIT_EXITWINDOWS |
-                    JOB_OBJECT_UILIMIT_DISPLAYSETTINGS,
-                    policy);
-
-        policy->SetIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
-      }
-    } else {
-      SetJobLevel(*cmd_line_, sandbox::JOB_UNPROTECTED, 0, policy);
-      policy->SetTokenLevel(sandbox::USER_UNPROTECTED,
-                            sandbox::USER_LIMITED);
-    }
-
-    // Allow the server side of GPU sockets, which are pipes that have
-    // the "chrome.gpu" namespace and an arbitrary suffix.
-    sandbox::ResultCode result = policy->AddRule(
-        sandbox::TargetPolicy::SUBSYS_NAMED_PIPES,
-        sandbox::TargetPolicy::NAMEDPIPES_ALLOW_ANY,
-        L"\\\\.\\pipe\\chrome.gpu.*");
-    if (result != sandbox::SBOX_ALL_OK)
-      return false;
-
-    // Block this DLL even if it is not loaded by the browser process.
-    policy->AddDllToUnload(L"cmsetac.dll");
-
-#ifdef USE_AURA
-    // GPU also needs to add sections to the browser for aura
-    // TODO(jschuh): refactor the GPU channel to remove this. crbug.com/128786
-    result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                             sandbox::TargetPolicy::HANDLES_DUP_BROKER,
-                             L"Section");
-    if (result != sandbox::SBOX_ALL_OK)
-      return false;
-#endif
-
-    if (cmd_line_->HasSwitch(switches::kEnableLogging)) {
-      base::string16 log_file_path = logging::GetLogFileFullPath();
-      if (!log_file_path.empty()) {
-        result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                                 sandbox::TargetPolicy::FILES_ALLOW_ANY,
-                                 log_file_path.c_str());
-        if (result != sandbox::SBOX_ALL_OK)
-          return false;
-      }
-    }
-
+  bool PreSpawnTarget() override {
+    
     return true;
   }
 #elif defined(OS_POSIX)

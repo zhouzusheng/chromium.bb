@@ -419,18 +419,6 @@ void RenderWidgetHostViewChildFrame::CopyFromCompositingSurface(
   callback.Run(SkBitmap(), READBACK_FAILED);
 }
 
-void RenderWidgetHostViewChildFrame::CopyFromCompositingSurfaceToVideoFrame(
-    const gfx::Rect& src_subrect,
-    const scoped_refptr<media::VideoFrame>& target,
-    const base::Callback<void(const gfx::Rect&, bool)>& callback) {
-  NOTIMPLEMENTED();
-  callback.Run(gfx::Rect(), false);
-}
-
-bool RenderWidgetHostViewChildFrame::CanCopyToVideoFrame() const {
-  return false;
-}
-
 bool RenderWidgetHostViewChildFrame::HasAcceleratedSurface(
       const gfx::Size& desired_size) {
   return false;

@@ -32,9 +32,6 @@ interface HTMLCanvasElement : HTMLElement
     attribute long width;
     attribute long height;
 
-    // Bloomberg-specific extensions
-    attribute boolean bbDirectCompositingDisabled;
-
     // Note: this differs deliberately from the specified Web IDL for this function:
     //     RenderingContext? getContext(DOMString contextId, any... arguments);
     // in order to eliminate the custom binding. It is functionally equivalent.

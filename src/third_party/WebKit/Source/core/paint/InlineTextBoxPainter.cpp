@@ -5,14 +5,12 @@
 #include "config.h"
 #include "core/paint/InlineTextBoxPainter.h"
 
-#include "core/css/parser/CSSParser.h"
 #include "core/editing/CompositionUnderline.h"
 #include "core/editing/Editor.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 #include "core/editing/markers/RenderedDocumentMarker.h"
 #include "core/frame/LocalFrame.h"
 #include "core/layout/LayoutBlock.h"
-#include "core/layout/LayoutTableCell.h"
 #include "core/layout/LayoutTextCombine.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/api/LineLayoutBox.h"
@@ -436,47 +434,12 @@ void InlineTextBoxPainter::paintDocumentMarker(GraphicsContext* pt, const Layout
         // In larger fonts, though, place the underline up near the baseline to prevent a big gap.
         underlineOffset = baseline + 2;
     }
-
-    Color markerColor(255,0,0,255);
-    if (m_inlineTextBox.layoutObject().node()) {
-        const Element *element = m_inlineTextBox.layoutObject().node()->rootEditableElement();
-        if (element && element->hasAttributes()) {
-            AtomicString colorAttr = nullAtom;
-
-            if (colorAttr == nullAtom && marker->type() & DocumentMarker::Spelling) {
-                colorAttr = element->getAttribute(HTMLNames::data_marker_color_spellingAttr);
-            }
-            if (colorAttr == nullAtom && marker->type() & DocumentMarker::Grammar) {
-                colorAttr = element->getAttribute(HTMLNames::data_marker_color_grammarAttr);
-            }
-            if (colorAttr == nullAtom) {
-                colorAttr = element->getAttribute(HTMLNames::data_marker_color_defaultAttr);
-            }
-
-            if (colorAttr != nullAtom) {
-                Color parsedColor;
-                String colorStr = colorAttr.string();
-                if (CSSParser::parseColor(parsedColor, colorStr, false)) {
-                    markerColor = parsedColor;
-                }
-            }
-        }
-    }
-    pt->drawLineForDocumentMarker(FloatPoint((boxOrigin.x() + start).toFloat(), (boxOrigin.y() + underlineOffset).toFloat()), width.toFloat(), markerColor);
+    pt->drawLineForDocumentMarker(FloatPoint((boxOrigin.x() + start).toFloat(), (boxOrigin.y() + underlineOffset).toFloat()), width.toFloat(), lineStyleForMarkerType(marker->type()));
 }
 
 template <InlineTextBoxPainter::PaintOptions options>
 void InlineTextBoxPainter::paintSelection(GraphicsContext* context, const LayoutRect& boxRect, const ComputedStyle& style, const Font& font, Color textColor, LayoutTextCombine* combinedText)
 {
-    // If any table cell in our container hierarchy is fully selected,
-    // then don't paint the selection highlight.
-    LayoutBlock* cb = m_inlineTextBox.layoutObject().containingBlock();
-    while (cb) {
-        if (cb->isTableCell() && toLayoutTableCell(cb)->isFullySelected())
-            return;
-        cb = cb->containingBlock();
-    }
-
     // See if we have a selection to paint at all.
     int sPos, ePos;
     m_inlineTextBox.selectionStartEnd(sPos, ePos);
@@ -862,8 +825,7 @@ void InlineTextBoxPainter::paintCompositionUnderline(GraphicsContext* ctx, const
     start += 1;
     width -= 2;
 
-    const ComputedStyle& styleToUse = m_inlineTextBox.layoutObject().styleRef(m_inlineTextBox.isFirstLineStyle());
-    ctx->setStrokeColor(m_inlineTextBox.layoutObject().resolveColor(styleToUse, CSSPropertyWebkitTextFillColor));
+    ctx->setStrokeColor(underline.color);
     ctx->setStrokeThickness(lineThickness);
     ctx->drawLineForText(FloatPoint(boxOrigin.x() + start, (boxOrigin.y() + m_inlineTextBox.logicalHeight() - lineThickness).toFloat()), width, m_inlineTextBox.lineLayoutItem().document().printing());
 }

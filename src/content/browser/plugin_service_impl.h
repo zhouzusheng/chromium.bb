@@ -25,10 +25,8 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/browser/plugin_process_host.h"
-#include "content/browser/ppapi_plugin_process_host.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/plugin_service.h"
-#include "content/public/common/pepper_plugin_info.h"
 #include "ipc/ipc_channel_handle.h"
 #include "url/gurl.h"
 
@@ -51,7 +49,6 @@ class PluginDirWatcherDelegate;
 class PluginLoaderPosix;
 class PluginServiceFilter;
 class ResourceContext;
-struct PepperPluginInfo;
 
 // base::Bind() has limited arity, and the filter-related methods tend to
 // surpass that limit.
@@ -91,8 +88,7 @@ class CONTENT_EXPORT PluginServiceImpl
   base::string16 GetPluginDisplayNameByPath(
       const base::FilePath& path) override;
   void GetPlugins(const GetPluginsCallback& callback) override;
-  PepperPluginInfo* GetRegisteredPpapiPluginInfo(
-      const base::FilePath& plugin_path) override;
+ 
   void SetFilter(PluginServiceFilter* filter) override;
   PluginServiceFilter* GetFilter() override;
   void ForcePluginShutdown(const base::FilePath& plugin_path) override;
@@ -117,22 +113,14 @@ class CONTENT_EXPORT PluginServiceImpl
   // Returns true iff the given HWND is a plugin.
   bool IsPluginWindow(HWND window);
 #endif
-  bool PpapiDevChannelSupported(BrowserContext* browser_context,
-                                const GURL& document_url) override;
-
+  
   // Returns the plugin process host corresponding to the plugin process that
   // has been started by this service. This will start a process to host the
   // 'plugin_path' if needed. If the process fails to start, the return value
   // is NULL. Must be called on the IO thread.
   PluginProcessHost* FindOrStartNpapiPluginProcess(
       int render_process_id, const base::FilePath& plugin_path);
-  PpapiPluginProcessHost* FindOrStartPpapiPluginProcess(
-      int render_process_id,
-      const base::FilePath& plugin_path,
-      const base::FilePath& profile_data_directory);
-  PpapiPluginProcessHost* FindOrStartPpapiBrokerProcess(
-      int render_process_id, const base::FilePath& plugin_path);
-
+  
   // Opens a channel to a plugin process for the given mime type, starting
   // a new plugin process if necessary.  This must be called on the IO thread
   // or else a deadlock can occur.
@@ -142,13 +130,6 @@ class CONTENT_EXPORT PluginServiceImpl
                                 const GURL& page_url,
                                 const std::string& mime_type,
                                 PluginProcessHost::Client* client);
-  void OpenChannelToPpapiPlugin(int render_process_id,
-                                const base::FilePath& plugin_path,
-                                const base::FilePath& profile_data_directory,
-                                PpapiPluginProcessHost::PluginClient* client);
-  void OpenChannelToPpapiBroker(int render_process_id,
-                                const base::FilePath& path,
-                                PpapiPluginProcessHost::BrokerClient* client);
 
   // Cancels opening a channel to a NPAPI plugin.
   void CancelOpenChannelToNpapiPlugin(PluginProcessHost::Client* client);
@@ -172,14 +153,7 @@ class CONTENT_EXPORT PluginServiceImpl
   // has been started by this service. Returns NULL if no process has been
   // started.
   PluginProcessHost* FindNpapiPluginProcess(const base::FilePath& plugin_path);
-  PpapiPluginProcessHost* FindPpapiPluginProcess(
-      const base::FilePath& plugin_path,
-      const base::FilePath& profile_data_directory);
-  PpapiPluginProcessHost* FindPpapiBrokerProcess(
-      const base::FilePath& broker_path);
-
-  void RegisterPepperPlugins();
-
+  
   // Run on the blocking pool to load the plugins synchronously.
   void GetPluginsInternal(base::SingleThreadTaskRunner* target_task_runner,
                           const GetPluginsCallback& callback);
@@ -230,8 +204,6 @@ class CONTENT_EXPORT PluginServiceImpl
 #if defined(OS_POSIX) && !defined(OS_OPENBSD) && !defined(OS_ANDROID)
   ScopedVector<base::FilePathWatcher> file_watchers_;
 #endif
-
-  std::vector<PepperPluginInfo> ppapi_plugins_;
 
   // Weak pointer; outlives us.
   PluginServiceFilter* filter_;

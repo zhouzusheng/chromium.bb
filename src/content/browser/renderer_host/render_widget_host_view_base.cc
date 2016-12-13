@@ -11,7 +11,6 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/content_switches_internal.h"
-#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/geometry/size_f.h"
@@ -393,7 +392,7 @@ const int kFlushInputRateInUs = 16666;
 
 RenderWidgetHostViewBase::RenderWidgetHostViewBase()
     : popup_type_(blink::WebPopupTypeNone),
-      background_color_(SK_ColorBLACK),
+      background_color_(SK_ColorWHITE),
       mouse_locked_(false),
       showing_context_menu_(false),
       selection_text_offset_(0),
@@ -418,7 +417,7 @@ void RenderWidgetHostViewBase::SetBackgroundColor(SkColor color) {
 }
 
 void RenderWidgetHostViewBase::SetBackgroundColorToDefault() {
-  SetBackgroundColor(SK_ColorBLACK);
+  SetBackgroundColor(SK_ColorWHITE);
 }
 
 bool RenderWidgetHostViewBase::GetBackgroundOpaque() {
@@ -507,12 +506,6 @@ void RenderWidgetHostViewBase::GestureEventAck(
     InputEventAckState ack_result) {
 }
 
-void RenderWidgetHostViewBase::SetRubberbandRect(const gfx::Rect& rect) {
-}
-
-void RenderWidgetHostViewBase::HideRubberbandRect() {
-}
-
 void RenderWidgetHostViewBase::SetPopupType(blink::WebPopupType popup_type) {
   popup_type_ = popup_type;
 }
@@ -589,16 +582,6 @@ RenderWidgetHostViewBase::CreateSyntheticGestureTarget() {
       RenderWidgetHostImpl::From(GetRenderWidgetHost());
   return scoped_ptr<SyntheticGestureTarget>(
       new SyntheticGestureTargetBase(host));
-}
-
-// Base implementation is unimplemented.
-void RenderWidgetHostViewBase::BeginFrameSubscription(
-    scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) {
-  NOTREACHED();
-}
-
-void RenderWidgetHostViewBase::EndFrameSubscription() {
-  NOTREACHED();
 }
 
 uint32 RenderWidgetHostViewBase::RendererFrameNumber() {

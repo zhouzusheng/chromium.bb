@@ -493,52 +493,9 @@ void SelectionController::updateSelectionForMouseDrag(Node* mousePressNode, cons
 
 void SelectionController::updateSelectionForMouseDrag(const HitTestResult& hitTestResult, Node* mousePressNode, const LayoutPoint& dragStartPos, const IntPoint& lastKnownMousePosition)
 {
-    HitTestResult adjustedHitTestResult = adjustHitTestResultForSelectability(hitTestResult, mousePressNode, lastKnownMousePosition);
     if (RuntimeEnabledFeatures::selectionForComposedTreeEnabled())
-        return updateSelectionForMouseDragAlgorithm<EditingInComposedTreeStrategy>(adjustedHitTestResult, mousePressNode, dragStartPos, lastKnownMousePosition);
-    updateSelectionForMouseDragAlgorithm<EditingStrategy>(adjustedHitTestResult, mousePressNode, dragStartPos, lastKnownMousePosition);
-}
-
-HitTestResult SelectionController::adjustHitTestResultForSelectability(const HitTestResult& result, Node* mousePressNode, const IntPoint& lastKnownMousePosition)
-{
-    if (!result.innerNode() || !mousePressNode || !mousePressNode->layoutObject())
-        return result;
-
-    // Check if we should constrain the selection to within the selectable
-    // area around the initial mousedown node.
-    Node* constraint = mousePressNode;
-    while (constraint->parentNode() && constraint->parentNode()->layoutObject() && constraint->parentNode()->layoutObject()->isSelectable())
-        constraint = constraint->parentNode();
-
-    // If the existing hit test result is within the constraint, then we don't
-    // need to rerun the hit test.
-    if (constraint->contains(result.innerNode()))
-        return result;
-
-    // Otherwise, we need to constrain the mouse position to the bounds of the
-    // 'constraint' node, then rerun the hit test.
-
-    LayoutPoint mousePosition = m_frame->view() ? m_frame->view()->rootFrameToContents(lastKnownMousePosition)
-                                                : lastKnownMousePosition;
-
-    LayoutRect boundingBox(constraint->layoutObject()->absoluteBoundingBoxRect());
-    if (mousePosition.x() < boundingBox.x()) {
-        mousePosition.setX(boundingBox.x());
-    }
-    else if (mousePosition.x() > boundingBox.maxX()) {
-        mousePosition.setX(boundingBox.maxX());
-    }
-    if (mousePosition.y() < boundingBox.y()) {
-        mousePosition.setY(boundingBox.y());
-    }
-    else if (mousePosition.y() > boundingBox.maxY()) {
-        mousePosition.setY(boundingBox.maxY());
-    }
-
-    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active);
-    HitTestResult newResult(request, mousePosition);
-    m_frame->document()->layoutView()->hitTest(newResult);
-    return newResult;
+        return updateSelectionForMouseDragAlgorithm<EditingInComposedTreeStrategy>(hitTestResult, mousePressNode, dragStartPos, lastKnownMousePosition);
+    updateSelectionForMouseDragAlgorithm<EditingStrategy>(hitTestResult, mousePressNode, dragStartPos, lastKnownMousePosition);
 }
 
 template <typename Strategy>

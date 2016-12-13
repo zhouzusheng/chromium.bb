@@ -69,7 +69,6 @@ PassRefPtrWillBeRawPtr<KeyboardEvent> KeyboardEvent::create(ScriptState* scriptS
 
 KeyboardEvent::KeyboardEvent()
     : m_location(DOM_KEY_LOCATION_STANDARD)
-    , m_bbIsNumLock(false)
 {
 }
 
@@ -80,7 +79,6 @@ KeyboardEvent::KeyboardEvent(const PlatformKeyboardEvent& key, AbstractView* vie
     , m_code(key.code())
     , m_key(key.key())
     , m_location(keyLocationCode(key))
-    , m_bbIsNumLock(key.bbIsNumLock())
 {
     setPlatformTimeStamp(key.timestamp());
     initLocationModifiers(m_location);
@@ -90,7 +88,6 @@ KeyboardEvent::KeyboardEvent(const AtomicString& eventType, const KeyboardEventI
     : UIEventWithKeyState(eventType, initializer)
     , m_keyIdentifier(initializer.keyIdentifier())
     , m_location(initializer.location())
-    , m_bbIsNumLock(initializer.bbIsNumLock())
 {
     if (initializer.repeat())
         m_modifiers |= PlatformEvent::IsAutoRepeat;
@@ -104,7 +101,6 @@ KeyboardEvent::KeyboardEvent(const AtomicString& eventType, bool canBubble, bool
     , m_code(code)
     , m_key(key)
     , m_location(location)
-    , m_bbIsNumLock(false)
 {
     initLocationModifiers(location);
 }

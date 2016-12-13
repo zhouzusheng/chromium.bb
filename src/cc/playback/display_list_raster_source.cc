@@ -38,8 +38,7 @@ DisplayListRasterSource::DisplayListRasterSource(
       clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_),
       slow_down_raster_scale_factor_for_debug_(
           other->slow_down_raster_scale_factor_for_debug_),
-      should_attempt_to_use_distance_field_text_(false),
-      default_lcd_background_color_(other->default_lcd_background_color_) {}
+      should_attempt_to_use_distance_field_text_(false) {}
 
 DisplayListRasterSource::DisplayListRasterSource(
     const DisplayListRasterSource* other,
@@ -57,8 +56,7 @@ DisplayListRasterSource::DisplayListRasterSource(
       slow_down_raster_scale_factor_for_debug_(
           other->slow_down_raster_scale_factor_for_debug_),
       should_attempt_to_use_distance_field_text_(
-          other->should_attempt_to_use_distance_field_text_),
-      default_lcd_background_color_(other->default_lcd_background_color_) {}
+          other->should_attempt_to_use_distance_field_text_) {}
 
 DisplayListRasterSource::~DisplayListRasterSource() {
 }
@@ -300,16 +298,6 @@ DisplayListRasterSource::CreateCloneWithoutLCDText() const {
   bool can_use_lcd_text = false;
   return scoped_refptr<DisplayListRasterSource>(
       new DisplayListRasterSource(this, can_use_lcd_text));
-}
-
-SkColor DisplayListRasterSource::DefaultLCDBackgroundColor() const
-{
-  if (can_use_lcd_text_) {
-      return default_lcd_background_color_;
-  }
-  else {
-      return SK_ColorTRANSPARENT;
-  }
 }
 
 }  // namespace cc

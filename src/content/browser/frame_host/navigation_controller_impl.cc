@@ -74,7 +74,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
-#include "media/base/mime_util.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
 #include "skia/ext/platform_canvas.h"
@@ -509,8 +508,7 @@ NavigationEntryImpl* NavigationControllerImpl::GetLastCommittedEntry() const {
 bool NavigationControllerImpl::CanViewSource() const {
   const std::string& mime_type = delegate_->GetContentsMimeType();
   bool is_viewable_mime_type =
-      mime_util::IsSupportedNonImageMimeType(mime_type) &&
-      !media::IsSupportedMediaMimeType(mime_type);
+      mime_util::IsSupportedNonImageMimeType(mime_type);
   NavigationEntry* visible_entry = GetVisibleEntry();
   return visible_entry && !visible_entry->IsViewSourceMode() &&
       is_viewable_mime_type && !delegate_->GetInterstitialPage();

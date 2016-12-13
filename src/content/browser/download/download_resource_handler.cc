@@ -27,7 +27,6 @@
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/power_save_blocker.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/resource_response.h"
 #include "net/base/io_buffer.h"
@@ -137,9 +136,6 @@ DownloadResourceHandler::DownloadResourceHandler(
                                        request_info->GetRequestID(),
                                        request_info->frame_tree_node_id()),
                  tab_info_.get()));
-  power_save_blocker_ = PowerSaveBlocker::Create(
-      PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
-      PowerSaveBlocker::kReasonOther, "Download in progress");
 }
 
 bool DownloadResourceHandler::OnRequestRedirected(

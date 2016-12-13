@@ -53,7 +53,6 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     short hyphenationShorts[3];
 
     Color touchColors;
-    StyleColor caretColor;
     TabSize tabSize;
     void* variables[1];
 };
@@ -80,7 +79,6 @@ StyleRareInheritedData::StyleRareInheritedData()
     , overflowWrap(ComputedStyle::initialOverflowWrap())
     , lineBreak(LineBreakAuto)
     , userSelect(ComputedStyle::initialUserSelect())
-    , rubberbandable(ComputedStyle::initialRubberbandable())
     , speak(SpeakNormal)
     , hyphens(HyphensManual)
     , textEmphasisFill(TextEmphasisFillFilled)
@@ -102,7 +100,6 @@ StyleRareInheritedData::StyleRareInheritedData()
     , hyphenationLimitAfter(-1)
     , hyphenationLimitLines(-1)
     , tapHighlightColor(ComputedStyle::initialTapHighlightColor())
-    , caretColor(ComputedStyle::initialCaretColor())
     , m_tabSize(ComputedStyle::initialTabSize())
 {
 }
@@ -137,7 +134,6 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , overflowWrap(o.overflowWrap)
     , lineBreak(o.lineBreak)
     , userSelect(o.userSelect)
-    , rubberbandable(o.rubberbandable)
     , speak(o.speak)
     , hyphens(o.hyphens)
     , textEmphasisFill(o.textEmphasisFill)
@@ -162,7 +158,6 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , locale(o.locale)
     , textEmphasisCustomMark(o.textEmphasisCustomMark)
     , tapHighlightColor(o.tapHighlightColor)
-    , caretColor(o.caretColor)
     , appliedTextDecorations(o.appliedTextDecorations)
     , m_tabSize(o.m_tabSize)
     , variables(o.variables)
@@ -203,7 +198,6 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && overflowWrap == o.overflowWrap
         && lineBreak == o.lineBreak
         && userSelect == o.userSelect
-        && rubberbandable == o.rubberbandable
         && speak == o.speak
         && hyphens == o.hyphens
         && hyphenationLimitBefore == o.hyphenationLimitBefore
@@ -229,7 +223,6 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_imageRendering == o.m_imageRendering
         && m_textUnderlinePosition == o.m_textUnderlinePosition
         && m_rubyPosition == o.m_rubyPosition
-        && caretColor == o.caretColor
         && dataEquivalent(listStyleImage.get(), o.listStyleImage.get())
         && dataEquivalent(appliedTextDecorations, o.appliedTextDecorations)
         && variables == o.variables;

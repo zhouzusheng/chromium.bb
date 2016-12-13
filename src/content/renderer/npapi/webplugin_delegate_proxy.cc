@@ -57,7 +57,6 @@
 
 #if defined(OS_WIN)
 #include "base/win/scoped_handle.h"
-#include "content/public/common/sandbox_init.h"
 #endif
 
 using blink::WebBindings;
@@ -492,6 +491,57 @@ void WebPluginDelegateProxy::OnChannelError() {
     render_view_->PluginFocusChanged(false, instance_id_);
 #endif
 }
+
+ bool BrokerDuplicateHandle(HANDLE source_handle,
+	DWORD target_process_id,
+	HANDLE* target_handle,
+	DWORD desired_access,
+	DWORD options) {
+	// If our process is the target just duplicate the handle.
+	if (::GetCurrentProcessId() == target_process_id) {
+		if (!!::DuplicateHandle(::GetCurrentProcess(), source_handle,
+			::GetCurrentProcess(), target_handle,
+			desired_access, FALSE, options))
+			return true;
+
+		PLOG(ERROR) << "Failed to duplicate handle.";
+		return false;
+	}
+
+	// Finally, see if we already have access to the process.
+	base::win::ScopedHandle target_process;
+	target_process.Set(::OpenProcess(PROCESS_DUP_HANDLE, FALSE,
+		target_process_id));
+	if (target_process.IsValid()) {
+		if (!!::DuplicateHandle(::GetCurrentProcess(), source_handle,
+			target_process.Get(), target_handle,
+			desired_access, FALSE, options)) {
+			return true;
+		}
+
+		PLOG(ERROR) << "Failed to duplicate handle for another process.";
+		return false;
+	}
+
+	LOG(ERROR) << "Failed to create handle for process " << target_process_id;
+	return false;
+}
+
+ bool BrokerDuplicateSharedMemoryHandle(
+	const base::SharedMemoryHandle& source_handle,
+	base::ProcessId target_process_id,
+	base::SharedMemoryHandle* target_handle) {
+	HANDLE duped_handle;
+	if (!BrokerDuplicateHandle(source_handle.GetHandle(), target_process_id,
+		&duped_handle,
+		FILE_GENERIC_READ | FILE_GENERIC_WRITE, 0)) {
+		return false;
+	}
+
+	*target_handle = base::SharedMemoryHandle(duped_handle, target_process_id);
+	return true;
+}
+
 
 static void CopySharedMemoryHandleForMessage(
     const base::SharedMemoryHandle& handle_in,

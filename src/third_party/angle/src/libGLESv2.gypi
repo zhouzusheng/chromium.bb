@@ -800,7 +800,7 @@
             'target_name': 'libGLESv2',
             'type': '<(angle_gl_library_type)',
             'dependencies': [
-                '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+                '../../../minikit/minikit.gyp:minikit_generate_sources',
                 'libANGLE',
                 'angle_common'
             ],
@@ -809,6 +809,10 @@
             [
                 '<@(libglesv2_sources)',
             ],
+			'include_dirs':
+            [
+                '<(SHARED_INTERMEDIATE_DIR)/minikit/public',
+            ],
             'defines':
             [
                 'LIBGLESV2_IMPLEMENTATION',
@@ -816,9 +820,9 @@
             'conditions':
             [
                 ['bb_version!=""', {
-                  'product_name': 'blpcr_glesv2.<(bb_version)',
+                  'product_name': 'minicr_glesv2.<(bb_version)',
                 }, {
-                  'product_name': 'blpcr_glesv2',
+                  'product_name': 'minicr_glesv2',
                 }],
                 ['angle_build_winrt==1',
                 {

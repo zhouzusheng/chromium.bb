@@ -45,7 +45,6 @@ class CONTENT_EXPORT WorkerStoragePartition {
  public:
   WorkerStoragePartition(
       net::URLRequestContextGetter* url_request_context,
-      net::URLRequestContextGetter* media_url_request_context,
       ChromeAppCacheService* appcache_service,
       storage::QuotaManager* quota_manager,
       storage::FileSystemContext* filesystem_context,

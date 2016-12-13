@@ -34,7 +34,6 @@
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/renderer_host/dip_util.h"
-#include "content/browser/renderer_host/media/audio_renderer_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_delegate_view.h"
@@ -45,7 +44,6 @@
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
-#include "content/common/speech_recognition_messages.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/ax_event_notification_details.h"
@@ -212,8 +210,7 @@ RenderViewHostImpl::RenderViewHostImpl(
     int32 routing_id,
     int32 main_frame_routing_id,
     bool swapped_out,
-    bool hidden,
-    bool has_initialized_audio_host)
+    bool hidden)
     : RenderWidgetHostImpl(widget_delegate,
                            instance->GetProcess(),
                            routing_id,
@@ -245,21 +242,12 @@ RenderViewHostImpl::RenderViewHostImpl(
   GetProcess()->EnableSendQueue();
 
   if (ResourceDispatcherHostImpl::Get()) {
-    bool has_active_audio = false;
-    if (has_initialized_audio_host) {
-      scoped_refptr<AudioRendererHost> arh =
-          static_cast<RenderProcessHostImpl*>(GetProcess())
-              ->audio_renderer_host();
-      if (arh.get())
-        has_active_audio =
-            arh->RenderFrameHasActiveAudio(main_frame_routing_id_);
-    }
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
         base::Bind(&ResourceDispatcherHostImpl::OnRenderViewHostCreated,
                    base::Unretained(ResourceDispatcherHostImpl::Get()),
                    GetProcess()->GetID(), GetRoutingID(),
-                   !GetWidget()->is_hidden(), has_active_audio));
+                   !GetWidget()->is_hidden()));
   }
 }
 
@@ -1386,10 +1374,6 @@ void RenderViewHostImpl::OnFocusedNodeTouched(bool editable) {
     base::win::DismissVirtualKeyboard();
   }
 #endif
-}
-
-void RenderViewHostImpl::EnableAltDragRubberbanding(bool enable) {
-  Send(new ViewMsg_EnableAltDragRubberbanding(GetRoutingID(), enable));
 }
 
 bool RenderViewHostImpl::CanAccessFilesOfPageState(

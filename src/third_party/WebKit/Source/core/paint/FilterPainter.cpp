@@ -70,13 +70,7 @@ FilterPainter::FilterPainter(PaintLayer& layer, GraphicsContext* context, const 
         // the layer's filter. See crbug.com/502026.
         if (webFilterOperations->isEmpty())
             return;
-        LayoutRect visualBounds(rootRelativeBounds);
-        if (layer.enclosingPaginationLayer()) {
-            // Filters are set up before pagination, so we need to make the bounding box visual on our own.
-            visualBounds.moveBy(-offsetFromRoot);
-            layer.convertFromFlowThreadToVisualBoundingBoxInAncestor(paintingInfo.rootLayer, visualBounds);
-        }
-        context->paintController().createAndAppend<BeginFilterDisplayItem>(*m_layoutObject, imageFilter, FloatRect(visualBounds), webFilterOperations.release());
+        context->paintController().createAndAppend<BeginFilterDisplayItem>(*m_layoutObject, imageFilter, FloatRect(rootRelativeBounds), webFilterOperations.release());
     }
 
     m_filterInProgress = true;

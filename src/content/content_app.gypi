@@ -52,7 +52,7 @@
     }],
     ['OS=="win"', {
       'dependencies': [
-        'content.gyp:sandbox_helper_win',
+#        'content.gyp:sandbox_helper_win',
       ],
     }],
   ],

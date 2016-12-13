@@ -142,12 +142,6 @@ public:
 
     bool erase(SkColor color) const { return this->erase(color, this->bounds()); }
 
-    /**
-     * Returns the color that LCD text should be blended with when the background
-     * would otherwise be transparent.
-     */
-    SkColor defaultLCDBackgroundColor() const { return fInfo.defaultLCDBackgroundColor(); }
-
 private:
     const void*     fPixels;
     SkColorTable*   fCTable;

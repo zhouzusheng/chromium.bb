@@ -66,7 +66,6 @@ namespace ui {
 class CompositorLock;
 class InputMethod;
 class LocatedEvent;
-class RubberbandOutline;
 class Texture;
 class TouchSelectionController;
 }
@@ -153,14 +152,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       const gfx::Size& dst_size,
       const ReadbackRequestCallback& callback,
       const SkColorType preferred_color_type) override;
-  void CopyFromCompositingSurfaceToVideoFrame(
-      const gfx::Rect& src_subrect,
-      const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(const gfx::Rect&, bool)>& callback) override;
-  bool CanCopyToVideoFrame() const override;
-  void BeginFrameSubscription(
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
-  void EndFrameSubscription() override;
+  
   bool HasAcceleratedSurface(const gfx::Size& desired_size) override;
   void GetScreenInfo(blink::WebScreenInfo* results) override;
   bool GetScreenColorProfile(std::vector<char>* color_profile) override;
@@ -182,8 +174,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                                const SkBitmap& zoomed_bitmap) override;
   bool LockMouse() override;
   void UnlockMouse() override;
-  void SetRubberbandRect(const gfx::Rect& rect) override;
-  void HideRubberbandRect() override;
   void OnSwapCompositorFrame(uint32 output_surface_id,
                              scoped_ptr<cc::CompositorFrame> frame) override;
   void ClearCompositorFrame() override;
@@ -654,9 +644,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   gfx::Vector2dF last_scroll_offset_;
 
   gfx::Insets insets_;
-
-  // The rect to draw the rubberband highlight.
-  scoped_ptr<ui::RubberbandOutline> rubberband_outline_;
 
   std::vector<ui::LatencyInfo> software_latency_info_;
 

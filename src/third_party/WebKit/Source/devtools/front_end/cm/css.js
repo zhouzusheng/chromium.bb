@@ -554,7 +554,7 @@ CodeMirror.defineMode("css", function(config, parserConfig) {
     "optimizeLegibility", "optimizeSpeed", "oriya", "oromo", "outset",
     "outside", "outside-shape", "overlay", "overline", "padding", "padding-box",
     "painted", "page", "paused", "persian", "plus-darker", "plus-lighter", "pointer",
-    "polygon", "portrait", "pre", "pre-line", "pre-wrap", "-bb-pre-wrap-text", "preserve-3d", "progress", "push-button",
+    "polygon", "portrait", "pre", "pre-line", "pre-wrap", "preserve-3d", "progress", "push-button",
     "radio", "read-only", "read-write", "read-write-plaintext-only", "rectangle", "region",
     "relative", "repeat", "repeat-x", "repeat-y", "reset", "reverse", "rgb", "rgba",
     "ridge", "right", "round", "row-resize", "rtl", "run-in", "running",

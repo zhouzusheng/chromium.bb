@@ -25,9 +25,6 @@
 #include "content/common/gpu/gpu_config.h"
 #include "content/common/gpu/gpu_memory_buffer_factory.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/gpu/media/gpu_jpeg_decode_accelerator.h"
-#include "content/common/gpu/media/gpu_video_decode_accelerator.h"
-#include "content/common/gpu/media/gpu_video_encode_accelerator.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/gpu/gpu_process.h"
@@ -55,8 +52,6 @@
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #include "base/win/scoped_com_initializer.h"
-#include "content/common/gpu/media/dxva_video_decode_accelerator.h"
-#include "sandbox/win/src/sandbox.h"
 #endif
 
 #if defined(USE_X11)
@@ -105,7 +100,7 @@ bool CanAccessNvidiaDeviceFile();
 #endif
 bool StartSandboxLinux(const gpu::GPUInfo&, GpuWatchdogThread*, bool);
 #elif defined(OS_WIN)
-bool StartSandboxWindows(const sandbox::SandboxInterfaceInfo*);
+bool StartSandboxWindows();
 #endif
 
 base::LazyInstance<GpuChildThread::DeferredMessages> deferred_messages =
@@ -352,17 +347,11 @@ int GpuMain(const MainFunctionParams& parameters) {
                                              should_initialize_gl_context);
     }
 #elif defined(OS_WIN)
-    gpu_info.sandboxed = StartSandboxWindows(parameters.sandbox_info);
+    gpu_info.sandboxed = StartSandboxWindows();
 #elif defined(OS_MACOSX)
     gpu_info.sandboxed = Sandbox::SandboxIsCurrentlyActive();
 #endif
 
-    gpu_info.video_decode_accelerator_supported_profiles =
-        content::GpuVideoDecodeAccelerator::GetSupportedProfiles();
-    gpu_info.video_encode_accelerator_supported_profiles =
-        content::GpuVideoEncodeAccelerator::GetSupportedProfiles();
-    gpu_info.jpeg_decode_accelerator_supported =
-        content::GpuJpegDecodeAccelerator::IsSupported();
   } else {
     dead_on_arrival = true;
   }
@@ -387,9 +376,6 @@ int GpuMain(const MainFunctionParams& parameters) {
   child_thread->Init(start_time);
 
   gpu_process.set_main_thread(child_thread);
-
-  if (watchdog_thread.get())
-    watchdog_thread->AddPowerObserver();
 
 #if defined(OS_ANDROID)
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
@@ -437,9 +423,6 @@ bool WarmUpSandbox(const base::CommandLine& command_line) {
     (void) base::RandUint64();
   }
 
-#if defined(OS_WIN)
-  content::DXVAVideoDecodeAccelerator::PreSandboxInitialization();
-#endif
   return true;
 }
 
@@ -557,17 +540,8 @@ bool StartSandboxLinux(const gpu::GPUInfo& gpu_info,
 #endif  // defined(OS_LINUX)
 
 #if defined(OS_WIN)
-bool StartSandboxWindows(const sandbox::SandboxInterfaceInfo* sandbox_info) {
+bool StartSandboxWindows() {
   TRACE_EVENT0("gpu,startup", "Lower token");
-
-  // For Windows, if the target_services interface is not zero, the process
-  // is sandboxed and we must call LowerToken() before rendering untrusted
-  // content.
-  sandbox::TargetServices* target_services = sandbox_info->target_services;
-  if (target_services) {
-    target_services->LowerToken();
-    return true;
-  }
 
   return false;
 }

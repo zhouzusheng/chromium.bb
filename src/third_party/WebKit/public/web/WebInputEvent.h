@@ -283,10 +283,6 @@ public:
     // easier to leave it always false than ifdef.
     bool isSystemKey;
 
-    // This specifies whether the NumLock was active when the keyboard event
-    // occurred.
-    bool bbIsNumLock;
-
     // Whether the event forms part of a browser-handled keyboard shortcut.
     // This can be used to conditionally suppress Char events after a
     // shortcut-triggering RawKeyDown goes unhandled.
@@ -309,7 +305,6 @@ public:
         , windowsKeyCode(0)
         , nativeKeyCode(0)
         , isSystemKey(false)
-        , bbIsNumLock(false)
         , isBrowserShortcut(false)
     {
         memset(&text, 0, sizeof(text));

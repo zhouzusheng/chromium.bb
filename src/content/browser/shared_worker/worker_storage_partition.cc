@@ -18,7 +18,6 @@ namespace content {
 
 WorkerStoragePartition::WorkerStoragePartition(
     net::URLRequestContextGetter* url_request_context,
-    net::URLRequestContextGetter* media_url_request_context,
     ChromeAppCacheService* appcache_service,
     storage::QuotaManager* quota_manager,
     storage::FileSystemContext* filesystem_context,
@@ -26,7 +25,6 @@ WorkerStoragePartition::WorkerStoragePartition(
     IndexedDBContextImpl* indexed_db_context,
     ServiceWorkerContextWrapper* service_worker_context)
     : url_request_context_(url_request_context),
-      media_url_request_context_(media_url_request_context),
       appcache_service_(appcache_service),
       quota_manager_(quota_manager),
       filesystem_context_(filesystem_context),

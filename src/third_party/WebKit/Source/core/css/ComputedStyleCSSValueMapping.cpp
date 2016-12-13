@@ -1943,8 +1943,6 @@ PassRefPtrWillBeRawPtr<CSSValue> ComputedStyleCSSValueMapping::get(CSSPropertyID
         return cssValuePool().createValue(style.textUnderlinePosition());
     case CSSPropertyWebkitTextDecorationsInEffect:
         return renderTextDecorationFlagsToCSSValue(style.textDecorationsInEffect());
-    case CSSPropertyWebkitCaretColor:
-        return currentColorOrValidColor(style, style.caretColor());
     case CSSPropertyWebkitTextFillColor:
         return currentColorOrValidColor(style, style.textFillColor());
     case CSSPropertyWebkitTextEmphasisColor:
@@ -2249,8 +2247,6 @@ PassRefPtrWillBeRawPtr<CSSValue> ComputedStyleCSSValueMapping::get(CSSPropertyID
         return cssValuePool().createValue(style.userDrag());
     case CSSPropertyWebkitUserSelect:
         return cssValuePool().createValue(style.userSelect());
-    case CSSPropertyBbRubberbandable:
-        return cssValuePool().createValue(style.rubberbandable());
     case CSSPropertyBorderBottomLeftRadius:
         return valueForBorderRadiusCorner(style.borderBottomLeftRadius(), style);
     case CSSPropertyBorderBottomRightRadius:

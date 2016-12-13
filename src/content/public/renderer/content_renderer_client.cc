@@ -4,8 +4,6 @@
 
 #include "content/public/renderer/content_renderer_client.h"
 
-#include "content/public/renderer/media_stream_renderer_factory.h"
-#include "media/base/renderer_factory.h"
 #include "third_party/WebKit/public/platform/modules/app_banner/WebAppBannerClient.h"
 
 namespace content {
@@ -168,23 +166,6 @@ bool ContentRendererClient::IsExternalPepperPlugin(
 
 bool ContentRendererClient::AllowPepperMediaStreamAPI(const GURL& url) {
   return false;
-}
-
-void ContentRendererClient::AddKeySystems(
-    std::vector<media::KeySystemInfo>* key_systems) {
-}
-
-scoped_ptr<media::RendererFactory>
-ContentRendererClient::CreateMediaRendererFactory(
-    RenderFrame* render_frame,
-    media::GpuVideoAcceleratorFactories* gpu_factories,
-    const scoped_refptr<media::MediaLog>& media_log) {
-  return nullptr;
-}
-
-scoped_ptr<MediaStreamRendererFactory>
-ContentRendererClient::CreateMediaStreamRendererFactory() {
-  return nullptr;
 }
 
 bool ContentRendererClient::ShouldReportDetailedMessageForSource(

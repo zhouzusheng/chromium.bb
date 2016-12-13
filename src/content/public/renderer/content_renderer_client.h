@@ -54,13 +54,6 @@ struct WebPluginParams;
 struct WebURLError;
 }
 
-namespace media {
-class GpuVideoAcceleratorFactories;
-class MediaLog;
-class RendererFactory;
-struct KeySystemInfo;
-}
-
 namespace content {
 class BrowserPluginDelegate;
 class DocumentState;
@@ -255,19 +248,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns true if the page at |url| can use Pepper MediaStream APIs.
   virtual bool AllowPepperMediaStreamAPI(const GURL& url);
 
-  // Allows an embedder to provide a media::RendererFactory.
-  virtual scoped_ptr<media::RendererFactory> CreateMediaRendererFactory(
-      RenderFrame* render_frame,
-      media::GpuVideoAcceleratorFactories* gpu_factories,
-      const scoped_refptr<media::MediaLog>& media_log);
-
-  // Allows an embedder to provide a MediaStreamRendererFactory.
-  virtual scoped_ptr<MediaStreamRendererFactory>
-  CreateMediaStreamRendererFactory();
-
-  // Gives the embedder a chance to register the key system(s) it supports by
-  // populating |key_systems|.
-  virtual void AddKeySystems(std::vector<media::KeySystemInfo>* key_systems);
+  
 
   // Returns true if we should report a detailed message (including a stack
   // trace) for console [logs|errors|exceptions]. |source| is the WebKit-

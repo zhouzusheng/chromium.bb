@@ -602,8 +602,8 @@ int ResourceDispatcher::StartAsync(const RequestInfo& request_info,
   // Compute a unique request_id for this renderer process.
   int request_id = MakeRequestID();
 
-  scoped_ptr<ResourceLoaderBridge> bridge(
-      GetContentClient()->renderer()->OverrideResourceLoaderBridge(request_info));
+  auto renderer = GetContentClient()->renderer();
+  scoped_ptr<ResourceLoaderBridge> bridge(renderer ? renderer->OverrideResourceLoaderBridge(request_info) : nullptr);
   if (bridge.get()) {
       const RequestExtraData kEmptyData;
       const RequestExtraData* extra_data;

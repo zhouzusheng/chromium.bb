@@ -181,10 +181,7 @@ void TileTaskWorkerPool::PlaybackToMemory(
 
   // Uses kPremul_SkAlphaType since the result is not known to be opaque.
   SkImageInfo info =
-      SkImageInfo::MakeN32(size.width(), size.height(),
-        kPremul_SkAlphaType,
-        kLinear_SkColorProfileType,
-		    raster_source->DefaultLCDBackgroundColor());
+      SkImageInfo::MakeN32(size.width(), size.height(), kPremul_SkAlphaType);
   SkColorType buffer_color_type = ResourceFormatToSkColorType(format);
   bool needs_copy = buffer_color_type != info.colorType();
 
@@ -227,7 +224,7 @@ void TileTaskWorkerPool::PlaybackToMemory(
 
     SkImageInfo dst_info =
         SkImageInfo::Make(info.width(), info.height(), buffer_color_type,
-                          info.alphaType(), info.profileType(), info.defaultLCDBackgroundColor());
+                          info.alphaType(), info.profileType());
     bool rv = canvas->readPixels(dst_info, memory, stride, 0, 0);
     DCHECK(rv);
   }

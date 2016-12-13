@@ -43,7 +43,6 @@
 #include "content/browser/loader/navigation_resource_handler.h"
 #include "content/browser/loader/navigation_resource_throttle.h"
 #include "content/browser/loader/navigation_url_loader_impl_core.h"
-#include "content/browser/loader/power_save_block_resource_throttle.h"
 #include "content/browser/loader/redirect_to_file_resource_handler.h"
 #include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/loader/resource_request_info_impl.h"
@@ -713,6 +712,9 @@ void ResourceDispatcherHostImpl::ClearLoginDelegateForRequest(
 
 void ResourceDispatcherHostImpl::Shutdown() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  //zzs
+  //not safe, but need
+  is_shutdown_ = true;
   BrowserThread::PostTask(BrowserThread::IO,
                           FROM_HERE,
                           base::Bind(&ResourceDispatcherHostImpl::OnShutdown,
@@ -1218,14 +1220,15 @@ void ResourceDispatcherHostImpl::BeginRequest(
   net::URLRequestContext* request_context = NULL;
   filter_->GetContexts(request_data, &resource_context, &request_context);
   // http://crbug.com/90971
-  CHECK(ContainsKey(active_resource_contexts_, resource_context));
+  bool valid = ContainsKey(active_resource_contexts_, resource_context);
+  //CHECK(is_shutdown_ == true || ContainsKey(active_resource_contexts_, resource_context));
 
   // Parse the headers before calling ShouldServiceRequest, so that they are
   // available to be validated.
   net::HttpRequestHeaders headers;
   headers.AddHeadersFromString(request_data.headers);
 
-  if (is_shutdown_ ||
+  if (is_shutdown_ || (!valid) ||
       !ShouldServiceRequest(process_type, child_id, request_data, headers,
                             filter_, resource_context)) {
     AbortRequestBeforeItStarts(filter_, sync_result, request_id);
@@ -1512,7 +1515,7 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::AddStandardHandlers(
 
   if (request->has_upload()) {
     // Block power save while uploading data.
-    throttles.push_back(new PowerSaveBlockResourceThrottle());
+    //throttles.push_back(new PowerSaveBlockResourceThrottle());
   }
 
   // TODO(ricea): Stop looking this up so much.
@@ -1649,9 +1652,8 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
 
 void ResourceDispatcherHostImpl::OnRenderViewHostCreated(int child_id,
                                                          int route_id,
-                                                         bool is_visible,
-                                                         bool is_audible) {
-  scheduler_->OnClientCreated(child_id, route_id, is_visible, is_audible);
+                                                         bool is_visible) {
+  scheduler_->OnClientCreated(child_id, route_id, is_visible);
 }
 
 void ResourceDispatcherHostImpl::OnRenderViewHostDeleted(

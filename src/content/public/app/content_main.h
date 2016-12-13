@@ -15,9 +15,6 @@
 #include <windows.h>
 #endif
 
-namespace sandbox {
-struct SandboxInterfaceInfo;
-}
 
 namespace content {
 class ContentMainDelegate;
@@ -27,7 +24,6 @@ struct ContentMainParams {
       : delegate(delegate),
 #if defined(OS_WIN)
         instance(NULL),
-        sandbox_info(NULL),
 #elif !defined(OS_ANDROID)
         argc(0),
         argv(NULL),
@@ -40,9 +36,6 @@ struct ContentMainParams {
 #if defined(OS_WIN)
   HINSTANCE instance;
 
-  // |sandbox_info| should be initialized using InitializeSandboxInfo from
-  // content_main_win.h
-  sandbox::SandboxInterfaceInfo* sandbox_info;
 #elif !defined(OS_ANDROID)
   int argc;
   const char** argv;

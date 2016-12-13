@@ -61,13 +61,13 @@
       ['OS!="android"', {
         'feature_defines': [
           'ENABLE_INPUT_MULTIPLE_FIELDS_UI=1',
-          'ENABLE_WEB_AUDIO=1'
+          'ENABLE_WEB_AUDIO=0'
         ],
       }],
       # Mac OS X uses Accelerate.framework FFT by default instead of FFmpeg.
       ['OS!="mac" and OS!="android"', {
         'feature_defines': [
-          'WTF_USE_WEBAUDIO_FFMPEG=1',
+          'WTF_USE_WEBAUDIO_FFMPEG=0',
         ],
       }],
       ['OS=="android" and use_openmax_dl_fft!=0', {

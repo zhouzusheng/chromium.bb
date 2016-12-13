@@ -28,7 +28,6 @@
 #include "platform/image-decoders/ico/ICOImageDecoder.h"
 #include "platform/image-decoders/jpeg/JPEGImageDecoder.h"
 #include "platform/image-decoders/png/PNGImageDecoder.h"
-#include "platform/image-decoders/webp/WEBPImageDecoder.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
@@ -102,9 +101,6 @@ PassOwnPtr<ImageDecoder> ImageDecoder::create(const SharedBuffer& data, AlphaOpt
 
     if (matchesGIFSignature(contents))
         return adoptPtr(new GIFImageDecoder(alphaOption, colorOptions, maxDecodedBytes));
-
-    if (matchesWebPSignature(contents))
-        return adoptPtr(new WEBPImageDecoder(alphaOption, colorOptions, maxDecodedBytes));
 
     if (matchesICOSignature(contents) || matchesCURSignature(contents))
         return adoptPtr(new ICOImageDecoder(alphaOption, colorOptions, maxDecodedBytes));

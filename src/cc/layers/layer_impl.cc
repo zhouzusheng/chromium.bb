@@ -63,7 +63,6 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl,
       layer_property_changed_(false),
       masks_to_bounds_(false),
       contents_opaque_(false),
-      contents_opaque_for_lcd_text_(false),
       is_root_for_isolated_group_(false),
       use_parent_backface_visibility_(false),
       draws_content_(false),
@@ -576,7 +575,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetNonFastScrollableRegion(non_fast_scrollable_region_);
   layer->SetTouchEventHandlerRegion(touch_event_handler_region_);
   layer->SetContentsOpaque(contents_opaque_);
-  layer->SetContentsOpaqueForLCDText(contents_opaque_for_lcd_text_);
   layer->SetOpacity(opacity_);
   layer->SetBlendMode(blend_mode_);
   layer->SetIsRootForIsolatedGroup(is_root_for_isolated_group_);
@@ -1169,14 +1167,6 @@ void LayerImpl::SetContentsOpaque(bool opaque) {
     return;
 
   contents_opaque_ = opaque;
-  NoteLayerPropertyChangedForSubtree();
-}
-
-void LayerImpl::SetContentsOpaqueForLCDText(bool opaque) {
-  if (contents_opaque_for_lcd_text_ == opaque)
-    return;
-
-  contents_opaque_for_lcd_text_ = opaque;
   NoteLayerPropertyChangedForSubtree();
 }
 

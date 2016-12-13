@@ -33,24 +33,6 @@ WebContents* RenderFrameHostDelegate::GetAsWebContents() {
   return NULL;
 }
 
-void RenderFrameHostDelegate::RequestMediaAccessPermission(
-    const MediaStreamRequest& request,
-    const MediaResponseCallback& callback) {
-  LOG(ERROR) << "RenderFrameHostDelegate::RequestMediaAccessPermission: "
-             << "Not supported.";
-  callback.Run(MediaStreamDevices(),
-               MEDIA_DEVICE_NOT_SUPPORTED,
-               scoped_ptr<MediaStreamUI>());
-}
-
-bool RenderFrameHostDelegate::CheckMediaAccessPermission(
-    const GURL& security_origin,
-    MediaStreamType type) {
-  LOG(ERROR) << "RenderFrameHostDelegate::CheckMediaAccessPermission: "
-             << "Not supported.";
-  return false;
-}
-
 AccessibilityMode RenderFrameHostDelegate::GetAccessibilityMode() const {
   return AccessibilityModeOff;
 }

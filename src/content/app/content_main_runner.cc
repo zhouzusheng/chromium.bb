@@ -44,13 +44,11 @@
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
-#include "content/public/common/sandbox_init.h"
+
 #include "content/renderer/in_process_renderer_thread.h"
 #include "content/utility/in_process_utility_thread.h"
 #include "ipc/ipc_descriptors.h"
 #include "ipc/ipc_switches.h"
-#include "media/base/media.h"
-#include "sandbox/win/src/sandbox_types.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
 
@@ -123,8 +121,6 @@ extern int GpuMain(const content::MainFunctionParams&);
 #if !defined(OS_LINUX)
 extern int PluginMain(const content::MainFunctionParams&);
 #endif
-extern int PpapiPluginMain(const MainFunctionParams&);
-extern int PpapiBrokerMain(const MainFunctionParams&);
 #endif
 extern int RendererMain(const content::MainFunctionParams&);
 extern int UtilityMain(const MainFunctionParams&);
@@ -362,8 +358,6 @@ int RunNamedProcessTypeMain(
 #if !defined(OS_LINUX)
     { switches::kPluginProcess,      PluginMain },
 #endif
-    { switches::kPpapiPluginProcess, PpapiPluginMain },
-    { switches::kPpapiBrokerProcess, PpapiBrokerMain },
 #endif  // ENABLE_PLUGINS
     { switches::kUtilityProcess,     UtilityMain },
     { switches::kRendererProcess,    RendererMain },
@@ -416,7 +410,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
         delegate_(NULL),
         ui_task_(NULL) {
 #if defined(OS_WIN)
-    memset(&sandbox_info_, 0, sizeof(sandbox_info_));
+   
 #endif
   }
 
@@ -461,8 +455,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #if defined(OS_WIN)
     base::win::RegisterInvalidParamHandler();
     ui::win::CreateATLModuleIfNeeded();
-
-    sandbox_info_ = *params.sandbox_info;
 #else  // !OS_WIN
 
 #if defined(OS_ANDROID)
@@ -787,7 +779,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       CommonSubprocessInit(process_type);
 
 #if defined(OS_WIN)
-    CHECK(InitializeSandbox(params.sandbox_info));
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
     if (process_type == switches::kRendererProcess ||
         process_type == switches::kPpapiPluginProcess ||
@@ -817,7 +808,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     MainFunctionParams main_params(command_line);
     main_params.ui_task = ui_task_;
 #if defined(OS_WIN)
-    main_params.sandbox_info = &sandbox_info_;
+   
 #elif defined(OS_MACOSX)
     main_params.autorelease_pool = autorelease_pool_.get();
 #endif
@@ -876,7 +867,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
   scoped_ptr<base::AtExitManager> exit_manager_;
 #if defined(OS_WIN)
-  sandbox::SandboxInterfaceInfo sandbox_info_;
+  
 #elif defined(OS_MACOSX)
   scoped_ptr<base::mac::ScopedNSAutoreleasePool> autorelease_pool_;
 #endif

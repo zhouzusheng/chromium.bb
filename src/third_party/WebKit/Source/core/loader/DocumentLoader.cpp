@@ -813,7 +813,7 @@ PassRefPtrWillBeRawPtr<DocumentWriter> DocumentLoader::createWriterFor(const Doc
     RefPtrWillBeRawPtr<Document> document = frame->localDOMWindow()->installNewDocument(mimeType, init);
     if (ownerDocument) {
         document->setCookieURL(ownerDocument->cookieURL());
-        document->updateSecurityOrigin(ownerDocument->securityOrigin());
+        document->setSecurityOrigin(ownerDocument->securityOrigin());
     }
 
     frame->loader().didBeginDocument(dispatch);

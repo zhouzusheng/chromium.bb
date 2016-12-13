@@ -62,7 +62,6 @@ class CONTENT_EXPORT StoragePartition {
  public:
   virtual base::FilePath GetPath() = 0;
   virtual net::URLRequestContextGetter* GetURLRequestContext() = 0;
-  virtual net::URLRequestContextGetter* GetMediaURLRequestContext() = 0;
   virtual storage::QuotaManager* GetQuotaManager() = 0;
   virtual AppCacheService* GetAppCacheService() = 0;
   virtual storage::FileSystemContext* GetFileSystemContext() = 0;

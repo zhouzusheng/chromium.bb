@@ -189,17 +189,13 @@ enum EUserSelect {
     SELECT_NONE, SELECT_TEXT, SELECT_ALL
 };
 
-enum ERubberbandable {
-    RUBBERBANDABLE_NONE, RUBBERBANDABLE_TEXT, RUBBERBANDABLE_TEXT_WITH_LEADING_TAB
-};
-
 // CSS3 Image Values
 enum ObjectFit { ObjectFitFill, ObjectFitContain, ObjectFitCover, ObjectFitNone, ObjectFitScaleDown };
 
 // Word Break Values. Matches WinIE and CSS3
 
 enum EWordBreak {
-    NormalWordBreak, BreakAllWordBreak, KeepAllWordBreak, KeepAllIfKoreanWordBreak, BreakWordBreak
+    NormalWordBreak, BreakAllWordBreak, KeepAllWordBreak, BreakWordBreak
 };
 
 enum EOverflowWrap {
@@ -284,7 +280,7 @@ enum EAnimPlayState {
 };
 
 enum EWhiteSpace {
-    NORMAL, PRE, PRE_WRAP, BB_PRE_WRAP_TEXT, PRE_LINE, NOWRAP, KHTML_NOWRAP
+    NORMAL, PRE, PRE_WRAP, PRE_LINE, NOWRAP, KHTML_NOWRAP
 };
 
 // The order of this enum must match the order of the text align values in CSSValueKeywords.in.

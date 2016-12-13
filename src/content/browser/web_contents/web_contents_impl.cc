@@ -45,11 +45,8 @@
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/manifest/manifest_manager_host.h"
-#include "content/browser/media/audio_stream_monitor.h"
-#include "content/browser/media/capture/web_contents_audio_muter.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/plugin_content_origin_whitelist.h"
-#include "content/browser/power_save_blocker_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -402,7 +399,6 @@ WebContentsImpl::WebContentsImpl(BrowserContext* browser_context,
       geolocation_service_context_(new GeolocationServiceContext()),
       accessibility_mode_(
           BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode()),
-      audio_stream_monitor_(this),
       virtual_keyboard_requested_(false),
       page_scale_factor_is_one_(true),
       loading_weak_factory_(this) {
@@ -614,10 +610,6 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
     IPC_MESSAGE_HANDLER(FrameHostMsg_EndColorChooser, OnEndColorChooser)
     IPC_MESSAGE_HANDLER(FrameHostMsg_SetSelectedColorInColorChooser,
                         OnSetSelectedColorInColorChooser)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_MediaPlayingNotification,
-                        OnMediaPlayingNotification)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_MediaPausedNotification,
-                        OnMediaPausedNotification)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidFirstVisuallyNonEmptyPaint,
                         OnFirstVisuallyNonEmptyPaint)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidLoadResourceFromMemoryCache,
@@ -647,8 +639,6 @@ bool WebContentsImpl::OnMessageReceived(RenderViewHost* render_view_host,
                         OnPepperInstanceDeleted)
     IPC_MESSAGE_HANDLER(FrameHostMsg_PepperPluginHung, OnPepperPluginHung)
     IPC_MESSAGE_HANDLER(FrameHostMsg_PluginCrashed, OnPluginCrashed)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_RequestPpapiBrokerPermission,
-                        OnRequestPpapiBrokerPermission)
     IPC_MESSAGE_HANDLER_GENERIC(BrowserPluginHostMsg_Attach,
                                 OnBrowserPluginMessage(render_frame_host,
                                                        message))
@@ -1080,30 +1070,6 @@ int WebContentsImpl::GetCapturerCount() const {
   return capturer_count_;
 }
 
-bool WebContentsImpl::IsAudioMuted() const {
-  return audio_muter_.get() && audio_muter_->is_muting();
-}
-
-void WebContentsImpl::SetAudioMuted(bool mute) {
-  DVLOG(1) << "SetAudioMuted(mute=" << mute << "), was " << IsAudioMuted()
-           << " for WebContentsImpl@" << this;
-
-  if (mute == IsAudioMuted())
-    return;
-
-  if (mute) {
-    if (!audio_muter_)
-      audio_muter_.reset(new WebContentsAudioMuter(this));
-    audio_muter_->StartMuting();
-  } else {
-    DCHECK(audio_muter_);
-    audio_muter_->StopMuting();
-  }
-
-  // Notification for UI updates in response to the changed muting state.
-  NotifyNavigationStateChanged(INVALIDATE_TYPE_TAB);
-}
-
 bool WebContentsImpl::IsCrashed() const {
   return (crashed_status_ == base::TERMINATION_STATUS_PROCESS_CRASHED ||
           crashed_status_ == base::TERMINATION_STATUS_ABNORMAL_TERMINATION ||
@@ -1141,18 +1107,7 @@ void WebContentsImpl::NotifyNavigationStateChanged(
   tracked_objects::ScopedTracker tracking_profile(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "466285 WebContentsImpl::NotifyNavigationStateChanged"));
-  // Create and release the audio power save blocker depending on whether the
-  // tab is actively producing audio or not.
-  if ((changed_flags & INVALIDATE_TYPE_TAB) &&
-      AudioStreamMonitor::monitoring_available()) {
-    if (WasRecentlyAudible()) {
-      if (!audio_power_save_blocker_)
-        CreateAudioPowerSaveBlocker();
-    } else {
-      audio_power_save_blocker_.reset();
-    }
-  }
-
+ 
   if (delegate_)
     delegate_->NavigationStateChanged(this, changed_flags);
 }
@@ -1187,10 +1142,6 @@ void WebContentsImpl::WasShown() {
         GetRootWindowResizerRect(rvh->GetWidget()));
   }
 
-  // Restore power save blocker if there are active video players running.
-  if (!active_video_players_.empty() && !video_power_save_blocker_)
-    CreateVideoPowerSaveBlocker();
-
   FOR_EACH_OBSERVER(WebContentsObserver, observers_, WasShown());
 
   should_normally_be_visible_ = true;
@@ -1211,8 +1162,6 @@ void WebContentsImpl::WasHidden() {
         view->Hide();
     }
 
-    // Release any video power save blockers held as video is not visible.
-    video_power_save_blocker_.reset();
   }
 
   FOR_EACH_OBSERVER(WebContentsObserver, observers_, WasHidden());
@@ -2081,26 +2030,6 @@ RenderWidgetHostView* WebContentsImpl::GetCreatedWidget(int route_id) {
   return widget_host_view;
 }
 
-void WebContentsImpl::RequestMediaAccessPermission(
-    const MediaStreamRequest& request,
-    const MediaResponseCallback& callback) {
-  if (delegate_) {
-    delegate_->RequestMediaAccessPermission(this, request, callback);
-  } else {
-    callback.Run(MediaStreamDevices(),
-                 MEDIA_DEVICE_FAILED_DUE_TO_SHUTDOWN,
-                 scoped_ptr<MediaStreamUI>());
-  }
-}
-
-bool WebContentsImpl::CheckMediaAccessPermission(const GURL& security_origin,
-                                                 MediaStreamType type) {
-  DCHECK(type == MEDIA_DEVICE_AUDIO_CAPTURE ||
-         type == MEDIA_DEVICE_VIDEO_CAPTURE);
-  return delegate_ &&
-         delegate_->CheckMediaAccessPermission(this, security_origin, type);
-}
-
 SessionStorageNamespace* WebContentsImpl::GetSessionStorageNamespace(
     SiteInstance* instance) {
   return controller_.GetSessionStorageNamespace(instance);
@@ -2848,10 +2777,6 @@ void WebContentsImpl::InsertCSS(const std::string& css) {
       GetMainFrame()->GetRoutingID(), css));
 }
 
-bool WebContentsImpl::WasRecentlyAudible() {
-  return audio_stream_monitor_.WasRecentlyAudible();
-}
-
 void WebContentsImpl::GetManifest(const GetManifestCallback& callback) {
   manifest_manager_host_->GetManifest(GetMainFrame(), callback);
 }
@@ -3405,29 +3330,6 @@ void WebContentsImpl::OnPluginCrashed(const base::FilePath& plugin_path,
                     PluginCrashed(plugin_path, plugin_pid));
 }
 
-void WebContentsImpl::OnRequestPpapiBrokerPermission(
-    int routing_id,
-    const GURL& url,
-    const base::FilePath& plugin_path) {
-  if (!delegate_) {
-    OnPpapiBrokerPermissionResult(routing_id, false);
-    return;
-  }
-
-  if (!delegate_->RequestPpapiBrokerPermission(
-      this, url, plugin_path,
-      base::Bind(&WebContentsImpl::OnPpapiBrokerPermissionResult,
-                 base::Unretained(this), routing_id))) {
-    NOTIMPLEMENTED();
-    OnPpapiBrokerPermissionResult(routing_id, false);
-  }
-}
-
-void WebContentsImpl::OnPpapiBrokerPermissionResult(int routing_id,
-                                                    bool result) {
-  Send(new ViewMsg_PpapiBrokerPermissionResult(routing_id, result));
-}
-
 void WebContentsImpl::OnBrowserPluginMessage(RenderFrameHost* render_frame_host,
                                              const IPC::Message& message) {
   CHECK(!browser_plugin_embedder_.get());
@@ -3451,76 +3353,8 @@ void WebContentsImpl::OnUpdateFaviconURL(
                     DidUpdateFaviconURL(candidates));
 }
 
-void WebContentsImpl::CreateAudioPowerSaveBlocker() {
-  DCHECK(!audio_power_save_blocker_);
-  audio_power_save_blocker_ = PowerSaveBlocker::Create(
-      PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
-      PowerSaveBlocker::kReasonAudioPlayback, "Playing audio");
-}
-
-void WebContentsImpl::CreateVideoPowerSaveBlocker() {
-  DCHECK(!video_power_save_blocker_);
-  DCHECK(!active_video_players_.empty());
-  video_power_save_blocker_ = PowerSaveBlocker::Create(
-      PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
-      PowerSaveBlocker::kReasonVideoPlayback, "Playing video");
-  //TODO(mfomitchev): Support PowerSaveBlocker on Aura - crbug.com/546718.
-#if defined(OS_ANDROID) && !defined(USE_AURA)
-static_cast<PowerSaveBlockerImpl*>(video_power_save_blocker_.get())
-      ->InitDisplaySleepBlocker(this);
-#endif
-}
-
 void WebContentsImpl::MaybeReleasePowerSaveBlockers() {
-  // If there are no more audio players and we don't have audio stream
-  // monitoring, release the audio power save blocker here instead of during
-  // NotifyNavigationStateChanged().
-  if (active_audio_players_.empty() &&
-      !AudioStreamMonitor::monitoring_available()) {
-    audio_power_save_blocker_.reset();
-  }
-
-  // If there are no more video players, clear the video power save blocker.
-  if (active_video_players_.empty())
-    video_power_save_blocker_.reset();
-}
-
-void WebContentsImpl::OnMediaPlayingNotification(int64 player_cookie,
-                                                 bool has_video,
-                                                 bool has_audio,
-                                                 bool is_remote) {
-  // Ignore the videos playing remotely and don't hold the wake lock for the
-  // screen.
-  if (is_remote) return;
-
-  if (has_audio) {
-    AddMediaPlayerEntry(player_cookie, &active_audio_players_);
-
-    // If we don't have audio stream monitoring, allocate the audio power save
-    // blocker here instead of during NotifyNavigationStateChanged().
-    if (!audio_power_save_blocker_ &&
-        !AudioStreamMonitor::monitoring_available()) {
-      CreateAudioPowerSaveBlocker();
-    }
-  }
-
-  if (has_video) {
-    AddMediaPlayerEntry(player_cookie, &active_video_players_);
-
-    // If we're not hidden and have just created a player, create a blocker.
-    if (!video_power_save_blocker_ && !IsHidden())
-      CreateVideoPowerSaveBlocker();
-  }
-
-  FOR_EACH_OBSERVER(WebContentsObserver, observers_, MediaStartedPlaying());
-}
-
-void WebContentsImpl::OnMediaPausedNotification(int64 player_cookie) {
-  RemoveMediaPlayerEntry(player_cookie, &active_audio_players_);
-  RemoveMediaPlayerEntry(player_cookie, &active_video_players_);
-  MaybeReleasePowerSaveBlockers();
-
-  FOR_EACH_OBSERVER(WebContentsObserver, observers_, MediaPaused());
+  
 }
 
 #if defined(OS_ANDROID)
@@ -4716,16 +4550,12 @@ void WebContentsImpl::CreateBrowserPluginEmbedderIfNecessary() {
 
 void WebContentsImpl::ClearPowerSaveBlockers(
     RenderFrameHost* render_frame_host) {
-  RemoveAllMediaPlayerEntries(render_frame_host, &active_audio_players_);
-  RemoveAllMediaPlayerEntries(render_frame_host, &active_video_players_);
+  
   MaybeReleasePowerSaveBlockers();
 }
 
 void WebContentsImpl::ClearAllPowerSaveBlockers() {
-  active_audio_players_.clear();
-  active_video_players_.clear();
-  audio_power_save_blocker_.reset();
-  video_power_save_blocker_.reset();
+  
 }
 
 gfx::Size WebContentsImpl::GetSizeForNewRenderView() {
@@ -4748,51 +4578,6 @@ void WebContentsImpl::OnPreferredSizeChanged(const gfx::Size& old_size) {
   const gfx::Size new_size = GetPreferredSize();
   if (new_size != old_size)
     delegate_->UpdatePreferredSize(this, new_size);
-}
-
-void WebContentsImpl::AddMediaPlayerEntry(int64 player_cookie,
-                                          ActiveMediaPlayerMap* player_map) {
-  if (!HasValidFrameSource())
-    return;
-
-  const uintptr_t key =
-      reinterpret_cast<uintptr_t>(render_frame_message_source_);
-  DCHECK(std::find((*player_map)[key].begin(),
-                   (*player_map)[key].end(),
-                   player_cookie) == (*player_map)[key].end());
-  (*player_map)[key].push_back(player_cookie);
-}
-
-void WebContentsImpl::RemoveMediaPlayerEntry(int64 player_cookie,
-                                             ActiveMediaPlayerMap* player_map) {
-  if (!HasValidFrameSource())
-    return;
-
-  const uintptr_t key =
-      reinterpret_cast<uintptr_t>(render_frame_message_source_);
-  ActiveMediaPlayerMap::iterator it = player_map->find(key);
-  if (it == player_map->end())
-    return;
-
-  // Remove the player.
-  PlayerList::iterator player_it =
-      std::find(it->second.begin(), it->second.end(), player_cookie);
-  if (player_it != it->second.end())
-    it->second.erase(player_it);
-
-  // If there are no players left, remove the map entry.
-  if (it->second.empty())
-    player_map->erase(it);
-}
-
-void WebContentsImpl::RemoveAllMediaPlayerEntries(
-    RenderFrameHost* render_frame_host,
-    ActiveMediaPlayerMap* player_map) {
-  ActiveMediaPlayerMap::iterator it =
-      player_map->find(reinterpret_cast<uintptr_t>(render_frame_host));
-  if (it == player_map->end())
-    return;
-  player_map->erase(it);
 }
 
 WebUI* WebContentsImpl::CreateWebUI(const GURL& url,

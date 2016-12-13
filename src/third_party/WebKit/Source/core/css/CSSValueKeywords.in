@@ -434,7 +434,6 @@ portrait
 pre
 pre-line
 pre-wrap
--bb-pre-wrap-text
 relative
 scroll
 separate
@@ -557,19 +556,10 @@ ellipsis
 discard
 
 //
-// bb-rubberbandable
-//
-// auto
-// none
-// text
-text-with-leading-tab
-
-//
 // word-break
 //
 break-all
 keep-all
--bb-keep-all-if-korean
 
 //
 // word-wrap

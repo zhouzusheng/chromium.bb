@@ -51,8 +51,7 @@ DisplayListRecordingSource::DisplayListRecordingSource()
       solid_color_(SK_ColorTRANSPARENT),
       background_color_(SK_ColorTRANSPARENT),
       pixel_record_distance_(kPixelDistanceToRecord),
-      painter_reported_memory_usage_(0),
-      default_lcd_background_color_(SK_ColorTRANSPARENT) {}
+      painter_reported_memory_usage_(0) {}
 
 DisplayListRecordingSource::~DisplayListRecordingSource() {
 }
@@ -222,10 +221,6 @@ bool DisplayListRecordingSource::IsSuitableForGpuRasterization() const {
   // create a display list (e.g., if the size is empty). We return true in these
   // cases because the gpu suitability bit sticks false.
   return !display_list_ || display_list_->IsSuitableForGpuRasterization();
-}
-
-void DisplayListRecordingSource::SetDefaultLCDBackgroundColor(SkColor default_lcd_background_color) {
-  default_lcd_background_color_ = default_lcd_background_color;
 }
 
 scoped_refptr<DisplayListRasterSource>

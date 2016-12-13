@@ -233,7 +233,6 @@
       'WebUserMediaRequest.cpp',
       'WebViewFrameWidget.cpp',
       'WebViewFrameWidget.h',
-      'WebViewImplRubberband.cpp',
       'WebViewImpl.cpp',
       'WebViewImpl.h',
       'WorkerContentSettingsClient.cpp',

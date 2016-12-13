@@ -24,8 +24,6 @@
 #include "content/browser/download/download_stats.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
-#include "content/browser/media/media_internals.h"
-#include "content/browser/renderer_host/pepper/pepper_security_helper.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
@@ -48,10 +46,6 @@
 #include "content/public/common/url_constants.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_platform_file.h"
-#include "media/audio/audio_manager.h"
-#include "media/audio/audio_manager_base.h"
-#include "media/audio/audio_parameters.h"
-#include "media/base/media_log_event.h"
 #include "net/base/io_buffer.h"
 #include "net/base/keygen_handler.h"
 #include "net/base/mime_util.h"
@@ -59,7 +53,6 @@
 #include "net/http/http_cache.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ppapi/shared_impl/file_type_conversion.h"
 #include "ui/gfx/color_profile.h"
 #include "url/gurl.h"
 
@@ -115,8 +108,6 @@ RenderMessageFilter::RenderMessageFilter(
     BrowserContext* browser_context,
     net::URLRequestContextGetter* request_context,
     RenderWidgetHelper* render_widget_helper,
-    media::AudioManager* audio_manager,
-    MediaInternals* media_internals,
     DOMStorageContextWrapper* dom_storage_context)
     : BrowserMessageFilter(kFilteredMessageClasses,
                            arraysize(kFilteredMessageClasses)),
@@ -126,9 +117,7 @@ RenderMessageFilter::RenderMessageFilter(
       resource_context_(browser_context->GetResourceContext()),
       render_widget_helper_(render_widget_helper),
       dom_storage_context_(dom_storage_context),
-      render_process_id_(render_process_id),
-      audio_manager_(audio_manager),
-      media_internals_(media_internals) {
+      render_process_id_(render_process_id) {
   DCHECK(request_context_.get());
 
   if (render_widget_helper)
@@ -192,9 +181,7 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
                         OnDeletedDiscardableSharedMemory)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(RenderProcessHostMsg_Keygen, OnKeygen)
     IPC_MESSAGE_HANDLER(RenderProcessHostMsg_DidGenerateCacheableMetadata,
-                        OnCacheableMetadataAvailable)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_GetAudioHardwareConfig,
-                        OnGetAudioHardwareConfig)
+                        OnCacheableMetadataAvailable)    
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(RenderProcessHostMsg_LoadFont, OnLoadFont)
 #elif defined(OS_WIN)
@@ -203,7 +190,6 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(RenderProcessHostMsg_GetMonitorColorProfile,
                         OnGetMonitorColorProfile)
 #endif
-    IPC_MESSAGE_HANDLER(ViewHostMsg_MediaLogEvents, OnMediaLogEvents)
 #if defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunWebAudioMediaCodec, OnWebAudioMediaCodec)
 #endif
@@ -220,8 +206,7 @@ void RenderMessageFilter::OnDestruct() const {
 
 void RenderMessageFilter::OverrideThreadForMessage(const IPC::Message& message,
                                                    BrowserThread::ID* thread) {
-  if (message.type() == ViewHostMsg_MediaLogEvents::ID)
-    *thread = BrowserThread::UI;
+    //*thread = BrowserThread::UI;
 }
 
 base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
@@ -231,9 +216,6 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
   if (message.type() == RenderProcessHostMsg_GetMonitorColorProfile::ID)
     return BrowserThread::GetBlockingPool();
 #endif
-  // Always query audio device parameters on the audio thread.
-  if (message.type() == ViewHostMsg_GetAudioHardwareConfig::ID)
-    return audio_manager_->GetTaskRunner().get();
   return NULL;
 }
 
@@ -311,18 +293,6 @@ void RenderMessageFilter::OnGetProcessMemorySizes(size_t* private_bytes,
 
 void RenderMessageFilter::OnGenerateRoutingID(int* route_id) {
   *route_id = render_widget_helper_->GetNextRoutingID();
-}
-
-void RenderMessageFilter::OnGetAudioHardwareConfig(
-    media::AudioParameters* input_params,
-    media::AudioParameters* output_params) {
-  DCHECK(input_params);
-  DCHECK(output_params);
-  *output_params = audio_manager_->GetDefaultOutputStreamParameters();
-
-  // TODO(henrika): add support for all available input devices.
-  *input_params = audio_manager_->GetInputStreamParameters(
-      media::AudioManagerBase::kDefaultDeviceId);
 }
 
 #if defined(OS_MACOSX)
@@ -626,15 +596,6 @@ void RenderMessageFilter::OnKeygenOnWorkerThread(
       reply_msg,
       keygen_handler->GenKeyAndSignChallenge());
   Send(reply_msg);
-}
-
-void RenderMessageFilter::OnMediaLogEvents(
-    const std::vector<media::MediaLogEvent>& events) {
-  // OnMediaLogEvents() is always dispatched to the UI thread for handling.
-  // See OverrideThreadForMessage().
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (media_internals_)
-    media_internals_->OnMediaEvents(render_process_id_, events);
 }
 
 #if defined(OS_ANDROID)

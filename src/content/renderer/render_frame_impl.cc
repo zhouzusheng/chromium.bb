@@ -62,9 +62,7 @@
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_frame_observer.h"
-#include "content/public/renderer/renderer_ppapi_host.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
-#include "content/renderer/bluetooth/web_bluetooth_impl.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/child_frame_compositing_helper.h"
@@ -80,31 +78,17 @@
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/internal_document_state_data.h"
 #include "content/renderer/manifest/manifest_manager.h"
-#include "content/renderer/media/audio_device_factory.h"
-#include "content/renderer/media/audio_renderer_mixer_manager.h"
-#include "content/renderer/media/crypto/render_cdm_factory.h"
-#include "content/renderer/media/media_permission_dispatcher_impl.h"
-#include "content/renderer/media/media_permission_dispatcher_proxy.h"
-#include "content/renderer/media/media_stream_dispatcher.h"
-#include "content/renderer/media/media_stream_renderer_factory_impl.h"
-#include "content/renderer/media/midi_dispatcher.h"
-#include "content/renderer/media/render_media_log.h"
-#include "content/renderer/media/renderer_webmediaplayer_delegate.h"
-#include "content/renderer/media/user_media_client_impl.h"
-#include "content/renderer/media/webmediaplayer_ms.h"
 #include "content/renderer/memory_benchmarking_extension.h"
 #include "content/renderer/mojo/service_registry_js_wrapper.h"
 #include "content/renderer/navigation_state_impl.h"
 #include "content/renderer/notification_permission_dispatcher.h"
 #include "content/renderer/npapi/plugin_channel_host.h"
-#include "content/renderer/pepper/plugin_instance_throttler_impl.h"
 #include "content/renderer/presentation/presentation_dispatcher.h"
 #include "content/renderer/push_messaging/push_messaging_dispatcher.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "content/renderer/render_widget_fullscreen_pepper.h"
 #include "content/renderer/renderer_webapplicationcachehost_impl.h"
 #include "content/renderer/renderer_webcolorchooser_impl.h"
 #include "content/renderer/savable_resources.h"
@@ -116,14 +100,9 @@
 #include "content/renderer/web_frame_utils.h"
 #include "content/renderer/web_ui_extension.h"
 #include "content/renderer/websharedworker_proxy.h"
+#include "content/public/renderer/plugin_instance_throttler.h"
 #include "gin/modules/module_registry.h"
-#include "media/audio/audio_output_device.h"
-#include "media/base/audio_renderer_mixer_input.h"
-#include "media/base/media_log.h"
-#include "media/base/media_switches.h"
-#include "media/blink/webencryptedmediaclient_impl.h"
-#include "media/blink/webmediaplayer_impl.h"
-#include "media/renderers/gpu_video_accelerator_factories.h"
+
 #include "mojo/common/url_type_converters.h"
 #include "net/base/data_url.h"
 #include "net/base/net_errors.h"
@@ -164,10 +143,6 @@
 
 #if defined(ENABLE_PLUGINS)
 #include "content/renderer/npapi/webplugin_impl.h"
-#include "content/renderer/pepper/pepper_browser_connection.h"
-#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
-#include "content/renderer/pepper/pepper_webplugin_impl.h"
-#include "content/renderer/pepper/plugin_module.h"
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -190,7 +165,7 @@
 // SHEZ: Remove dependency on webusb component.
 // #include "content/renderer/usb/web_usb_client_impl.h"
 
-#include "device/devices_app/public/cpp/constants.h"
+
 #endif
 
 #if defined(ENABLE_PEPPER_CDMS)
@@ -209,7 +184,7 @@
 #if defined(ENABLE_MOJO_MEDIA) && !defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
 #include "media/mojo/services/mojo_renderer_factory.h"
 #else
-#include "media/renderers/default_renderer_factory.h"
+
 #endif
 
 #if defined(ENABLE_WEBVR)
@@ -520,16 +495,6 @@ CommonNavigationParams MakeCommonNavigationParams(
       base::TimeTicks::Now());
 }
 
-#if !defined(OS_ANDROID) || defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
-media::Context3D GetSharedMainThreadContext3D() {
-  cc::ContextProvider* provider =
-      RenderThreadImpl::current()->SharedMainThreadContextProvider().get();
-  if (!provider)
-    return media::Context3D();
-  return media::Context3D(provider->ContextGL(), provider->GrContext());
-}
-#endif
-
 bool IsReload(FrameMsg_Navigate_Type::Value navigation_type) {
   return navigation_type == FrameMsg_Navigate_Type::RELOAD ||
          navigation_type == FrameMsg_Navigate_Type::RELOAD_IGNORING_CACHE ||
@@ -744,16 +709,12 @@ RenderFrameImpl::RenderFrameImpl(const CreateParams& params)
       is_detaching_(false),
       proxy_routing_id_(MSG_ROUTING_NONE),
 #if defined(ENABLE_PLUGINS)
-      plugin_power_saver_helper_(nullptr),
 #endif
       cookie_jar_(this),
       selection_text_offset_(0),
       selection_range_(gfx::Range::InvalidRange()),
       handling_select_range_(false),
       notification_permission_dispatcher_(NULL),
-      web_user_media_client_(NULL),
-      media_permission_dispatcher_(NULL),
-      midi_dispatcher_(NULL),
 #if defined(OS_ANDROID)
       media_player_manager_(NULL),
 #endif
@@ -772,7 +733,6 @@ RenderFrameImpl::RenderFrameImpl(const CreateParams& params)
       manifest_manager_(NULL),
       accessibility_mode_(AccessibilityModeOff),
       renderer_accessibility_(NULL),
-      media_player_delegate_(NULL),
       is_using_lofi_(false),
       is_pasting_(false),
       weak_factory_(this) {
@@ -792,7 +752,6 @@ RenderFrameImpl::RenderFrameImpl(const CreateParams& params)
 
 #if defined(ENABLE_PLUGINS)
   // Manages its own lifetime.
-  plugin_power_saver_helper_ = new PluginPowerSaverHelper(this);
 #endif
 
   manifest_manager_ = new ManifestManager(this);
@@ -861,7 +820,7 @@ void RenderFrameImpl::Initialize() {
   }
 
 #if defined(ENABLE_PLUGINS)
-  new PepperBrowserConnection(this);
+
 #endif
   new SharedWorkerRepository(this);
 
@@ -891,85 +850,6 @@ RenderWidget* RenderFrameImpl::GetRenderWidget() {
 }
 
 #if defined(ENABLE_PLUGINS)
-void RenderFrameImpl::PepperPluginCreated(RendererPpapiHost* host) {
-  FOR_EACH_OBSERVER(RenderFrameObserver, observers_,
-                    DidCreatePepperPlugin(host));
-  if (host->GetPluginName() == kFlashPluginName) {
-    RenderThread::Get()->RecordAction(
-        base::UserMetricsAction("FrameLoadWithFlash"));
-  }
-}
-
-void RenderFrameImpl::PepperDidChangeCursor(
-    PepperPluginInstanceImpl* instance,
-    const blink::WebCursorInfo& cursor) {
-  // Update the cursor appearance immediately if the requesting plugin is the
-  // one which receives the last mouse event. Otherwise, the new cursor won't be
-  // picked up until the plugin gets the next input event. That is bad if, e.g.,
-  // the plugin would like to set an invisible cursor when there isn't any user
-  // input for a while.
-  if (instance == render_view_->pepper_last_mouse_event_target())
-    GetRenderWidget()->didChangeCursor(cursor);
-}
-
-void RenderFrameImpl::PepperDidReceiveMouseEvent(
-    PepperPluginInstanceImpl* instance) {
-  render_view_->set_pepper_last_mouse_event_target(instance);
-}
-
-void RenderFrameImpl::PepperTextInputTypeChanged(
-    PepperPluginInstanceImpl* instance) {
-  if (instance != render_view_->focused_pepper_plugin())
-    return;
-
-  GetRenderWidget()->UpdateTextInputState(
-      RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
-
-  FocusedNodeChangedForAccessibility(WebNode());
-}
-
-void RenderFrameImpl::PepperCaretPositionChanged(
-    PepperPluginInstanceImpl* instance) {
-  if (instance != render_view_->focused_pepper_plugin())
-    return;
-  GetRenderWidget()->UpdateSelectionBounds();
-}
-
-void RenderFrameImpl::PepperCancelComposition(
-    PepperPluginInstanceImpl* instance) {
-  if (instance != render_view_->focused_pepper_plugin())
-    return;
-  Send(new InputHostMsg_ImeCancelComposition(render_view_->GetRoutingID()));;
-#if defined(OS_MACOSX) || defined(USE_AURA)
-  GetRenderWidget()->UpdateCompositionInfo(true);
-#endif
-}
-
-void RenderFrameImpl::PepperSelectionChanged(
-    PepperPluginInstanceImpl* instance) {
-  if (instance != render_view_->focused_pepper_plugin())
-    return;
-  SyncSelectionIfRequired();
-}
-
-RenderWidgetFullscreenPepper* RenderFrameImpl::CreatePepperFullscreenContainer(
-    PepperPluginInstanceImpl* plugin) {
-  GURL active_url;
-  if (render_view_->webview() && render_view_->webview()->mainFrame())
-    active_url = GURL(render_view_->webview()->mainFrame()->document().url());
-  RenderWidgetFullscreenPepper* widget = RenderWidgetFullscreenPepper::Create(
-      GetRenderWidget()->routing_id(), GetRenderWidget()->compositor_deps(),
-      plugin, active_url, GetRenderWidget()->screenInfo());
-  widget->show(blink::WebNavigationPolicyIgnore);
-  return widget;
-}
-
-bool RenderFrameImpl::IsPepperAcceptingCompositionEvents() const {
-  if (!render_view_->focused_pepper_plugin())
-    return false;
-  return render_view_->focused_pepper_plugin()->
-      IsPluginAcceptingCompositionEvents();
-}
 
 void RenderFrameImpl::PluginCrashed(const base::FilePath& plugin_path,
                                    base::ProcessId plugin_pid) {
@@ -998,33 +878,7 @@ void RenderFrameImpl::OnImeSetComposition(
     const std::vector<blink::WebCompositionUnderline>& underlines,
     int selection_start,
     int selection_end) {
-  // When a PPAPI plugin has focus, we bypass WebKit.
-  if (!IsPepperAcceptingCompositionEvents()) {
-    pepper_composition_text_ = text;
-  } else {
-    // TODO(kinaba) currently all composition events are sent directly to
-    // plugins. Use DOM event mechanism after WebKit is made aware about
-    // plugins that support composition.
-    // The code below mimics the behavior of WebCore::Editor::setComposition.
-
-    // Empty -> nonempty: composition started.
-    if (pepper_composition_text_.empty() && !text.empty()) {
-      render_view_->focused_pepper_plugin()->HandleCompositionStart(
-          base::string16());
-    }
-    // Nonempty -> empty: composition canceled.
-    if (!pepper_composition_text_.empty() && text.empty()) {
-      render_view_->focused_pepper_plugin()->HandleCompositionEnd(
-          base::string16());
-    }
-    pepper_composition_text_ = text;
-    // Nonempty: composition is ongoing.
-    if (!pepper_composition_text_.empty()) {
-      render_view_->focused_pepper_plugin()->HandleCompositionUpdate(
-          pepper_composition_text_, underlines, selection_start,
-          selection_end);
-    }
-  }
+ //TODO::
 }
 
 void RenderFrameImpl::OnImeConfirmComposition(
@@ -1035,15 +889,14 @@ void RenderFrameImpl::OnImeConfirmComposition(
   // Here, text.empty() has a special meaning. It means to commit the last
   // update of composition text (see
   // RenderWidgetHost::ImeConfirmComposition()).
-  const base::string16& last_text = text.empty() ? pepper_composition_text_
-                                                 : text;
+  const base::string16& last_text =  text;
 
   // last_text is empty only when both text and pepper_composition_text_ is.
   // Ignore it.
   if (last_text.empty())
     return;
 
-  if (!IsPepperAcceptingCompositionEvents()) {
+  
     base::i18n::UTF16CharIterator iterator(&last_text);
     int32 i = 0;
     while (iterator.Advance()) {
@@ -1063,22 +916,9 @@ void RenderFrameImpl::OnImeConfirmComposition(
       if (GetRenderWidget()->webwidget())
         GetRenderWidget()->webwidget()->handleInputEvent(char_event);
     }
-  } else {
-    // Mimics the order of events sent by WebKit.
-    // See WebCore::Editor::setComposition() for the corresponding code.
-    render_view_->focused_pepper_plugin()->HandleCompositionEnd(last_text);
-    render_view_->focused_pepper_plugin()->HandleTextInput(last_text);
-  }
-  pepper_composition_text_.clear();
+  
 }
 #endif  // defined(ENABLE_PLUGINS)
-
-MediaStreamDispatcher* RenderFrameImpl::GetMediaStreamDispatcher() {
-  if (!web_user_media_client_)
-    InitializeUserMediaClient();
-  return web_user_media_client_ ?
-      web_user_media_client_->media_stream_dispatcher() : NULL;
-}
 
 bool RenderFrameImpl::Send(IPC::Message* message) {
   if (is_detaching_) {
@@ -1986,17 +1826,6 @@ blink::WebPlugin* RenderFrameImpl::CreatePlugin(
                   ->GetWeakPtr());
   }
 
-  bool pepper_plugin_was_registered = false;
-  scoped_refptr<PluginModule> pepper_module(PluginModule::Create(
-      this, info, &pepper_plugin_was_registered));
-  if (pepper_plugin_was_registered) {
-    if (pepper_module.get()) {
-      return new PepperWebPluginImpl(
-          pepper_module.get(), params, this,
-          make_scoped_ptr(
-              static_cast<PluginInstanceThrottlerImpl*>(throttler.release())));
-    }
-  }
 #if defined(OS_CHROMEOS)
   LOG(WARNING) << "Pepper module/plugin creation failed.";
 #else
@@ -2026,8 +1855,7 @@ ServiceRegistry* RenderFrameImpl::GetServiceRegistry() {
 void RenderFrameImpl::RegisterPeripheralPlugin(
     const url::Origin& content_origin,
     const base::Closure& unthrottle_callback) {
-  return plugin_power_saver_helper_->RegisterPeripheralPlugin(
-      content_origin, unthrottle_callback);
+  
 }
 
 bool RenderFrameImpl::ShouldThrottleContent(
@@ -2036,14 +1864,12 @@ bool RenderFrameImpl::ShouldThrottleContent(
     int width,
     int height,
     bool* cross_origin_main_content) const {
-  return plugin_power_saver_helper_->ShouldThrottleContent(
-      main_frame_origin, content_origin, width, height,
-      cross_origin_main_content);
+	return false;
 }
 
 void RenderFrameImpl::WhitelistContentOrigin(
     const url::Origin& content_origin) {
-  return plugin_power_saver_helper_->WhitelistContentOrigin(content_origin);
+ 
 }
 #endif  // defined(ENABLE_PLUGINS)
 
@@ -2152,76 +1978,7 @@ blink::WebMediaPlayer* RenderFrameImpl::createMediaPlayer(
     WebMediaPlayerEncryptedMediaClient* encrypted_client,
     WebContentDecryptionModule* initial_cdm,
     const blink::WebString& sink_id) {
-#if defined(VIDEO_HOLE)
-  if (!contains_media_player_) {
-    render_view_->RegisterVideoHoleFrame(this);
-    contains_media_player_ = true;
-  }
-#endif  // defined(VIDEO_HOLE)
-
-  blink::WebMediaStream web_stream(
-      blink::WebMediaStreamRegistry::lookupMediaStreamDescriptor(url));
-  if (!web_stream.isNull())
-    return CreateWebMediaPlayerForMediaStream(client, sink_id,
-                                              frame->securityOrigin());
-
-  RenderThreadImpl* render_thread = RenderThreadImpl::current();
-
-#if defined(OS_ANDROID) && !defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
-  scoped_refptr<media::RestartableAudioRendererSink> audio_renderer_sink;
-  media::WebMediaPlayerParams::Context3DCB context_3d_cb;
-#else
-  scoped_refptr<media::RestartableAudioRendererSink> audio_renderer_sink =
-      render_thread->GetAudioRendererMixerManager()->CreateInput(
-          routing_id_, sink_id.utf8(), frame->securityOrigin());
-  media::WebMediaPlayerParams::Context3DCB context_3d_cb =
-      base::Bind(&GetSharedMainThreadContext3D);
-#endif  // defined(OS_ANDROID) && !defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
-
-  scoped_refptr<media::MediaLog> media_log(new RenderMediaLog());
-  media::WebMediaPlayerParams params(
-      base::Bind(&ContentRendererClient::DeferMediaLoad,
-                 base::Unretained(GetContentClient()->renderer()),
-                 static_cast<RenderFrame*>(this),
-                 GetWebMediaPlayerDelegate()->has_played_media()),
-      audio_renderer_sink, media_log, render_thread->GetMediaThreadTaskRunner(),
-      render_thread->GetWorkerTaskRunner(),
-      render_thread->compositor_task_runner(), context_3d_cb,
-      base::Bind(&v8::Isolate::AdjustAmountOfExternalAllocatedMemory,
-                 base::Unretained(blink::mainThreadIsolate())),
-      GetMediaPermission(), initial_cdm);
-
-// TODO(xhwang, watk): Find a better way to specify these ifdef conditions.
-#if defined(OS_ANDROID) && !defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
-  return CreateAndroidWebMediaPlayer(client, encrypted_client, params);
-#else
-#if defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableUnifiedMediaPipeline)) {
-    return CreateAndroidWebMediaPlayer(client, encrypted_client, params);
-  }
-#endif  // defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
-
-#if defined(ENABLE_MOJO_MEDIA) && !defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
-  scoped_ptr<media::RendererFactory> media_renderer_factory(
-      new media::MojoRendererFactory(GetMediaServiceFactory()));
-#else
-  scoped_ptr<media::RendererFactory> media_renderer_factory =
-      GetContentClient()->renderer()->CreateMediaRendererFactory(
-          this, render_thread->GetGpuFactories(), media_log);
-
-  if (!media_renderer_factory.get()) {
-    media_renderer_factory.reset(new media::DefaultRendererFactory(
-        media_log, render_thread->GetGpuFactories(),
-        *render_thread->GetAudioHardwareConfig()));
-  }
-#endif  // defined(ENABLE_MOJO_MEDIA) &&
-        // !defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
-
-  return new media::WebMediaPlayerImpl(
-      frame, client, encrypted_client, GetWebMediaPlayerDelegate()->AsWeakPtr(),
-      media_renderer_factory.Pass(), GetCdmFactory(), params);
-#endif  // defined(OS_ANDROID) && !defined(ENABLE_MEDIA_PIPELINE_ON_ANDROID)
+	return nullptr;
 }
 
 blink::WebMediaSession* RenderFrameImpl::createMediaSession() {
@@ -3777,28 +3534,15 @@ void RenderFrameImpl::willStartUsingPeerConnectionHandler(
 }
 
 blink::WebUserMediaClient* RenderFrameImpl::userMediaClient() {
-  if (!web_user_media_client_)
-    InitializeUserMediaClient();
-  return web_user_media_client_;
+	return nullptr;
 }
 
 blink::WebEncryptedMediaClient* RenderFrameImpl::encryptedMediaClient() {
-  if (!web_encrypted_media_client_) {
-    web_encrypted_media_client_.reset(new media::WebEncryptedMediaClientImpl(
-        // base::Unretained(this) is safe because WebEncryptedMediaClientImpl
-        // is destructed before |this|, and does not give away ownership of the
-        // callback.
-        base::Bind(&RenderFrameImpl::AreSecureCodecsSupported,
-                   base::Unretained(this)),
-        GetCdmFactory(), GetMediaPermission()));
-  }
-  return web_encrypted_media_client_.get();
+	return nullptr;
 }
 
 blink::WebMIDIClient* RenderFrameImpl::webMIDIClient() {
-  if (!midi_dispatcher_)
-    midi_dispatcher_ = new MidiDispatcher(this);
-  return midi_dispatcher_;
+	return nullptr;
 }
 
 bool RenderFrameImpl::willCheckAndDispatchMessageEvent(
@@ -3998,12 +3742,13 @@ void RenderFrameImpl::unregisterProtocolHandler(const WebString& scheme,
 }
 
 blink::WebBluetooth* RenderFrameImpl::bluetooth() {
-  if (!bluetooth_) {
-    bluetooth_.reset(new WebBluetoothImpl(
-        ChildThreadImpl::current()->thread_safe_sender(), routing_id_));
-  }
+  //if (!bluetooth_) {
+  //  bluetooth_.reset(new WebBluetoothImpl(
+  //     ChildThreadImpl::current()->thread_safe_sender(), routing_id_));
+  //}
 
-  return bluetooth_.get();
+	return nullptr;
+
 }
 
 blink::WebUSBClient* RenderFrameImpl::usbClient() {
@@ -4015,7 +3760,7 @@ blink::WebUSBClient* RenderFrameImpl::usbClient() {
   }
 #endif
 #endif
-  return usb_client_.get();
+  return nullptr;
 }
 
 #if defined(ENABLE_WEBVR)
@@ -4879,11 +4624,6 @@ void RenderFrameImpl::SyncSelectionIfRequired() {
   size_t offset;
   gfx::Range range;
 #if defined(ENABLE_PLUGINS)
-  if (render_view_->focused_pepper_plugin_) {
-    render_view_->focused_pepper_plugin_->GetSurroundingText(&text, &range);
-    offset = 0;  // Pepper API does not support offset reporting.
-    // TODO(kinaba): cut as needed.
-  } else
 #endif
   {
     size_t location, length;
@@ -4971,21 +4711,6 @@ WebMediaPlayer* RenderFrameImpl::CreateWebMediaPlayerForMediaStream(
 #else
   return NULL;
 #endif  // defined(ENABLE_WEBRTC)
-}
-
-scoped_ptr<MediaStreamRendererFactory>
-RenderFrameImpl::CreateRendererFactory() {
-  scoped_ptr<MediaStreamRendererFactory> factory =
-      GetContentClient()->renderer()->CreateMediaStreamRendererFactory();
-  if (factory.get())
-    return factory.Pass();
-#if defined(ENABLE_WEBRTC)
-  return scoped_ptr<MediaStreamRendererFactory>(
-      new MediaStreamRendererFactoryImpl());
-#else
-  return scoped_ptr<MediaStreamRendererFactory>(
-      static_cast<MediaStreamRendererFactory*>(NULL));
-#endif
 }
 
 void RenderFrameImpl::PrepareRenderViewForNavigation(
@@ -5290,19 +5015,6 @@ RendererMediaPlayerManager* RenderFrameImpl::GetMediaPlayerManager() {
 }
 #endif  // defined(OS_ANDROID)
 
-scoped_ptr<media::MediaPermission> RenderFrameImpl::CreateMediaPermissionProxy(
-    scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner) {
-  MediaPermissionDispatcherImpl* media_permission =
-      static_cast<MediaPermissionDispatcherImpl*>(GetMediaPermission());
-  return media_permission->CreateProxy(caller_task_runner).Pass();
-}
-
-media::MediaPermission* RenderFrameImpl::GetMediaPermission() {
-  if (!media_permission_dispatcher_)
-    media_permission_dispatcher_ = new MediaPermissionDispatcherImpl(this);
-  return media_permission_dispatcher_;
-}
-
 #if defined(ENABLE_MOJO_MEDIA)
 media::interfaces::ServiceFactory* RenderFrameImpl::GetMediaServiceFactory() {
   if (!media_service_factory_) {
@@ -5336,31 +5048,6 @@ bool RenderFrameImpl::AreSecureCodecsSupported() {
 #endif  // defined(OS_ANDROID)
 }
 
-media::CdmFactory* RenderFrameImpl::GetCdmFactory() {
-#if defined(ENABLE_BROWSER_CDMS)
-  if (!cdm_manager_)
-    cdm_manager_ = new RendererCdmManager(this);
-#endif  // defined(ENABLE_BROWSER_CDMS)
-
-  if (!cdm_factory_) {
-    DCHECK(frame_);
-
-#if defined(ENABLE_MOJO_MEDIA)
-    cdm_factory_.reset(new media::MojoCdmFactory(GetMediaServiceFactory()));
-#else
-    cdm_factory_.reset(new RenderCdmFactory(
-#if defined(ENABLE_PEPPER_CDMS)
-        base::Bind(&PepperCdmWrapperImpl::Create, frame_)
-#elif defined(ENABLE_BROWSER_CDMS)
-        cdm_manager_
-#endif
-        ));
-#endif  //  defined(ENABLE_MOJO_MEDIA)
-  }
-
-  return cdm_factory_.get();
-}
-
 void RenderFrameImpl::RegisterMojoServices() {
   // Only main frame have ImageDownloader service.
   if (!frame_->parent()) {
@@ -5383,25 +5070,11 @@ mojo::ServiceProviderPtr RenderFrameImpl::ConnectToApplication(
   return service_provider.Pass();
 }
 
-media::RendererWebMediaPlayerDelegate*
-RenderFrameImpl::GetWebMediaPlayerDelegate() {
-  if (!media_player_delegate_)
-    media_player_delegate_ = new media::RendererWebMediaPlayerDelegate(this);
-  return media_player_delegate_;
-}
-
 void RenderFrameImpl::checkIfAudioSinkExistsAndIsAuthorized(
     const blink::WebString& sink_id,
     const blink::WebSecurityOrigin& security_origin,
     blink::WebSetSinkIdCallbacks* web_callbacks) {
-  media::SwitchOutputDeviceCB callback =
-      media::ConvertToSwitchOutputDeviceCB(web_callbacks);
-  scoped_refptr<media::AudioOutputDevice> device =
-      AudioDeviceFactory::NewOutputDevice(routing_id_, 0, sink_id.utf8(),
-                                          security_origin);
-  media::OutputDeviceStatus status = device->GetDeviceStatus();
-  device->Stop();
-  callback.Run(status);
+ 
 }
 
 }  // namespace content

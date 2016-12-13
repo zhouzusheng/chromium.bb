@@ -148,13 +148,6 @@ JavaScriptDialogManager* WebContentsDelegate::GetJavaScriptDialogManager(
   return nullptr;
 }
 
-scoped_ptr<BluetoothChooser> WebContentsDelegate::RunBluetoothChooser(
-    WebContents* web_contents,
-    const BluetoothChooser::EventHandler& event_handler,
-    const GURL& origin) {
-  return nullptr;
-}
-
 bool WebContentsDelegate::EmbedsFullscreenWidget() const {
   return false;
 }
@@ -176,26 +169,6 @@ content::ColorChooser* WebContentsDelegate::OpenColorChooser(
   return nullptr;
 }
 
-void WebContentsDelegate::RequestMediaAccessPermission(
-    WebContents* web_contents,
-    const MediaStreamRequest& request,
-    const MediaResponseCallback& callback) {
-  LOG(ERROR) << "WebContentsDelegate::RequestMediaAccessPermission: "
-             << "Not supported.";
-  callback.Run(MediaStreamDevices(),
-               MEDIA_DEVICE_NOT_SUPPORTED,
-               scoped_ptr<MediaStreamUI>());
-}
-
-bool WebContentsDelegate::CheckMediaAccessPermission(
-    WebContents* web_contents,
-    const GURL& security_origin,
-    MediaStreamType type) {
-  LOG(ERROR) << "WebContentsDelegate::CheckMediaAccessPermission: "
-             << "Not supported.";
-  return false;
-}
-
 #if defined(OS_ANDROID)
 void WebContentsDelegate::RequestMediaDecodePermission(
     WebContents* web_contents,
@@ -203,14 +176,6 @@ void WebContentsDelegate::RequestMediaDecodePermission(
   callback.Run(false);
 }
 #endif
-
-bool WebContentsDelegate::RequestPpapiBrokerPermission(
-    WebContents* web_contents,
-    const GURL& url,
-    const base::FilePath& plugin_path,
-    const base::Callback<void(bool)>& callback) {
-  return false;
-}
 
 bool WebContentsDelegate::ShouldSetKeyboardFocusOnMouseDown() {
   return true;

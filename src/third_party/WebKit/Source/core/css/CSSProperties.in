@@ -333,7 +333,6 @@ y interpolable, svg, converter=convertLength
 -webkit-box-orient
 -webkit-box-pack
 -webkit-box-reflect converter=convertBoxReflect
--webkit-caret-color inherited, custom_value
 -webkit-clip-path interpolable, custom_value
 -webkit-column-break-after type_name=EPageBreak, initial=initialPageBreak
 -webkit-column-break-before type_name=EPageBreak, initial=initialPageBreak
@@ -388,7 +387,6 @@ y interpolable, svg, converter=convertLength
 -webkit-user-drag
 -webkit-user-modify inherited
 -webkit-user-select inherited
--bb-rubberbandable inherited, name_for_methods=Rubberbandable
 white-space inherited
 widows interpolable, inherited, type_name=short, custom_all
 width interpolable, initial=initialSize, converter=convertLengthSizing

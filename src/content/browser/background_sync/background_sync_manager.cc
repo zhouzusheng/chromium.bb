@@ -13,7 +13,6 @@
 #include "base/time/default_clock.h"
 #include "content/browser/background_sync/background_sync_metrics.h"
 #include "content/browser/background_sync/background_sync_network_observer.h"
-#include "content/browser/background_sync/background_sync_power_observer.h"
 #include "content/browser/background_sync/background_sync_registration_handle.h"
 #include "content/browser/background_sync/background_sync_registration_options.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
@@ -297,8 +296,6 @@ BackgroundSyncManager::BackgroundSyncManager(
       base::Bind(&BackgroundSyncManager::OnNetworkChanged,
                  weak_ptr_factory_.GetWeakPtr())));
 #endif
-  power_observer_.reset(new BackgroundSyncPowerObserver(base::Bind(
-      &BackgroundSyncManager::OnPowerChanged, weak_ptr_factory_.GetWeakPtr())));
 }
 
 void BackgroundSyncManager::Init() {
@@ -1004,8 +1001,7 @@ void BackgroundSyncManager::GetRegistrationsImpl(
 bool BackgroundSyncManager::AreOptionConditionsMet(
     const BackgroundSyncRegistrationOptions& options) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  return network_observer_->NetworkSufficient(options.network_state) &&
-         power_observer_->PowerSufficient(options.power_state);
+  return network_observer_->NetworkSufficient(options.network_state);
 }
 
 bool BackgroundSyncManager::IsRegistrationReadyToFire(

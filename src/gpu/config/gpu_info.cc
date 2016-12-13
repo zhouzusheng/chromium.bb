@@ -17,30 +17,7 @@ void EnumerateGPUDevice(const gpu::GPUInfo::GPUDevice& device,
   enumerator->EndGPUDevice();
 }
 
-void EnumerateVideoDecodeAcceleratorSupportedProfile(
-    const gpu::VideoDecodeAcceleratorSupportedProfile& profile,
-    gpu::GPUInfo::Enumerator* enumerator) {
-  enumerator->BeginVideoDecodeAcceleratorSupportedProfile();
-  enumerator->AddInt("profile", profile.profile);
-  enumerator->AddInt("maxResolutionWidth", profile.max_resolution.width());
-  enumerator->AddInt("maxResolutionHeight", profile.max_resolution.height());
-  enumerator->AddInt("minResolutionWidth", profile.min_resolution.width());
-  enumerator->AddInt("minResolutionHeight", profile.min_resolution.height());
-  enumerator->EndVideoDecodeAcceleratorSupportedProfile();
-}
 
-void EnumerateVideoEncodeAcceleratorSupportedProfile(
-    const gpu::VideoEncodeAcceleratorSupportedProfile& profile,
-    gpu::GPUInfo::Enumerator* enumerator) {
-  enumerator->BeginVideoEncodeAcceleratorSupportedProfile();
-  enumerator->AddInt("profile", profile.profile);
-  enumerator->AddInt("maxResolutionWidth", profile.max_resolution.width());
-  enumerator->AddInt("maxResolutionHeight", profile.max_resolution.height());
-  enumerator->AddInt("maxFramerateNumerator", profile.max_framerate_numerator);
-  enumerator->AddInt("maxFramerateDenominator",
-                     profile.max_framerate_denominator);
-  enumerator->EndVideoEncodeAcceleratorSupportedProfile();
-}
 
 }  // namespace
 
@@ -69,9 +46,9 @@ GPUInfo::GPUInfo()
       basic_info_state(kCollectInfoNone),
       context_info_state(kCollectInfoNone),
 #if defined(OS_WIN)
-      dx_diagnostics_info_state(kCollectInfoNone),
+      dx_diagnostics_info_state(kCollectInfoNone)
 #endif
-      jpeg_decode_accelerator_supported(false) {
+       {
 }
 
 GPUInfo::~GPUInfo() { }
@@ -114,11 +91,6 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     CollectInfoResult dx_diagnostics_info_state;
     DxDiagNode dx_diagnostics;
 #endif
-    VideoDecodeAcceleratorSupportedProfiles
-        video_decode_accelerator_supported_profiles;
-    VideoEncodeAcceleratorSupportedProfiles
-        video_encode_accelerator_supported_profiles;
-    bool jpeg_decode_accelerator_supported;
   };
 
   // If this assert fails then most likely something below needs to be updated.
@@ -174,13 +146,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
 #if defined(OS_WIN)
   enumerator->AddInt("DxDiagnosticsInfoState", dx_diagnostics_info_state);
 #endif
-  // TODO(kbr): add dx_diagnostics on Windows.
-  for (const auto& profile : video_decode_accelerator_supported_profiles)
-    EnumerateVideoDecodeAcceleratorSupportedProfile(profile, enumerator);
-  for (const auto& profile : video_encode_accelerator_supported_profiles)
-    EnumerateVideoEncodeAcceleratorSupportedProfile(profile, enumerator);
-  enumerator->AddBool("jpegDecodeAcceleratorSupported",
-      jpeg_decode_accelerator_supported);
+  
   enumerator->EndAuxAttributes();
 }
 

@@ -15,11 +15,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
-#include "content/browser/ppapi_plugin_process_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/common/content_switches_internal.h"
-#include "content/common/pepper_plugin_list.h"
 #include "content/common/plugin_list.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -178,8 +176,6 @@ void PluginServiceImpl::Init() {
   PluginList::Singleton()->set_will_load_plugins_callback(
       base::Bind(&WillLoadPluginsCallback, plugin_list_token_));
 
-  RegisterPepperPlugins();
-
   // Load any specified on the command line as well.
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
@@ -255,28 +251,6 @@ PluginProcessHost* PluginServiceImpl::FindNpapiPluginProcess(
   return NULL;
 }
 
-PpapiPluginProcessHost* PluginServiceImpl::FindPpapiPluginProcess(
-    const base::FilePath& plugin_path,
-    const base::FilePath& profile_data_directory) {
-  for (PpapiPluginProcessHostIterator iter; !iter.Done(); ++iter) {
-    if (iter->plugin_path() == plugin_path &&
-        iter->profile_data_directory() == profile_data_directory) {
-      return *iter;
-    }
-  }
-  return NULL;
-}
-
-PpapiPluginProcessHost* PluginServiceImpl::FindPpapiBrokerProcess(
-    const base::FilePath& broker_path) {
-  for (PpapiBrokerProcessHostIterator iter; !iter.Done(); ++iter) {
-    if (iter->plugin_path() == broker_path)
-      return *iter;
-  }
-
-  return NULL;
-}
-
 PluginProcessHost* PluginServiceImpl::FindOrStartNpapiPluginProcess(
     int render_process_id,
     const base::FilePath& plugin_path) {
@@ -317,74 +291,6 @@ PluginProcessHost* PluginServiceImpl::FindOrStartNpapiPluginProcess(
   return new_host.release();
 }
 
-PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiPluginProcess(
-    int render_process_id,
-    const base::FilePath& plugin_path,
-    const base::FilePath& profile_data_directory) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  if (filter_ && !filter_->CanLoadPlugin(render_process_id, plugin_path)) {
-    VLOG(1) << "Unable to load ppapi plugin: " << plugin_path.MaybeAsASCII();
-    return NULL;
-  }
-
-  PpapiPluginProcessHost* plugin_host =
-      FindPpapiPluginProcess(plugin_path, profile_data_directory);
-  if (plugin_host)
-    return plugin_host;
-
-  // Validate that the plugin is actually registered.
-  PepperPluginInfo* info = GetRegisteredPpapiPluginInfo(plugin_path);
-  if (!info) {
-    VLOG(1) << "Unable to find ppapi plugin registration for: "
-            << plugin_path.MaybeAsASCII();
-    return NULL;
-  }
-
-  // Record when PPAPI Flash process is started for the first time.
-  static bool counted = false;
-  if (!counted && info->name == kFlashPluginName) {
-    counted = true;
-    UMA_HISTOGRAM_ENUMERATION("Plugin.FlashUsage",
-                              START_PPAPI_FLASH_AT_LEAST_ONCE,
-                              FLASH_USAGE_ENUM_COUNT);
-  }
-
-  // This plugin isn't loaded by any plugin process, so create a new process.
-  plugin_host = PpapiPluginProcessHost::CreatePluginHost(
-      *info, profile_data_directory);
-  if (!plugin_host) {
-    VLOG(1) << "Unable to create ppapi plugin process for: "
-            << plugin_path.MaybeAsASCII();
-  }
-
-  return plugin_host;
-}
-
-PpapiPluginProcessHost* PluginServiceImpl::FindOrStartPpapiBrokerProcess(
-    int render_process_id,
-    const base::FilePath& plugin_path) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  if (filter_ && !filter_->CanLoadPlugin(render_process_id, plugin_path))
-    return NULL;
-
-  PpapiPluginProcessHost* plugin_host = FindPpapiBrokerProcess(plugin_path);
-  if (plugin_host)
-    return plugin_host;
-
-  // Validate that the plugin is actually registered.
-  PepperPluginInfo* info = GetRegisteredPpapiPluginInfo(plugin_path);
-  if (!info)
-    return NULL;
-
-  // TODO(ddorwin): Uncomment once out of process is supported.
-  // DCHECK(info->is_out_of_process);
-
-  // This broker isn't loaded by any broker process, so create a new process.
-  return PpapiPluginProcessHost::CreateBrokerHost(*info);
-}
-
 void PluginServiceImpl::OpenChannelToNpapiPlugin(
     int render_process_id,
     int render_frame_id,
@@ -406,35 +312,6 @@ void PluginServiceImpl::OpenChannelToNpapiPlugin(
   GetPlugins(base::Bind(
       &PluginServiceImpl::ForwardGetAllowedPluginForOpenChannelToPlugin,
       base::Unretained(this), params, url, mime_type, client));
-}
-
-void PluginServiceImpl::OpenChannelToPpapiPlugin(
-    int render_process_id,
-    const base::FilePath& plugin_path,
-    const base::FilePath& profile_data_directory,
-    PpapiPluginProcessHost::PluginClient* client) {
-  PpapiPluginProcessHost* plugin_host = FindOrStartPpapiPluginProcess(
-      render_process_id, plugin_path, profile_data_directory);
-  if (plugin_host) {
-    plugin_host->OpenChannelToPlugin(client);
-  } else {
-    // Send error.
-    client->OnPpapiChannelOpened(IPC::ChannelHandle(), base::kNullProcessId, 0);
-  }
-}
-
-void PluginServiceImpl::OpenChannelToPpapiBroker(
-    int render_process_id,
-    const base::FilePath& path,
-    PpapiPluginProcessHost::BrokerClient* client) {
-  PpapiPluginProcessHost* plugin_host = FindOrStartPpapiBrokerProcess(
-      render_process_id, path);
-  if (plugin_host) {
-    plugin_host->OpenChannelToPlugin(client);
-  } else {
-    // Send error.
-    client->OnPpapiChannelOpened(IPC::ChannelHandle(), base::kNullProcessId, 0);
-  }
 }
 
 void PluginServiceImpl::CancelOpenChannelToNpapiPlugin(
@@ -654,40 +531,6 @@ void PluginServiceImpl::OnKeyChanged(base::win::RegKey* key) {
 }
 #endif  // defined(OS_WIN)
 
-void PluginServiceImpl::RegisterPepperPlugins() {
-  ComputePepperPluginList(&ppapi_plugins_);
-  for (size_t i = 0; i < ppapi_plugins_.size(); ++i) {
-    RegisterInternalPlugin(ppapi_plugins_[i].ToWebPluginInfo(), true);
-  }
-}
-
-// There should generally be very few plugins so a brute-force search is fine.
-PepperPluginInfo* PluginServiceImpl::GetRegisteredPpapiPluginInfo(
-    const base::FilePath& plugin_path) {
-  PepperPluginInfo* info = NULL;
-  for (size_t i = 0; i < ppapi_plugins_.size(); ++i) {
-    if (ppapi_plugins_[i].path == plugin_path) {
-      info = &ppapi_plugins_[i];
-      break;
-    }
-  }
-  if (info)
-    return info;
-  // We did not find the plugin in our list. But wait! the plugin can also
-  // be a latecomer, as it happens with pepper flash. This information
-  // can be obtained from the PluginList singleton and we can use it to
-  // construct it and add it to the list. This same deal needs to be done
-  // in the renderer side in PepperPluginRegistry.
-  WebPluginInfo webplugin_info;
-  if (!GetPluginInfoByPath(plugin_path, &webplugin_info))
-    return NULL;
-  PepperPluginInfo new_pepper_info;
-  if (!MakePepperPluginInfo(webplugin_info, &new_pepper_info))
-    return NULL;
-  ppapi_plugins_.push_back(new_pepper_info);
-  return &ppapi_plugins_[ppapi_plugins_.size() - 1];
-}
-
 #if defined(OS_POSIX) && !defined(OS_OPENBSD) && !defined(OS_ANDROID)
 // static
 void PluginServiceImpl::RegisterFilePathWatcher(FilePathWatcher* watcher,
@@ -865,11 +708,5 @@ bool PluginServiceImpl::IsPluginWindow(HWND window) {
 }
 #endif
 
-bool PluginServiceImpl::PpapiDevChannelSupported(
-    BrowserContext* browser_context,
-    const GURL& document_url) {
-  return GetContentClient()->browser()->IsPluginAllowedToUseDevChannelAPIs(
-      browser_context, document_url);
-}
 
 }  // namespace content

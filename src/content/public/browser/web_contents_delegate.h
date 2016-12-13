@@ -12,10 +12,8 @@
 #include "base/callback.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/bluetooth_chooser.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_type.h"
-#include "content/public/common/media_stream_request.h"
 #include "content/public/common/security_style.h"
 #include "content/public/common/window_container_type.h"
 #include "third_party/WebKit/public/platform/WebDisplayMode.h"
@@ -25,6 +23,7 @@
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/native_widget_types.h"
+#include "vector"
 
 class GURL;
 
@@ -349,13 +348,6 @@ class CONTENT_EXPORT WebContentsDelegate {
                                   int request_id,
                                   const base::FilePath& path) {}
 
-  // Shows a chooser for the user to select a nearby Bluetooth device. The
-  // observer must live at least as long as the returned chooser object.
-  virtual scoped_ptr<BluetoothChooser> RunBluetoothChooser(
-      WebContents* web_contents,
-      const BluetoothChooser::EventHandler& event_handler,
-      const GURL& origin);
-
   // Returns true if the delegate will embed a WebContents-owned fullscreen
   // render widget.  In this case, the delegate may access the widget by calling
   // WebContents::GetFullscreenRenderWidgetHostView().  If false is returned,
@@ -442,22 +434,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Notification that the page has lost the mouse lock.
   virtual void LostMouseLock() {}
 
-  // Asks permission to use the camera and/or microphone. If permission is
-  // granted, a call should be made to |callback| with the devices. If the
-  // request is denied, a call should be made to |callback| with an empty list
-  // of devices. |request| has the details of the request (e.g. which of audio
-  // and/or video devices are requested, and lists of available devices).
-  virtual void RequestMediaAccessPermission(
-      WebContents* web_contents,
-      const MediaStreamRequest& request,
-      const MediaResponseCallback& callback);
-
-  // Checks if we have permission to access the microphone or camera. Note that
-  // this does not query the user. |type| must be MEDIA_DEVICE_AUDIO_CAPTURE
-  // or MEDIA_DEVICE_VIDEO_CAPTURE.
-  virtual bool CheckMediaAccessPermission(WebContents* web_contents,
-                                          const GURL& security_origin,
-                                          MediaStreamType type);
 
 #if defined(OS_ANDROID)
   // Asks permission to decode media stream. After permission is determined,
@@ -466,15 +442,6 @@ class CONTENT_EXPORT WebContentsDelegate {
       WebContents* web_contents,
       const base::Callback<void(bool)>& callback);
 #endif
-
-  // Requests permission to access the PPAPI broker. The delegate should return
-  // true and call the passed in |callback| with the result, or return false
-  // to indicate that it does not support asking for permission.
-  virtual bool RequestPpapiBrokerPermission(
-      WebContents* web_contents,
-      const GURL& url,
-      const base::FilePath& plugin_path,
-      const base::Callback<void(bool)>& callback);
 
   // Return true if the RWHV should take focus on mouse-down.
   virtual bool ShouldSetKeyboardFocusOnMouseDown();

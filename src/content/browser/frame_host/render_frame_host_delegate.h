@@ -13,7 +13,6 @@
 #include "content/common/frame_message_enums.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/common/javascript_message_type.h"
-#include "content/public/common/media_stream_request.h"
 #include "net/http/http_response_headers.h"
 
 #if defined(OS_WIN)
@@ -113,18 +112,6 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // not a WebContents, returns NULL.
   virtual WebContents* GetAsWebContents();
 
-  // The render frame has requested access to media devices listed in
-  // |request|, and the client should grant or deny that permission by
-  // calling |callback|.
-  virtual void RequestMediaAccessPermission(
-      const MediaStreamRequest& request,
-      const MediaResponseCallback& callback);
-
-  // Checks if we have permission to access the microphone or camera. Note that
-  // this does not query the user. |type| must be MEDIA_DEVICE_AUDIO_CAPTURE
-  // or MEDIA_DEVICE_VIDEO_CAPTURE.
-  virtual bool CheckMediaAccessPermission(const GURL& security_origin,
-                                          MediaStreamType type);
 
   // Get the accessibility mode for the WebContents that owns this frame.
   virtual AccessibilityMode GetAccessibilityMode() const;

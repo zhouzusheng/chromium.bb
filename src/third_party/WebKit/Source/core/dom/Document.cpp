@@ -417,7 +417,6 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     , m_designMode(false)
     , m_hasAnnotatedRegions(false)
     , m_annotatedRegionsDirty(false)
-    , m_bbPrintPageNumbers(true)
     , m_useSecureKeyboardEntryWhenActive(false)
     , m_documentClasses(documentClasses)
     , m_isViewSource(false)

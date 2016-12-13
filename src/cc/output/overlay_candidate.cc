@@ -10,7 +10,6 @@
 #include "cc/base/math_util.h"
 #include "cc/quads/io_surface_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
-#include "cc/quads/stream_video_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/resources/resource_provider.h"
@@ -201,10 +200,6 @@ bool OverlayCandidate::FromDrawQuad(ResourceProvider* resource_provider,
     case DrawQuad::TEXTURE_CONTENT:
       return FromTextureQuad(resource_provider,
                              TextureDrawQuad::MaterialCast(quad), candidate);
-    case DrawQuad::STREAM_VIDEO_CONTENT:
-      return FromStreamVideoQuad(resource_provider,
-                                 StreamVideoDrawQuad::MaterialCast(quad),
-                                 candidate);
     case DrawQuad::IO_SURFACE_CONTENT:
       return FromIOSurfaceQuad(
           resource_provider, IOSurfaceDrawQuad::MaterialCast(quad), candidate);
@@ -243,52 +238,6 @@ bool OverlayCandidate::FromTextureQuad(ResourceProvider* resource_provider,
   candidate->resource_size_in_pixels = quad->resource_size_in_pixels();
   candidate->transform = overlay_transform;
   candidate->uv_rect = BoundingRect(quad->uv_top_left, quad->uv_bottom_right);
-  return true;
-}
-
-// static
-bool OverlayCandidate::FromStreamVideoQuad(ResourceProvider* resource_provider,
-                                           const StreamVideoDrawQuad* quad,
-                                           OverlayCandidate* candidate) {
-  if (!resource_provider->IsOverlayCandidate(quad->resource_id()))
-    return false;
-  gfx::OverlayTransform overlay_transform = GetOverlayTransform(
-      quad->shared_quad_state->quad_to_target_transform, false);
-  if (overlay_transform == gfx::OVERLAY_TRANSFORM_INVALID)
-    return false;
-  if (!quad->matrix.IsScaleOrTranslation()) {
-    // We cannot handle anything other than scaling & translation for texture
-    // coordinates yet.
-    return false;
-  }
-  candidate->resource_id = quad->resource_id();
-  candidate->resource_size_in_pixels = quad->resource_size_in_pixels();
-  candidate->transform = overlay_transform;
-
-  gfx::Point3F uv0 = gfx::Point3F(0, 0, 0);
-  gfx::Point3F uv1 = gfx::Point3F(1, 1, 0);
-  quad->matrix.TransformPoint(&uv0);
-  quad->matrix.TransformPoint(&uv1);
-  gfx::Vector3dF delta = uv1 - uv0;
-  if (delta.x() < 0) {
-    candidate->transform = ComposeTransforms(
-        gfx::OVERLAY_TRANSFORM_FLIP_HORIZONTAL, candidate->transform);
-    float x0 = uv0.x();
-    uv0.set_x(uv1.x());
-    uv1.set_x(x0);
-    delta.set_x(-delta.x());
-  }
-
-  if (delta.y() < 0) {
-    // In this situation, uv0y < uv1y. Since we overlay inverted, a request
-    // to invert the source texture means we can just output the texture
-    // normally and it will be correct.
-    candidate->uv_rect = gfx::RectF(uv0.x(), uv1.y(), delta.x(), -delta.y());
-  } else {
-    candidate->transform = ComposeTransforms(
-        gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL, candidate->transform);
-    candidate->uv_rect = gfx::RectF(uv0.x(), uv0.y(), delta.x(), delta.y());
-  }
   return true;
 }
 

@@ -307,6 +307,7 @@ ul, menu, dir {
     -webkit-margin-after: 1em;
     -webkit-margin-start: 0;
     -webkit-margin-end: 0;
+    -webkit-padding-start: 40px
 }
 
 ol {
@@ -316,6 +317,7 @@ ol {
     -webkit-margin-after: 1em;
     -webkit-margin-start: 0;
     -webkit-margin-end: 0;
+    -webkit-padding-start: 40px
 }
 
 li {

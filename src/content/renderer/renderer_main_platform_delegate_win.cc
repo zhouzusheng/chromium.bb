@@ -16,7 +16,6 @@
 #include "content/public/common/injection_test_win.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/render_thread_impl.h"
-#include "sandbox/win/src/sandbox.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/win/WebFontRendering.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
@@ -80,20 +79,6 @@ void RendererMainPlatformDelegate::PlatformUninitialize() {
 }
 
 bool RendererMainPlatformDelegate::EnableSandbox() {
-  sandbox::TargetServices* target_services =
-      parameters_.sandbox_info->target_services;
-
-  if (target_services) {
-    // Cause advapi32 to load before the sandbox is turned on.
-    unsigned int dummy_rand;
-    rand_s(&dummy_rand);
-    // Warm up language subsystems before the sandbox is turned on.
-    ::GetUserDefaultLangID();
-    ::GetUserDefaultLCID();
-
-    target_services->LowerToken();
-    return true;
-  }
   return false;
 }
 

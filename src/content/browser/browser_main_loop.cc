@@ -13,8 +13,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/pending_task.h"
-#include "base/power_monitor/power_monitor.h"
-#include "base/power_monitor/power_monitor_device_source.h"
 #include "base/process/process_metrics.h"
 #include "base/profiler/scoped_profile.h"
 #include "base/run_loop.h"
@@ -30,7 +28,6 @@
 #include "components/tracing/trace_config_file.h"
 #include "components/tracing/tracing_switches.h"
 #include "content/browser/browser_thread_impl.h"
-#include "content/browser/device_sensors/device_inertial_sensor_service.h"
 #include "content/browser/dom_storage/dom_storage_area.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/gamepad/gamepad_service.h"
@@ -42,11 +39,8 @@
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/histogram_synchronizer.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
-#include "content/browser/media/media_internals.h"
 #include "content/browser/mojo/mojo_shell_context.h"
 #include "content/browser/net/browser_online_state_observer.h"
-#include "content/browser/renderer_host/media/media_stream_manager.h"
-#include "content/browser/speech/speech_recognition_manager_impl.h"
 #include "content/browser/startup_task_runner.h"
 #include "content/browser/time_zone_monitor.h"
 #include "content/browser/webui/content_web_ui_controller_factory.h"
@@ -62,11 +56,6 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
-#include "device/battery/battery_status_service.h"
-#include "media/audio/audio_manager.h"
-#include "media/base/media.h"
-#include "media/base/user_input_monitor.h"
-#include "media/midi/midi_manager.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/ssl/ssl_config_service.h"
@@ -129,7 +118,6 @@
 
 #include "base/memory/memory_pressure_monitor_win.h"
 #include "content/browser/system_message_window_win.h"
-#include "content/common/sandbox_win.h"
 #include "net/base/winsock_init.h"
 #include "ui/base/l10n/l10n_util_win.h"
 #endif
@@ -540,12 +528,6 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
     system_monitor_.reset(new base::SystemMonitor);
   }
   {
-    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:PowerMonitor");
-    scoped_ptr<base::PowerMonitorSource> power_monitor_source(
-      new base::PowerMonitorDeviceSource());
-    power_monitor_.reset(new base::PowerMonitor(power_monitor_source.Pass()));
-  }
-  {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:HighResTimerManager");
     hi_res_timer_manager_.reset(new base::HighResolutionTimerManager);
   }
@@ -555,10 +537,6 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
   }
 
 #if !defined(OS_IOS)
-  {
-    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MediaFeatures");
-    media::InitializeMediaLibrary();
-  }
   {
     TRACE_EVENT0("startup",
                  "BrowserMainLoop::Subsystem:ContentWebUIController");
@@ -1001,12 +979,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
                  "BrowserMainLoop::Subsystem:ResourceDispatcherHost");
     resource_dispatcher_host_->Shutdown();
   }
-  // Request shutdown to clean up allocated resources on the IO thread.
-  if (midi_manager_) {
-    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:MidiManager");
-    midi_manager_->Shutdown();
-  }
-
+  
   memory_pressure_monitor_.reset();
 
 #if defined(OS_MACOSX)
@@ -1137,15 +1110,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:GamepadService");
     GamepadService::GetInstance()->Terminate();
   }
-  {
-    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:SensorService");
-    DeviceInertialSensorService::GetInstance()->Shutdown();
-  }
 #if !defined(OS_ANDROID)
-  {
-    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:BatteryStatusService");
-    device::BatteryStatusService::GetInstance()->Shutdown();
-  }
 #endif
   {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DeleteDataSources");
@@ -1223,17 +1188,6 @@ int BrowserMainLoop::BrowserThreadsStarted() {
       nullptr);
 #endif
 
-  {
-    TRACE_EVENT0("startup", "BrowserThreadsStarted::Subsystem:AudioMan");
-    audio_manager_.reset(media::AudioManager::CreateWithHangTimer(
-        MediaInternals::GetInstance(), io_thread_->task_runner()));
-  }
-
-  {
-    TRACE_EVENT0("startup", "BrowserThreadsStarted::Subsystem:MidiManager");
-    midi_manager_.reset(media::midi::MidiManager::Create());
-  }
-
 #if defined(OS_LINUX) && defined(USE_UDEV)
   device_monitor_linux_.reset(new DeviceMonitorLinux());
 #elif defined(OS_MACOSX)
@@ -1249,28 +1203,6 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     TRACE_EVENT0("startup",
       "BrowserMainLoop::BrowserThreadsStarted:InitResourceDispatcherHost");
     resource_dispatcher_host_.reset(new ResourceDispatcherHostImpl());
-  }
-
-  // MediaStreamManager needs the IO thread to be created.
-  {
-    TRACE_EVENT0("startup",
-      "BrowserMainLoop::BrowserThreadsStarted:InitMediaStreamManager");
-    media_stream_manager_.reset(new MediaStreamManager(audio_manager_.get()));
-  }
-
-  {
-    TRACE_EVENT0("startup",
-      "BrowserMainLoop::BrowserThreadsStarted:InitSpeechRecognition");
-    speech_recognition_manager_.reset(new SpeechRecognitionManagerImpl(
-        audio_manager_.get(), media_stream_manager_.get()));
-  }
-
-  {
-    TRACE_EVENT0(
-        "startup",
-        "BrowserMainLoop::BrowserThreadsStarted::InitUserInputMonitor");
-    user_input_monitor_ = media::UserInputMonitor::Create(
-        io_thread_->task_runner(), main_thread_->task_runner());
   }
 
   {

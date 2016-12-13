@@ -75,6 +75,11 @@ void ListMarkerPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& pai
 
     if (m_layoutListMarker.isImage()) {
         context->drawImage(m_layoutListMarker.image()->image(&m_layoutListMarker, marker.size()).get(), marker);
+        if (m_layoutListMarker.selectionState() != SelectionNone) {
+            LayoutRect selRect = m_layoutListMarker.localSelectionRect();
+            selRect.moveBy(boxOrigin);
+            context->fillRect(pixelSnappedIntRect(selRect), m_layoutListMarker.listItem()->selectionBackgroundColor());
+        }
         return;
     }
 
@@ -134,8 +139,8 @@ void ListMarkerPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& pai
     }
 
     const UChar suffix = ListMarkerText::suffix(listStyle, m_layoutListMarker.listItem()->value());
-    UChar suffixStr[1] = { suffix };
-    TextRun suffixRun = constructTextRun(font, suffixStr, 1, m_layoutListMarker.styleRef(), m_layoutListMarker.style()->direction());
+    UChar suffixStr[2] = { suffix, static_cast<UChar>(' ') };
+    TextRun suffixRun = constructTextRun(font, suffixStr, 2, m_layoutListMarker.styleRef(), m_layoutListMarker.style()->direction());
     TextRunPaintInfo suffixRunInfo(suffixRun);
     suffixRunInfo.bounds = marker;
 

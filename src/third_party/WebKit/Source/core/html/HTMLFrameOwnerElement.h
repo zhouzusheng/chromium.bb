@@ -109,25 +109,21 @@ DEFINE_ELEMENT_TYPE_CASTS(HTMLFrameOwnerElement, isFrameOwnerElement());
 class SubframeLoadingDisabler {
     STACK_ALLOCATED();
 public:
-    explicit SubframeLoadingDisabler(Node& root) : SubframeLoadingDisabler(&root)
-    {
-    }
-
-    explicit SubframeLoadingDisabler(Node* root)
+    explicit SubframeLoadingDisabler(Node& root)
         : m_root(root)
     {
-        if (m_root)
-            disabledSubtreeRoots().add(m_root);
+        disabledSubtreeRoots().add(m_root);
     }
 
     ~SubframeLoadingDisabler()
     {
-        if (m_root)
-            disabledSubtreeRoots().remove(m_root);
+        disabledSubtreeRoots().remove(m_root);
     }
 
     static bool canLoadFrame(HTMLFrameOwnerElement& owner)
     {
+        if (owner.document().unloadStarted())
+            return false;
         for (Node* node = &owner; node; node = node->parentOrShadowHostNode()) {
             if (disabledSubtreeRoots().contains(node))
                 return false;
@@ -136,7 +132,7 @@ public:
     }
 
 private:
-    CORE_EXPORT static WillBeHeapHashCountedSet<RawPtrWillBeMember<Node>>& disabledSubtreeRoots();
+    static WillBeHeapHashCountedSet<RawPtrWillBeMember<Node>>& disabledSubtreeRoots();
 
     RawPtrWillBeMember<Node> m_root;
 };

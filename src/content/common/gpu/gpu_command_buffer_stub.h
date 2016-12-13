@@ -22,7 +22,6 @@
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "media/base/video_decoder_config.h"
 #include "ui/events/latency_info.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -186,15 +185,15 @@ class GpuCommandBufferStub
   void OnDestroyTransferBuffer(int32 id);
   void OnGetTransferBuffer(int32 id, IPC::Message* reply_message);
 
-  void OnCreateVideoDecoder(media::VideoCodecProfile profile,
-                            int32 route_id,
-                            IPC::Message* reply_message);
-  void OnCreateVideoEncoder(media::VideoPixelFormat input_format,
-                            const gfx::Size& input_visible_size,
-                            media::VideoCodecProfile output_profile,
-                            uint32 initial_bitrate,
-                            int32 route_id,
-                            IPC::Message* reply_message);
+  //void OnCreateVideoDecoder(media::VideoCodecProfile profile,
+   //                         int32 route_id,
+   //                         IPC::Message* reply_message);
+  //void OnCreateVideoEncoder(media::VideoPixelFormat input_format,
+    //                        const gfx::Size& input_visible_size,
+    //                        media::VideoCodecProfile output_profile,
+    //                        uint32 initial_bitrate,
+     //                       int32 route_id,
+     //                       IPC::Message* reply_message);
 
   void OnSetSurfaceVisible(bool visible);
 

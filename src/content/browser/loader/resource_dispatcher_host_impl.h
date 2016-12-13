@@ -174,8 +174,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // Called when a RenderViewHost is created.
   void OnRenderViewHostCreated(int child_id,
                                int route_id,
-                               bool is_visible,
-                               bool is_audible);
+                               bool is_visible);
 
   // Called when a RenderViewHost is deleted.
   void OnRenderViewHostDeleted(int child_id, int route_id);

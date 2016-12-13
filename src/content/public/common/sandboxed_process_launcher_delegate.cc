@@ -19,8 +19,7 @@ bool SandboxedProcessLauncherDelegate::DisableDefaultPolicy() {
   return false;
 }
 
-bool SandboxedProcessLauncherDelegate::PreSpawnTarget(
-    sandbox::TargetPolicy* policy) {
+bool SandboxedProcessLauncherDelegate::PreSpawnTarget() {
   return true;
 }
 

@@ -27,8 +27,7 @@ PictureLayer::PictureLayer(const LayerSettings& settings,
       instrumentation_object_tracker_(id()),
       update_source_frame_number_(-1),
       is_mask_(false),
-      nearest_neighbor_(false),
-      default_lcd_background_color_(SK_ColorTRANSPARENT) {
+      nearest_neighbor_(false) {
 }
 
 PictureLayer::PictureLayer(const LayerSettings& settings,
@@ -126,7 +125,6 @@ bool PictureLayer::Update() {
   recording_source_->SetBackgroundColor(SafeOpaqueBackgroundColor());
   recording_source_->SetRequiresClear(!contents_opaque() &&
                                       !client_->FillsBoundsCompletely());
-  recording_source_->SetDefaultLCDBackgroundColor(default_lcd_background_color_);
 
   TRACE_EVENT1("cc", "PictureLayer::Update",
                "source_frame_number",
@@ -206,14 +204,6 @@ void PictureLayer::SetNearestNeighbor(bool nearest_neighbor) {
 
   nearest_neighbor_ = nearest_neighbor;
   SetNeedsCommit();
-}
-
-void PictureLayer::SetDefaultLCDBackgroundColor(SkColor default_lcd_background_color) {
-  if (default_lcd_background_color_ == default_lcd_background_color)
-    return;
-
-  default_lcd_background_color_ = default_lcd_background_color;
-  SetNeedsDisplay();
 }
 
 bool PictureLayer::HasDrawableContent() const {

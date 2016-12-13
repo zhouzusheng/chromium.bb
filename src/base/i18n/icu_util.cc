@@ -31,7 +31,7 @@
 #include "base/mac/foundation_util.h"
 #endif
 
-#include <blpwtk2_products.h>
+#include <minikit_products.h>
 
 #define ICU_UTIL_DATA_FILE   0
 #define ICU_UTIL_DATA_SHARED 1
@@ -62,7 +62,7 @@ bool g_called_once = false;
 // No need to change the filename in multiple places (gyp files, windows
 // build pkg configurations, etc). 'l' stands for Little Endian.
 // This variable is exported through the header file.
-const char kIcuDataFileName[] = BLPWTK2_ICUDTL_DAT_NAME;
+const char kIcuDataFileName[] = MINIKIT_ICUDTL_DAT_NAME;
 #if defined(OS_ANDROID)
 const char kAndroidAssetsIcuDataFileName[] = "assets/icudtl.dat";
 #endif

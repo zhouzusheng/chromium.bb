@@ -25,10 +25,6 @@ class ContextSupport;
 struct Mailbox;
 }
 
-namespace media {
-class VideoFrame;
-};
-
 class SkRegion;
 
 namespace content {
@@ -132,7 +128,6 @@ class ScopedTextureBinder : ScopedBinder<Target> {
   }
 };
 
-class ReadbackYUVInterface;
 class GLHelperReadbackSupport;
 
 // Provides higher level operations on top of the gpu::gles2::GLES2Interface
@@ -310,20 +305,6 @@ class CONTENT_EXPORT GLHelper {
                                 bool vertically_flip_texture,
                                 bool swizzle);
 
-  // Create a readback pipeline that will scale a subsection of the source
-  // texture, then convert it to YUV422 planar form and then read back that.
-  // This reduces the amount of memory read from GPU to CPU memory by a factor
-  // 2.6, which can be quite handy since readbacks have very limited speed
-  // on some platforms. All values in |dst_size| must be a multiple of two. If
-  // |use_mrt| is true, the pipeline will try to optimize the YUV conversion
-  // using the multi-render-target extension. |use_mrt| should only be set to
-  // false for testing.
-  ReadbackYUVInterface* CreateReadbackPipelineYUV(ScalerQuality quality,
-                                                  const gfx::Size& src_size,
-                                                  const gfx::Rect& src_subrect,
-                                                  const gfx::Size& dst_size,
-                                                  bool flip_vertically,
-                                                  bool use_mrt);
 
   // Returns the maximum number of draw buffers available,
   // 0 if GL_EXT_draw_buffers is not available.
@@ -353,31 +334,6 @@ class CONTENT_EXPORT GLHelper {
   scoped_ptr<GLHelperReadbackSupport> readback_support_;
 
   DISALLOW_COPY_AND_ASSIGN(GLHelper);
-};
-
-// Similar to a ScalerInterface, a yuv readback pipeline will
-// cache a scaler and all intermediate textures and frame buffers
-// needed to scale, crop, letterbox and read back a texture from
-// the GPU into CPU-accessible RAM. A single readback pipeline
-// can handle multiple outstanding readbacks at the same time, but
-// if the source or destination sizes change, you'll need to create
-// a new readback pipeline.
-class CONTENT_EXPORT ReadbackYUVInterface {
- public:
-  ReadbackYUVInterface() {}
-  virtual ~ReadbackYUVInterface() {}
-
-  // Note that |target| must use YV12 format.  |paste_location| specifies where
-  // the captured pixels that are read back will be placed in the video frame.
-  // The region defined by the |paste_location| and the |dst_size| specified in
-  // the call to CreateReadbackPipelineYUV() must be fully contained within
-  // |target->visible_rect()|.
-  virtual void ReadbackYUV(const gpu::Mailbox& mailbox,
-                           const gpu::SyncToken& sync_token,
-                           const scoped_refptr<media::VideoFrame>& target,
-                           const gfx::Point& paste_location,
-                           const base::Callback<void(bool)>& callback) = 0;
-  virtual GLHelper::ScalerInterface* scaler() = 0;
 };
 
 }  // namespace content

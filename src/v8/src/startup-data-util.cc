@@ -4,7 +4,7 @@
 
 #include "src/startup-data-util.h"
 
-#include <blpv8_products.h>
+#include <miniv8_products.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -99,8 +99,8 @@ void InitializeExternalStartupData(const char* directory_path) {
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
   char* natives;
   char* snapshot;
-  LoadFromFiles(RelativePath(&natives, directory_path, BLPV8_NATIVES_BLOB_NAME),
-                RelativePath(&snapshot, directory_path, BLPV8_SNAPSHOT_BLOB_NAME));
+  LoadFromFiles(RelativePath(&natives, directory_path, MINIV8_NATIVES_BLOB_NAME),
+                RelativePath(&snapshot, directory_path, MINIV8_SNAPSHOT_BLOB_NAME));
   free(natives);
   free(snapshot);
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA

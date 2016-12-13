@@ -32,7 +32,6 @@
 #include "content/public/browser/web_contents_delegate.h"
 
 #if defined(OS_ANDROID)
-#include "content/browser/power_save_blocker_impl.h"
 #include "content/public/browser/render_widget_host_view.h"
 #endif
 

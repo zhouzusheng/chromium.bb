@@ -36,10 +36,6 @@ struct AccessibilityHostMsg_EventParams;
 struct ViewHostMsg_SelectionBounds_Params;
 struct ViewHostMsg_TextInputState_Params;
 
-namespace media {
-class VideoFrame;
-}
-
 namespace blink {
 struct WebScreenInfo;
 class WebMouseEvent;
@@ -75,12 +71,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   bool IsMouseLocked() override;
   gfx::Size GetVisibleViewportSize() const override;
   void SetInsets(const gfx::Insets& insets) override;
-  void SetRubberbandRect(const gfx::Rect& rect) override;
-  void HideRubberbandRect() override;
-  void BeginFrameSubscription(
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
-  void EndFrameSubscription() override;
-
+  
   // IPC::Listener implementation:
   bool OnMessageReceived(const IPC::Message& msg) override;
 
@@ -271,28 +262,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
       const gfx::Size& dst_size,
       const ReadbackRequestCallback& callback,
       const SkColorType preferred_color_type) = 0;
-
-  // Copies the contents of the compositing surface, populating the given
-  // |target| with YV12 image data. |src_subrect| is specified in layer space
-  // coordinates for the current platform (e.g., DIP for Aura/Mac, physical for
-  // Android), and is the region to be copied from this view. The copy is then
-  // scaled and letterboxed with black borders to fit |target|. Finally,
-  // |callback| is asynchronously run with true/false for
-  // success/failure. |target| must point to an allocated, YV12 video frame of
-  // the intended size. This operation will fail if there is no available
-  // compositing surface.
-  virtual void CopyFromCompositingSurfaceToVideoFrame(
-      const gfx::Rect& src_subrect,
-      const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(const gfx::Rect&, bool)>& callback) = 0;
-
-  // Returns true if CopyFromCompositingSurfaceToVideoFrame() is likely to
-  // succeed.
-  //
-  // TODO(nick): When VideoFrame copies are broadly implemented, this method
-  // should be renamed to HasCompositingSurface(), or unified with
-  // IsSurfaceAvailableForCopy() and HasAcceleratedSurface().
-  virtual bool CanCopyToVideoFrame() const = 0;
 
   // Return true if the view has an accelerated surface that contains the last
   // presented frame for the view. If |desired_size| is non-empty, true is

@@ -19,8 +19,6 @@
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/gpu_watchdog.h"
 #include "content/common/gpu/image_transport_surface.h"
-#include "content/common/gpu/media/gpu_video_decode_accelerator.h"
-#include "content/common/gpu/media/gpu_video_encode_accelerator.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/common/constants.h"
@@ -39,10 +37,11 @@
 #include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_switches.h"
+#include "ui/gl/gl_image.h"
 
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
-#include "content/public/common/sandbox_init.h"
+
 #endif
 
 #if defined(OS_ANDROID)
@@ -306,10 +305,6 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
                         OnRegisterTransferBuffer);
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_DestroyTransferBuffer,
                         OnDestroyTransferBuffer);
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_CreateVideoDecoder,
-                                    OnCreateVideoDecoder)
-    IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuCommandBufferMsg_CreateVideoEncoder,
-                                    OnCreateVideoEncoder)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_SetSurfaceVisible,
                         OnSetSurfaceVisible)
     IPC_MESSAGE_HANDLER(GpuCommandBufferMsg_RetireSyncPoint,
@@ -890,36 +885,6 @@ void GpuCommandBufferStub::PutChanged() {
   scheduler_->PutChanged();
 }
 
-void GpuCommandBufferStub::OnCreateVideoDecoder(
-    media::VideoCodecProfile profile,
-    int32 decoder_route_id,
-    IPC::Message* reply_message) {
-  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnCreateVideoDecoder");
-  GpuVideoDecodeAccelerator* decoder = new GpuVideoDecodeAccelerator(
-      decoder_route_id, this, channel_->io_task_runner());
-  decoder->Initialize(profile, reply_message);
-  // decoder is registered as a DestructionObserver of this stub and will
-  // self-delete during destruction of this stub.
-}
-
-void GpuCommandBufferStub::OnCreateVideoEncoder(
-    media::VideoPixelFormat input_format,
-    const gfx::Size& input_visible_size,
-    media::VideoCodecProfile output_profile,
-    uint32 initial_bitrate,
-    int32 encoder_route_id,
-    IPC::Message* reply_message) {
-  TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnCreateVideoEncoder");
-  GpuVideoEncodeAccelerator* encoder =
-      new GpuVideoEncodeAccelerator(encoder_route_id, this);
-  encoder->Initialize(input_format,
-                      input_visible_size,
-                      output_profile,
-                      initial_bitrate,
-                      reply_message);
-  // encoder is registered as a DestructionObserver of this stub and will
-  // self-delete during destruction of this stub.
-}
 
 // TODO(sohanjg): cleanup this and the client side too.
 void GpuCommandBufferStub::OnSetSurfaceVisible(bool visible) {

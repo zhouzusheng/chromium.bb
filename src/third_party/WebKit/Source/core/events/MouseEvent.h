@@ -81,7 +81,6 @@ public:
     virtual DataTransfer* dataTransfer() const { return nullptr; }
 
     bool fromTouch() const { return m_syntheticEventType == PlatformMouseEvent::FromTouch; }
-    bool fromContextMenuKey() const { return m_syntheticEventType == PlatformMouseEvent::FromContextMenuKey; }
 
     const AtomicString& interfaceName() const override;
 

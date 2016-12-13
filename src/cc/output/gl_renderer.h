@@ -18,7 +18,6 @@
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
-#include "cc/quads/yuv_video_draw_quad.h"
 #include "ui/gfx/geometry/quad_f.h"
 
 class SkBitmap;
@@ -35,7 +34,6 @@ class GLRendererShaderTest;
 class OutputSurface;
 class PictureDrawQuad;
 class ScopedResource;
-class StreamVideoDrawQuad;
 class TextureDrawQuad;
 class TextureMailboxDeleter;
 class StaticGeometryBinding;
@@ -181,9 +179,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   void DrawSolidColorQuad(const DrawingFrame* frame,
                           const SolidColorDrawQuad* quad,
                           const gfx::QuadF* clip_region);
-  void DrawStreamVideoQuad(const DrawingFrame* frame,
-                           const StreamVideoDrawQuad* quad,
-                           const gfx::QuadF* clip_region);
   void DrawTextureQuad(const DrawingFrame* frame,
                        const TextureDrawQuad* quad,
                        const gfx::QuadF* clip_region);
@@ -211,9 +206,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                            const ContentDrawQuadBase* quad,
                            ResourceId resource_id,
                            const gfx::QuadF* clip_region);
-  void DrawYUVVideoQuad(const DrawingFrame* frame,
-                        const YUVVideoDrawQuad* quad,
-                        const gfx::QuadF* clip_region);
   void DrawPictureQuad(const DrawingFrame* frame,
                        const PictureDrawQuad* quad,
                        const gfx::QuadF* clip_region);

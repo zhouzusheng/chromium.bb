@@ -30,11 +30,6 @@ void SkBlitLCD16Row_SSE2(SkPMColor dst[], const uint16_t src[],
 void SkBlitLCD16OpaqueRow_SSE2(SkPMColor dst[], const uint16_t src[],
                                SkColor color, int width, SkPMColor opaqueDst);
 
-void SkBlitLCD16RowOverBackground_SSE2(SkPMColor dst[], const uint16_t src[],
-                         SkColor color, int width, SkPMColor, SkPMColor defaultDst);
-void SkBlitLCD16OpaqueRowOverBackground_SSE2(SkPMColor dst[], const uint16_t src[],
-                               SkColor color, int width, SkPMColor opaqueDst, SkPMColor defaultDst);
-
 void S32_D565_Opaque_SSE2(uint16_t* SK_RESTRICT dst,
                           const SkPMColor* SK_RESTRICT src, int count,
                           U8CPU alpha, int /*x*/, int /*y*/);

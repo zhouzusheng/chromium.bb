@@ -35,9 +35,6 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
-#if defined(ENABLE_PLUGINS)
-#include "content/common/pepper_renderer_instance_data.h"
-#endif
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -446,16 +443,6 @@ IPC_STRUCT_BEGIN(FrameHostMsg_ShowPopup_Params)
   // Whether this is a multi-select popup.
   IPC_STRUCT_MEMBER(bool, allow_multiple_selection)
 IPC_STRUCT_END()
-#endif
-
-#if defined(ENABLE_PLUGINS)
-IPC_STRUCT_TRAITS_BEGIN(content::PepperRendererInstanceData)
-  IPC_STRUCT_TRAITS_MEMBER(render_process_id)
-  IPC_STRUCT_TRAITS_MEMBER(render_frame_id)
-  IPC_STRUCT_TRAITS_MEMBER(document_url)
-  IPC_STRUCT_TRAITS_MEMBER(plugin_url)
-  IPC_STRUCT_TRAITS_MEMBER(is_potentially_secure_plugin_context)
-IPC_STRUCT_TRAITS_END()
 #endif
 
 // -----------------------------------------------------------------------------
@@ -968,76 +955,8 @@ IPC_SYNC_MESSAGE_CONTROL4_2(FrameHostMsg_OpenChannelToPlugin,
                             IPC::ChannelHandle /* channel_handle */,
                             content::WebPluginInfo /* info */)
 
-// A renderer sends this to the browser process when it wants to create a ppapi
-// plugin.  The browser will create the plugin process if necessary, and will
-// return a handle to the channel on success.
-//
-// The plugin_child_id is the ChildProcessHost ID assigned in the browser
-// process. This ID is valid only in the context of the browser process and is
-// used to identify the proper process when the renderer notifies it that the
-// plugin is hung.
-//
-// On error an empty string and null handles are returned.
-IPC_SYNC_MESSAGE_CONTROL1_3(FrameHostMsg_OpenChannelToPepperPlugin,
-                            base::FilePath /* path */,
-                            IPC::ChannelHandle /* handle to channel */,
-                            base::ProcessId /* plugin_pid */,
-                            int /* plugin_child_id */)
 
-// Message from the renderer to the browser indicating the in-process instance
-// has been created.
-IPC_MESSAGE_CONTROL2(FrameHostMsg_DidCreateInProcessInstance,
-                     int32 /* instance */,
-                     content::PepperRendererInstanceData /* instance_data */)
 
-// Message from the renderer to the browser indicating the in-process instance
-// has been destroyed.
-IPC_MESSAGE_CONTROL1(FrameHostMsg_DidDeleteInProcessInstance,
-                     int32 /* instance */)
-
-// Notification that a plugin has created a new plugin instance. The parameters
-// indicate:
-//  - The plugin process ID that we're creating the instance for.
-//  - The instance ID of the instance being created.
-//  - A PepperRendererInstanceData struct which contains properties from the
-//    renderer which are associated with the plugin instance. This includes the
-//    routing ID of the associated RenderFrame and the URL of plugin.
-//  - Whether the plugin we're creating an instance for is external or internal.
-//
-// This message must be sync even though it returns no parameters to avoid
-// a race condition with the plugin process. The plugin process sends messages
-// to the browser that assume the browser knows about the instance. We need to
-// make sure that the browser actually knows about the instance before we tell
-// the plugin to run.
-IPC_SYNC_MESSAGE_CONTROL4_0(
-    FrameHostMsg_DidCreateOutOfProcessPepperInstance,
-    int /* plugin_child_id */,
-    int32 /* pp_instance */,
-    content::PepperRendererInstanceData /* creation_data */,
-    bool /* is_external */)
-
-// Notification that a plugin has destroyed an instance. This is the opposite of
-// the "DidCreate" message above.
-IPC_MESSAGE_CONTROL3(FrameHostMsg_DidDeleteOutOfProcessPepperInstance,
-                     int /* plugin_child_id */,
-                     int32 /* pp_instance */,
-                     bool /* is_external */)
-
-// A renderer sends this to the browser process when it wants to
-// create a ppapi broker.  The browser will create the broker process
-// if necessary, and will return a handle to the channel on success.
-// On error an empty string is returned.
-// The browser will respond with ViewMsg_PpapiBrokerChannelCreated.
-IPC_MESSAGE_CONTROL2(FrameHostMsg_OpenChannelToPpapiBroker,
-                     int /* routing_id */,
-                     base::FilePath /* path */)
-
-// A renderer sends this to the browser process when it throttles or unthrottles
-// a plugin instance for the Plugin Power Saver feature.
-IPC_MESSAGE_CONTROL3(FrameHostMsg_PluginInstanceThrottleStateChange,
-                     int /* plugin_child_id */,
-                     int32 /* pp_instance */,
-                     bool /* is_throttled */)
 #endif  // defined(ENABLE_PLUGINS)
 
 // Acknowledge that we presented an ubercomp frame.

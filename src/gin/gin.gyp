@@ -13,7 +13,7 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
-        '../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+        '../minikit/minikit.gyp:minikit_generate_sources',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../v8/tools/gyp/v8.gyp:v8',
       ],

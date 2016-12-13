@@ -174,12 +174,7 @@ PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(LocalFrame* fra
 
 void ContextMenuController::showContextMenu(Event* event)
 {
-    bool fromContextMenuKey = false;
-    if (event && event->isMouseEvent()) {
-        const MouseEvent* mouseEvent = toMouseEvent(event);
-        fromContextMenuKey = mouseEvent->fromContextMenuKey();
-    }
-    m_client->showContextMenu(m_contextMenu.get(), fromContextMenuKey);
+    m_client->showContextMenu(m_contextMenu.get());
     if (event)
         event->setDefaultHandled();
 }

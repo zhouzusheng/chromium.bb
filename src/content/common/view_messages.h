@@ -16,7 +16,6 @@
 #include "content/common/content_param_traits.h"
 #include "content/common/date_time_suggestion.h"
 #include "content/common/frame_replication_state.h"
-#include "content/common/media/media_param_traits.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/view_message_enums.h"
 #include "content/common/webplugin_geometry.h"
@@ -36,9 +35,6 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
-#include "media/audio/audio_parameters.h"
-#include "media/base/channel_layout.h"
-#include "media/base/media_log_event.h"
 #include "net/base/network_change_notifier.h"
 #include "third_party/WebKit/public/platform/WebDisplayMode.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
@@ -108,8 +104,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::StopFindAction,
                           content::STOP_FIND_ACTION_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(content::ThreeDAPIType,
                           content::THREE_D_API_TYPE_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(media::MediaLogEvent::Type,
-                          media::MediaLogEvent::TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputMode, ui::TEXT_INPUT_MODE_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputType, ui::TEXT_INPUT_TYPE_MAX)
 
@@ -281,12 +275,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPluginGeometry)
   IPC_STRUCT_TRAITS_MEMBER(visible)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(media::MediaLogEvent)
-  IPC_STRUCT_TRAITS_MEMBER(id)
-  IPC_STRUCT_TRAITS_MEMBER(type)
-  IPC_STRUCT_TRAITS_MEMBER(params)
-  IPC_STRUCT_TRAITS_MEMBER(time)
-IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_BEGIN(ViewHostMsg_CreateWindow_Params)
   // Routing ID of the view initiating the open.
@@ -897,10 +885,6 @@ IPC_MESSAGE_CONTROL3(ViewMsg_SystemColorsChanged,
 // Tells the renderer to clear unused resources from its global web cache
 IPC_MESSAGE_CONTROL0(ViewMsg_ClearWebCache)
 
-// Tells the renderer to enable/disable alt-mousedrag rubberbanding.
-IPC_MESSAGE_ROUTED1(ViewMsg_EnableAltDragRubberbanding,
-                    bool /* enable */)
-
 #if defined(OS_ANDROID)
 // Tells the renderer to suspend/resume the webkit timers.
 IPC_MESSAGE_CONTROL1(ViewMsg_SetWebKitSharedTimersSuspended,
@@ -1016,10 +1000,6 @@ IPC_SYNC_MESSAGE_CONTROL1_1(ViewHostMsg_CreateFullscreenWidget,
 IPC_SYNC_MESSAGE_CONTROL0_1(ViewHostMsg_GenerateRoutingID,
                             int /* routing_id */)
 
-// Asks the browser for the default audio hardware configuration.
-IPC_SYNC_MESSAGE_CONTROL0_2(ViewHostMsg_GetAudioHardwareConfig,
-                            media::AudioParameters /* input parameters */,
-                            media::AudioParameters /* output parameters */)
 
 // These three messages are sent to the parent RenderViewHost to display the
 // page/widget that was created by
@@ -1285,10 +1265,6 @@ IPC_MESSAGE_CONTROL2(ViewHostMsg_SavedPageAsMHTML,
                      int /* job_id */,
                      int64 /* size of the MHTML file, -1 if error */)
 
-// Notifies the browser of an event occurring in the media pipeline.
-IPC_MESSAGE_CONTROL1(ViewHostMsg_MediaLogEvents,
-                     std::vector<media::MediaLogEvent> /* events */)
-
 // Requests to lock the mouse. Will result in a ViewMsg_LockMouse_ACK message
 // being sent back.
 // |privileged| is used by Pepper Flash. If this flag is set to true, we won't
@@ -1319,13 +1295,6 @@ IPC_MESSAGE_ROUTED0(ViewHostMsg_WillInsertBody)
 // Notification that the urls for the favicon of a site has been determined.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_UpdateFaviconURL,
                     std::vector<content::FaviconURL> /* candidates */)
-
-// Instructs the browser to draw the rubberband rect.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_SetRubberbandRect,
-                    gfx::Rect /* rect */)
-
-// Instructs the browser to stop drawing the rubberband rect.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_HideRubberbandRect)
 
 // Message sent from renderer to the browser when the element that is focused
 // has been touched. A bool is passed in this message which indicates if the

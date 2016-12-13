@@ -8,7 +8,6 @@
 #include "content/browser/appcache/appcache_internals_ui.h"
 #include "content/browser/gpu/gpu_internals_ui.h"
 #include "content/browser/indexed_db/indexed_db_internals_ui.h"
-#include "content/browser/media/media_internals_ui.h"
 #include "content/browser/service_worker/service_worker_internals_ui.h"
 #include "content/browser/tracing/tracing_ui.h"
 #include "content/public/browser/storage_partition.h"
@@ -27,13 +26,12 @@ WebUI::TypeID ContentWebUIControllerFactory::GetWebUIType(
   if (!url.SchemeIs(kChromeUIScheme))
     return WebUI::kNoWebUI;
 
-  if (url.host() == kChromeUIWebRTCInternalsHost ||
+  if (
 #if !defined(OS_ANDROID)
       url.host() == kChromeUITracingHost ||
 #endif
       url.host() == kChromeUIGpuHost ||
       url.host() == kChromeUIIndexedDBInternalsHost ||
-      url.host() == kChromeUIMediaInternalsHost ||
       url.host() == kChromeUIServiceWorkerInternalsHost ||
       url.host() == kChromeUIAccessibilityHost ||
       url.host() == kChromeUIAppCacheInternalsHost) {
@@ -63,8 +61,6 @@ WebUIController* ContentWebUIControllerFactory::CreateWebUIControllerForURL(
     return new GpuInternalsUI(web_ui);
   if (url.host() == kChromeUIIndexedDBInternalsHost)
     return new IndexedDBInternalsUI(web_ui);
-  if (url.host() == kChromeUIMediaInternalsHost)
-    return new MediaInternalsUI(web_ui);
   if (url.host() == kChromeUIAccessibilityHost)
     return new AccessibilityUI(web_ui);
   if (url.host() == kChromeUIServiceWorkerInternalsHost)

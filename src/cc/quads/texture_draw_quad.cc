@@ -11,7 +11,7 @@
 #include "ui/gfx/geometry/vector2d_f.h"
 
 namespace cc {
-
+	
 TextureDrawQuad::TextureDrawQuad()
     : premultiplied_alpha(false),
       background_color(SK_ColorTRANSPARENT),

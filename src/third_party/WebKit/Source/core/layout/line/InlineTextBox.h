@@ -66,7 +66,6 @@ public:
     unsigned end() const { return m_len ? m_start + m_len - 1 : m_start; }
     unsigned len() const { return m_len; }
 
-    void setStartAndLen(unsigned start, unsigned len);
     void offsetRun(int delta);
 
     unsigned short truncation() const { return m_truncation; }

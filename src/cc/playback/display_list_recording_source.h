@@ -46,7 +46,6 @@ class CC_EXPORT DisplayListRecordingSource {
   void SetGenerateDiscardableImagesMetadata(bool generate_metadata);
   void SetBackgroundColor(SkColor background_color);
   void SetRequiresClear(bool requires_clear);
-  void SetDefaultLCDBackgroundColor(SkColor default_lcd_background_color);
 
   // These functions are virtual for testing.
   virtual scoped_refptr<DisplayListRasterSource> CreateRasterSource(
@@ -74,7 +73,6 @@ class CC_EXPORT DisplayListRecordingSource {
   bool clear_canvas_with_debug_color_;
   SkColor solid_color_;
   SkColor background_color_;
-  SkColor default_lcd_background_color_;
   int pixel_record_distance_;
 
   scoped_refptr<DisplayItemList> display_list_;

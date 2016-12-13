@@ -39,6 +39,9 @@
 #include "cc/blink/web_layer_impl.h"
 #include "cc/raster/task_graph_runner.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "cc/blink/context_provider_web_context.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
+
 #include "components/scheduler/renderer/renderer_scheduler.h"
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/appcache_frontend_impl.h"
@@ -84,7 +87,6 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
-#include "content/renderer/bluetooth/bluetooth_message_filter.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/cache_storage/cache_storage_dispatcher.h"
 #include "content/renderer/cache_storage/cache_storage_message_filter.h"
@@ -99,16 +101,6 @@
 #include "content/renderer/input/input_event_filter.h"
 #include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/input/main_thread_input_event_filter.h"
-#include "content/renderer/media/aec_dump_message_filter.h"
-#include "content/renderer/media/audio_input_message_filter.h"
-#include "content/renderer/media/audio_message_filter.h"
-#include "content/renderer/media/audio_renderer_mixer_manager.h"
-#include "content/renderer/media/media_stream_center.h"
-#include "content/renderer/media/midi_message_filter.h"
-#include "content/renderer/media/render_media_client.h"
-#include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
-#include "content/renderer/media/video_capture_impl_manager.h"
-#include "content/renderer/media/video_capture_message_filter.h"
 #include "content/renderer/net_info_helper.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
 #include "content/renderer/raster_worker_pool.h"
@@ -127,9 +119,6 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_platform_file.h"
 #include "ipc/mojo/ipc_channel_mojo.h"
-#include "media/base/audio_hardware_config.h"
-#include "media/base/media.h"
-#include "media/renderers/gpu_video_accelerator_factories.h"
 #include "mojo/common/common_type_converters.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/base/net_errors.h"
@@ -692,9 +681,6 @@ void RenderThreadImpl::Init() {
   db_message_filter_ = new DBMessageFilter();
   AddFilter(db_message_filter_.get());
 
-  vc_manager_.reset(new VideoCaptureImplManager());
-  AddFilter(vc_manager_->video_capture_message_filter());
-
   browser_plugin_manager_.reset(new BrowserPluginManager());
   AddObserver(browser_plugin_manager_.get());
 
@@ -715,19 +701,6 @@ void RenderThreadImpl::Init() {
   peer_connection_factory_.reset(new PeerConnectionDependencyFactory(
       p2p_socket_dispatcher_.get()));
 #endif  // defined(ENABLE_WEBRTC)
-
-  audio_input_message_filter_ =
-      new AudioInputMessageFilter(GetIOMessageLoopProxy());
-  AddFilter(audio_input_message_filter_.get());
-
-  audio_message_filter_ = new AudioMessageFilter(GetIOMessageLoopProxy());
-  AddFilter(audio_message_filter_.get());
-
-  midi_message_filter_ = new MidiMessageFilter(GetIOMessageLoopProxy());
-  AddFilter(midi_message_filter_.get());
-
-  bluetooth_message_filter_ = new BluetoothMessageFilter(thread_safe_sender());
-  AddFilter(bluetooth_message_filter_->GetFilter());
 
   AddFilter((new IndexedDBMessageFilter(thread_safe_sender()))->GetFilter());
 
@@ -814,10 +787,6 @@ void RenderThreadImpl::Init() {
     is_distance_field_text_enabled_ = false;
   }
 
-  // Note that under Linux, the media library will normally already have
-  // been initialized by the Zygote before this instance became a Renderer.
-  media::InitializeMediaLibrary();
-
   memory_pressure_listener_.reset(new base::MemoryPressureListener(
       base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
 
@@ -884,9 +853,6 @@ void RenderThreadImpl::Shutdown() {
     devtools_agent_message_filter_ = NULL;
   }
 
-  RemoveFilter(audio_input_message_filter_.get());
-  audio_input_message_filter_ = NULL;
-
 #if defined(ENABLE_WEBRTC)
   RTCPeerConnectionHandler::DestructAllHandlers();
   // |peer_connection_factory_| cannot be deleted until after the main message
@@ -895,9 +861,7 @@ void RenderThreadImpl::Shutdown() {
   // by the PC factory.  Once those tasks have been freed, the factory can be
   // deleted.
 #endif
-  RemoveFilter(vc_manager_->video_capture_message_filter());
-  vc_manager_.reset();
-
+ 
   RemoveFilter(db_message_filter_.get());
   db_message_filter_ = NULL;
 
@@ -917,13 +881,7 @@ void RenderThreadImpl::Shutdown() {
   }
 #endif
 
-  media_thread_.reset();
-
   compositor_thread_.reset();
-
-  // AudioMessageFilter may be accessed on |media_thread_|, so shutdown after.
-  RemoveFilter(audio_message_filter_.get());
-  audio_message_filter_ = NULL;
 
   raster_worker_pool_->Shutdown();
 
@@ -944,8 +902,6 @@ void RenderThreadImpl::Shutdown() {
   main_thread_indexed_db_dispatcher_.reset();
 
   main_thread_compositor_task_runner_ = NULL;
-
-  gpu_factories_.clear();
 
   // Context providers must be released prior to destroying the GPU channel.
   shared_worker_context_provider_ = nullptr;
@@ -1265,8 +1221,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   EnableBlinkPlatformLogChannels(
       command_line.GetSwitchValueASCII(switches::kBlinkPlatformLogChannels));
 
-  RenderMediaClient::Initialize();
-
   FOR_EACH_OBSERVER(RenderProcessObserver, observers_, WebKitInitialized());
 
   devtools_agent_message_filter_ = new DevToolsAgentFilter();
@@ -1436,72 +1390,6 @@ void RenderThreadImpl::PostponeIdleNotification() {
   idle_notifications_to_skip_ = 2;
 }
 
-media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
-  DCHECK(IsMainThread());
-
-  if (!gpu_factories_.empty()) {
-    scoped_refptr<ContextProviderCommandBuffer> shared_context_provider =
-        gpu_factories_.back()->ContextProviderMainThread();
-    if (shared_context_provider) {
-      cc::ContextProvider::ScopedContextLock lock(
-          shared_context_provider.get());
-      if (lock.ContextGL()->GetGraphicsResetStatusKHR() == GL_NO_ERROR) {
-        return gpu_factories_.back();
-      } else {
-        scoped_refptr<base::SingleThreadTaskRunner> media_task_runner =
-            GetMediaThreadTaskRunner();
-        media_task_runner->PostTask(
-            FROM_HERE,
-            base::Bind(
-                base::IgnoreResult(
-                    &RendererGpuVideoAcceleratorFactories::CheckContextLost),
-                base::Unretained(gpu_factories_.back())));
-      }
-    }
-  }
-
-  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
-
-#if defined(OS_ANDROID)
-  if (SynchronousCompositorFactory::GetInstance()) {
-    if (!cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
-      DLOG(WARNING) << "Accelerated video decoding is not explicitly disabled, "
-                       "but is not supported by in-process rendering";
-    }
-    return NULL;
-  }
-#endif
-
-  scoped_refptr<base::SingleThreadTaskRunner> media_task_runner =
-      GetMediaThreadTaskRunner();
-  scoped_refptr<ContextProviderCommandBuffer> shared_context_provider =
-      SharedWorkerContextProvider();
-  scoped_refptr<GpuChannelHost> gpu_channel_host = GetGpuChannel();
-  if (shared_context_provider && gpu_channel_host) {
-    const bool enable_video_accelerator =
-        !cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode);
-    const bool enable_gpu_memory_buffer_video_frames =
-#if defined(OS_MACOSX)
-        !cmd_line->HasSwitch(switches::kDisableGpuMemoryBufferVideoFrames);
-#else
-        cmd_line->HasSwitch(switches::kEnableGpuMemoryBufferVideoFrames);
-#endif
-    std::string image_texture_target_string =
-        cmd_line->GetSwitchValueASCII(switches::kVideoImageTextureTarget);
-    unsigned image_texture_target = 0;
-    const bool parsed_image_texture_target =
-        base::StringToUint(image_texture_target_string, &image_texture_target);
-    DCHECK(parsed_image_texture_target);
-    gpu_factories_.push_back(RendererGpuVideoAcceleratorFactories::Create(
-        gpu_channel_host.get(), base::ThreadTaskRunnerHandle::Get(),
-        media_task_runner, shared_context_provider,
-        enable_gpu_memory_buffer_video_frames, image_texture_target,
-        enable_video_accelerator));
-    return gpu_factories_.back();
-  }
-  return nullptr;
-}
-
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
 RenderThreadImpl::CreateOffscreenContext3d() {
   blink::WebGraphicsContext3D::Attributes attributes(GetOffscreenAttribs());
@@ -1532,28 +1420,6 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
       shared_main_thread_contexts_ = NULL;
   }
   return shared_main_thread_contexts_;
-}
-
-AudioRendererMixerManager* RenderThreadImpl::GetAudioRendererMixerManager() {
-  if (!audio_renderer_mixer_manager_) {
-    audio_renderer_mixer_manager_.reset(new AudioRendererMixerManager());
-  }
-
-  return audio_renderer_mixer_manager_.get();
-}
-
-media::AudioHardwareConfig* RenderThreadImpl::GetAudioHardwareConfig() {
-  if (!audio_hardware_config_) {
-    media::AudioParameters input_params;
-    media::AudioParameters output_params;
-    Send(new ViewHostMsg_GetAudioHardwareConfig(
-        &input_params, &output_params));
-
-    audio_hardware_config_.reset(new media::AudioHardwareConfig(
-        input_params, output_params));
-  }
-
-  return audio_hardware_config_.get();
 }
 
 base::WaitableEvent* RenderThreadImpl::GetShutdownEvent() {
@@ -1984,21 +1850,6 @@ RenderThreadImpl::GetFileThreadMessageLoopProxy() {
     file_thread_->Start();
   }
   return file_thread_->task_runner();
-}
-
-scoped_refptr<base::SingleThreadTaskRunner>
-RenderThreadImpl::GetMediaThreadTaskRunner() {
-  DCHECK(message_loop() == base::MessageLoop::current());
-  if (!media_thread_) {
-    media_thread_.reset(new base::Thread("Media"));
-    media_thread_->Start();
-
-#if defined(OS_ANDROID)
-    renderer_demuxer_ = new RendererDemuxerAndroid();
-    AddFilter(renderer_demuxer_.get());
-#endif
-  }
-  return media_thread_->task_runner();
 }
 
 base::TaskRunner* RenderThreadImpl::GetWorkerTaskRunner() {

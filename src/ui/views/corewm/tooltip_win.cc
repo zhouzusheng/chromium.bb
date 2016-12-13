@@ -40,10 +40,6 @@ TooltipWin::~TooltipWin() {
     DestroyWindow(tooltip_hwnd_);
 }
 
-HWND TooltipWin::GetParentHwnd() {
-  return parent_hwnd_;
-}
-
 void TooltipWin::SetTooltipStyle(HFONT font) {
   s_tooltipFont = font;
 }

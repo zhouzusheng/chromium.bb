@@ -46,7 +46,6 @@
 #include "content/common/frame_replication_state.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/input_messages.h"
-#include "content/common/pepper_messages.h"
 #include "content/common/site_isolation_policy.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
@@ -83,8 +82,6 @@
 #include "content/renderer/ime_event_guard.h"
 #include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/internal_document_state_data.h"
-#include "content/renderer/media/audio_device_factory.h"
-#include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/mhtml_generator.h"
 #include "content/renderer/navigation_state_impl.h"
 #include "content/renderer/net_info_helper.h"
@@ -93,19 +90,13 @@
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_mouse_lock_dispatcher.h"
-#include "content/renderer/render_widget_fullscreen_pepper.h"
 #include "content/renderer/renderer_webapplicationcachehost_impl.h"
 #include "content/renderer/resizing_mode_selector.h"
 #include "content/renderer/savable_resources.h"
-#include "content/renderer/speech_recognition_dispatcher.h"
 #include "content/renderer/text_input_client_observer.h"
 #include "content/renderer/web_ui_extension_data.h"
 #include "content/renderer/web_ui_mojo.h"
 #include "content/renderer/websharedworker_proxy.h"
-#include "media/audio/audio_output_device.h"
-#include "media/base/media_switches.h"
-#include "media/renderers/audio_renderer_impl.h"
-#include "media/renderers/gpu_video_accelerator_factories.h"
 #include "net/base/data_url.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
@@ -202,8 +193,6 @@
 
 #if defined(ENABLE_PLUGINS)
 #include "content/renderer/npapi/webplugin_delegate_proxy.h"
-#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
-#include "content/renderer/pepper/pepper_plugin_registry.h"
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -642,18 +631,12 @@ RenderViewImpl::RenderViewImpl(CompositorDependencies* compositor_deps,
       has_scrolled_focused_editable_node_into_rect_(false),
       main_render_frame_(nullptr),
       frame_widget_(nullptr),
-      speech_recognition_dispatcher_(NULL),
       mouse_lock_dispatcher_(NULL),
 #if defined(OS_ANDROID)
       expected_content_intent_id_(0),
 #endif
 #if defined(OS_WIN)
       focused_plugin_id_(-1),
-#endif
-#if defined(ENABLE_PLUGINS)
-      plugin_find_handler_(NULL),
-      focused_pepper_plugin_(NULL),
-      pepper_last_mouse_event_target_(NULL),
 #endif
       enumeration_completion_id_(0),
       session_storage_namespace_id_(params.session_storage_namespace_id) {
@@ -1170,40 +1153,6 @@ blink::WebView* RenderViewImpl::webview() const {
 }
 
 #if defined(ENABLE_PLUGINS)
-void RenderViewImpl::PepperInstanceCreated(
-    PepperPluginInstanceImpl* instance) {
-  active_pepper_instances_.insert(instance);
-
-  RenderFrameImpl* const render_frame = instance->render_frame();
-  render_frame->Send(
-      new FrameHostMsg_PepperInstanceCreated(render_frame->GetRoutingID()));
-}
-
-void RenderViewImpl::PepperInstanceDeleted(
-    PepperPluginInstanceImpl* instance) {
-  active_pepper_instances_.erase(instance);
-
-  if (pepper_last_mouse_event_target_ == instance)
-    pepper_last_mouse_event_target_ = NULL;
-  if (focused_pepper_plugin_ == instance)
-    PepperFocusChanged(instance, false);
-
-  RenderFrameImpl* const render_frame = instance->render_frame();
-  if (render_frame)
-    render_frame->Send(
-        new FrameHostMsg_PepperInstanceDeleted(render_frame->GetRoutingID()));
-}
-
-void RenderViewImpl::PepperFocusChanged(PepperPluginInstanceImpl* instance,
-                                        bool focused) {
-  if (focused)
-    focused_pepper_plugin_ = instance;
-  else if (focused_pepper_plugin_ == instance)
-    focused_pepper_plugin_ = NULL;
-
-  UpdateTextInputState(NO_SHOW_IME, FROM_NON_IME);
-  UpdateSelectionBounds();
-}
 
 void RenderViewImpl::RegisterPluginDelegate(WebPluginDelegateProxy* delegate) {
   plugin_delegates_.insert(delegate);
@@ -1343,7 +1292,6 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     // TODO(viettrungluu): Move to a separate message filter.
     IPC_MESSAGE_HANDLER(ViewMsg_SetHistoryOffsetAndLength,
                         OnSetHistoryOffsetAndLength)
-    IPC_MESSAGE_HANDLER(ViewMsg_EnableAltDragRubberbanding, OnEnableAltDragRubberbanding)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableViewSourceMode, OnEnableViewSourceMode)
     IPC_MESSAGE_HANDLER(ViewMsg_ReleaseDisambiguationPopupBitmap,
                         OnReleaseDisambiguationPopupBitmap)
@@ -1526,10 +1474,6 @@ void RenderViewImpl::OnForceRedraw(int id) {
         rwc->CreateLatencyInfoSwapPromiseMonitor(&latency_info).Pass();
   }
   ScheduleCompositeWithForcedRedraw();
-}
-
-void RenderViewImpl::OnEnableAltDragRubberbanding(bool enable) {
-  webview()->enableAltDragRubberbanding(enable);
 }
 
 // blink::WebViewClient ------------------------------------------------------
@@ -1977,14 +1921,6 @@ void RenderViewImpl::navigateBackForwardSoon(int offset) {
   Send(new ViewHostMsg_GoToEntryAtOffset(routing_id_, offset));
 }
 
-void RenderViewImpl::setRubberbandRect(const WebRect& rect) {
-  Send(new ViewHostMsg_SetRubberbandRect(routing_id_, rect));
-}
-
-void RenderViewImpl::hideRubberbandRect() {
-  Send(new ViewHostMsg_HideRubberbandRect(routing_id_));
-}
-
 int RenderViewImpl::historyBackListCount() {
   return history_list_offset_ < 0 ? 0 : history_list_offset_;
 }
@@ -2279,8 +2215,7 @@ blink::WebPlugin* RenderViewImpl::GetWebPluginForFind() {
     return webview()->mainFrame()->document().to<WebPluginDocument>().plugin();
 
 #if defined(ENABLE_PLUGINS)
-  if (plugin_find_handler_)
-    return plugin_find_handler_->container()->plugin();
+  
 #endif
 
   return NULL;
@@ -2845,14 +2780,7 @@ void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
 
 void RenderViewImpl::DidInitiatePaint() {
 #if defined(ENABLE_PLUGINS)
-  // Notify all instances that we painted.  The same caveats apply as for
-  // ViewFlushedPaint regarding instances closing themselves, so we take
-  // similar precautions.
-  PepperPluginSet plugins = active_pepper_instances_;
-  for (PepperPluginSet::iterator i = plugins.begin(); i != plugins.end(); ++i) {
-    if (active_pepper_instances_.find(*i) != active_pepper_instances_.end())
-      (*i)->ViewInitiatedPaint();
-  }
+  
 #endif
 }
 
@@ -3007,14 +2935,7 @@ bool RenderViewImpl::WillHandleMouseEvent(const blink::WebMouseEvent& event) {
       gfx::Point(event.globalX, event.globalY);
 
 #if defined(ENABLE_PLUGINS)
-  // This method is called for every mouse event that the render view receives.
-  // And then the mouse event is forwarded to WebKit, which dispatches it to the
-  // event target. Potentially a Pepper plugin will receive the event.
-  // In order to tell whether a plugin gets the last mouse event and which it
-  // is, we set |pepper_last_mouse_event_target_| to NULL here. If a plugin gets
-  // the event, it will notify us via DidReceiveMouseEvent() and set itself as
-  // |pepper_last_mouse_event_target_|.
-  pepper_last_mouse_event_target_ = NULL;
+  
 #endif
 
   // If the mouse is locked, only the current owner of the mouse lock can
@@ -3051,10 +2972,7 @@ void RenderViewImpl::OnWasHidden() {
     webview()->setVisibilityState(visibilityState(), false);
 
 #if defined(ENABLE_PLUGINS)
-  for (PepperPluginSet::iterator i = active_pepper_instances_.begin();
-       i != active_pepper_instances_.end(); ++i)
-    (*i)->PageVisibilityChanged(false);
-
+  
 #if defined(OS_MACOSX)
   // Inform NPAPI plugins that their container is no longer visible.
   std::set<WebPluginDelegateProxy*>::iterator plugin_it;
@@ -3079,10 +2997,7 @@ void RenderViewImpl::OnWasShown(bool needs_repainting,
     webview()->setVisibilityState(visibilityState(), false);
 
 #if defined(ENABLE_PLUGINS)
-  for (PepperPluginSet::iterator i = active_pepper_instances_.begin();
-       i != active_pepper_instances_.end(); ++i)
-    (*i)->PageVisibilityChanged(true);
-
+ 
 #if defined(OS_MACOSX)
   // Inform NPAPI plugins that their container is now visible.
   std::set<WebPluginDelegateProxy*>::iterator plugin_it;
@@ -3128,10 +3043,7 @@ void RenderViewImpl::SetFocus(bool enable) {
       (*plugin_it)->SetContentAreaFocus(enable);
     }
   }
-  // Notify all Pepper plugins.
-  for (PepperPluginSet::iterator i = active_pepper_instances_.begin();
-       i != active_pepper_instances_.end(); ++i)
-    (*i)->SetContentAreaFocus(enable);
+  
 #endif
   // Notify all BrowserPlugins of the RenderView's focus state.
   if (BrowserPluginManager::Get())
@@ -3144,12 +3056,7 @@ void RenderViewImpl::OnImeSetComposition(
     int selection_start,
     int selection_end) {
 #if defined(ENABLE_PLUGINS)
-  if (focused_pepper_plugin_) {
-    focused_pepper_plugin_->render_frame()->OnImeSetComposition(
-        text, underlines, selection_start, selection_end);
-    return;
-  }
-
+  
 #if defined(OS_WIN)
   // When a plugin has focus, we create platform-specific IME data used by
   // our IME emulator and send it directly to the focused plugin, i.e. we
@@ -3187,11 +3094,7 @@ void RenderViewImpl::OnImeConfirmComposition(
     const gfx::Range& replacement_range,
     bool keep_selection) {
 #if defined(ENABLE_PLUGINS)
-  if (focused_pepper_plugin_) {
-    focused_pepper_plugin_->render_frame()->OnImeConfirmComposition(
-        text, replacement_range, keep_selection);
-    return;
-  }
+  
 #if defined(OS_WIN)
   // Same as OnImeSetComposition(), we send the text from IMEs directly to
   // plugins. When we send IME text directly to plugins, we should not send
@@ -3251,24 +3154,14 @@ void RenderViewImpl::ResetDeviceColorProfileForTesting() {
 
 ui::TextInputType RenderViewImpl::GetTextInputType() {
 #if defined(ENABLE_PLUGINS)
-  if (focused_pepper_plugin_)
-    return focused_pepper_plugin_->text_input_type();
+
 #endif
   return RenderWidget::GetTextInputType();
 }
 
 void RenderViewImpl::GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) {
 #if defined(ENABLE_PLUGINS)
-  if (focused_pepper_plugin_) {
-    // TODO(kinaba) http://crbug.com/101101
-    // Current Pepper IME API does not handle selection bounds. So we simply
-    // use the caret position as an empty range for now. It will be updated
-    // after Pepper API equips features related to surrounding text retrieval.
-    gfx::Rect caret = focused_pepper_plugin_->GetCaretBounds();
-    *start = caret;
-    *end = caret;
-    return;
-  }
+  
 #endif
   RenderWidget::GetSelectionBounds(start, end);
 }
@@ -3284,9 +3177,7 @@ void RenderViewImpl::GetCompositionCharacterBounds(
   bounds->clear();
 
 #if defined(ENABLE_PLUGINS)
-  if (focused_pepper_plugin_) {
-    return;
-  }
+ 
 #endif
 
   if (!webview())
@@ -3316,17 +3207,14 @@ void RenderViewImpl::GetCompositionCharacterBounds(
 
 void RenderViewImpl::GetCompositionRange(gfx::Range* range) {
 #if defined(ENABLE_PLUGINS)
-  if (focused_pepper_plugin_) {
-    return;
-  }
+  
 #endif
   RenderWidget::GetCompositionRange(range);
 }
 
 bool RenderViewImpl::CanComposeInline() {
 #if defined(ENABLE_PLUGINS)
-  if (focused_pepper_plugin_)
-    return focused_pepper_plugin_->IsPluginAcceptingCompositionEvents();
+  
 #endif
   return true;
 }
@@ -3378,9 +3266,7 @@ bool RenderViewImpl::ScheduleFileChooser(
 }
 
 blink::WebSpeechRecognizer* RenderViewImpl::speechRecognizer() {
-  if (!speech_recognition_dispatcher_)
-    speech_recognition_dispatcher_ = new SpeechRecognitionDispatcher(this);
-  return speech_recognition_dispatcher_;
+	return nullptr;
 }
 
 void RenderViewImpl::zoomLimitsChanged(double minimum_level,

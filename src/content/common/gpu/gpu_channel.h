@@ -53,7 +53,6 @@ namespace content {
 class GpuChannelManager;
 class GpuChannelMessageFilter;
 class GpuChannelMessageQueue;
-class GpuJpegDecodeAccelerator;
 class GpuWatchdog;
 
 // Encapsulates an IPC channel between the GPU process and one renderer
@@ -227,8 +226,7 @@ class CONTENT_EXPORT GpuChannel
       int32 route_id,
       bool* succeeded);
   void OnDestroyCommandBuffer(int32 route_id);
-  void OnCreateJpegDecoder(int32 route_id, IPC::Message* reply_msg);
-
+ 
   // The lifetime of objects of this class is managed by a GpuChannelManager.
   // The GpuChannelManager destroy all the GpuChannels that they own when they
   // are destroyed. So a raw pointer is safe.
@@ -275,8 +273,6 @@ class CONTENT_EXPORT GpuChannel
   scoped_refptr<gpu::gles2::SubscriptionRefSet> subscription_ref_set_;
 
   scoped_refptr<gpu::ValueStateMap> pending_valuebuffer_state_;
-
-  scoped_ptr<GpuJpegDecodeAccelerator> jpeg_decoder_;
 
   gpu::gles2::DisallowedFeatures disallowed_features_;
   GpuWatchdog* watchdog_;

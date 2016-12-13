@@ -130,8 +130,7 @@ Widget::InitParams::InitParams()
       layer_type(ui::LAYER_TEXTURED),
       context(NULL),
       force_show_in_taskbar(false),
-      force_software_compositing(false),
-      reroute_mouse_wheel_to_any_related_window(false) {
+      force_software_compositing(false) {
 }
 
 Widget::InitParams::InitParams(Type type)
@@ -155,8 +154,7 @@ Widget::InitParams::InitParams(Type type)
       layer_type(ui::LAYER_TEXTURED),
       context(NULL),
       force_show_in_taskbar(false),
-      force_software_compositing(false),
-      reroute_mouse_wheel_to_any_related_window(false) {
+      force_software_compositing(false) {
 }
 
 Widget::InitParams::~InitParams() {
@@ -937,10 +935,6 @@ void Widget::DebugToggleFrameType() {
 
 void Widget::FrameTypeChanged() {
   native_widget_->FrameTypeChanged();
-}
-
-void Widget::CompositionChanged() {
-  native_widget_->CompositionChanged();
 }
 
 const ui::Compositor* Widget::GetCompositor() const {

@@ -7,7 +7,6 @@
 #include "base/files/file_path.h"
 #include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/common/sandbox_type.h"
-#include "media/base/cdm_factory.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
@@ -114,9 +113,6 @@ bool ContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
   return false;
 }
 
-scoped_ptr<media::CdmFactory> ContentBrowserClient::CreateCdmFactory() {
-  return nullptr;
-}
 
 bool ContentBrowserClient::ShouldSwapProcessesForRedirect(
     ResourceContext* resource_context, const GURL& current_url,
@@ -264,10 +260,6 @@ void ContentBrowserClient::GetStoragePartitionConfigForSite(
   *in_memory = false;
 }
 
-MediaObserver* ContentBrowserClient::GetMediaObserver() {
-  return nullptr;
-}
-
 PlatformNotificationService*
 ContentBrowserClient::GetPlatformNotificationService() {
   return nullptr;
@@ -324,19 +316,6 @@ std::string ContentBrowserClient::GetDefaultDownloadName() {
 
 base::FilePath ContentBrowserClient::GetShaderDiskCacheDirectory() {
   return base::FilePath();
-}
-
-BrowserPpapiHost*
-    ContentBrowserClient::GetExternalBrowserPpapiHost(int plugin_process_id) {
-  return nullptr;
-}
-
-bool ContentBrowserClient::AllowPepperSocketAPI(
-    BrowserContext* browser_context,
-    const GURL& url,
-    bool private_api,
-    const SocketPermissionRequest* params) {
-  return false;
 }
 
 ui::SelectFilePolicy* ContentBrowserClient::CreateSelectFilePolicy(
@@ -396,7 +375,7 @@ const wchar_t* ContentBrowserClient::GetResourceDllName() {
   return nullptr;
 }
 
-bool ContentBrowserClient::PreSpawnRenderer(sandbox::TargetPolicy* policy) {
+bool ContentBrowserClient::PreSpawnRenderer() {
   return true;
 }
 

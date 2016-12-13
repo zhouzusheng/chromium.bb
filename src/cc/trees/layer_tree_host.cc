@@ -107,7 +107,7 @@ LayerTreeHost::LayerTreeHost(InitParams* params)
       has_gpu_rasterization_trigger_(false),
       content_is_suitable_for_gpu_rasterization_(true),
       gpu_rasterization_histogram_recorded_(false),
-      background_color_(SK_ColorBLACK),
+      background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
       did_complete_scale_animation_(false),
       in_paint_layer_contents_(false),

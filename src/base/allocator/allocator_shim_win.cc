@@ -56,8 +56,9 @@ bool win_heap_init() {
 void* win_heap_malloc(size_t size) {
   if (size < kMaxWindowsAllocation) {
     void* ptr = HeapAlloc(_crtheap, 0, size);
-    if (ptr)
-        ::InterlockedAdd64(&allocator_shim_counter, size);
+	if (ptr) {
+		::InterlockedAdd64(&allocator_shim_counter, size);
+	}
     return ptr;
   }
   return NULL;

@@ -217,7 +217,7 @@
       'dependencies': [
         'base',
         'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+        '../minikit/minikit.gyp:minikit_generate_sources',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
       ],

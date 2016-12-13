@@ -57,8 +57,8 @@
         '../gin/gin.gyp:gin',
         '../gpu/gpu.gyp:gpu',
         '../ipc/ipc.gyp:ipc',
-        '../media/blink/media_blink.gyp:media_blink',
-        '../media/media.gyp:media',
+#        '../media/blink/media_blink.gyp:media_blink',
+#        '../media/media.gyp:media',
         '../net/net.gyp:net',
         '../net/net.gyp:net_resources',
         '../skia/skia.gyp:skia',
@@ -510,7 +510,7 @@
         }],  # OS=="win"
         ['OS == "win"', {
           'dependencies': [
-            '../sandbox/sandbox.gyp:sandbox',
+           
           ],
         }],  # OS=="win"
         ['OS=="win" and asan==0', {

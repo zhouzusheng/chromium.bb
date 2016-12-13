@@ -570,7 +570,6 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
     bool midWordBreak = false;
     bool breakAll = m_currentStyle->wordBreak() == BreakAllWordBreak && m_autoWrap;
     bool keepAll = m_currentStyle->wordBreak() == KeepAllWordBreak && m_autoWrap;
-    bool keepAllIfKorean = m_currentStyle->wordBreak() == KeepAllIfKoreanWordBreak && m_autoWrap;
     bool prohibitBreakInside = m_currentStyle->hasTextCombine() && layoutText.isCombineText() && LineLayoutTextCombine(layoutText).isCombined();
 
     // This is currently only used for word-break: break-all, specifically for the case
@@ -585,18 +584,6 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
         breakWords = false;
         breakAll = false;
         keepAll = false;
-        keepAllIfKorean = false;
-    }
-
-    LineBreakType lineBreakType;
-    if (breakAll) {
-        lineBreakType = LineBreakType::BreakAll;
-    } else if (keepAll) {
-        lineBreakType = LineBreakType::KeepAll;
-    } else if (keepAllIfKorean) {
-        lineBreakType = LineBreakType::KeepAllIfKorean;
-    } else {
-        lineBreakType = LineBreakType::Normal;
     }
 
     if (layoutText.isWordBreak()) {
@@ -645,7 +632,7 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
         }
 
         int nextBreakablePosition = m_current.nextBreakablePosition();
-        bool betweenWords = c == newlineCharacter || (m_currWS != PRE && !m_atStart && m_layoutTextInfo.m_lineBreakIterator.isBreakable(m_current.offset(), nextBreakablePosition, lineBreakType));
+        bool betweenWords = c == newlineCharacter || (m_currWS != PRE && !m_atStart && m_layoutTextInfo.m_lineBreakIterator.isBreakable(m_current.offset(), nextBreakablePosition, breakAll ? LineBreakType::BreakAll : keepAll ? LineBreakType::KeepAll : LineBreakType::Normal));
         m_current.setNextBreakablePosition(nextBreakablePosition);
 
         if (betweenWords || midWordBreak) {

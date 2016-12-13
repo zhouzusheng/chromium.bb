@@ -346,10 +346,6 @@ class WebContents : public PageNavigator,
   virtual void DecrementCapturerCount() = 0;
   virtual int GetCapturerCount() const = 0;
 
-  // Indicates/Sets whether all audio output from this WebContents is muted.
-  virtual bool IsAudioMuted() const = 0;
-  virtual void SetAudioMuted(bool mute) = 0;
-
   // Indicates whether this tab should be considered crashed. The setter will
   // also notify the delegate when the flag is changed.
   virtual bool IsCrashed() const  = 0;
@@ -652,9 +648,6 @@ class WebContents : public PageNavigator,
 
   // Requests the renderer to insert CSS into the main frame's document.
   virtual void InsertCSS(const std::string& css) = 0;
-
-  // Returns true if audio has recently been audible from the WebContents.
-  virtual bool WasRecentlyAudible() = 0;
 
   typedef base::Callback<void(const Manifest&)> GetManifestCallback;
 

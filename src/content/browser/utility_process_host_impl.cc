@@ -33,10 +33,6 @@
 #include "ipc/ipc_switches.h"
 #include "ui/base/ui_base_switches.h"
 
-#if defined(OS_WIN)
-#include "sandbox/win/src/sandbox_policy.h"
-#include "sandbox/win/src/sandbox_types.h"
-#endif
 
 namespace content {
 
@@ -64,22 +60,10 @@ class UtilitySandboxedProcessLauncherDelegate
 #if defined(OS_WIN)
   bool ShouldLaunchElevated() override { return launch_elevated_; }
 
-  bool PreSpawnTarget(sandbox::TargetPolicy* policy) override {
+  bool PreSpawnTarget() override {
     if (exposed_dir_.empty())
       return true;
-
-    sandbox::ResultCode result;
-    result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                             sandbox::TargetPolicy::FILES_ALLOW_ANY,
-                             exposed_dir_.value().c_str());
-    if (result != sandbox::SBOX_ALL_OK)
-      return false;
-
-    base::FilePath exposed_files = exposed_dir_.AppendASCII("*");
-    result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                             sandbox::TargetPolicy::FILES_ALLOW_ANY,
-                             exposed_files.value().c_str());
-    return result == sandbox::SBOX_ALL_OK;
+	return true;
   }
 
 #elif defined(OS_POSIX)

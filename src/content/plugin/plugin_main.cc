@@ -23,7 +23,6 @@
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
 #include "content/public/common/injection_test_win.h"
-#include "sandbox/win/src/sandbox.h"
 #elif defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/posix/global_descriptors.h"
 #include "ipc/ipc_descriptors.h"

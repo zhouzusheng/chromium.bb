@@ -28,25 +28,6 @@
         'content_resources.gypi',
       ],
     }],
-    ['OS == "win"', {
-      'targets': [
-        {
-          # GN: //content:sandbox_helper_win
-          'target_name': 'sandbox_helper_win',
-          'type': 'static_library',
-          'include_dirs': [
-            '..',
-          ],
-          'dependencies': [
-            '../sandbox/sandbox.gyp:sandbox',
-          ],
-          'sources': [
-            'app/sandbox_helper_win.cc',
-            'public/app/sandbox_helper_win.h',
-          ],
-        }
-      ],
-    }],
     # In component mode, we build all of content as a single DLL.
     # However, in the static mode, we need to build content as multiple
     # targets in order to prevent dependencies from getting introduced
@@ -75,7 +56,7 @@
                 'content_child',
                 'content_gpu',
                 'content_plugin',
-                'content_ppapi_plugin',
+#                'content_ppapi_plugin',
                 'content_renderer',
                 'content_utility',
               ],
@@ -239,17 +220,6 @@
               ],
             },
             {
-              # GN version: //content/ppapi_plugin
-              'target_name': 'content_ppapi_plugin',
-              'type': 'static_library',
-              'variables': { 'enable_wexit_time_destructors': 1, },
-              'includes': [
-                'content_ppapi_plugin.gypi',
-              ],
-              # Disable c4267 warnings until we fix size_t to int truncations.
-              'msvs_disabled_warnings': [ 4267, ],
-            },
-            {
               # GN version: //content/renderer and //content/public/renderer
               'target_name': 'content_renderer',
               'type': 'static_library',
@@ -315,7 +285,7 @@
             'content_common.gypi',
             'content_gpu.gypi',
             'content_plugin.gypi',
-            'content_ppapi_plugin.gypi',
+#			'content_ppapi_plugin.gypi',
             'content_renderer.gypi',
             'content_utility.gypi',
           ],
@@ -381,14 +351,6 @@
           'target_name': 'content_plugin',
           'type': 'none',
           'dependencies': ['content'],
-        },
-        {
-          # GN version: //content/ppapi_plugin
-          'target_name': 'content_ppapi_plugin',
-          'type': 'none',
-          'dependencies': ['content'],
-          # Disable c4267 warnings until we fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4267, ],
         },
         {
           # GN version: //content/renderer and //content/public/renderer

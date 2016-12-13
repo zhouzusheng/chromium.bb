@@ -20,7 +20,7 @@
         ['OS!="ios"', {
           # iOS doesn't use and must not depend on //media
           'dependencies': [
-            '../../media/media.gyp:media',
+#            '../../media/media.gyp:media',
           ],
         }],
       ],

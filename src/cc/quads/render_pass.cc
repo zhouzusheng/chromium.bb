@@ -20,11 +20,9 @@
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/shared_quad_state.h"
 #include "cc/quads/solid_color_draw_quad.h"
-#include "cc/quads/stream_video_draw_quad.h"
 #include "cc/quads/surface_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
-#include "cc/quads/yuv_video_draw_quad.h"
 
 namespace {
 const size_t kDefaultNumSharedQuadStatesToReserve = 32;
@@ -243,14 +241,8 @@ DrawQuad* RenderPass::CopyFromAndAppendDrawQuad(
     case DrawQuad::TILED_CONTENT:
       CopyFromAndAppendTypedDrawQuad<TileDrawQuad>(quad);
       break;
-    case DrawQuad::STREAM_VIDEO_CONTENT:
-      CopyFromAndAppendTypedDrawQuad<StreamVideoDrawQuad>(quad);
-      break;
     case DrawQuad::SURFACE_CONTENT:
       CopyFromAndAppendTypedDrawQuad<SurfaceDrawQuad>(quad);
-      break;
-    case DrawQuad::YUV_VIDEO_CONTENT:
-      CopyFromAndAppendTypedDrawQuad<YUVVideoDrawQuad>(quad);
       break;
     // RenderPass quads need to use specific CopyFrom function.
     case DrawQuad::RENDER_PASS:

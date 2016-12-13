@@ -211,16 +211,6 @@ public:
     void scrollTo(double x, double y);
     virtual void scrollTo(const ScrollToOptions&);
 
-#define BB_HAS_ELEMENT_EXTENSIONS
-    // Bloomberg-specific extensions
-    void bbRequestSpellCheck();
-    virtual int bbScrollLeftNoZoomAdjust();
-    virtual int bbScrollTopNoZoomAdjust();
-    virtual void setBbScrollLeftNoZoomAdjust(int);
-    virtual void setBbScrollTopNoZoomAdjust(int);
-    virtual int bbScrollWidthNoZoomAdjust();
-    virtual int bbScrollHeightNoZoomAdjust();
-
     IntRect boundsInViewportSpace();
 
     ClientRectList* getClientRects();

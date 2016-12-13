@@ -974,22 +974,20 @@ void WebPluginContainerImpl::computeClipRectsForPlugin(
     LayoutRect unclippedAbsoluteRect(frameRectInOwnerElementSpace);
     box->mapRectToPaintInvalidationBacking(rootView, unclippedAbsoluteRect, nullptr);
 
+    // The frameRect is already in absolute space of the local frame to the plugin.
+    windowRect = frameRect();
     // Map up to the root frame.
     windowRect = enclosingIntRect(m_element->document().view()->layoutView()->localToAbsoluteQuad(FloatQuad(FloatRect(frameRect())), TraverseDocumentBoundaries).boundingBox());
+    // Finally, adjust for scrolling of the root frame, which the above does not take into account.
+    windowRect.moveBy(roundedIntPoint(-rootView->viewRect().location()));
 
     clippedLocalRect = enclosingIntRect(unclippedAbsoluteRect);
     unclippedIntLocalRect = clippedLocalRect;
+    clippedLocalRect.intersect(rootView->frameView()->visibleContentRect());
 
-    // Intersect with the visible rect, which will provide us with a clipped rect
-    clippedLocalRect.intersect(enclosingIntRect(rootView->frameView()->visibleContentRect()));
-
-    // Although the clip rect is in absolute space, its origin is the top-left
-    // of the frame rect
-    clippedLocalRect.moveBy(-windowRect.location());
-    unclippedIntLocalRect.moveBy(-windowRect.location());
-
-    // Finally, adjust for scrolling of the root frame, which the above does not take into account.
-    windowRect.moveBy(roundedIntPoint(-rootView->viewRect().location()));
+    // TODO(chrishtr): intentionally ignore transform, because the positioning of frameRect() does also. This is probably wrong.
+    unclippedIntLocalRect = box->absoluteToLocalQuad(FloatRect(unclippedIntLocalRect), TraverseDocumentBoundaries).enclosingBoundingBox();
+    clippedLocalRect = box->absoluteToLocalQuad(FloatRect(clippedLocalRect), TraverseDocumentBoundaries).enclosingBoundingBox();
 }
 
 void WebPluginContainerImpl::calculateGeometry(IntRect& windowRect, IntRect& clipRect, IntRect& unobscuredRect, Vector<IntRect>& cutOutRects)

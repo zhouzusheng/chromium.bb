@@ -121,7 +121,6 @@ public:
     unsigned overflowWrap : 1; // EOverflowWrap
     unsigned lineBreak : 3; // LineBreak
     unsigned userSelect : 2; // EUserSelect
-    unsigned rubberbandable : 2;  // ERubberbandable
     unsigned speak : 3; // ESpeak
     unsigned hyphens : 2; // Hyphens
     unsigned textEmphasisFill : 1; // TextEmphasisFill
@@ -157,8 +156,6 @@ public:
     RefPtr<QuotesData> quotes;
 
     Color tapHighlightColor;
-
-    StyleColor caretColor;
 
     RefPtr<AppliedTextDecorationList> appliedTextDecorations;
     TabSize m_tabSize;

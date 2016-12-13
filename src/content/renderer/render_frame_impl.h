@@ -26,8 +26,6 @@
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "ipc/ipc_message.h"
-#include "media/blink/webmediaplayer_delegate.h"
-#include "media/blink/webmediaplayer_params.h"
 #include "mojo/application/public/interfaces/service_provider.mojom.h"
 #include "mojo/application/public/interfaces/shell.mojom.h"
 #include "third_party/WebKit/public/platform/modules/app_banner/WebAppBannerClient.h"
@@ -40,10 +38,6 @@
 #include "third_party/WebKit/public/web/WebPageSerializerClient.h"
 #include "third_party/WebKit/public/web/WebScriptExecutionCallback.h"
 #include "ui/gfx/range/range.h"
-
-#if defined(ENABLE_PLUGINS)
-#include "content/renderer/pepper/plugin_power_saver_helper.h"
-#endif
 
 #if defined(OS_ANDROID)
 #include "content/renderer/media/android/renderer_media_player_manager.h"
@@ -80,13 +74,6 @@ class Range;
 class Rect;
 }
 
-namespace media {
-class CdmFactory;
-class MediaPermission;
-class RendererWebMediaPlayerDelegate;
-class WebEncryptedMediaClientImpl;
-}
-
 namespace mojo {
 class ServiceProvider;
 }
@@ -104,27 +91,17 @@ class DocumentState;
 class ExternalPopupMenu;
 class GeolocationDispatcher;
 class ManifestManager;
-class MediaStreamDispatcher;
-class MediaStreamRendererFactory;
-class MediaPermissionDispatcherImpl;
-class MidiDispatcher;
 class NavigationState;
 class NotificationPermissionDispatcher;
 class PageState;
-class PepperPluginInstanceImpl;
 class PermissionDispatcher;
 class PresentationDispatcher;
 class PushMessagingDispatcher;
 class RendererAccessibility;
-class RendererCdmManager;
-class RendererMediaPlayerManager;
-class RendererPpapiHost;
 class RenderFrameObserver;
 class RenderViewImpl;
 class RenderWidget;
-class RenderWidgetFullscreenPepper;
 class ScreenOrientationDispatcher;
-class UserMediaClientImpl;
 class WakeLockDispatcher;
 struct CommonNavigationParams;
 struct CustomContextMenuContext;
@@ -291,34 +268,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void FocusedNodeChangedForAccessibility(const blink::WebNode& node);
 
 #if defined(ENABLE_PLUGINS)
-  // Notification that a PPAPI plugin has been created.
-  void PepperPluginCreated(RendererPpapiHost* host);
-
-  // Notifies that |instance| has changed the cursor.
-  // This will update the cursor appearance if it is currently over the plugin
-  // instance.
-  void PepperDidChangeCursor(PepperPluginInstanceImpl* instance,
-                             const blink::WebCursorInfo& cursor);
-
-  // Notifies that |instance| has received a mouse event.
-  void PepperDidReceiveMouseEvent(PepperPluginInstanceImpl* instance);
-
-  // Informs the render view that a PPAPI plugin has changed text input status.
-  void PepperTextInputTypeChanged(PepperPluginInstanceImpl* instance);
-  void PepperCaretPositionChanged(PepperPluginInstanceImpl* instance);
-
-  // Cancels current composition.
-  void PepperCancelComposition(PepperPluginInstanceImpl* instance);
-
-  // Informs the render view that a PPAPI plugin has changed selection.
-  void PepperSelectionChanged(PepperPluginInstanceImpl* instance);
-
-  // Creates a fullscreen container for a pepper plugin instance.
-  RenderWidgetFullscreenPepper* CreatePepperFullscreenContainer(
-      PepperPluginInstanceImpl* plugin);
-
-  bool IsPepperAcceptingCompositionEvents() const;
-
+  
   // Notification that the given plugin has crashed.
   void PluginCrashed(const base::FilePath& plugin_path,
                      base::ProcessId plugin_pid);
@@ -343,10 +293,6 @@ class CONTENT_EXPORT RenderFrameImpl
                                const gfx::Range& replacement_range,
                                bool keep_selection);
 #endif  // defined(ENABLE_PLUGINS)
-
-  // May return NULL in some cases, especially if userMediaClient() returns
-  // NULL.
-  MediaStreamDispatcher* GetMediaStreamDispatcher();
 
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
   void DidHideExternalPopupMenu();
@@ -628,12 +574,6 @@ class CONTENT_EXPORT RenderFrameImpl
   void SetPendingNavigationParams(
       scoped_ptr<NavigationParams> navigation_params);
 
-  // Expose MediaPermission to the non-UI threads. Any calls to this will be
-  // redirected to |media_permission_dispatcher_| on UI thread and have the
-  // callback called on |caller_task_runner|.
-  scoped_ptr<media::MediaPermission> CreateMediaPermissionProxy(
-      scoped_refptr<base::SingleThreadTaskRunner> caller_task_runner);
-
  protected:
   explicit RenderFrameImpl(const CreateParams& params);
 
@@ -841,9 +781,6 @@ class CONTENT_EXPORT RenderFrameImpl
       const blink::WebString& sink_id,
       const blink::WebSecurityOrigin& security_origin);
 
-  // Creates a factory object used for creating audio and video renderers.
-  scoped_ptr<MediaStreamRendererFactory> CreateRendererFactory();
-
   // Does preparation for the navigation to |url|.
   void PrepareRenderViewForNavigation(
       const GURL& url,
@@ -898,8 +835,6 @@ class CONTENT_EXPORT RenderFrameImpl
 
   bool AreSecureCodecsSupported();
 
-  media::MediaPermission* GetMediaPermission();
-
 #if defined(ENABLE_MOJO_MEDIA)
   media::interfaces::ServiceFactory* GetMediaServiceFactory();
 
@@ -907,17 +842,11 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnMediaServiceFactoryConnectionError();
 #endif
 
-  media::CdmFactory* GetCdmFactory();
-
   void RegisterMojoServices();
 
   // Connects to a Mojo application and returns a proxy to its exposed
   // ServiceProvider.
   mojo::ServiceProviderPtr ConnectToApplication(const GURL& url);
-
-  // Returns the media delegate for WebMediaPlayer usage.  If
-  // |media_player_delegate_| is NULL, one is created.
-  media::RendererWebMediaPlayerDelegate* GetWebMediaPlayerDelegate();
 
   // Stores the WebLocalFrame we are associated with.  This is null from the
   // constructor until SetWebFrame is called, and it is null after
@@ -961,11 +890,6 @@ class CONTENT_EXPORT RenderFrameImpl
   blink::WebHistoryItem current_history_item_;
 
 #if defined(ENABLE_PLUGINS)
-  // Current text input composition text. Empty if no composition is in
-  // progress.
-  base::string16 pepper_composition_text_;
-
-  PluginPowerSaverHelper* plugin_power_saver_helper_;
 #endif
 
   RendererWebCookieJarImpl cookie_jar_;
@@ -1013,23 +937,12 @@ class CONTENT_EXPORT RenderFrameImpl
   // Dispatches permission requests for Web Notifications.
   NotificationPermissionDispatcher* notification_permission_dispatcher_;
 
-  // Destroyed via the RenderFrameObserver::OnDestruct() mechanism.
-  UserMediaClientImpl* web_user_media_client_;
-
-  // EncryptedMediaClient attached to this frame; lazily initialized.
-  scoped_ptr<media::WebEncryptedMediaClientImpl> web_encrypted_media_client_;
-
-  // The media permission dispatcher attached to this frame, lazily initialized.
-  MediaPermissionDispatcherImpl* media_permission_dispatcher_;
-
 #if defined(ENABLE_MOJO_MEDIA)
   // The media factory attached to this frame, lazily initialized.
   media::interfaces::ServiceFactoryPtr media_service_factory_;
 #endif
 
-  // MidiClient attached to this frame; lazily initialized.
-  MidiDispatcher* midi_dispatcher_;
-
+  
 #if defined(OS_ANDROID)
   // Manages all media players in this render frame for communicating with the
   // real media player in the browser process. It's okay to use a raw pointer
@@ -1044,9 +957,7 @@ class CONTENT_EXPORT RenderFrameImpl
   RendererCdmManager* cdm_manager_;
 #endif
 
-  // The CDM factory attached to this frame, lazily initialized.
-  scoped_ptr<media::CdmFactory> cdm_factory_;
-
+  
 #if defined(VIDEO_HOLE)
   // Whether or not this RenderFrameImpl contains a media player. Used to
   // register as an observer for video-hole-specific events.
@@ -1092,14 +1003,6 @@ class CONTENT_EXPORT RenderFrameImpl
   scoped_ptr<PermissionDispatcher> permission_client_;
 
   scoped_ptr<blink::WebAppBannerClient> app_banner_client_;
-
-  scoped_ptr<blink::WebBluetooth> bluetooth_;
-
-  scoped_ptr<blink::WebUSBClient> usb_client_;
-
-  // Manages play, pause notifications for WebMediaPlayer implementations; its
-  // lifetime is tied to the RenderFrame via the RenderFrameObserver interface.
-  media::RendererWebMediaPlayerDelegate* media_player_delegate_;
 
   // Whether or not this RenderFrame is using Lo-Fi mode.
   bool is_using_lofi_;

@@ -47,7 +47,6 @@
 #include "core/editing/markers/DocumentMarkerController.h"
 #include "core/editing/serializers/HTMLInterchange.h"
 #include "core/editing/serializers/Serialization.h"
-#include "core/events/CustomEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/UIEventWithKeyState.h"
 #include "core/events/WheelEvent.h"
@@ -429,8 +428,6 @@ WebViewImpl::WebViewImpl(WebViewClient* client)
     , m_operationsAllowed(WebDragOperationNone)
     , m_dragOperation(WebDragOperationNone)
     , m_devToolsEmulator(nullptr)
-    , m_isAltDragRubberbandingEnabled(false)
-    , m_rubberbandingForcedOn(false)
     , m_isTransparent(false)
     , m_tabsToLinks(false)
     , m_layerTreeView(nullptr)
@@ -2066,9 +2063,6 @@ bool WebViewImpl::handleInputEvent(const WebInputEvent& inputEvent)
     page()->frameHost().visualViewport().startTrackingPinchStats();
 
     TRACE_EVENT1("input", "WebViewImpl::handleInputEvent", "type", inputTypeToName(inputEvent.type));
-    if ((m_rubberbandingForcedOn || m_isAltDragRubberbandingEnabled) && handleAltDragRubberbandEvent(inputEvent))
-        return true;
-
     // If we've started a drag and drop operation, ignore input events until
     // we're done.
     if (m_doingDragAndDrop)
@@ -2187,9 +2181,6 @@ void WebViewImpl::mouseCaptureLost()
 {
     TRACE_EVENT_ASYNC_END0("input", "capturing mouse", this);
     m_mouseCaptureNode = nullptr;
-    if ((m_rubberbandingForcedOn || m_isAltDragRubberbandingEnabled) && isRubberbanding()) {
-        abortRubberbanding();
-    }
 }
 
 void WebViewImpl::setFocus(bool enable)
@@ -2719,21 +2710,6 @@ void WebViewImpl::didLosePointerLock()
     m_pointerLockGestureToken.clear();
     if (page())
         page()->pointerLockController().didLosePointerLock();
-}
-
-void WebViewImpl::didChangeWindowRect()
-{
-    if (!mainFrameImpl()
-        || !mainFrameImpl()->frame()
-        || !mainFrameImpl()->frame()->document()) {
-        return;
-    }
-
-    CustomEventInit eventInit;
-    eventInit.setBubbles(false);
-    eventInit.setCancelable(false);
-    RefPtr<CustomEvent> event = CustomEvent::create("bbWindowRectChanged", eventInit);
-    mainFrameImpl()->frame()->domWindow()->dispatchEvent(event);
 }
 
 void WebViewImpl::didChangeWindowResizerRect()
@@ -3858,13 +3834,6 @@ void WebViewImpl::setBaseBackgroundColor(WebColor color)
         m_page->deprecatedLocalMainFrame()->view()->setBaseBackgroundColor(color);
 
     updateLayerTreeBackgroundColor();
-}
-
-void WebViewImpl::setLCDTextShouldBlendWithCSSBackgroundColor(bool lcdTextShouldBlendWithCSSBackgroundColor)
-{
-    if (compositor()) {
-        compositor()->setLCDTextShouldBlendWithCSSBackgroundColor(lcdTextShouldBlendWithCSSBackgroundColor);
-    }
 }
 
 void WebViewImpl::setIsActive(bool active)

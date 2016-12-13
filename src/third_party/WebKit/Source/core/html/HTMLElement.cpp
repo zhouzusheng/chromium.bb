@@ -43,10 +43,8 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/serializers/Serialization.h"
-#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/EventListener.h"
 #include "core/events/KeyboardEvent.h"
-#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLBRElement.h"
@@ -367,17 +365,6 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
     if (name == dirAttr) {
         dirAttributeChanged(value);
     } else {
-        if (name == contenteditableAttr) {
-            if (value.isNull() || equalIgnoringCase(value, "false")) {
-                if (document().frame()) {
-                    VisiblePosition startPos = createVisiblePosition(firstPositionInNode(this));
-                    VisiblePosition endPos = createVisiblePosition(lastPositionInNode(this));
-                    EphemeralRange range(startPos.deepEquivalent(), endPos.deepEquivalent());
-                    document().frame()->spellChecker().clearMisspellingsAndBadGrammar(VisibleSelection(range));
-                }
-            }
-        }
-
         const AtomicString& eventName = eventNameForAttributeName(name);
         if (!eventName.isNull())
             setAttributeEventListener(eventName, createAttributeEventListener(this, name, value, eventParameterName()));

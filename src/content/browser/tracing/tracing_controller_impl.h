@@ -127,9 +127,6 @@ class TracingControllerImpl
       const scoped_refptr<base::RefCountedString>& events_str_ptr);
 #endif
 
-  void OnEndPowerTracingAcked(
-      const scoped_refptr<base::RefCountedString>& events_str_ptr);
-
   void OnCaptureMonitoringSnapshotAcked(
       TraceMessageFilter* trace_message_filter);
 
@@ -191,7 +188,6 @@ class TracingControllerImpl
 #endif
   bool is_tracing_;
   bool is_monitoring_;
-  bool is_power_tracing_;
 
   GetCategoriesDoneCallback pending_get_categories_done_callback_;
   GetTraceBufferUsageCallback pending_trace_buffer_usage_callback_;

@@ -18,7 +18,6 @@
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/media_stream_request.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.h"
@@ -54,10 +53,6 @@ namespace gfx {
 class ImageSkia;
 }
 
-namespace media {
-class CdmFactory;
-}
-
 namespace mojo {
 class ApplicationDelegate;
 }
@@ -71,10 +66,6 @@ class URLRequest;
 class URLRequestContext;
 class URLRequestContextGetter;
 class X509Certificate;
-}
-
-namespace sandbox {
-class TargetPolicy;
 }
 
 namespace ui {
@@ -95,13 +86,11 @@ class BrowserChildProcessHost;
 class BrowserContext;
 class BrowserMainParts;
 class BrowserPluginGuestDelegate;
-class BrowserPpapiHost;
 class BrowserURLHandler;
 class ClientCertificateDelegate;
 class DevToolsManagerDelegate;
 class ExternalVideoSurfaceContainer;
 class LocationProvider;
-class MediaObserver;
 class NavigationHandle;
 class NavigatorConnectContext;
 class NavigatorConnectServiceFactory;
@@ -492,9 +481,6 @@ class CONTENT_EXPORT ContentBrowserClient {
                               int render_process_id,
                               int render_frame_id) {}
 
-  // Returns a class to get notifications about media event. The embedder can
-  // return nullptr if they're not interested.
-  virtual MediaObserver* GetMediaObserver();
 
   // Returns the platform notification service, capable of displaying Web
   // Notifications to the user. The embedder can return a nullptr if they don't
@@ -582,25 +568,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Returns the path to the browser shader disk cache root.
   virtual base::FilePath GetShaderDiskCacheDirectory();
 
-  // Notification that a pepper plugin has just been spawned. This allows the
-  // embedder to add filters onto the host to implement interfaces.
-  // This is called on the IO thread.
-  virtual void DidCreatePpapiPlugin(BrowserPpapiHost* browser_host) {}
 
-  // Gets the host for an external out-of-process plugin.
-  virtual BrowserPpapiHost* GetExternalBrowserPpapiHost(
-      int plugin_child_id);
-
-  // Returns true if the socket operation specified by |params| is allowed from
-  // the given |browser_context| and |url|. If |params| is nullptr, this method
-  // checks the basic "socket" permission, which is for those operations that
-  // don't require a specific socket permission rule.
-  // |private_api| indicates whether this permission check is for the private
-  // Pepper socket API or the public one.
-  virtual bool AllowPepperSocketAPI(BrowserContext* browser_context,
-                                    const GURL& url,
-                                    bool private_api,
-                                    const SocketPermissionRequest* params);
 
   // Returns an implementation of a file selecition policy. Can return nullptr.
   virtual ui::SelectFilePolicy* CreateSelectFilePolicy(
@@ -729,9 +697,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual ScopedVector<NavigationThrottle> CreateThrottlesForNavigation(
       NavigationHandle* navigation_handle);
 
-  // Creates and returns a factory used for creating CDM instances for playing
-  // protected content.
-  virtual scoped_ptr<media::CdmFactory> CreateCdmFactory();
 
   // Populates |mappings| with all files that need to be mapped before launching
   // a child process.
@@ -755,7 +720,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the PROCESS_LAUNCHER thread before the renderer process
   // is launched. It gives the embedder a chance to add loosen the sandbox
   // policy.
-  virtual bool PreSpawnRenderer(sandbox::TargetPolicy* policy);
+  virtual bool PreSpawnRenderer();
 
   // Returns the AppContainer SID for the specified sandboxed process type, or
   // empty string if this sandboxed process type does not support living inside

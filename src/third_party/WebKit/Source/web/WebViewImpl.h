@@ -89,21 +89,6 @@ class WebSelection;
 class WebSettingsImpl;
 class WebViewScheduler;
 
-class RubberbandContext;
-class RubberbandStateImpl;
-class RubberbandState {
-
-    // Not implemented.
-    RubberbandState(const RubberbandState&);
-    RubberbandState& operator=(const RubberbandState&);
-
-  public:
-    RubberbandState();
-    ~RubberbandState();
-
-    RubberbandStateImpl* m_impl;
-};
-
 class WebViewImpl final : public WebView
     , public RefCounted<WebViewImpl>
     , public WebGestureCurveTarget
@@ -168,7 +153,6 @@ public:
     void didAcquirePointerLock() override;
     void didNotAcquirePointerLock() override;
     void didLosePointerLock() override;
-    void didChangeWindowRect() override;
     void didChangeWindowResizerRect() override;
 
     // WebView methods:
@@ -183,7 +167,6 @@ public:
     bool isTransparent() const override;
     void setIsTransparent(bool value) override;
     void setBaseBackgroundColor(WebColor) override;
-    void setLCDTextShouldBlendWithCSSBackgroundColor(bool) override;
     bool tabsToLinks() const override;
     void setTabsToLinks(bool value) override;
     bool tabKeyCyclesThroughElements() const override;
@@ -314,24 +297,6 @@ public:
     Color baseBackgroundColor() const { return m_baseBackgroundColor; }
 
     WebColor backgroundColorOverride() const { return m_backgroundColorOverride; }
-
-    // Rubberbanding
-    void rubberbandWalkFrame(const RubberbandContext&, LocalFrame*, const LayoutPoint&);
-    void rubberbandWalkLayoutObject(const RubberbandContext&, LayoutObject*);
-    WTF::String getTextInRubberbandImpl(const WebRect&);
-    bool handleAltDragRubberbandEvent(const WebInputEvent&);
-
-    virtual bool isAltDragRubberbandingEnabled() const override;
-    virtual void enableAltDragRubberbanding(bool) override;
-    virtual bool isRubberbanding() const override;
-    virtual bool preStartRubberbanding() override;
-    virtual void startRubberbanding() override;
-    virtual WebRect expandRubberbandRect(const WebRect&) override;
-    virtual WebString finishRubberbanding(const WebRect&) override;
-    virtual void abortRubberbanding() override;
-    virtual WebString getTextInRubberband(const WebRect&) override;
-    virtual bool forceStartRubberbanding(int x, int y) override;
-
 
     const WebPoint& lastMouseDownPoint() const
     {
@@ -739,12 +704,6 @@ private:
     OwnPtrWillBePersistent<InspectorOverlay> m_inspectorOverlay;
     OwnPtrWillBePersistent<DevToolsEmulator> m_devToolsEmulator;
     OwnPtr<PageOverlay> m_pageColorOverlay;
-    OwnPtr<RubberbandState> m_rubberbandState;
-
-    // Whether Alt+Mousedrag rubberbanding is enabled or not.
-    bool m_isAltDragRubberbandingEnabled;
-    // Whether rubberbanding has been forced on
-    bool m_rubberbandingForcedOn;
 
     // Whether the webview is rendering transparently.
     bool m_isTransparent;

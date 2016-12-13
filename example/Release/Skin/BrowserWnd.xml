@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<Window size="1000,670" sizebox="4,4,4,4" caption="0,0,0,40" mininfo="960,670" roundcorner="6,6" bktrans="false"  >
+  <Font name="微软雅黑" size="13"/>
+  <Font name="微软雅黑" size="14"/>
+  <Font name="微软雅黑" size="14"/>
+  <Default name="Label" value="textcolor=&quot;#FFFFFFFF&quot; autocalcwidth=&quot;true&quot;" />
+  <Default name="Button" value="textcolor=&quot;#FFFFFFFF&quot; autocalcwidth=&quot;true&quot;"/>
+
+  <VerticalLayout name="background" bkimage="BKImage\2.jpg" bkcolor="#FF01ECFD" bordercolor="#FF47484B" bordersize="1" inset="1,1,1,1"  >
+
+    <HorizontalLayout name="MainWndTitle" height="40">
+      <!-- 标题栏 -->
+      <VerticalLayout name="TitleLeft" width="365" inset="7,0,5,0">
+        <HorizontalLayout height="35">
+          <Label name="Lbl_Main_Title" font="2" text="海量情报服务平台 3.2.4" width="150" endellipsis="true" autocalcwidth="false"/>
+          <Control />
+          <Button name="Btn_Home" width="35" height="35" padding="0,2,0,0" normalimage="LeftTab\browser.png" hotimage="LeftTab\browser_hover.png" pushedimage="LeftTab\browser.png"  group="LeftTab" selectedimage="LeftTab\browser.png" tooltip="主页"/>
+          <Button name="Btn_Goback" width="34" height="50" padding="5,0,0,0" normalimage="tab\back_normal.png" hotimage="tab\back_hover.png" pushedimage="tab\back_down.png" disabledimage="tab\back_disable.png" tooltip="回退"/>
+          <Button name="Btn_Refresh" width="34" height="50" padding="5,0,0,0" normalimage="tab\refresh_normal.png" hotimage="tab\refresh_hover.png" pushedimage="tab\refresh_down.png" tooltip="刷新"/>
+         </HorizontalLayout>
+      </VerticalLayout>
+      <VerticalLayout name="Main_Title_Right" >
+        <HorizontalLayout height="39" >
+          <Control width="20"/>
+          <HorizontalLayout bkimage="file='title\bk.png' corner='30,0,0,0'">
+           
+            <HorizontalLayout >
+              <Control width="30" />
+               <!--
+              <Button text="登陆" width="25" />
+              <Label text="|" width="10" padding="15,0,5,0"/>
+              <Button text="注册" width="25"/>
+              -->
+              <HorizontalLayout padding="20,5,0,0">
+                <RichEdit name="Edt_Title_Search" rich="false" borderround="12,12" readonly="false" wantreturn="false" wantctrlreturn="false" multiline="false" font="2" text="请输入网站名称或地址" height="27" textpadding="9,3,35,5" textcolor="#646464" bkcolor="#00FFFFFF" bkimage="title\edit.png" >
+                  <Control height="1"/>
+                  <Button name="Btn_Title_Search" width="33" height="27" normalimage="title\search_normal.png" hotimage="title\search_hover.png" pushedimage="title\search_down.png" />
+                </RichEdit>
+              </HorizontalLayout>
+              
+            </HorizontalLayout>
+            
+            <HorizontalLayout width="150" padding="0,0,8,0">
+              <Control width="40"/>
+              <Button name="Btn_Title_SkinPicker" width="23" height="18" padding="0,10,0,0" normalimage="title\skin_normal.png" hotimage="title\skin_hover.png" pushedimage="title\skin_down.png" />
+              <Control width="1" height="18" padding="9,10,0,0" bkimage="title\separate_line.png" />
+              <Button name="Menu_Main_Settings" width="23" height="18" padding="9,10,0,0" normalimage="title\menu_normal.png" hotimage="title\menu_hover.png" pushedimage="title\menu_down.png" />
+              <Button name="minbtn" width="23" height="18" padding="0,10,0,0" normalimage="title\min_normal.png" hotimage="title\min_hover.png" pushedimage="title\min_down.png" />
+              <Button name="closebtn" width="23" height="18" padding="0,10,0,0" normalimage="title\close_normal.png" hotimage="title\close_hover.png" pushedimage="title\close_down.png" />
+            </HorizontalLayout>
+          </HorizontalLayout>
+        </HorizontalLayout>
+
+      </VerticalLayout>
+    </HorizontalLayout>
+    <HorizontalLayout >
+      <!-- 主体 -->
+      <VerticalLayout name="MainContent">
+        <TabLayout name="mainTab" padding="0,0,0,0" bottombordersize="2" bordercolor="FFCACACA" selectedid="0">
+          <Browser name="homebrowser"  delaycreate="false"  url="http://h.hylanda.com/" visible="true" bkcolor="#00FFFFFF" padding="0,0,0,0" />
+          <VerticalLayout name="morebrowserLayout">
+            <HorizontalLayout inset="4,0,4,0" height="30" name="browserToolbar">
+              <ScrollTab name="scrollToolBar" height="25" TabWidth="150" TabSelColor="#ffff0000" TabNorColor="#00000000"/>
+            </HorizontalLayout>
+            <TabLayout name="browserLayout">
+             </TabLayout>
+          </VerticalLayout> 
+      </TabLayout>
+      </VerticalLayout>
+
+    </HorizontalLayout>
+  </VerticalLayout>
+
+</Window>

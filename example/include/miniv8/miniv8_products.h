@@ -1,0 +1,10 @@
+// generated file -- DO NOT EDIT
+#ifndef INCLUDED_GENERATED_MINIV8_PRODUCTS
+#define INCLUDED_GENERATED_MINIV8_PRODUCTS
+
+#define MINIV8_DLL_NAME "miniv8.dll"
+#define MINIV8_NATIVES_BLOB_NAME "natives_blob.bin"
+#define MINIV8_SNAPSHOT_BLOB_NAME "snapshot_blob.bin"
+#define MINIV8_ICUDTL_DAT_NAME "icudtl.dat"
+
+#endif  // INCLUDED_GENERATED_MINIV8_PRODUCTS
